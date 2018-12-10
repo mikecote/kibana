@@ -75,3 +75,38 @@ export function createJsonStringifyStream({ pretty = false } = {}) {
     }
   });
 }
+
+/**
+ * Create a Transform stream that accepts arbitrary JavaScript
+ * values and provides the output in a stringified JSON object as a whole.
+ *
+ * Serialization errors are emitted with the "error" event, and
+ * if not caught will cause the process to crash. When caught
+ * the stream will continue to stringify subsequence values.
+ */
+export function createToJsonBufferStream() {
+  let firstWrite = true;
+  return new Transform({
+    writableObjectMode: true,
+    readableObjectMode: false,
+    transform(obj, encoding, callback) {
+      try {
+        let result = '';
+        if (firstWrite) {
+          result += '[\n  ';
+          firstWrite = false;
+        } else {
+          result += ',\n  ';
+        }
+        result += JSON.stringify(obj, null, 2).replace(/\n/g, '\n  ');
+        callback(null, result);
+      } catch (err) {
+        callback(err);
+      }
+    },
+    flush(callback) {
+      this.push('\n]\n');
+      callback();
+    }
+  });
+}

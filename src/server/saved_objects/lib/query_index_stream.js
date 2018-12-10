@@ -17,11 +17,26 @@
  * under the License.
  */
 
-export { createBulkCreateRoute } from './bulk_create';
-export { createBulkGetRoute } from './bulk_get';
-export { createCreateRoute } from './create';
-export { createDeleteRoute } from './delete';
-export { createFindRoute } from './find';
-export { createGetRoute } from './get';
-export { createUpdateRoute } from './update';
-export { createExportRoute } from './export';
+import { Transform } from 'stream';
+
+export function createQueryIndexStream(savedObjectsClient) {
+  return new Transform({
+    objectMode: true,
+    async transform(query, encoding, callback) {
+      try {
+        // TODO: Paginate, handle backpressure
+        const result = await savedObjectsClient.find(query);
+        for (const hit of result.saved_objects) {
+          this.push({
+            _type: hit.type,
+            _id: hit.id,
+            _source: hit.attributes,
+          });
+        }
+        callback(null);
+      } catch (err) {
+        callback(err);
+      }
+    }
+  });
+}

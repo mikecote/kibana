@@ -284,6 +284,7 @@ class ObjectsTableUI extends Component {
   };
 
   onExportAll = async () => {
+    alert('EXPORTING ALL');
     const { $http } = this.props;
     const { exportAllSelectedOptions } = this.state;
 
@@ -296,7 +297,9 @@ class ObjectsTableUI extends Component {
       },
       []
     );
+    console.log('exportTypes', exportTypes);
     const results = await scanAllTypes($http, exportTypes);
+    console.log('RESULTS', results);
     saveToFile(JSON.stringify(flattenDeep(results), null, 2));
   };
 

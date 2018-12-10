@@ -125,6 +125,15 @@ export default function (kibana) {
         'kql-telemetry': {
           isNamespaceAgnostic: true,
         },
+        dashboard: {
+          dependencies: ['visualization'],
+        },
+        visualization: {
+          dependencies: ['index-pattern'],
+        },
+        search: {
+          dependencies: ['index-pattern'],
+        },
       },
 
       injectDefaultVars(server, options) {
