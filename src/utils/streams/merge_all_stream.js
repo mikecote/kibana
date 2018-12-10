@@ -17,16 +17,23 @@
  * under the License.
  */
 
-export { concatStreamProviders } from './concat_stream_providers';
-export { createIntersperseStream } from './intersperse_stream';
-export { createSplitStream } from './split_stream';
-export { createListStream } from './list_stream';
-export { createReduceStream } from './reduce_stream';
-export { createJsonParseStream, createJsonStringifyStream } from './json_streams';
-export { createPromiseFromStreams } from './promise_from_streams';
-export { createConcatStream } from './concat_stream';
-export { createMapStream } from './map_stream';
-export { createReplaceStream } from './replace_stream';
-export { createMapESStream } from './map_es_stream';
-export { createMergeAllStream } from './merge_all_stream';
-export { createScrollESStream } from './scroll_es_stream';
+import { Transform } from 'stream';
+
+export function createMergeAllStream() {
+  return new Transform({
+    objectMode: true,
+    transform(stream, enc, done) {
+      stream
+        .on('data', (row) => {
+          const continuePushing = this.push(row);
+          if (!continuePushing) {
+            stream.pause();
+            // TODO: What about errors?
+            stream._readableState.pipes.once('drain', () => stream.resume());
+          }
+        })
+        .on('error', err => done(err))
+        .on('end', () => done());
+    }
+  });
+}
