@@ -17,11 +17,7 @@
  * under the License.
  */
 
-import {
-  createScrollEsStream,
-  createPromiseFromStreams,
-  createConcatStream,
-} from './';
+import { createScrollEsStream, createPromiseFromStreams, createConcatStream } from './';
 
 describe('createScrollEsStream()', () => {
   test('scrolls through Elasticsearch when no results exist 2', async () => {
@@ -51,14 +47,16 @@ describe('createScrollEsStream()', () => {
         return Promise.resolve({
           hits: {
             total: 1,
-            hits: [{
-              _index: indexName,
-              _type: typeValue,
-              _id: '123',
-              _source: {
-                attr: 'value',
+            hits: [
+              {
+                _index: indexName,
+                _type: typeValue,
+                _id: '123',
+                _source: {
+                  attr: 'value',
+                },
               },
-            }],
+            ],
           },
         });
       }),
@@ -71,17 +69,19 @@ describe('createScrollEsStream()', () => {
 
     expect(results).toHaveLength(1);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
-    expect(results[0]).toEqual({
-      type: 'doc',
-      value: {
-        index: indexName,
-        type: typeValue,
-        id: '123',
-        source: {
-          attr: 'value',
-        },
-      },
-    });
+    expect(results[0]).toMatchInlineSnapshot(`
+Object {
+  "type": "doc",
+  "value": Object {
+    "id": "123",
+    "index": "my_index",
+    "source": Object {
+      "attr": "value",
+    },
+    "type": "my_type",
+  },
+}
+`);
   });
 
   test('handles errors when search fails', async () => {
