@@ -18,13 +18,13 @@
  */
 
 import { Transform } from 'stream';
-import { createScrollESStream } from './scroll_es_stream';
+import { createScrollEsStream } from './scroll_es_stream';
 
 export function createMapESStream(client) {
   return new Transform({
     objectMode: true,
     transform(args, enc, done) {
-      done(null, createScrollESStream(client, args));
+      done(null, createScrollEsStream(client, args));
     },
   });
 }

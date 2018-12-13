@@ -18,12 +18,12 @@
  */
 
 import {
-  createScrollESStream,
+  createScrollEsStream,
   createPromiseFromStreams,
   createConcatStream,
 } from './';
 
-describe('createScrollESStream()', () => {
+describe('createScrollEsStream()', () => {
   test('scrolls through Elasticsearch when no results exist 2', async () => {
     const mockClient = {
       search: jest.fn(() => {
@@ -36,7 +36,7 @@ describe('createScrollESStream()', () => {
       }),
     };
     const results = await createPromiseFromStreams([
-      createScrollESStream(mockClient, { index: 'my_index' }),
+      createScrollEsStream(mockClient, { index: 'my_index' }),
       createConcatStream([]),
     ]);
     expect(results).toHaveLength(0);
@@ -65,7 +65,7 @@ describe('createScrollESStream()', () => {
     };
 
     const results = await createPromiseFromStreams([
-      createScrollESStream(mockClient, { index: indexName }),
+      createScrollEsStream(mockClient, { index: indexName }),
       createConcatStream([]),
     ]);
 
@@ -92,7 +92,7 @@ describe('createScrollESStream()', () => {
     };
     try {
       await createPromiseFromStreams([
-        createScrollESStream(mockClient, { index: 'my_index' }),
+        createScrollEsStream(mockClient, { index: 'my_index' }),
         createConcatStream([]),
       ]);
       throw new Error('Should have failed');

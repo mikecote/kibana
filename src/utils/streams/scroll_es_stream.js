@@ -20,18 +20,18 @@
 import { assign } from 'lodash';
 import { Readable } from 'stream';
 
-const SCROLL_SIZE = 100;
+const SCROLL_SIZE = 300;
 const SCROLL_TIMEOUT = '1m';
 
-export function createScrollESStream(client, args) {
+export function createScrollEsStream(client, args) {
   let pointer = 0;
   let isReading = false;
-  let fetchAfter = false;
   let scrollId = null;
 
   const readableStream = new Readable({
     objectMode: true,
     read() {
+      if (isReading) return;
       readPage();
     }
   });
@@ -69,22 +69,18 @@ export function createScrollESStream(client, args) {
    */
   async function readPage() {
     try {
-      if (isReading) {
-        fetchAfter = true;
-        return;
-      }
       isReading = true;
       let resp;
       // Fetch page from Elasticsearch
       if (scrollId) {
         resp = await client.scroll({
-          size: SCROLL_SIZE,
           scrollId: scrollId,
           scroll: SCROLL_TIMEOUT,
         });
       } else {
         args = assign({}, args, {
           scroll: SCROLL_TIMEOUT,
+          size: SCROLL_SIZE,
           _source: true,
           rest_total_hits_as_int: true,
         });
@@ -95,8 +91,6 @@ export function createScrollESStream(client, args) {
       isReading = false;
       if (resp.hits.total <= pointer) {
         readableStream.push(null);
-      } else if (fetchAfter) {
-        readPage();
       }
     } catch(e) {
       readableStream.emit('error', e);
