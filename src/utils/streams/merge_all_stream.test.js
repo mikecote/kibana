@@ -19,8 +19,12 @@
 
 import { Readable } from 'stream';
 
-import { createListStream } from './list_stream';
-import { createMergeAllStream } from './merge_all_stream';
+import {
+  createListStream,
+  createMergeAllStream,
+  createPromiseFromStreams,
+  createConcatStream,
+} from './';
 
 function createFailingReadableStream() {
   return new Readable({
@@ -33,38 +37,29 @@ function createFailingReadableStream() {
 
 describe('createMergeAllStream()', () => {
   test('merges streams together', async () => {
-    const readStream = new Readable({ objectMode: true });
-    const mergeAllStream = createMergeAllStream();
-    const onData = jest.fn();
-
-    readStream
-      .pipe(mergeAllStream)
-      .on('data', onData);
-
-    readStream.push(createListStream([1, 2, 3]));
-    readStream.push(createListStream([4, 5]));
-    readStream.push(null);
-
-    await new Promise(resolve => mergeAllStream.on('finish', resolve));
-
-    expect(onData).toHaveBeenCalledTimes(5);
+    const results = await createPromiseFromStreams([
+      createListStream([
+        createListStream([1, 2, 3]),
+        createListStream([4, 5]),
+      ]),
+      createMergeAllStream(),
+      createConcatStream([]),
+    ]);
+    expect(results).toEqual([1, 2, 3, 4, 5]);
   });
 
   test('handles errors when given stream fails', async () => {
-    const readStream = new Readable({ objectMode: true });
-    const mergeAllStream = createMergeAllStream();
-    const onError = jest.fn();
-
-    readStream
-      .pipe(mergeAllStream)
-      .on('error', onError);
-
-    readStream.push(createFailingReadableStream());
-    readStream.push(null);
-
-    await new Promise(resolve => mergeAllStream.on('error', resolve));
-
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError.mock.calls[0][0].message).toBe('Test error');
+    try {
+      await createPromiseFromStreams([
+        createListStream([
+          createFailingReadableStream(),
+        ]),
+        createMergeAllStream(),
+        createConcatStream([]),
+      ]);
+      throw new Error('Should have failed');
+    } catch (e) {
+      expect(e.message).toBe('Test error');
+    }
   });
 });

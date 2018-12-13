@@ -17,10 +17,14 @@
  * under the License.
  */
 
-import { createScrollESStream } from './scroll_es_stream';
+import {
+  createScrollESStream,
+  createPromiseFromStreams,
+  createConcatStream,
+} from './';
 
 describe('createScrollESStream()', () => {
-  test('scrolls through Elasticsearch when no results exist', async () => {
+  test('scrolls through Elasticsearch when no results exist 2', async () => {
     const mockClient = {
       search: jest.fn(() => {
         return Promise.resolve({
@@ -31,14 +35,11 @@ describe('createScrollESStream()', () => {
         });
       }),
     };
-
-    const scrollStream = createScrollESStream(mockClient, { index: 'my_index' });
-    const onData = jest.fn();
-    scrollStream.on('data', onData);
-
-    await new Promise(resolve => scrollStream.on('end', resolve));
-
-    expect(onData).toHaveBeenCalledTimes(0);
+    const results = await createPromiseFromStreams([
+      createScrollESStream(mockClient, { index: 'my_index' }),
+      createConcatStream([]),
+    ]);
+    expect(results).toHaveLength(0);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
   });
 
@@ -63,15 +64,14 @@ describe('createScrollESStream()', () => {
       }),
     };
 
-    const scrollStream = createScrollESStream(mockClient, { index: indexName });
-    const onData = jest.fn();
-    scrollStream.on('data', onData);
+    const results = await createPromiseFromStreams([
+      createScrollESStream(mockClient, { index: indexName }),
+      createConcatStream([]),
+    ]);
 
-    await new Promise(resolve => scrollStream.on('end', resolve));
-
-    expect(onData).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
-    expect(onData.mock.calls[0][0]).toEqual({
+    expect(results[0]).toEqual({
       type: 'doc',
       value: {
         index: indexName,
@@ -90,15 +90,14 @@ describe('createScrollESStream()', () => {
         return Promise.reject(new Error('Test error'));
       }),
     };
-    const scrollStream = createScrollESStream(mockClient, { index: 'my_index' });
-    const onError = jest.fn();
-    // Make stream to execute
-    scrollStream.on('data', () => {});
-    scrollStream.on('error', onError);
-
-    await new Promise(resolve => scrollStream.on('error', resolve));
-
-    expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError.mock.calls[0][0].message).toBe('Test error');
+    try {
+      await createPromiseFromStreams([
+        createScrollESStream(mockClient, { index: 'my_index' }),
+        createConcatStream([]),
+      ]);
+      throw new Error('Should have failed');
+    } catch (e) {
+      expect(e.message).toBe('Test error');
+    }
   });
 });

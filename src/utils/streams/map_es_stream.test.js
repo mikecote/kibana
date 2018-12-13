@@ -20,6 +20,8 @@
 import {
   createMapESStream,
   createListStream,
+  createPromiseFromStreams,
+  createConcatStream,
 } from './';
 
 describe('createMapESStream()', () => {
@@ -39,39 +41,27 @@ describe('createMapESStream()', () => {
   });
 
   test('provides readable streams from inputs', async () => {
-    const readStream = createListStream([{ index: 'my_index' }]);
-    const mapStream = createMapESStream(mockClient);
-    const onData = jest.fn();
-
-    readStream
-      .pipe(mapStream)
-      .on('data', onData);
-
-    await new Promise(resolve => mapStream.on('finish', resolve));
-
-    expect(onData).toHaveBeenCalledTimes(1);
+    const readableStreams = await createPromiseFromStreams([
+      createListStream([{ index: 'my_index' }]),
+      createMapESStream(mockClient),
+      createConcatStream([]),
+    ]);
+    expect(readableStreams).toHaveLength(1);
   });
 
   test('readable streams query Elasticsearch', async () => {
-    const readStream = createListStream([{ index: 'my_index' }]);
-    const mapStream = createMapESStream(mockClient);
-    const onData = jest.fn();
-
-    readStream
-      .pipe(mapStream)
-      .on('data', onData);
-
-    await new Promise(resolve => mapStream.on('finish', resolve));
-
-    expect(onData).toHaveBeenCalledTimes(1);
-
-    const readableESStream = onData.mock.calls[0][0];
-    const onESData = jest.fn();
-    readableESStream.on('data', onESData);
-
-    await new Promise(resolve => readableESStream.on('end', resolve));
-
+    const readableStreams = await createPromiseFromStreams([
+      createListStream([{ index: 'my_index' }]),
+      createMapESStream(mockClient),
+      createConcatStream([]),
+    ]);
+    expect(readableStreams).toHaveLength(1);
+    const readableEsStream = readableStreams[0];
+    const searchResults = await createPromiseFromStreams([
+      readableEsStream,
+      createConcatStream([]),
+    ]);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
-    expect(onESData).toHaveBeenCalledTimes(0);
+    expect(searchResults).toHaveLength(0);
   });
 });
