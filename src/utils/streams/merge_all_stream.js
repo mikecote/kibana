@@ -28,7 +28,6 @@ export function createMergeAllStream() {
           const continuePushing = this.push(row);
           if (!continuePushing) {
             stream.pause();
-            // TODO: What about errors?
             stream._readableState.pipes.once('drain', () => stream.resume());
           }
         })

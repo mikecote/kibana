@@ -17,18 +17,23 @@
  * under the License.
  */
 
+import { Transform } from 'stream';
 import { createScrollEsStream, createPromiseFromStreams, createConcatStream } from './';
 
 describe('createScrollEsStream()', () => {
-  test('scrolls through Elasticsearch when no results exist 2', async () => {
+  test('scrolls through Elasticsearch when no results exist', async () => {
     const mockClient = {
       search: jest.fn(() => {
         return Promise.resolve({
+          _scroll_id: 'abc',
           hits: {
             total: 0,
             hits: [],
           },
         });
+      }),
+      clearScroll: jest.fn((args, callback) => {
+        callback();
       }),
     };
     const results = await createPromiseFromStreams([
@@ -37,6 +42,7 @@ describe('createScrollEsStream()', () => {
     ]);
     expect(results).toHaveLength(0);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
+    // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
   });
 
   test('scrolls through Elasticsearch with results', async () => {
@@ -45,6 +51,7 @@ describe('createScrollEsStream()', () => {
     const mockClient = {
       search: jest.fn(() => {
         return Promise.resolve({
+          _scroll_id: 'abc',
           hits: {
             total: 1,
             hits: [
@@ -60,6 +67,9 @@ describe('createScrollEsStream()', () => {
           },
         });
       }),
+      clearScroll: jest.fn((args, callback) => {
+        callback();
+      }),
     };
 
     const results = await createPromiseFromStreams([
@@ -69,6 +79,7 @@ describe('createScrollEsStream()', () => {
 
     expect(results).toHaveLength(1);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
+    // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
     expect(results[0]).toMatchInlineSnapshot(`
 Object {
   "type": "doc",
@@ -89,6 +100,9 @@ Object {
       search: jest.fn(() => {
         return Promise.reject(new Error('Test error'));
       }),
+      clearScroll: jest.fn((args, callback) => {
+        callback();
+      }),
     };
     try {
       await createPromiseFromStreams([
@@ -98,6 +112,68 @@ Object {
       throw new Error('Should have failed');
     } catch (e) {
       expect(e.message).toBe('Test error');
+      // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('stream clears scroll when destroy is called', async () => {
+    const typeValue = 'my_type';
+    const indexName = 'my_index';
+    const mockClient = {
+      search: jest.fn(() => {
+        return Promise.resolve({
+          _scroll_id: 'abc',
+          hits: {
+            total: 2,
+            hits: [
+              {
+                _index: indexName,
+                _type: typeValue,
+                _id: '123',
+                _source: {
+                  attr: 'value',
+                },
+              },
+            ],
+          },
+        });
+      }),
+      scroll: jest.fn(() => {
+        return Promise.resolve({
+          _scroll_id: 'abc',
+          hits: {
+            total: 2,
+            hits: [
+              {
+                _index: indexName,
+                _type: typeValue,
+                _id: '456',
+                _source: {
+                  attr: 'value',
+                },
+              },
+            ],
+          },
+        });
+      }),
+      clearScroll: jest.fn((args, callback) => {
+        callback();
+      }),
+    };
+    try {
+      await createPromiseFromStreams([
+        createScrollEsStream(mockClient, { index: 'my_index' }),
+        new Transform({
+          objectMode: true,
+          transform(obj, enc, done) {
+            done(new Error('Test error'));
+          }
+        }),
+      ]);
+      throw new Error('Should have failed');
+    } catch (e) {
+      expect(e.message).toBe('Test error');
+      // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
     }
   });
 });

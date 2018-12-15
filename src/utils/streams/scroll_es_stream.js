@@ -33,6 +33,10 @@ export function createScrollEsStream(client, args) {
     read() {
       if (isReading) return;
       readPage();
+    },
+    destroy(err, callback) {
+      if (!scrollId) return callback();
+      client.clearScroll({ scrollId }, callback);
     }
   });
 
@@ -44,7 +48,6 @@ export function createScrollEsStream(client, args) {
   async function pushHits(hits) {
     for (const hit of hits) {
       pointer += 1;
-      // TODO: Change structure
       const continuePushing = readableStream.push({
         type: 'doc',
         value: {
@@ -56,8 +59,6 @@ export function createScrollEsStream(client, args) {
       });
       if (!continuePushing) {
         await new Promise((resolve) => {
-          // TODO: What about reject?
-          // TODO: Check if drained yet (async code executed between await and here)
           readableStream._readableState.pipes.once('drain', resolve);
         });
       }
