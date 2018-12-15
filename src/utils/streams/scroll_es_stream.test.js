@@ -42,7 +42,7 @@ describe('createScrollEsStream()', () => {
     ]);
     expect(results).toHaveLength(0);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
-    // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
+    expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
   });
 
   test('scrolls through Elasticsearch with results', async () => {
@@ -79,7 +79,7 @@ describe('createScrollEsStream()', () => {
 
     expect(results).toHaveLength(1);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
-    // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
+    expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
     expect(results[0]).toMatchInlineSnapshot(`
 Object {
   "type": "doc",
@@ -112,7 +112,8 @@ Object {
       throw new Error('Should have failed');
     } catch (e) {
       expect(e.message).toBe('Test error');
-      // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
+      // No scroll id assigned, so clearScroll won't get called
+      expect(mockClient.clearScroll).toHaveBeenCalledTimes(0);
     }
   });
 
@@ -173,7 +174,7 @@ Object {
       throw new Error('Should have failed');
     } catch (e) {
       expect(e.message).toBe('Test error');
-      // expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
+      expect(mockClient.clearScroll).toHaveBeenCalledTimes(1);
     }
   });
 });

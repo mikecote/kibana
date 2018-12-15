@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { assign } from 'lodash';
+import { assign, noop } from 'lodash';
 import { Readable } from 'stream';
 
 const SCROLL_SIZE = 300;
@@ -92,6 +92,8 @@ export function createScrollEsStream(client, args) {
       isReading = false;
       if (resp.hits.total <= pointer) {
         readableStream.push(null);
+        client.clearScroll({ scrollId }, noop);
+        scrollId = null;
       }
     } catch(e) {
       readableStream.emit('error', e);
