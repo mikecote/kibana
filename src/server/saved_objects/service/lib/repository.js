@@ -84,7 +84,7 @@ export class SavedObjectsRepository {
     const time = this._getCurrentTime();
 
     try {
-      const references = attributes.references;
+      const { references } = attributes;
       delete attributes.references;
       const migrated = this._migrator.migrateDocument({
         id,
@@ -143,6 +143,7 @@ export class SavedObjectsRepository {
         attributes: object.attributes,
         migrationVersion: object.migrationVersion,
         namespace,
+        // Or is it object.attribute.references?
         references: object.references,
         updated_at: time,
       });
@@ -480,6 +481,8 @@ export class SavedObjectsRepository {
     } = options;
 
     const time = this._getCurrentTime();
+    const { references } = attributes;
+    delete attributes.references;
     const response = await this._writeToCluster('update', {
       id: this._serializer.generateRawId(namespace, type, id),
       type: this._type,
@@ -489,9 +492,9 @@ export class SavedObjectsRepository {
       ignore: [404],
       body: {
         doc: {
+          references,
           [type]: attributes,
           updated_at: time,
-          // TODO?
         }
       },
     });
@@ -505,7 +508,7 @@ export class SavedObjectsRepository {
       id,
       type,
       updated_at: time,
-      // TODO?
+      references: response.references,
       version: response._version,
       attributes
     };
@@ -543,7 +546,6 @@ export class SavedObjectsRepository {
       attributes: { [counterFieldName]: 1 },
       migrationVersion,
       updated_at: time,
-      // TODO?
     });
 
     const raw = this._serializer.savedObjectToRaw(migrated);
@@ -581,7 +583,7 @@ export class SavedObjectsRepository {
       id,
       type,
       updated_at: time,
-      // TODO?
+      references: response.get._source.references,
       version: response._version,
       attributes: response.get._source[type],
     };

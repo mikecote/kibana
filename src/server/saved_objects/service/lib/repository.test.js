@@ -1206,7 +1206,11 @@ describe('SavedObjectsRepository', () => {
         id: 'foo-namespace:index-pattern:logstash-*',
         version: undefined,
         body: {
-          doc: { updated_at: mockTimestamp, 'index-pattern': { title: 'Testing' } }
+          doc: {
+            updated_at: mockTimestamp,
+            'index-pattern': { title: 'Testing' },
+            references: undefined
+          }
         },
         ignore: [404],
         refresh: 'wait_for',
@@ -1225,7 +1229,11 @@ describe('SavedObjectsRepository', () => {
         id: 'index-pattern:logstash-*',
         version: undefined,
         body: {
-          doc: { updated_at: mockTimestamp, 'index-pattern': { title: 'Testing' } }
+          doc: {
+            updated_at: mockTimestamp,
+            'index-pattern': { title: 'Testing' },
+            references: undefined
+          }
         },
         ignore: [404],
         refresh: 'wait_for',
@@ -1248,7 +1256,11 @@ describe('SavedObjectsRepository', () => {
         id: 'globaltype:foo',
         version: undefined,
         body: {
-          doc: { updated_at: mockTimestamp, 'globaltype': { name: 'bar' } }
+          doc: {
+            updated_at: mockTimestamp,
+            'globaltype': { name: 'bar' },
+            references: undefined
+          }
         },
         ignore: [404],
         refresh: 'wait_for',

@@ -32,7 +32,8 @@ export const createUpdateRoute = (prereqs) => {
         }).required(),
         payload: Joi.object({
           attributes: Joi.object().required(),
-          version: Joi.number().min(1)
+          version: Joi.number().min(1),
+          references: Joi.object().optional(),
         }).required()
       },
       handler(request) {
