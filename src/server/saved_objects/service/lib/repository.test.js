@@ -1216,6 +1216,12 @@ describe('SavedObjectsRepository', () => {
         title: 'Testing',
       }, {
         namespace: 'foo-namespace',
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '1'
+          }
+        }
       });
 
       sinon.assert.calledOnce(callAdminCluster);
@@ -1227,7 +1233,12 @@ describe('SavedObjectsRepository', () => {
           doc: {
             updated_at: mockTimestamp,
             'index-pattern': { title: 'Testing' },
-            references: undefined
+            references: {
+              ref_0: {
+                type: 'test',
+                id: '1'
+              }
+            }
           }
         },
         ignore: [404],
@@ -1239,7 +1250,16 @@ describe('SavedObjectsRepository', () => {
     });
 
     it(`doesn't prepend namespace to the id or add namespace property when providing no namespace for namespaced type`, async () => {
-      await savedObjectsRepository.update('index-pattern', 'logstash-*', { title: 'Testing' });
+      await savedObjectsRepository.update('index-pattern', 'logstash-*', {
+        title: 'Testing'
+      }, {
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '1'
+          }
+        }
+      });
 
       sinon.assert.calledOnce(callAdminCluster);
       sinon.assert.calledWithExactly(callAdminCluster, 'update', {
@@ -1250,7 +1270,12 @@ describe('SavedObjectsRepository', () => {
           doc: {
             updated_at: mockTimestamp,
             'index-pattern': { title: 'Testing' },
-            references: undefined
+            references: {
+              ref_0: {
+                type: 'test',
+                id: '1'
+              }
+            }
           }
         },
         ignore: [404],
@@ -1266,6 +1291,12 @@ describe('SavedObjectsRepository', () => {
         name: 'bar',
       }, {
         namespace: 'foo-namespace',
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '1'
+          }
+        }
       });
 
       sinon.assert.calledOnce(callAdminCluster);
@@ -1277,7 +1308,12 @@ describe('SavedObjectsRepository', () => {
           doc: {
             updated_at: mockTimestamp,
             'globaltype': { name: 'bar' },
-            references: undefined
+            references: {
+              ref_0: {
+                type: 'test',
+                id: '1'
+              }
+            }
           }
         },
         ignore: [404],
