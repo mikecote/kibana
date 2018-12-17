@@ -261,6 +261,12 @@ describe('SavedObjectsRepository', () => {
       }, {
         id: 'logstash-*',
         namespace: 'foo-namespace',
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '123'
+          },
+        }
       });
 
       expect(response).toEqual({
@@ -270,6 +276,12 @@ describe('SavedObjectsRepository', () => {
         version: 2,
         attributes: {
           title: 'Logstash',
+        },
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '123'
+          },
         }
       });
     });
@@ -430,8 +442,8 @@ describe('SavedObjectsRepository', () => {
       callAdminCluster.returns({ items: [] });
 
       await savedObjectsRepository.bulkCreate([
-        { type: 'config', id: 'one', attributes: { title: 'Test One' } },
-        { type: 'index-pattern', id: 'two', attributes: { title: 'Test Two' } }
+        { type: 'config', id: 'one', attributes: { title: 'Test One' }, references: { ref_0: { type: 'test', id: '1' } } },
+        { type: 'index-pattern', id: 'two', attributes: { title: 'Test Two' }, references: { ref_0: { type: 'test', id: '2' } } },
       ]);
 
       sinon.assert.calledOnce(callAdminCluster);
@@ -441,9 +453,9 @@ describe('SavedObjectsRepository', () => {
 
       expect(bulkCalls[0][1].body).toEqual([
         { create: { _type: 'doc', _id: 'config:one' } },
-        { type: 'config', ...mockTimestampFields, config: { title: 'Test One' } },
+        { type: 'config', ...mockTimestampFields, config: { title: 'Test One' }, references: { ref_0: { type: 'test', id: '1' } } },
         { create: { _type: 'doc', _id: 'index-pattern:two' } },
-        { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' } }
+        { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' }, references: { ref_0: { type: 'test', id: '2' } } }
       ]);
 
       sinon.assert.calledOnce(onBeforeWrite);
@@ -1169,13 +1181,19 @@ describe('SavedObjectsRepository', () => {
     });
 
     it('returns current ES document version', async () => {
-      const response = await savedObjectsRepository.update('index-pattern', 'logstash-*', attributes, { namespace: 'foo-namespace' });
+      const response = await savedObjectsRepository.update('index-pattern', 'logstash-*', attributes, { namespace: 'foo-namespace', references: { ref_0: { type: 'test', id: '1' } } });
       expect(response).toEqual({
         id,
         type,
         ...mockTimestampFields,
         version: newVersion,
-        attributes
+        attributes,
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '1'
+          }
+        }
       });
     });
 

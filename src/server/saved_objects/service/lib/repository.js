@@ -507,8 +507,8 @@ export class SavedObjectsRepository {
       id,
       type,
       updated_at: time,
-      references: response.references,
       version: response._version,
+      references,
       attributes
     };
   }
