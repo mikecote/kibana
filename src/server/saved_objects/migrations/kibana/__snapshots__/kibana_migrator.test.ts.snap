@@ -26,6 +26,10 @@ Object {
       "namespace": Object {
         "type": "keyword",
       },
+      "references": Object {
+        "dynamic": true,
+        "type": "object",
+      },
       "type": Object {
         "type": "keyword",
       },
