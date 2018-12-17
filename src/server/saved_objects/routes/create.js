@@ -47,8 +47,8 @@ export const createCreateRoute = prereqs => {
         const { savedObjectsClient } = request.pre;
         const { type, id } = request.params;
         const { overwrite } = request.query;
-        const { migrationVersion } = request.payload;
-        const options = { id, overwrite, migrationVersion };
+        const { migrationVersion, references } = request.payload;
+        const options = { id, overwrite, migrationVersion, references };
 
         return savedObjectsClient.create(type, request.payload.attributes, options);
       },

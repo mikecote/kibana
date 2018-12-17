@@ -108,7 +108,9 @@ uiModules
     };
 
     SavedVis.injectReferences = function (references) {
-      this.savedSearchId = references[this.savedSearchReference].id;
+      if (this.savedSearchReference) {
+        this.savedSearchId = references[this.savedSearchReference].id;
+      }
     };
 
     SavedVis.prototype.getFullPath = function () {

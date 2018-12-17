@@ -70,6 +70,7 @@ export class SavedObjectsRepository {
    * @property {boolean} [options.overwrite=false]
    * @property {object} [options.migrationVersion=undefined]
    * @property {string} [options.namespace]
+   * @property {object} [options.references]
    * @returns {promise} - { id, type, version, attributes }
   */
   async create(type, attributes = {}, options = {}) {
@@ -78,14 +79,13 @@ export class SavedObjectsRepository {
       migrationVersion,
       overwrite = false,
       namespace,
+      references
     } = options;
 
     const method = id && !overwrite ? 'create' : 'index';
     const time = this._getCurrentTime();
 
     try {
-      const { references } = attributes;
-      delete attributes.references;
       const migrated = this._migrator.migrateDocument({
         id,
         type,
@@ -127,7 +127,7 @@ export class SavedObjectsRepository {
    * @param {object} [options={}]
    * @property {boolean} [options.overwrite=false] - overwrites existing documents
    * @property {string} [options.namespace]
-   * @returns {promise} -  {saved_objects: [[{ id, type, version, attributes, error: { message } }]}
+   * @returns {promise} -  {saved_objects: [[{ id, type, version, references, attributes, error: { message } }]}
    */
   async bulkCreate(objects, options = {}) {
     const {
@@ -143,7 +143,6 @@ export class SavedObjectsRepository {
         attributes: object.attributes,
         migrationVersion: object.migrationVersion,
         namespace,
-        // Or is it object.attribute.references?
         references: object.references,
         updated_at: time,
       });
@@ -472,17 +471,17 @@ export class SavedObjectsRepository {
    * @param {object} [options={}]
    * @property {integer} options.version - ensures version matches that of persisted object
    * @property {string} [options.namespace]
+   * @property {object} [options.references]
    * @returns {promise}
    */
   async update(type, id, attributes, options = {}) {
     const {
       version,
-      namespace
+      namespace,
+      references
     } = options;
 
     const time = this._getCurrentTime();
-    const { references } = attributes;
-    delete attributes.references;
     const response = await this._writeToCluster('update', {
       id: this._serializer.generateRawId(namespace, type, id),
       type: this._type,

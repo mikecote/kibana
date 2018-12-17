@@ -428,6 +428,8 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
 
       // Here we want to extract references and set them within "references" attribute
       const source = extractReferences(this.serialize());
+      const references = source.references;
+      delete source.references;
 
       this.isSaving = true;
 
@@ -436,7 +438,7 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
           if (confirmOverwrite) {
             return createSource(source);
           } else {
-            return savedObjectsClient.create(esType, source, this.creationOpts({ overwrite: true }));
+            return savedObjectsClient.create(esType, source, this.creationOpts({ references, overwrite: true }));
           }
         })
         .then((resp) => {

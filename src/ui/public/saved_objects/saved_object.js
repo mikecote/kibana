@@ -49,7 +49,7 @@ export class SavedObject {
     if (this.id) {
       return this._client.update(this.type, this.id, this.attributes, { migrationVersion: this.migrationVersion });
     } else {
-      return this._client.create(this.type, this.attributes, { migrationVersion: this.migrationVersion });
+      return this._client.create(this.type, this.attributes, { migrationVersion: this.migrationVersion, references: this.references });
     }
   }
 
