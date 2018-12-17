@@ -139,9 +139,9 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
       }
 
       // Somehow inject index id
-      if (searchSourceValues.indexReference) {
-        searchSourceValues.index = references[searchSourceValues.indexReference].id;
-        delete searchSourceValues.indexReference;
+      if (searchSourceValues.indexRef) {
+        searchSourceValues.index = references[searchSourceValues.indexRef].id;
+        delete searchSourceValues.indexRef;
       }
 
       const searchSourceFields = this.searchSource.getFields();
@@ -279,11 +279,12 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
      * @return {Object}
      */
     this.serialize = () => {
-      const body = {};
+      const attributes = {};
+      const references = {};
 
       _.forOwn(mapping, (fieldMapping, fieldName) => {
         if (this[fieldName] != null) {
-          body[fieldName] = (fieldMapping._serialize)
+          attributes[fieldName] = (fieldMapping._serialize)
             ? fieldMapping._serialize(this[fieldName])
             : this[fieldName];
         }
@@ -294,20 +295,18 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
         if (searchSourceFields.index) {
           const indexId = searchSourceFields.index;
           delete searchSourceFields.index;
-          searchSourceFields.indexReference = 'indexPattern';
-          body.references = _.assign({}, body.references, {
-            indexPattern: {
-              type: 'index-pattern',
-              id: indexId,
-            },
-          });
+          searchSourceFields.indexRef = 'indexPattern';
+          references.indexPattern = {
+            type: 'index-pattern',
+            id: indexId,
+          };
         }
-        body.kibanaSavedObjectMeta = {
+        attributes.kibanaSavedObjectMeta = {
           searchSourceJSON: angular.toJson(searchSourceFields)
         };
       }
 
-      return body;
+      return { attributes, references };
     };
 
     /**
@@ -427,18 +426,16 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
       }
 
       // Here we want to extract references and set them within "references" attribute
-      const source = extractReferences(this.serialize());
-      const references = source.references;
-      delete source.references;
+      const { attributes, references } = extractReferences(this.serialize());
 
       this.isSaving = true;
 
       return checkForDuplicateTitle(isTitleDuplicateConfirmed, onTitleDuplicate)
         .then(() => {
           if (confirmOverwrite) {
-            return createSource(source);
+            return createSource(attributes);
           } else {
-            return savedObjectsClient.create(esType, source, this.creationOpts({ references, overwrite: true }));
+            return savedObjectsClient.create(esType, attributes, this.creationOpts({ references, overwrite: true }));
           }
         })
         .then((resp) => {

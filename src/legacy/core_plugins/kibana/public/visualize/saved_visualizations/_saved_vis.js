@@ -25,7 +25,6 @@
  * NOTE: It's a type of SavedObject, but specific to visualizations.
  */
 
-import { assign } from 'lodash';
 import { VisProvider } from 'ui/vis';
 import { uiModules } from 'ui/modules';
 import { updateOldState } from 'ui/vis/vis_update_state';
@@ -91,19 +90,22 @@ uiModules
 
     SavedVis.searchSource = true;
 
-    SavedVis.extractReferences = (source) => {
-      if (!source.savedSearchId) return source;
-      return assign({}, source, {
+    SavedVis.extractReferences = ({ attributes, references }) => {
+      if (!attributes.savedSearchId) return { attributes, references };
+      return {
         references: {
-          ...source.references,
+          ...references,
           search_0: {
             type: 'search',
-            id: source.savedSearchId
+            id: attributes.savedSearchId
           }
         },
-        savedSearchId: undefined,
-        savedSearchRef: 'search_0'
-      });
+        attributes: {
+          ...attributes,
+          savedSearchId: undefined,
+          savedSearchRef: 'search_0'
+        }
+      };
     };
 
     SavedVis.injectReferences = function (references) {

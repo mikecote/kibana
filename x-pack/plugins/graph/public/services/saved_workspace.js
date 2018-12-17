@@ -4,7 +4,6 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { assign } from 'lodash';
 import { uiModules } from 'ui/modules';
 import { SavedObjectProvider } from 'ui/courier';
 
@@ -61,19 +60,22 @@ export function SavedWorkspaceProvider(Private) {
 
   SavedWorkspace.searchsource = false;
 
-  SavedWorkspace.extractReferences = (source) => {
+  SavedWorkspace.extractReferences = ({ attributes, references }) => {
     // For some reason, wsState comes in stringified 2x
-    const state = JSON.parse(JSON.parse(source.wsState));
+    const state = JSON.parse(JSON.parse(attributes.wsState));
     const { indexPattern } = state;
     state.indexPatternRef = 'indexPattern_0';
     delete state.indexPattern;
-    return assign({}, source, {
+    return {
       references: {
-        ...source.references,
+        ...references,
         indexPattern_0: indexPattern
       },
-      wsState: JSON.stringify(JSON.stringify(state))
-    });
+      attributes: {
+        ...attributes,
+        wsState: JSON.stringify(JSON.stringify(state))
+      }
+    };
   };
 
   SavedWorkspace.injectReferences = function (references) {
