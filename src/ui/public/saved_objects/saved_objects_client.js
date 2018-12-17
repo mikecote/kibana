@@ -61,7 +61,17 @@ export class SavedObjectsClient {
     const path = this._getPath([type, options.id]);
     const query = _.pick(options, ['overwrite']);
 
-    return this._request({ method: 'POST', path, query, body: { attributes, migrationVersion: options.migrationVersion, references: options.references } })
+    return this
+      ._request({
+        method: 'POST',
+        path,
+        query,
+        body: {
+          attributes,
+          migrationVersion: options.migrationVersion,
+          references: options.references
+        }
+      })
       .catch(error => {
         if (isAutoCreateIndexError(error)) {
           return showAutoCreateIndexErrorPage();

@@ -455,7 +455,12 @@ describe('SavedObjectsRepository', () => {
         { create: { _type: 'doc', _id: 'config:one' } },
         { type: 'config', ...mockTimestampFields, config: { title: 'Test One' }, references: { ref_0: { type: 'test', id: '1' } } },
         { create: { _type: 'doc', _id: 'index-pattern:two' } },
-        { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' }, references: { ref_0: { type: 'test', id: '2' } } }
+        {
+          type: 'index-pattern',
+          ...mockTimestampFields,
+          'index-pattern': { title: 'Test Two' },
+          references: { ref_0: { type: 'test', id: '2' } }
+        }
       ]);
 
       sinon.assert.calledOnce(onBeforeWrite);
@@ -1181,7 +1186,15 @@ describe('SavedObjectsRepository', () => {
     });
 
     it('returns current ES document version', async () => {
-      const response = await savedObjectsRepository.update('index-pattern', 'logstash-*', attributes, { namespace: 'foo-namespace', references: { ref_0: { type: 'test', id: '1' } } });
+      const response = await savedObjectsRepository.update('index-pattern', 'logstash-*', attributes, {
+        namespace: 'foo-namespace',
+        references: {
+          ref_0: {
+            type: 'test',
+            id: '1'
+          }
+        }
+      });
       expect(response).toEqual({
         id,
         type,
