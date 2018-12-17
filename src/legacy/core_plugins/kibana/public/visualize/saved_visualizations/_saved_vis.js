@@ -96,19 +96,19 @@ uiModules
       return assign({}, source, {
         references: {
           ...source.references,
-          searchReference: {
+          search_0: {
             type: 'search',
             id: source.savedSearchId
           }
         },
         savedSearchId: undefined,
-        savedSearchReference: 'searchReference'
+        savedSearchRef: 'search_0'
       });
     };
 
     SavedVis.injectReferences = function (references) {
-      if (this.savedSearchReference && references[this.savedSearchReference]) {
-        this.savedSearchId = references[this.savedSearchReference].id;
+      if (this.savedSearchRef && references[this.savedSearchRef]) {
+        this.savedSearchId = references[this.savedSearchRef].id;
       }
     };
 

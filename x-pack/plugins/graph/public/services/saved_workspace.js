@@ -65,12 +65,12 @@ export function SavedWorkspaceProvider(Private) {
     // For some reason, wsState comes in stringified 2x
     const state = JSON.parse(JSON.parse(source.wsState));
     const { indexPattern } = state;
-    state.indexPatternReference = 'indexPattern';
+    state.indexPatternRef = 'indexPattern_0';
     delete state.indexPattern;
     return assign({}, source, {
       references: {
         ...source.references,
-        indexPattern
+        indexPattern_0: indexPattern
       },
       wsState: JSON.stringify(JSON.stringify(state))
     });
@@ -78,9 +78,9 @@ export function SavedWorkspaceProvider(Private) {
 
   SavedWorkspace.injectReferences = function (references) {
     const state = JSON.parse(this.wsState);
-    if (state.indexPatternReference) {
-      state.indexPattern = references[state.indexPatternReference];
-      delete state.indexPatternReference;
+    if (state.indexPatternRef) {
+      state.indexPattern = references[state.indexPatternRef];
+      delete state.indexPatternRef;
       this.wsState = JSON.stringify(state);
     }
   };

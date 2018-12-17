@@ -111,7 +111,7 @@ module.factory('SavedDashboard', function (Private, config, i18n) {
     const references = clone(source.references) || {};
     const panels = JSON.parse(source.panelsJSON);
     panels.forEach((panel, i) => {
-      panel.panelReference = `panel_${i}`;
+      panel.panelRef = `panel_${i}`;
       references[`panel_${i}`] = pick(panel, 'type', 'id');
       delete panel.type;
       delete panel.id;
@@ -126,10 +126,10 @@ module.factory('SavedDashboard', function (Private, config, i18n) {
     // Inject references on read here
     const panels = JSON.parse(this.panelsJSON);
     panels.forEach((panel) => {
-      const reference = references[panel.panelReference];
+      const reference = references[panel.panelRef];
       panel.id = reference.id;
       panel.type = reference.type;
-      delete panel.panelReference;
+      delete panel.panelRef;
     });
     this.panelsJSON = JSON.stringify(panels);
   };
