@@ -3,7 +3,7 @@
  * or more contributor license agreements. Licensed under the Elastic License;
  * you may not use this file except in compliance with the Elastic License.
  */
-
+import { find } from 'lodash';
 import { uiModules } from 'ui/modules';
 import { SavedObjectProvider } from 'ui/courier';
 
@@ -67,10 +67,14 @@ export function SavedWorkspaceProvider(Private) {
     state.indexPatternRef = 'indexPattern_0';
     delete state.indexPattern;
     return {
-      references: {
+      references: [
         ...references,
-        indexPattern_0: indexPattern
-      },
+        {
+          name: 'indexPattern_0',
+          type: 'index-pattern',
+          id: indexPattern,
+        }
+      ],
       attributes: {
         ...attributes,
         wsState: JSON.stringify(JSON.stringify(state))
@@ -81,7 +85,7 @@ export function SavedWorkspaceProvider(Private) {
   SavedWorkspace.injectReferences = function (references) {
     const state = JSON.parse(this.wsState);
     if (state.indexPatternRef) {
-      state.indexPattern = references[state.indexPatternRef];
+      state.indexPattern = find(references, { name: state.indexPatternRef });
       delete state.indexPatternRef;
       this.wsState = JSON.stringify(state);
     }

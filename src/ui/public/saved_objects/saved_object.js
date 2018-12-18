@@ -25,7 +25,7 @@ export class SavedObject {
     this.id = id;
     this.type = type;
     this.attributes = attributes || {};
-    this.references = references || {};
+    this.references = references || [];
     this._version = version;
     this.migrationVersion = migrationVersion;
     if (error) {

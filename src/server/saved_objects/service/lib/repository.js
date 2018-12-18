@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { omit, mapValues } from 'lodash';
+import { omit, map } from 'lodash';
 import { getRootType, getRootPropertiesObjects } from '../../../mappings';
 import { getSearchDsl } from './search_dsl';
 import { includedFields } from './included_fields';
@@ -93,7 +93,7 @@ export class SavedObjectsRepository {
         attributes,
         migrationVersion,
         updated_at: time,
-        references: mapValues(references, (ref) => {
+        references: map(references, (ref) => {
           ref.namespace = namespace;
           return ref;
         }),
@@ -147,7 +147,7 @@ export class SavedObjectsRepository {
         migrationVersion: object.migrationVersion,
         namespace,
         updated_at: time,
-        references: mapValues(object.references, (ref) => {
+        references: map(object.references, (ref) => {
           ref.namespace = namespace;
           return ref;
         }),
@@ -499,7 +499,7 @@ export class SavedObjectsRepository {
         doc: {
           [type]: attributes,
           updated_at: time,
-          references: mapValues(references, (ref) => {
+          references: map(references, (ref) => {
             ref.namespace = namespace;
             return ref;
           }),

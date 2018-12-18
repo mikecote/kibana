@@ -79,7 +79,20 @@ function defaultMapping(): IndexMapping {
         },
         references: {
           type: 'object',
-          dynamic: true,
+          properties: {
+            name: {
+              type: 'keyword',
+            },
+            type: {
+              type: 'keyword',
+            },
+            id: {
+              type: 'keyword',
+            },
+            namespace: {
+              type: 'keyword',
+            },
+          },
         },
       },
     },

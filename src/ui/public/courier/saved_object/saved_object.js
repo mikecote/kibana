@@ -138,9 +138,9 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
         throw new InvalidJSONProperty(`Invalid searchSourceJSON in ${esType} "${this.id}".`);
       }
 
-      // Somehow inject index id
+      // Inject index id if a reference is saved
       if (searchSourceValues.indexRef) {
-        searchSourceValues.index = references[searchSourceValues.indexRef].id;
+        searchSourceValues.index = _.find(references, { name: searchSourceValues.indexRef }).id;
         delete searchSourceValues.indexRef;
       }
 
@@ -280,7 +280,7 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
      */
     this.serialize = () => {
       const attributes = {};
-      const references = {};
+      const references = [];
 
       _.forOwn(mapping, (fieldMapping, fieldName) => {
         if (this[fieldName] != null) {
@@ -296,10 +296,11 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
           const indexId = searchSourceFields.index;
           delete searchSourceFields.index;
           searchSourceFields.indexRef = 'indexPattern';
-          references.indexPattern = {
+          references.push({
+            name: 'indexPattern',
             type: 'index-pattern',
             id: indexId,
-          };
+          });
         }
         attributes.kibanaSavedObjectMeta = {
           searchSourceJSON: angular.toJson(searchSourceFields)

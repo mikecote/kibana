@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { pick } from 'lodash';
+import { find } from 'lodash';
 import angular from 'angular';
 import { uiModules } from 'ui/modules';
 import { createDashboardEditUrl } from '../dashboard_constants';
@@ -107,19 +107,23 @@ module.factory('SavedDashboard', function (Private, config, i18n) {
   SavedDashboard.searchsource = true;
 
   SavedDashboard.extractReferences = ({ attributes, references }) => {
-    const panelReferences = {};
+    const panelReferences = [];
     const panels = JSON.parse(attributes.panelsJSON);
     panels.forEach((panel, i) => {
       panel.panelRef = `panel_${i}`;
-      panelReferences[`panel_${i}`] = pick(panel, 'type', 'id');
+      panelReferences.push({
+        name: `panel_${i}`,
+        type: panel.type,
+        id: panel.id
+      });
       delete panel.type;
       delete panel.id;
     });
     return {
-      references: {
+      references: [
         ...references,
         ...panelReferences
-      },
+      ],
       attributes: {
         ...attributes,
         panelsJSON: JSON.stringify(panels)
@@ -130,7 +134,7 @@ module.factory('SavedDashboard', function (Private, config, i18n) {
   SavedDashboard.injectReferences = function (references) {
     const panels = JSON.parse(this.panelsJSON);
     panels.forEach((panel) => {
-      const reference = references[panel.panelRef];
+      const reference = find(references, { name: panel.panelRef });
       panel.id = reference.id;
       panel.type = reference.type;
       delete panel.panelRef;

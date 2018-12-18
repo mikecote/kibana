@@ -27,7 +27,20 @@ Object {
         "type": "keyword",
       },
       "references": Object {
-        "dynamic": true,
+        "properties": Object {
+          "id": Object {
+            "type": "keyword",
+          },
+          "name": Object {
+            "type": "keyword",
+          },
+          "namespace": Object {
+            "type": "keyword",
+          },
+          "type": Object {
+            "type": "keyword",
+          },
+        },
         "type": "object",
       },
       "type": Object {
