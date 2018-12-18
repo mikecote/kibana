@@ -70,7 +70,7 @@ export class SavedObjectsRepository {
    * @property {boolean} [options.overwrite=false]
    * @property {object} [options.migrationVersion=undefined]
    * @property {string} [options.namespace]
-   * @property {object} [options.references]
+   * @property {array} [options.references] - [{ name, type, id }]
    * @returns {promise} - { id, type, version, attributes }
   */
   async create(type, attributes = {}, options = {}) {
@@ -477,7 +477,7 @@ export class SavedObjectsRepository {
    * @param {object} [options={}]
    * @property {integer} options.version - ensures version matches that of persisted object
    * @property {string} [options.namespace]
-   * @property {object} [options.references]
+   * @property {array} [options.references] - [{ name, type, id }]
    * @returns {promise}
    */
   async update(type, id, attributes, options = {}) {
