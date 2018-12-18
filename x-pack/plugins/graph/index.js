@@ -28,7 +28,27 @@ export function graph(kibana) {
       styleSheetPaths: resolve(__dirname, 'public/index.scss'),
       hacks: ['plugins/graph/hacks/toggle_app_link_in_nav'],
       home: ['plugins/graph/register_feature'],
-      mappings
+      mappings,
+      migrations: {
+        'graph-workspace': {
+          '7.0.0': (doc) => {
+            const state = JSON.parse(JSON.parse(doc.attributes.wsState));
+            const { indexPattern } = state;
+            state.indexPatternRef = 'indexPattern_0';
+            delete state.indexPattern;
+            doc.attributes.wsState = JSON.stringify(JSON.stringify(state));
+            doc.references = [
+              ...doc.references,
+              {
+                name: 'indexPattern_0',
+                type: 'index-pattern',
+                id: indexPattern,
+              }
+            ];
+            return doc;
+          }
+        }
+      }
     },
 
     config(Joi) {

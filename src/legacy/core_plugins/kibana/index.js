@@ -159,6 +159,76 @@ export default function (kibana) {
 
       mappings,
       uiSettingDefaults: getUiSettingDefaults(),
+
+      migrations: {
+        visualization: {
+          '7.0.0': (doc) => {
+            const newReferences = [];
+            const searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
+            // Migrate index pattern
+            if (searchSource.index) {
+              newReferences.push({
+                name: 'indexPattern',
+                type: 'index-pattern',
+                id: searchSource.index,
+              });
+              searchSource.indexRef = 'indexPattern';
+              delete searchSource.index;
+              doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+            }
+            // Migrate saved search
+            if (doc.attributes.savedSearchId) {
+              newReferences.push({
+                type: 'search',
+                name: 'search_0',
+                id: doc.attributes.savedSearchId
+              });
+              doc.attributes.savedSearchRef = 'search_0';
+              delete doc.attributes.savedSearchId;
+            }
+            doc.references = [
+              ...doc.references,
+              ...newReferences
+            ];
+            return doc;
+          }
+        },
+        dashboard: {
+          '7.0.0': (doc) => {
+            const newReferences = [];
+            const panels = JSON.parse(doc.attributes.panelsJSON);
+            const searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
+            // Migrate index pattern
+            if (searchSource.index) {
+              newReferences.push({
+                name: 'indexPattern',
+                type: 'index-pattern',
+                id: searchSource.index,
+              });
+              searchSource.indexRef = 'indexPattern';
+              delete searchSource.index;
+            }
+            doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+            // Migrate panels
+            panels.forEach((panel, i) => {
+              panel.panelRef = `panel_${i}`;
+              newReferences.push({
+                name: `panel_${i}`,
+                type: panel.type,
+                id: panel.id
+              });
+              delete panel.type;
+              delete panel.id;
+            });
+            doc.attributes.references = [
+              ...doc.references,
+              ...newReferences
+            ];
+            doc.attributes.panelsJSON = JSON.stringify(panels);
+            return doc;
+          }
+        }
+      }
     },
 
     preInit: async function (server) {
