@@ -51,7 +51,7 @@ describe('IndexMigrator', () => {
           type: { type: 'keyword' },
           updated_at: { type: 'date' },
           references: {
-            type: 'object',
+            type: 'nested',
             properties: {
               name: { type: 'keyword' },
               type: { type: 'keyword' },
@@ -92,7 +92,7 @@ describe('IndexMigrator', () => {
               type: { type: 'keyword' },
               updated_at: { type: 'date' },
               references: {
-                type: 'object',
+                type: 'nested',
                 properties: {
                   name: { type: 'keyword' },
                   type: { type: 'keyword' },
@@ -212,7 +212,7 @@ describe('IndexMigrator', () => {
               type: { type: 'keyword' },
               updated_at: { type: 'date' },
               references: {
-                type: 'object',
+                type: 'nested',
                 properties: {
                   name: { type: 'keyword' },
                   type: { type: 'keyword' },

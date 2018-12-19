@@ -38,7 +38,7 @@ Object {
             "type": "keyword",
           },
         },
-        "type": "object",
+        "type": "nested",
       },
       "type": Object {
         "type": "keyword",

@@ -78,7 +78,7 @@ function defaultMapping(): IndexMapping {
           type: 'date',
         },
         references: {
-          type: 'object',
+          type: 'nested',
           properties: {
             name: {
               type: 'keyword',
