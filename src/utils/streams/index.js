@@ -30,3 +30,4 @@ export { createReplaceStream } from './replace_stream';
 export { createMapESStream } from './map_es_stream';
 export { createMergeAllStream } from './merge_all_stream';
 export { createScrollEsStream } from './scroll_es_stream';
+export { createUniqStream } from './uniq_stream';
