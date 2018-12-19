@@ -4,6 +4,7 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
+import { get } from 'lodash';
 import { resolve } from 'path';
 import Boom from 'boom';
 
@@ -32,19 +33,30 @@ export function graph(kibana) {
       migrations: {
         'graph-workspace': {
           '7.0.0': (doc) => {
-            const state = JSON.parse(JSON.parse(doc.attributes.wsState));
-            const { indexPattern } = state;
-            state.indexPatternRef = 'indexPattern_0';
-            delete state.indexPattern;
-            doc.attributes.wsState = JSON.stringify(JSON.stringify(state));
-            doc.references = [
-              ...doc.references,
-              {
-                name: 'indexPattern_0',
-                type: 'index-pattern',
-                id: indexPattern,
+            const wsState = get(doc, 'attributes.wsState');
+            if (typeof wsState === 'string') {
+              let state;
+              try {
+                state = JSON.parse(JSON.parse(state));
+              } catch (e) {
+                // TODO: Handle error
+                throw e;
               }
-            ];
+              const { indexPattern } = state;
+              state.indexPatternRef = 'indexPattern_0';
+              delete state.indexPattern;
+              doc.attributes.wsState = JSON.stringify(JSON.stringify(state));
+              doc.references = [
+                ...doc.references,
+                {
+                  name: 'indexPattern_0',
+                  type: 'index-pattern',
+                  id: indexPattern,
+                }
+              ];
+            } else {
+              // TODO: Handle error
+            }
             return doc;
           }
         }

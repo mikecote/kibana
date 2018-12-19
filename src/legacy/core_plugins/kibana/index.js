@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { get } from 'lodash';
 import Promise from 'bluebird';
 import { mkdirp as mkdirpNode } from 'mkdirp';
 import { resolve } from 'path';
@@ -164,67 +165,105 @@ export default function (kibana) {
         visualization: {
           '7.0.0': (doc) => {
             const newReferences = [];
-            const searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
             // Migrate index pattern
-            if (searchSource.index) {
-              newReferences.push({
-                name: 'indexPattern',
-                type: 'index-pattern',
-                id: searchSource.index,
-              });
-              searchSource.indexRef = 'indexPattern';
-              delete searchSource.index;
-              doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
+            if (typeof searchSourceJSON === 'string') {
+              let searchSource;
+              try {
+                searchSource = JSON.parse(searchSourceJSON);
+              } catch (e) {
+                // TODO: Handle error
+                throw e;
+              }
+              if (searchSource.index) {
+                newReferences.push({
+                  name: 'indexPattern',
+                  type: 'index-pattern',
+                  id: searchSource.index,
+                });
+                searchSource.indexRef = 'indexPattern';
+                delete searchSource.index;
+                doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+              }
+            } else {
+              // TODO: Handle error
             }
             // Migrate saved search
-            if (doc.attributes.savedSearchId) {
+            const savedSearchId = get(doc, 'attributes.savedSearchId');
+            if (savedSearchId) {
               newReferences.push({
                 type: 'search',
                 name: 'search_0',
-                id: doc.attributes.savedSearchId
+                id: savedSearchId
               });
               doc.attributes.savedSearchRef = 'search_0';
               delete doc.attributes.savedSearchId;
             }
-            doc.references = [
-              ...doc.references,
-              ...newReferences
-            ];
+            if (newReferences.length > 0) {
+              doc.references = [
+                ...doc.references,
+                ...newReferences
+              ];
+            }
             return doc;
           }
         },
         dashboard: {
           '7.0.0': (doc) => {
             const newReferences = [];
-            const panels = JSON.parse(doc.attributes.panelsJSON);
-            const searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
             // Migrate index pattern
-            if (searchSource.index) {
-              newReferences.push({
-                name: 'indexPattern',
-                type: 'index-pattern',
-                id: searchSource.index,
-              });
-              searchSource.indexRef = 'indexPattern';
-              delete searchSource.index;
+            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
+            if (typeof searchSourceJSON === 'string') {
+              let searchSource;
+              try {
+                searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
+              } catch (e) {
+                // TODO: Handle error
+                throw e;
+              }
+              if (searchSource.index) {
+                newReferences.push({
+                  name: 'indexPattern',
+                  type: 'index-pattern',
+                  id: searchSource.index,
+                });
+                searchSource.indexRef = 'indexPattern';
+                delete searchSource.index;
+              }
+              doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+            } else {
+              // TODO: Handle error
             }
-            doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
             // Migrate panels
-            panels.forEach((panel, i) => {
-              panel.panelRef = `panel_${i}`;
-              newReferences.push({
-                name: `panel_${i}`,
-                type: panel.type,
-                id: panel.id
+            const panelsJSON = get(doc, 'attributes.panelsJSON');
+            if (typeof panelsJSON === 'string') {
+              let panels;
+              try {
+                panels = JSON.parse(panelsJSON);
+              } catch (e) {
+                // TODO: Handle error
+                throw e;
+              }
+              panels.forEach((panel, i) => {
+                panel.panelRef = `panel_${i}`;
+                newReferences.push({
+                  name: `panel_${i}`,
+                  type: panel.type,
+                  id: panel.id
+                });
+                delete panel.type;
+                delete panel.id;
               });
-              delete panel.type;
-              delete panel.id;
-            });
-            doc.attributes.references = [
-              ...doc.references,
-              ...newReferences
-            ];
-            doc.attributes.panelsJSON = JSON.stringify(panels);
+              doc.attributes.panelsJSON = JSON.stringify(panels);
+            } else {
+              // TODO: Handle error
+            }
+            if (newReferences.length > 0) {
+              doc.attributes.references = [
+                ...doc.references,
+                ...newReferences
+              ];
+            }
             return doc;
           }
         }
