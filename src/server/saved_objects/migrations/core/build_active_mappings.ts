@@ -89,9 +89,6 @@ function defaultMapping(): IndexMapping {
             id: {
               type: 'keyword',
             },
-            namespace: {
-              type: 'keyword',
-            },
           },
         },
       },

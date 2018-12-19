@@ -34,9 +34,6 @@ Object {
           "name": Object {
             "type": "keyword",
           },
-          "namespace": Object {
-            "type": "keyword",
-          },
           "type": Object {
             "type": "keyword",
           },

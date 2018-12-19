@@ -280,7 +280,6 @@ describe('SavedObjectsRepository', () => {
           name: 'ref_0',
           type: 'test',
           id: '123',
-          namespace: 'foo-namespace'
         }]
       });
     });
@@ -481,15 +480,9 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'config:one' } },
-          { type: 'config', ...mockTimestampFields, config: { title: 'Test One!!' }, migrationVersion: { foo: '2.3.4' }, references: [] },
+          { type: 'config', ...mockTimestampFields, config: { title: 'Test One!!' }, migrationVersion: { foo: '2.3.4' } },
           { create: { _type: 'doc', _id: 'index-pattern:two' } },
-          {
-            type: 'index-pattern',
-            ...mockTimestampFields,
-            'index-pattern': { title: 'Test Two!!' },
-            migrationVersion: { foo: '2.3.4' },
-            references: []
-          }
+          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two!!' }, migrationVersion: { foo: '2.3.4' } }
         ]
       }));
     });
@@ -503,7 +496,7 @@ describe('SavedObjectsRepository', () => {
         body: [
           // uses create because overwriting is not allowed
           { create: { _type: 'doc', _id: 'foo:bar' } },
-          { type: 'foo', ...mockTimestampFields, 'foo': {}, references: [] },
+          { type: 'foo', ...mockTimestampFields, 'foo': {} },
         ]
       }));
 
@@ -518,7 +511,7 @@ describe('SavedObjectsRepository', () => {
         body: [
           // uses index because overwriting is allowed
           { index: { _type: 'doc', _id: 'foo:bar' } },
-          { type: 'foo', ...mockTimestampFields, 'foo': {}, references: [] },
+          { type: 'foo', ...mockTimestampFields, 'foo': {} },
         ]
       }));
 
@@ -626,15 +619,9 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'foo-namespace:config:one' } },
-          { namespace: 'foo-namespace', type: 'config', ...mockTimestampFields, config: { title: 'Test One' }, references: [] },
+          { namespace: 'foo-namespace', type: 'config', ...mockTimestampFields, config: { title: 'Test One' } },
           { create: { _type: 'doc', _id: 'foo-namespace:index-pattern:two' } },
-          {
-            namespace: 'foo-namespace',
-            type: 'index-pattern',
-            ...mockTimestampFields,
-            'index-pattern': { title: 'Test Two' },
-            references: []
-          }
+          { namespace: 'foo-namespace', type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' } }
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -650,9 +637,9 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'config:one' } },
-          { type: 'config', ...mockTimestampFields, config: { title: 'Test One' }, references: [] },
+          { type: 'config', ...mockTimestampFields, config: { title: 'Test One' } },
           { create: { _type: 'doc', _id: 'index-pattern:two' } },
-          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' }, references: [] }
+          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' } }
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -672,7 +659,7 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'globaltype:one' } },
-          { type: 'globaltype', ...mockTimestampFields, 'globaltype': { title: 'Test One' }, references: [] },
+          { type: 'globaltype', ...mockTimestampFields, 'globaltype': { title: 'Test One' } },
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -1215,7 +1202,6 @@ describe('SavedObjectsRepository', () => {
           name: 'ref_0',
           type: 'test',
           id: '1',
-          namespace: 'foo-namespace'
         }]
       });
     });
@@ -1259,7 +1245,6 @@ describe('SavedObjectsRepository', () => {
               name: 'ref_0',
               type: 'test',
               id: '1',
-              namespace: 'foo-namespace'
             }]
           }
         },
@@ -1295,7 +1280,6 @@ describe('SavedObjectsRepository', () => {
               name: 'ref_0',
               type: 'test',
               id: '1',
-              namespace: undefined
             }]
           }
         },
@@ -1332,7 +1316,6 @@ describe('SavedObjectsRepository', () => {
               name: 'ref_0',
               type: 'test',
               id: '1',
-              namespace: 'foo-namespace'
             }]
           }
         },
