@@ -17,14 +17,16 @@
  * under the License.
  */
 
+import { find } from 'lodash';
 import { collectIndexPatterns } from './collect_index_patterns';
 
 export async function collectSearchSources(savedObjectsClient, panels) {
   const docs = panels.reduce((acc, panel) => {
-    const { savedSearchId } = panel.attributes;
-    if (savedSearchId) {
-      if (!acc.find(s => s.id === savedSearchId) && !panels.find(p => p.id === savedSearchId)) {
-        acc.push({ type: 'search', id: savedSearchId });
+    const { savedSearchRef } = panel.attributes;
+    if (savedSearchRef) {
+      const savedSearch = find(panel.references, { name: savedSearchRef });
+      if (savedSearch && !acc.find(s => s.id === savedSearch.id) && !panels.find(p => p.id === savedSearch.id)) {
+        acc.push({ type: 'search', id: savedSearch.id });
       }
     }
     return acc;

@@ -17,6 +17,8 @@
  * under the License.
  */
 
+import { find } from 'lodash';
+
 export async function collectIndexPatterns(savedObjectsClient, panels) {
   const docs = panels.reduce((acc, panel) => {
     const { kibanaSavedObjectMeta, savedSearchId } = panel.attributes;
@@ -29,8 +31,11 @@ export async function collectIndexPatterns(savedObjectsClient, panels) {
         return acc;
       }
 
-      if (searchSourceData.index && !acc.find(s => s.id === searchSourceData.index)) {
-        acc.push({ type: 'index-pattern', id: searchSourceData.index });
+      if (searchSourceData.indexRef) {
+        const indexPattern = find(panel.references, { name: searchSourceData.indexRef });
+        if (indexPattern && !acc.find(s => s.id === indexPattern.id)) {
+          acc.push({ type: 'index-pattern', id: indexPattern.id });
+        }
       }
     }
     return acc;

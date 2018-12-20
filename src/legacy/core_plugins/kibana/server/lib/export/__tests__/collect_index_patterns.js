@@ -24,28 +24,48 @@ import { expect } from 'chai';
 describe('collectIndexPatterns(req, panels)', () => {
   const panels = [
     {
+      references: [{
+        name: 'indexPattern',
+        type: 'index-pattern',
+        id: 'index-*'
+      }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ index: 'index-*' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
         }
       }
     }, {
+      references: [{
+        name: 'indexPattern',
+        type: 'index-pattern',
+        id: 'logstash-*'
+      }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ index: 'logstash-*' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
         }
       }
     }, {
+      references: [{
+        name: 'indexPattern',
+        type: 'index-pattern',
+        id: 'logstash-*'
+      }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ index: 'logstash-*' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
         }
       }
     }, {
+      references: [{
+        name: 'indexPattern',
+        type: 'index-pattern',
+        id: 'bad-*'
+      }],
       attributes: {
-        savedSearchId: 1,
+        savedSearchRef: 'indexPattern',
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ index: 'bad-*' })
+          searchSourceJSON: JSON.stringify({})
         }
       }
     }

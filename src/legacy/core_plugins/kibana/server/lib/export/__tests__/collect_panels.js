@@ -32,10 +32,19 @@ describe('collectPanels(req, dashboard)', () => {
 
   beforeEach(() => {
     dashboard = {
+      references: [{
+        name: 'panel_0',
+        type: 'search',
+        id: 'panel-01',
+      }, {
+        name: 'panel_1',
+        type: 'visualization',
+        id: 'panel-02',
+      }],
       attributes: {
         panelsJSON: JSON.stringify([
-          { id: 'panel-01', type: 'search' },
-          { id: 'panel-02', type: 'visualization' }
+          { panelRef: 'panel_0' },
+          { panelRef: 'panel_1' }
         ])
       }
     };

@@ -29,8 +29,22 @@ describe('collectSearchSources(req, panels)', () => {
 
   beforeEach(() => {
     panels = [
-      { attributes: { savedSearchId: 1 } },
-      { attributes: { savedSearchId: 2 } }
+      {
+        references: [{
+          name: 'search_0',
+          type: 'search',
+          id: 1
+        }],
+        attributes: { savedSearchRef: 'search_0' }
+      },
+      {
+        references: [{
+          name: 'search_0',
+          type: 'search',
+          id: 2
+        }],
+        attributes: { savedSearchRef: 'search_0' }
+      }
     ];
 
     collectIndexPatternsStub = sinon.stub(deps, 'collectIndexPatterns');
