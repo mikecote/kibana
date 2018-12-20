@@ -162,6 +162,42 @@ export default function (kibana) {
       uiSettingDefaults: getUiSettingDefaults(),
 
       migrations: {
+        search: {
+          '7.0.0': (doc) => {
+            const newReferences = [];
+            // Migrate index pattern
+            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
+            if (typeof searchSourceJSON === 'string') {
+              let searchSource;
+              try {
+                searchSource = JSON.parse(searchSourceJSON);
+              } catch (e) {
+                // TODO: Handle error
+                throw e;
+              }
+              if (searchSource.index) {
+                newReferences.push({
+                  name: 'indexPattern',
+                  type: 'index-pattern',
+                  id: searchSource.index,
+                });
+                searchSource.indexRef = 'indexPattern';
+                delete searchSource.index;
+                doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
+              }
+            } else {
+              // TODO: Handle error
+            }
+            if (newReferences.length > 0) {
+              doc.references = doc.references || [];
+              doc.references = [
+                ...doc.references,
+                ...newReferences
+              ];
+            }
+            return doc;
+          },
+        },
         visualization: {
           '7.0.0': (doc) => {
             const newReferences = [];
@@ -200,6 +236,7 @@ export default function (kibana) {
               delete doc.attributes.savedSearchId;
             }
             if (newReferences.length > 0) {
+              doc.references = doc.references || [];
               doc.references = [
                 ...doc.references,
                 ...newReferences
@@ -259,7 +296,8 @@ export default function (kibana) {
               // TODO: Handle error
             }
             if (newReferences.length > 0) {
-              doc.attributes.references = [
+              doc.references = doc.references || [];
+              doc.references = [
                 ...doc.references,
                 ...newReferences
               ];
