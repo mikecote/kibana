@@ -189,7 +189,7 @@ export default function (kibana) {
                 doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
               }
             } else {
-              const error = new Error('Missing searchSourceJSON');
+              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
               error.doc = doc;
               throw error;
             }
@@ -223,7 +223,7 @@ export default function (kibana) {
                 doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
               }
             } else {
-              const error = new Error('Missing searchSourceJSON');
+              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
               error.doc = doc;
               throw error;
             }
@@ -268,7 +268,7 @@ export default function (kibana) {
               }
               doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
             } else {
-              const error = new Error('Missing searchSourceJSON');
+              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
               error.doc = doc;
               throw error;
             }
@@ -296,7 +296,7 @@ export default function (kibana) {
               });
               doc.attributes.panelsJSON = JSON.stringify(panels);
             } else {
-              const error = new Error('Missing panelsJSON');
+              const error = new Error(`panelsJSON is ${panelsJSON ? 'not a string' : 'missing'}`);
               error.doc = doc;
               throw error;
             }

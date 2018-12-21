@@ -57,7 +57,7 @@ export function graph(kibana) {
                 id: indexPattern,
               });
             } else {
-              const error = new Error('Missing wsState');
+              const error = new Error(`wsState is ${wsState ? 'not a string' : 'missing'}`);
               error.doc = doc;
               throw error;
             }
