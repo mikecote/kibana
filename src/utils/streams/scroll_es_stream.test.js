@@ -23,6 +23,7 @@ import { createScrollEsStream, createPromiseFromStreams, createConcatStream } fr
 describe('createScrollEsStream()', () => {
   test('scrolls through Elasticsearch when no results exist', async () => {
     const mockClient = {
+      clearScroll: jest.fn((args, done) => done()),
       search: jest.fn(() => {
         return Promise.resolve({
           _scroll_id: 'abc',
@@ -31,9 +32,6 @@ describe('createScrollEsStream()', () => {
             hits: [],
           },
         });
-      }),
-      clearScroll: jest.fn((args, callback) => {
-        callback();
       }),
     };
     const results = await createPromiseFromStreams([

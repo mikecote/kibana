@@ -29,8 +29,10 @@ describe('createMapESStream()', () => {
 
   beforeEach(() => {
     mockClient = {
+      clearScroll: jest.fn((opts, done) => done()),
       search: jest.fn(() => {
         return Promise.resolve({
+          _scroll_id: 'abc',
           hits: {
             total: 0,
             hits: [],
