@@ -79,7 +79,7 @@ export class SavedObjectsRepository {
       migrationVersion,
       overwrite = false,
       namespace,
-      references
+      references = []
     } = options;
 
     const method = id && !overwrite ? 'create' : 'index';
@@ -144,7 +144,7 @@ export class SavedObjectsRepository {
         migrationVersion: object.migrationVersion,
         namespace,
         updated_at: time,
-        references: object.references
+        references: object.references || []
       });
       const raw = this._serializer.savedObjectToRaw(migrated);
 
@@ -478,7 +478,7 @@ export class SavedObjectsRepository {
     const {
       version,
       namespace,
-      references
+      references = []
     } = options;
 
     const time = this._getCurrentTime();

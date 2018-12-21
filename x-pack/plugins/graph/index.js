@@ -33,14 +33,19 @@ export function graph(kibana) {
       migrations: {
         'graph-workspace': {
           '7.0.0': (doc) => {
+            // Set new "references" attribute
+            doc.references = doc.references || [];
+            // Migrate index pattern
             const wsState = get(doc, 'attributes.wsState');
             if (typeof wsState === 'string') {
               let state;
               try {
-                state = JSON.parse(JSON.parse(state));
+                state = JSON.parse(JSON.parse(wsState));
               } catch (e) {
-                // TODO: Handle error
-                throw e;
+                const error = new Error('Failed to parse wsState');
+                error.doc = doc;
+                error.originalError = e;
+                throw error;
               }
               const { indexPattern } = state;
               state.indexPatternRef = 'indexPattern_0';
@@ -55,7 +60,9 @@ export function graph(kibana) {
                 }
               ];
             } else {
-              // TODO: Handle error
+              const error = new Error('Missing wsState');
+              error.doc = doc;
+              throw error;
             }
             return doc;
           }

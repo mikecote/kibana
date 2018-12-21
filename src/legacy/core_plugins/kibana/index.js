@@ -165,6 +165,8 @@ export default function (kibana) {
         search: {
           '7.0.0': (doc) => {
             const newReferences = [];
+            // Set new "references" attribute
+            doc.references = doc.references || [];
             // Migrate index pattern
             const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
             if (typeof searchSourceJSON === 'string') {
@@ -172,8 +174,10 @@ export default function (kibana) {
               try {
                 searchSource = JSON.parse(searchSourceJSON);
               } catch (e) {
-                // TODO: Handle error
-                throw e;
+                const error = new Error('Failed to parse searchSourceJSON');
+                error.doc = doc;
+                error.originalError = e;
+                throw error;
               }
               if (searchSource.index) {
                 newReferences.push({
@@ -186,7 +190,9 @@ export default function (kibana) {
                 doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
               }
             } else {
-              // TODO: Handle error
+              const error = new Error('Missing searchSourceJSON');
+              error.doc = doc;
+              throw error;
             }
             if (newReferences.length > 0) {
               doc.references = doc.references || [];
@@ -201,6 +207,8 @@ export default function (kibana) {
         visualization: {
           '7.0.0': (doc) => {
             const newReferences = [];
+            // Set new "references" attribute
+            doc.references = doc.references || [];
             // Migrate index pattern
             const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
             if (typeof searchSourceJSON === 'string') {
@@ -208,8 +216,10 @@ export default function (kibana) {
               try {
                 searchSource = JSON.parse(searchSourceJSON);
               } catch (e) {
-                // TODO: Handle error
-                throw e;
+                const error = new Error('Failed to parse searchSourceJSON');
+                error.doc = doc;
+                error.originalError = e;
+                throw error;
               }
               if (searchSource.index) {
                 newReferences.push({
@@ -222,7 +232,9 @@ export default function (kibana) {
                 doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
               }
             } else {
-              // TODO: Handle error
+              const error = new Error('Missing searchSourceJSON');
+              error.doc = doc;
+              throw error;
             }
             // Migrate saved search
             const savedSearchId = get(doc, 'attributes.savedSearchId');
@@ -248,6 +260,8 @@ export default function (kibana) {
         dashboard: {
           '7.0.0': (doc) => {
             const newReferences = [];
+            // Set new "references" attribute
+            doc.references = doc.references || [];
             // Migrate index pattern
             const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
             if (typeof searchSourceJSON === 'string') {
@@ -255,8 +269,10 @@ export default function (kibana) {
               try {
                 searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
               } catch (e) {
-                // TODO: Handle error
-                throw e;
+                const error = new Error('Failed to parse searchSourceJSON');
+                error.doc = doc;
+                error.originalError = e;
+                throw error;
               }
               if (searchSource.index) {
                 newReferences.push({
@@ -269,7 +285,9 @@ export default function (kibana) {
               }
               doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
             } else {
-              // TODO: Handle error
+              const error = new Error('Missing searchSourceJSON');
+              error.doc = doc;
+              throw error;
             }
             // Migrate panels
             const panelsJSON = get(doc, 'attributes.panelsJSON');
@@ -278,8 +296,10 @@ export default function (kibana) {
               try {
                 panels = JSON.parse(panelsJSON);
               } catch (e) {
-                // TODO: Handle error
-                throw e;
+                const error = new Error('Failed to parse panelsJSON');
+                error.doc = doc;
+                error.originalError = e;
+                throw error;
               }
               panels.forEach((panel, i) => {
                 panel.panelRef = `panel_${i}`;
@@ -293,7 +313,9 @@ export default function (kibana) {
               });
               doc.attributes.panelsJSON = JSON.stringify(panels);
             } else {
-              // TODO: Handle error
+              const error = new Error('Missing panelsJSON');
+              error.doc = doc;
+              throw error;
             }
             if (newReferences.length > 0) {
               doc.references = doc.references || [];
