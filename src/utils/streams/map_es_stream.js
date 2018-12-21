@@ -17,14 +17,24 @@
  * under the License.
  */
 
+import { remove } from 'lodash';
 import { Transform } from 'stream';
 import { createScrollEsStream } from './scroll_es_stream';
 
 export function createMapESStream(client) {
+  const activeStreams = [];
   return new Transform({
     objectMode: true,
     transform(args, enc, done) {
-      done(null, createScrollEsStream(client, args));
+      const scrollStream = createScrollEsStream(client, args);
+      activeStreams.push(scrollStream);
+      scrollStream.once('close', () => {
+        remove(activeStreams, obj => obj === scrollStream);
+      });
+      done(null, scrollStream);
     },
+    destroy(err) {
+      activeStreams.forEach(stream => stream.destroy(err));
+    }
   });
 }

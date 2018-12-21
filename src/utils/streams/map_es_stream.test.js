@@ -17,12 +17,23 @@
  * under the License.
  */
 
+import { Transform } from 'stream';
+
 import {
   createMapESStream,
   createListStream,
   createPromiseFromStreams,
   createConcatStream,
 } from './';
+
+function createFailingTransformStream() {
+  return new Transform({
+    objectMode: true,
+    transform(obj, enc, done) {
+      done(new Error('Test error'));
+    }
+  });
+}
 
 describe('createMapESStream()', () => {
   let mockClient;
@@ -65,5 +76,29 @@ describe('createMapESStream()', () => {
     ]);
     expect(mockClient.search).toHaveBeenCalledTimes(1);
     expect(searchResults).toHaveLength(0);
+  });
+
+  test('readable streams to destroy when main pipeline fails', async () => {
+    const accumulatedStreams = [];
+    try {
+      await createPromiseFromStreams([
+        createListStream([{ index: 'my_index' }]),
+        createMapESStream(mockClient),
+        new Transform({
+          objectMode: true,
+          transform(obj, enc, done) {
+            accumulatedStreams.push(obj);
+            done(null, obj);
+          }
+        }),
+        createFailingTransformStream(),
+        createConcatStream([])
+      ]);
+      throw new Error('Should have failed');
+    } catch (e) {
+      expect(e).toHaveProperty('message', 'Test error');
+      expect(accumulatedStreams).toHaveLength(1);
+      expect(accumulatedStreams[0]).toHaveProperty('_readableState.destroyed', true);
+    }
   });
 });
