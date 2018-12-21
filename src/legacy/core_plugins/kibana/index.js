@@ -164,7 +164,6 @@ export default function (kibana) {
       migrations: {
         search: {
           '7.0.0': (doc) => {
-            const newReferences = [];
             // Set new "references" attribute
             doc.references = doc.references || [];
             // Migrate index pattern
@@ -180,7 +179,7 @@ export default function (kibana) {
                 throw error;
               }
               if (searchSource.index) {
-                newReferences.push({
+                doc.references.push({
                   name: 'indexPattern',
                   type: 'index-pattern',
                   id: searchSource.index,
@@ -194,19 +193,11 @@ export default function (kibana) {
               error.doc = doc;
               throw error;
             }
-            if (newReferences.length > 0) {
-              doc.references = doc.references || [];
-              doc.references = [
-                ...doc.references,
-                ...newReferences
-              ];
-            }
             return doc;
           },
         },
         visualization: {
           '7.0.0': (doc) => {
-            const newReferences = [];
             // Set new "references" attribute
             doc.references = doc.references || [];
             // Migrate index pattern
@@ -222,7 +213,7 @@ export default function (kibana) {
                 throw error;
               }
               if (searchSource.index) {
-                newReferences.push({
+                doc.references.push({
                   name: 'indexPattern',
                   type: 'index-pattern',
                   id: searchSource.index,
@@ -239,7 +230,7 @@ export default function (kibana) {
             // Migrate saved search
             const savedSearchId = get(doc, 'attributes.savedSearchId');
             if (savedSearchId) {
-              newReferences.push({
+              doc.references.push({
                 type: 'search',
                 name: 'search_0',
                 id: savedSearchId
@@ -247,19 +238,11 @@ export default function (kibana) {
               doc.attributes.savedSearchRef = 'search_0';
               delete doc.attributes.savedSearchId;
             }
-            if (newReferences.length > 0) {
-              doc.references = doc.references || [];
-              doc.references = [
-                ...doc.references,
-                ...newReferences
-              ];
-            }
             return doc;
           }
         },
         dashboard: {
           '7.0.0': (doc) => {
-            const newReferences = [];
             // Set new "references" attribute
             doc.references = doc.references || [];
             // Migrate index pattern
@@ -275,7 +258,7 @@ export default function (kibana) {
                 throw error;
               }
               if (searchSource.index) {
-                newReferences.push({
+                doc.references.push({
                   name: 'indexPattern',
                   type: 'index-pattern',
                   id: searchSource.index,
@@ -303,7 +286,7 @@ export default function (kibana) {
               }
               panels.forEach((panel, i) => {
                 panel.panelRef = `panel_${i}`;
-                newReferences.push({
+                doc.references.push({
                   name: `panel_${i}`,
                   type: panel.type,
                   id: panel.id
@@ -316,13 +299,6 @@ export default function (kibana) {
               const error = new Error('Missing panelsJSON');
               error.doc = doc;
               throw error;
-            }
-            if (newReferences.length > 0) {
-              doc.references = doc.references || [];
-              doc.references = [
-                ...doc.references,
-                ...newReferences
-              ];
             }
             return doc;
           }

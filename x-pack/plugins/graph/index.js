@@ -51,14 +51,11 @@ export function graph(kibana) {
               state.indexPatternRef = 'indexPattern_0';
               delete state.indexPattern;
               doc.attributes.wsState = JSON.stringify(JSON.stringify(state));
-              doc.references = [
-                ...doc.references,
-                {
-                  name: 'indexPattern_0',
-                  type: 'index-pattern',
-                  id: indexPattern,
-                }
-              ];
+              doc.references.push({
+                name: 'indexPattern_0',
+                type: 'index-pattern',
+                id: indexPattern,
+              });
             } else {
               const error = new Error('Missing wsState');
               error.doc = doc;
