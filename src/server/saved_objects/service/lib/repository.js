@@ -17,11 +17,12 @@
  * under the License.
  */
 
-import { omit } from 'lodash';
+import { omit, groupBy } from 'lodash';
 import { getRootType, getRootPropertiesObjects } from '../../../mappings';
 import { getSearchDsl } from './search_dsl';
 import { includedFields } from './included_fields';
 import { decorateEsError } from './decorate_es_error';
+import { getRelationshipsQuery } from './relationship_query_builder';
 import * as errors from './errors';
 
 // BEWARE: The SavedObjectClient depends on the implementation details of the SavedObjectsRepository
@@ -588,6 +589,56 @@ export class SavedObjectsRepository {
     };
 
 
+  }
+
+  async findRelationships(type, id, options) {
+    const {
+      size = 10,
+      namespace
+    } = options;
+
+    if (!id || typeof id !== 'string') {
+      throw new TypeError('options.id must be a string');
+    }
+
+    if (!type || typeof type !== 'string') {
+      throw new TypeError('options.type must be a string');
+    }
+
+    const sourceObject = await this.get(type, id, { namespace });
+
+    const bulkGetOpts = sourceObject.references.map(ref => ({ id: ref.id, type: ref.type }));
+    const allTypes = Object.keys(getRootPropertiesObjects(this._mappings));
+
+    const [{ saved_objects: referencedObjects }, ...referencedBySourceResponse] = await Promise.all([
+      this.bulkGet(bulkGetOpts),
+      // Iterate to have a pagination per type
+      ...allTypes.map((targetType) => {
+        const referencedBySourceSearchOptions = {
+          index: this._index,
+          size,
+          from: 0,
+          _source: true,
+          ignore: [404],
+          rest_total_hits_as_int: true,
+          body: {
+            version: true,
+            query: getRelationshipsQuery(type, id, targetType, { namespace })
+          }
+        };
+        return this._callCluster('search', referencedBySourceSearchOptions);
+      }),
+    ]);
+
+    const relationshipObjects = [].concat(
+      referencedObjects.map(obj => ({ id: obj.id, type: obj.type, ...obj.attributes })),
+      ...referencedBySourceResponse.map(response => response.hits.hits
+        .map(hit => this._rawToSavedObject(hit))
+        .map(obj => ({ id: obj.id, type: obj.type, ...obj.attributes }))
+      )
+    );
+
+    return groupBy(relationshipObjects, 'type');
   }
 
   async _writeToCluster(method, params) {
