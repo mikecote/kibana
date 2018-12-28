@@ -3,9 +3,13 @@
  * or more contributor license agreements. Licensed under the Elastic License;
  * you may not use this file except in compliance with the Elastic License.
  */
-import { find } from 'lodash';
+
 import { uiModules } from 'ui/modules';
 import { SavedObjectProvider } from 'ui/courier';
+import {
+  extractReferences,
+  injectReferences,
+} from './saved_workspace_references';
 
 const module = uiModules.get('app/dashboard');
 
@@ -20,8 +24,8 @@ export function SavedWorkspaceProvider(Private) {
         type: SavedWorkspace.type,
         mapping: SavedWorkspace.mapping,
         searchSource: SavedWorkspace.searchsource,
-        extractReferences: SavedWorkspace.extractReferences,
-        injectReferences: SavedWorkspace.injectReferences,
+        extractReferences: extractReferences,
+        injectReferences: injectReferences,
 
         // if this is null/undefined then the SavedObject will be assigned the defaults
         id: id,
@@ -59,37 +63,6 @@ export function SavedWorkspaceProvider(Private) {
   };
 
   SavedWorkspace.searchsource = false;
-
-  SavedWorkspace.extractReferences = ({ attributes, references }) => {
-    // For some reason, wsState comes in stringified 2x
-    const state = JSON.parse(JSON.parse(attributes.wsState));
-    const { indexPattern } = state;
-    state.indexPatternRef = 'indexPattern_0';
-    delete state.indexPattern;
-    return {
-      references: [
-        ...references,
-        {
-          name: 'indexPattern_0',
-          type: 'index-pattern',
-          id: indexPattern,
-        }
-      ],
-      attributes: {
-        ...attributes,
-        wsState: JSON.stringify(JSON.stringify(state))
-      }
-    };
-  };
-
-  SavedWorkspace.injectReferences = function (references) {
-    const state = JSON.parse(this.wsState);
-    if (state.indexPatternRef) {
-      state.indexPattern = find(references, { name: state.indexPatternRef });
-      delete state.indexPatternRef;
-      this.wsState = JSON.stringify(state);
-    }
-  };
 
   return SavedWorkspace;
 }

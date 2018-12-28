@@ -25,13 +25,16 @@
  * NOTE: It's a type of SavedObject, but specific to visualizations.
  */
 
-import { find } from 'lodash';
 import { VisProvider } from 'ui/vis';
 import { uiModules } from 'ui/modules';
 import { updateOldState } from 'ui/vis/vis_update_state';
 import { VisualizeConstants } from '../visualize_constants';
 import { createLegacyClass } from 'ui/utils/legacy_class';
 import { SavedObjectProvider } from 'ui/courier';
+import {
+  extractReferences,
+  injectReferences,
+} from './saved_visualization_references';
 
 uiModules
   .get('app/visualize')
@@ -48,8 +51,8 @@ uiModules
         type: SavedVis.type,
         mapping: SavedVis.mapping,
         searchSource: SavedVis.searchSource,
-        extractReferences: SavedVis.extractReferences,
-        injectReferences: SavedVis.injectReferences,
+        extractReferences: extractReferences,
+        injectReferences: injectReferences,
 
         id: opts.id,
         indexPattern: opts.indexPattern,
@@ -90,33 +93,6 @@ uiModules
     SavedVis.fieldOrder = ['title', 'description'];
 
     SavedVis.searchSource = true;
-
-    SavedVis.extractReferences = ({ attributes, references }) => {
-      if (!attributes.savedSearchId) return { attributes, references };
-      return {
-        references: [
-          ...references,
-          {
-            type: 'search',
-            name: 'search_0',
-            id: attributes.savedSearchId
-          }
-        ],
-        attributes: {
-          ...attributes,
-          savedSearchId: undefined,
-          savedSearchRef: 'search_0'
-        }
-      };
-    };
-
-    SavedVis.injectReferences = function (references) {
-      if (this.savedSearchRef) {
-        const reference = find(references, { name: this.savedSearchRef });
-        if (!reference) return;
-        this.savedSearchId = reference.id;
-      }
-    };
 
     SavedVis.prototype.getFullPath = function () {
       return `/app/kibana#${VisualizeConstants.EDIT_PATH}/${this.id}`;
