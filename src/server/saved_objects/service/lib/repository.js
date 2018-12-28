@@ -591,7 +591,7 @@ export class SavedObjectsRepository {
 
   }
 
-  async findRelationships(type, id, options) {
+  async findRelationships(type, id, options = {}) {
     const {
       size = 10,
       namespace

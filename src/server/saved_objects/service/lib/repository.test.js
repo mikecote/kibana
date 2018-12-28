@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import { get } from 'lodash';
 import sinon from 'sinon';
 import { delay } from 'bluebird';
 import { SavedObjectsRepository } from './repository';
@@ -480,9 +481,21 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'config:one' } },
-          { type: 'config', ...mockTimestampFields, config: { title: 'Test One!!' }, migrationVersion: { foo: '2.3.4' } },
+          {
+            type: 'config',
+            ...mockTimestampFields,
+            config: { title: 'Test One!!' },
+            migrationVersion: { foo: '2.3.4' },
+            references: []
+          },
           { create: { _type: 'doc', _id: 'index-pattern:two' } },
-          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two!!' }, migrationVersion: { foo: '2.3.4' } }
+          {
+            type: 'index-pattern',
+            ...mockTimestampFields,
+            'index-pattern': { title: 'Test Two!!' },
+            migrationVersion: { foo: '2.3.4' },
+            references: []
+          }
         ]
       }));
     });
@@ -496,7 +509,7 @@ describe('SavedObjectsRepository', () => {
         body: [
           // uses create because overwriting is not allowed
           { create: { _type: 'doc', _id: 'foo:bar' } },
-          { type: 'foo', ...mockTimestampFields, 'foo': {} },
+          { type: 'foo', ...mockTimestampFields, 'foo': {}, references: [] },
         ]
       }));
 
@@ -511,7 +524,7 @@ describe('SavedObjectsRepository', () => {
         body: [
           // uses index because overwriting is allowed
           { index: { _type: 'doc', _id: 'foo:bar' } },
-          { type: 'foo', ...mockTimestampFields, 'foo': {} },
+          { type: 'foo', ...mockTimestampFields, 'foo': {}, references: [] },
         ]
       }));
 
@@ -619,9 +632,21 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'foo-namespace:config:one' } },
-          { namespace: 'foo-namespace', type: 'config', ...mockTimestampFields, config: { title: 'Test One' } },
+          {
+            namespace: 'foo-namespace',
+            type: 'config',
+            ...mockTimestampFields,
+            config: { title: 'Test One' },
+            references: []
+          },
           { create: { _type: 'doc', _id: 'foo-namespace:index-pattern:two' } },
-          { namespace: 'foo-namespace', type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' } }
+          {
+            namespace: 'foo-namespace',
+            type: 'index-pattern',
+            ...mockTimestampFields,
+            'index-pattern': { title: 'Test Two' },
+            references: []
+          }
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -637,9 +662,9 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'config:one' } },
-          { type: 'config', ...mockTimestampFields, config: { title: 'Test One' } },
+          { type: 'config', ...mockTimestampFields, config: { title: 'Test One' }, references: [] },
           { create: { _type: 'doc', _id: 'index-pattern:two' } },
-          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' } }
+          { type: 'index-pattern', ...mockTimestampFields, 'index-pattern': { title: 'Test Two' }, references: [] }
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -659,7 +684,7 @@ describe('SavedObjectsRepository', () => {
       sinon.assert.calledWithExactly(callAdminCluster, 'bulk', sinon.match({
         body: [
           { create: { _type: 'doc', _id: 'globaltype:one' } },
-          { type: 'globaltype', ...mockTimestampFields, 'globaltype': { title: 'Test One' } },
+          { type: 'globaltype', ...mockTimestampFields, 'globaltype': { title: 'Test One' }, references: [] },
         ]
       }));
       sinon.assert.calledOnce(onBeforeWrite);
@@ -1538,6 +1563,77 @@ describe('SavedObjectsRepository', () => {
           namespace: 'foo-namespace',
         }),
       ).rejects.toEqual(new Error('"counterFieldName" argument must be a string'));
+    });
+  });
+
+  describe('#findRelationships', () => {
+    it('should find relationships for a given record', async () => {
+      callAdminCluster.callsFake((method, params) => {
+        switch(method) {
+          case 'get':
+            expect(params.id).toBe('visualization:1');
+            return {
+              _id: 'visualization:1',
+              _type: 'doc',
+              _source: {
+                id: 'visualization:1',
+                type: 'visualization',
+                visualization: {
+                  title: 'My Vis'
+                },
+                references: [{
+                  id: 'pattern*',
+                  type: 'index-pattern',
+                  name: 'indexPattern'
+                }]
+              },
+            };
+          case 'mget':
+            expect(params.body.docs).toHaveLength(1);
+            expect(params.body.docs[0]).toEqual({
+              _id: 'index-pattern:pattern*',
+              _type: 'doc'
+            });
+            return {
+              docs: [{
+                found: true,
+                _id: 'index-pattern:pattern*',
+                _type: 'doc',
+                _source: {
+                  id: 'index-pattern:pattern*',
+                  type: 'index-pattern',
+                  'index-pattern': {
+                    someAttr: true
+                  },
+                  references: []
+                }
+              }]
+            };
+          case 'search':
+            if (get(params, 'body.query.bool.filter.bool.must[1].term.type') !== 'dashboard') {
+              return { hits: { hits: [] } };
+            }
+            return {
+              hits: {
+                hits: [{
+                  _id: '2',
+                  _type: 'doc',
+                  _source: {
+                    id: '2',
+                    type: 'dashboard',
+                    dashboard: {
+                      title: 'Foo',
+                    }
+                  }
+                }]
+              }
+            };
+          default:
+            throw new Error(`Unhandled method "${method}"`);
+        }
+      });
+      const relationships = await savedObjectsRepository.findRelationships('visualization', '1');
+      expect(relationships).toMatchSnapshot();
     });
   });
 
