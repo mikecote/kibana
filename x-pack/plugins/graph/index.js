@@ -8,6 +8,7 @@ import { get } from 'lodash';
 import { resolve } from 'path';
 import Boom from 'boom';
 
+import migrations from './migrations';
 import { initServer } from './server';
 import mappings from './mappings.json';
 
@@ -30,41 +31,7 @@ export function graph(kibana) {
       hacks: ['plugins/graph/hacks/toggle_app_link_in_nav'],
       home: ['plugins/graph/register_feature'],
       mappings,
-      migrations: {
-        'graph-workspace': {
-          '7.0.0': (doc) => {
-            // Set new "references" attribute
-            doc.references = doc.references || [];
-            // Migrate index pattern
-            const wsState = get(doc, 'attributes.wsState');
-            if (typeof wsState === 'string') {
-              let state;
-              try {
-                state = JSON.parse(JSON.parse(wsState));
-              } catch (e) {
-                const error = new Error('Failed to parse wsState');
-                error.doc = doc;
-                error.originalError = e;
-                throw error;
-              }
-              const { indexPattern } = state;
-              state.indexPatternRef = 'indexPattern_0';
-              delete state.indexPattern;
-              doc.attributes.wsState = JSON.stringify(JSON.stringify(state));
-              doc.references.push({
-                name: 'indexPattern_0',
-                type: 'index-pattern',
-                id: indexPattern,
-              });
-            } else {
-              const error = new Error(`wsState is ${wsState ? 'not a string' : 'missing'}`);
-              error.doc = doc;
-              throw error;
-            }
-            return doc;
-          }
-        }
-      }
+      migrations,
     },
 
     config(Joi) {

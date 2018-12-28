@@ -17,11 +17,11 @@
  * under the License.
  */
 
-import { get } from 'lodash';
 import Promise from 'bluebird';
 import { mkdirp as mkdirpNode } from 'mkdirp';
 import { resolve } from 'path';
 
+import migrations from './migrations';
 import manageUuid from './server/lib/manage_uuid';
 import { searchApi } from './server/routes/api/search';
 import { scrollSearchApi } from './server/routes/api/scroll_search';
@@ -161,149 +161,7 @@ export default function (kibana) {
       mappings,
       uiSettingDefaults: getUiSettingDefaults(),
 
-      migrations: {
-        search: {
-          '7.0.0': (doc) => {
-            // Set new "references" attribute
-            doc.references = doc.references || [];
-            // Migrate index pattern
-            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
-            if (typeof searchSourceJSON === 'string') {
-              let searchSource;
-              try {
-                searchSource = JSON.parse(searchSourceJSON);
-              } catch (e) {
-                const error = new Error('Failed to parse searchSourceJSON');
-                error.doc = doc;
-                error.originalError = e;
-                throw error;
-              }
-              if (searchSource.index) {
-                doc.references.push({
-                  name: 'indexPattern',
-                  type: 'index-pattern',
-                  id: searchSource.index,
-                });
-                searchSource.indexRef = 'indexPattern';
-                delete searchSource.index;
-                doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
-              }
-            } else {
-              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
-              error.doc = doc;
-              throw error;
-            }
-            return doc;
-          },
-        },
-        visualization: {
-          '7.0.0': (doc) => {
-            // Set new "references" attribute
-            doc.references = doc.references || [];
-            // Migrate index pattern
-            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
-            if (typeof searchSourceJSON === 'string') {
-              let searchSource;
-              try {
-                searchSource = JSON.parse(searchSourceJSON);
-              } catch (e) {
-                const error = new Error('Failed to parse searchSourceJSON');
-                error.doc = doc;
-                error.originalError = e;
-                throw error;
-              }
-              if (searchSource.index) {
-                doc.references.push({
-                  name: 'indexPattern',
-                  type: 'index-pattern',
-                  id: searchSource.index,
-                });
-                searchSource.indexRef = 'indexPattern';
-                delete searchSource.index;
-                doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
-              }
-            } else {
-              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
-              error.doc = doc;
-              throw error;
-            }
-            // Migrate saved search
-            const savedSearchId = get(doc, 'attributes.savedSearchId');
-            if (savedSearchId) {
-              doc.references.push({
-                type: 'search',
-                name: 'search_0',
-                id: savedSearchId
-              });
-              doc.attributes.savedSearchRef = 'search_0';
-              delete doc.attributes.savedSearchId;
-            }
-            return doc;
-          }
-        },
-        dashboard: {
-          '7.0.0': (doc) => {
-            // Set new "references" attribute
-            doc.references = doc.references || [];
-            // Migrate index pattern
-            const searchSourceJSON = get(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON');
-            if (typeof searchSourceJSON === 'string') {
-              let searchSource;
-              try {
-                searchSource = JSON.parse(doc.attributes.kibanaSavedObjectMeta.searchSourceJSON);
-              } catch (e) {
-                const error = new Error('Failed to parse searchSourceJSON');
-                error.doc = doc;
-                error.originalError = e;
-                throw error;
-              }
-              if (searchSource.index) {
-                doc.references.push({
-                  name: 'indexPattern',
-                  type: 'index-pattern',
-                  id: searchSource.index,
-                });
-                searchSource.indexRef = 'indexPattern';
-                delete searchSource.index;
-              }
-              doc.attributes.kibanaSavedObjectMeta.searchSourceJSON = JSON.stringify(searchSource);
-            } else {
-              const error = new Error(`searchSourceJSON is ${searchSourceJSON ? 'not a string' : 'missing'}`);
-              error.doc = doc;
-              throw error;
-            }
-            // Migrate panels
-            const panelsJSON = get(doc, 'attributes.panelsJSON');
-            if (typeof panelsJSON === 'string') {
-              let panels;
-              try {
-                panels = JSON.parse(panelsJSON);
-              } catch (e) {
-                const error = new Error('Failed to parse panelsJSON');
-                error.doc = doc;
-                error.originalError = e;
-                throw error;
-              }
-              panels.forEach((panel, i) => {
-                panel.panelRef = `panel_${i}`;
-                doc.references.push({
-                  name: `panel_${i}`,
-                  type: panel.type,
-                  id: panel.id
-                });
-                delete panel.type;
-                delete panel.id;
-              });
-              doc.attributes.panelsJSON = JSON.stringify(panels);
-            } else {
-              const error = new Error(`panelsJSON is ${panelsJSON ? 'not a string' : 'missing'}`);
-              error.doc = doc;
-              throw error;
-            }
-            return doc;
-          }
-        }
-      }
+      migrations,
     },
 
     preInit: async function (server) {
