@@ -231,6 +231,13 @@ export class SpacesSavedObjectsClient implements SavedObjectsClient {
     });
   }
 
+  /**
+   * Finds other saved objects that have a relationship with a given saved object
+   *
+   * @param {string} type
+   * @param {string} id
+   * @param {object} [options]
+   */
   public async findRelationships(type: string, id: string, options: FindRelationshipsOptions) {
     throwErrorIfTypeIsSpace(type);
     throwErrorIfNamespaceSpecified(options);

@@ -591,6 +591,15 @@ export class SavedObjectsRepository {
 
   }
 
+  /**
+   * Finds other saved objects that have a relationship with a given saved object
+   *
+   * @param {string} type
+   * @param {string} id
+   * @param {object} [options={}]
+   * @property {number} [options.size=10]
+   * @property {string} [options.namespace]
+   */
   async findRelationships(type, id, options = {}) {
     const {
       size = 10,
@@ -598,11 +607,11 @@ export class SavedObjectsRepository {
     } = options;
 
     if (!id || typeof id !== 'string') {
-      throw new TypeError('options.id must be a string');
+      throw new TypeError('id must be a string');
     }
 
     if (!type || typeof type !== 'string') {
-      throw new TypeError('options.type must be a string');
+      throw new TypeError('type must be a string');
     }
 
     const sourceObject = await this.get(type, id, { namespace });
