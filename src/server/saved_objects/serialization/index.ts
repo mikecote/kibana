@@ -62,7 +62,7 @@ export interface SavedObjectDoc {
   migrationVersion?: MigrationVersion;
   version?: number;
   updated_at?: Date;
-  references?: object;
+  references?: object[];
 
   [rootProp: string]: any;
 }

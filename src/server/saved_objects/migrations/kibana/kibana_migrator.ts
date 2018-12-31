@@ -22,12 +22,20 @@
  * (the shape of the mappings and documents in the index).
  */
 
-import { once } from 'lodash';
+import { get, once, set, wrap } from 'lodash';
+import { getGlobalMigrations } from '../../global_migrations';
 import { SavedObjectsSchema, SavedObjectsSchemaDefinition } from '../../schema';
 import { SavedObjectDoc, SavedObjectsSerializer } from '../../serialization';
 import { docValidator } from '../../validation';
 import { buildActiveMappings, CallCluster, IndexMigrator, LogFn, MappingProperties } from '../core';
-import { DocumentMigrator, VersionedTransformer } from '../core/document_migrator';
+import {
+  DocumentMigrator,
+  MigrationDefinition,
+  TransformFn,
+  VersionedTransformer,
+} from '../core/document_migrator';
+
+const globalMigrationsByVersion = getGlobalMigrations();
 
 export interface KbnServer {
   server: Server;
@@ -125,9 +133,15 @@ export class KibanaMigrator {
     );
     this.mappingProperties = mergeProperties(kbnServer.uiExports.savedObjectMappings || []);
     this.log = (meta: string[], message: string) => kbnServer.server.log(meta, message);
+
+    const globalMigrationsByType = applyGlobalMigrations(
+      Object.keys(this.mappingProperties),
+      kbnServer.uiExports.savedObjectMigrations || {}
+    );
+
     this.documentMigrator = new DocumentMigrator({
       kibanaVersion: kbnServer.version,
-      migrations: kbnServer.uiExports.savedObjectMigrations || {},
+      migrations: globalMigrationsByType,
       validateDoc: docValidator(kbnServer.uiExports.savedObjectValidations || {}),
       log: this.log,
     });
@@ -167,4 +181,28 @@ function mergeProperties(mappings: any[]): MappingProperties {
     }
     return Object.assign(acc, properties);
   }, {});
+}
+
+/**
+ * Adds global migrations to the migrations grabbed from the plugins. Wraps where needed.
+ */
+function applyGlobalMigrations(
+  types: string[],
+  migrations: MigrationDefinition
+): MigrationDefinition {
+  const globalMigrationVersions = Object.keys(globalMigrationsByVersion);
+  globalMigrationVersions.forEach(version => {
+    types.forEach(type => {
+      let migration = globalMigrationsByVersion[version];
+      const existingMigration = get(migrations, [type, version]);
+      if (existingMigration) {
+        migration = wrap(existingMigration, (fn: TransformFn, doc: SavedObjectDoc) => {
+          const updatedDoc = globalMigrationsByVersion[version](doc);
+          return fn(updatedDoc);
+        });
+      }
+      set(migrations, [type, version], migration);
+    });
+  });
+  return migrations;
 }

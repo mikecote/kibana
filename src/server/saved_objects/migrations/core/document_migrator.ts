@@ -70,8 +70,12 @@ export type TransformFn = (doc: SavedObjectDoc) => SavedObjectDoc;
 
 type ValidateDoc = (doc: SavedObjectDoc) => void;
 
-interface MigrationDefinition {
-  [type: string]: { [version: string]: TransformFn };
+export interface TypeMigrationDefinition {
+  [version: string]: TransformFn;
+}
+
+export interface MigrationDefinition {
+  [type: string]: TypeMigrationDefinition;
 }
 
 interface Opts {
