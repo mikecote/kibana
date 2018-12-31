@@ -30,7 +30,6 @@ export function extractReferences({ attributes, references }) {
 
 export function injectReferences(references) {
   const state = JSON.parse(this.wsState);
-  console.log('state', typeof state);
   if (state.indexPatternRef) {
     state.indexPattern = find(references, { name: state.indexPatternRef }).id;
     delete state.indexPatternRef;
