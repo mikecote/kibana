@@ -134,14 +134,14 @@ export class KibanaMigrator {
     this.mappingProperties = mergeProperties(kbnServer.uiExports.savedObjectMappings || []);
     this.log = (meta: string[], message: string) => kbnServer.server.log(meta, message);
 
-    const globalMigrationsByType = applyGlobalMigrations(
+    const migrations = applyGlobalMigrations(
       Object.keys(this.mappingProperties),
       kbnServer.uiExports.savedObjectMigrations || {}
     );
 
     this.documentMigrator = new DocumentMigrator({
+      migrations,
       kibanaVersion: kbnServer.version,
-      migrations: globalMigrationsByType,
       validateDoc: docValidator(kbnServer.uiExports.savedObjectValidations || {}),
       log: this.log,
     });

@@ -33,7 +33,7 @@ Object {
   "attributes": Object {
     "foo": true,
   },
-  "references": undefined,
+  "references": Array [],
 }
 `);
   });
@@ -102,5 +102,16 @@ Object {
   "savedSearchId": "123",
 }
 `);
+  });
+
+  test(`fails when it can't find the reference in the array`, () => {
+    const context = {
+      id: '1',
+      foo: true,
+      savedSearchRef: 'search_0',
+    };
+    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+      `"Could not find reference \\"search_0\\""`
+    );
   });
 });

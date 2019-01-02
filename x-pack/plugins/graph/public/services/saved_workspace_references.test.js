@@ -37,6 +37,22 @@ Object {
 }
 `);
   });
+
+  test('fails when index is missing from workspace', () => {
+    const doc = {
+      id: '1',
+      attributes: {
+        wsState: JSON.stringify(
+          JSON.stringify({
+            bar: true,
+          })
+        ),
+      },
+    };
+    expect(() => extractReferences(doc)).toThrowErrorMatchingInlineSnapshot(
+      `"indexPattern attribute is missing in \\"wsState\\""`
+    );
+  });
 });
 
 describe('injectReferences', () => {
@@ -64,5 +80,27 @@ Object {
   "wsState": "{\\"bar\\":true,\\"indexPattern\\":\\"pattern*\\"}",
 }
 `);
+  });
+
+  test('fails when indexPatternRef is missing wsState', () => {
+    const context = {
+      id: '1',
+      wsState: JSON.stringify({ bar: true }),
+    };
+    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+      `"indexPatternRef attribute is missing from \\"wsState\\""`
+    );
+  });
+
+  test(`fails when it can't find the reference in the array`, () => {
+    const context = {
+      id: '1',
+      wsState: JSON.stringify({
+        indexPatternRef: 'indexPattern_0',
+      }),
+    };
+    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+      `"Could not find reference \\"indexPattern_0\\""`
+    );
   });
 });

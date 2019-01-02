@@ -61,6 +61,42 @@ Object {
 }
 `);
   });
+
+  test('fails when type attribute is missing from a panel', () => {
+    const doc = {
+      id: '1',
+      attributes: {
+        foo: true,
+        panelsJSON: JSON.stringify([
+          {
+            id: '1',
+            title: 'Title 1',
+          },
+        ]),
+      },
+    };
+    expect(() => extractReferences(doc)).toThrowErrorMatchingInlineSnapshot(
+      `"\\"type\\" attribute is missing from panel \\"0\\""`
+    );
+  });
+
+  test('fails when id attribute is missing from a panel', () => {
+    const doc = {
+      id: '1',
+      attributes: {
+        foo: true,
+        panelsJSON: JSON.stringify([
+          {
+            type: 'visualization',
+            title: 'Title 1',
+          },
+        ]),
+      },
+    };
+    expect(() => extractReferences(doc)).toThrowErrorMatchingInlineSnapshot(
+      `"\\"id\\" attribute is missing from panel \\"0\\""`
+    );
+  });
 });
 
 describe('injectReferences', () => {
@@ -101,5 +137,21 @@ Object {
 }
 `);
     /* eslint-enable max-len */
+  });
+
+  test(`fails when it can't find the reference in the array`, () => {
+    const context = {
+      id: '1',
+      foo: true,
+      panelsJSON: JSON.stringify([
+        {
+          panelRef: 'panel_0',
+          title: 'Title 1',
+        },
+      ]),
+    };
+    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+      `"Could not find reference \\"panel_0\\""`
+    );
   });
 });

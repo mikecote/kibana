@@ -19,10 +19,16 @@
 
 import { find } from 'lodash';
 
-export function extractReferences({ attributes, references }) {
+export function extractReferences({ attributes, references = [] }) {
   const panelReferences = [];
   const panels = JSON.parse(attributes.panelsJSON);
   panels.forEach((panel, i) => {
+    if (!panel.type) {
+      throw new Error(`"type" attribute is missing from panel "${i}"`);
+    }
+    if (!panel.id) {
+      throw new Error(`"id" attribute is missing from panel "${i}"`);
+    }
     panel.panelRef = `panel_${i}`;
     panelReferences.push({
       name: `panel_${i}`,
@@ -34,7 +40,7 @@ export function extractReferences({ attributes, references }) {
   });
   return {
     references: [
-      ...(references || []),
+      ...references,
       ...panelReferences
     ],
     attributes: {
@@ -48,6 +54,9 @@ export function injectReferences(references) {
   const panels = JSON.parse(this.panelsJSON);
   panels.forEach((panel) => {
     const reference = find(references, { name: panel.panelRef });
+    if (!reference) {
+      throw new Error(`Could not find reference "${panel.panelRef}"`);
+    }
     panel.id = reference.id;
     panel.type = reference.type;
     delete panel.panelRef;

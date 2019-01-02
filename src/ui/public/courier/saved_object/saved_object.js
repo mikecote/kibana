@@ -104,7 +104,7 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
     const afterESResp = config.afterESResp || _.noop;
     const customInit = config.init || _.noop;
     const extractReferences = config.extractReferences || _.identity;
-    const injectReferences = config.injectReferences || _.identity;
+    const injectReferences = config.injectReferences || _.noop;
 
     // optional search source which this object configures
     this.searchSource = config.searchSource ? new SearchSource() : undefined;
@@ -427,7 +427,7 @@ export function SavedObjectProvider(Promise, Private, Notifier, confirmModalProm
       }
 
       // Here we want to extract references and set them within "references" attribute
-      const { attributes, references } = extractReferences(this.serialize());
+      const { attributes, references = [] } = extractReferences(this.serialize());
 
       this.isSaving = true;
 

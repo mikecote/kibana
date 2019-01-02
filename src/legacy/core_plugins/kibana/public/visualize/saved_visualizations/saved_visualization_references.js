@@ -19,11 +19,11 @@
 
 import { find } from 'lodash';
 
-export function extractReferences({ attributes, references }) {
+export function extractReferences({ attributes, references = [] }) {
   if (!attributes.savedSearchId) return { attributes, references };
   return {
     references: [
-      ...(references || []),
+      ...references,
       {
         type: 'search',
         name: 'search_0',
@@ -41,7 +41,9 @@ export function extractReferences({ attributes, references }) {
 export function injectReferences(references) {
   if (this.savedSearchRef) {
     const reference = find(references, { name: this.savedSearchRef });
-    if (!reference) return;
+    if (!reference) {
+      throw new Error(`Could not find reference "${this.savedSearchRef}"`);
+    }
     this.savedSearchId = reference.id;
     delete this.savedSearchRef;
   }
