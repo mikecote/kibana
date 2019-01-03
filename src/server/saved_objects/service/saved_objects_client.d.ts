@@ -85,6 +85,7 @@ export interface SavedObject {
 export interface FindRelationshipsOptions {
   size?: number;
   namespace?: string;
+  filterTypes?: string[];
 }
 
 export interface FindRelationshipResponse {

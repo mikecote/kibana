@@ -599,11 +599,13 @@ export class SavedObjectsRepository {
    * @param {object} [options={}]
    * @property {number} [options.size=10]
    * @property {string} [options.namespace]
+   * @property {array} [options.filterTypes]
    */
   async findRelationships(type, id, options = {}) {
     const {
       size = 10,
-      namespace
+      namespace,
+      filterTypes,
     } = options;
 
     if (!id || typeof id !== 'string') {
@@ -617,12 +619,14 @@ export class SavedObjectsRepository {
     const sourceObject = await this.get(type, id, { namespace });
 
     const bulkGetOpts = sourceObject.references.map(ref => ({ id: ref.id, type: ref.type }));
-    const allTypes = Object.keys(getRootPropertiesObjects(this._mappings));
+    const searchTypes = Array.isArray(filterTypes)
+      ? filterTypes
+      : Object.keys(getRootPropertiesObjects(this._mappings));
 
     const [{ saved_objects: referencedObjects }, ...referencedBySourceResponse] = await Promise.all([
       this.bulkGet(bulkGetOpts),
       // Iterate to have a pagination per type
-      ...allTypes.map((targetType) => {
+      ...searchTypes.map((targetType) => {
         const referencedBySourceSearchOptions = {
           index: this._index,
           size,
