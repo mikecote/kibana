@@ -114,6 +114,8 @@ export function getTestSuiteFactory(esArchiver: any, supertest: SuperTest<any>) 
         uiStateJSON: resp.body.attributes.uiStateJSON,
         kibanaSavedObjectMeta: resp.body.attributes.kibanaSavedObjectMeta,
       },
+      migrationVersion: resp.body.migrationVersion,
+      references: resp.body.references,
     });
   };
 

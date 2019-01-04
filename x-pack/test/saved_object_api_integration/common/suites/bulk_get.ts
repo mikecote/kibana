@@ -108,6 +108,8 @@ export function bulkGetTestSuiteFactory(esArchiver: any, supertest: SuperTest<an
             uiStateJSON: resp.body.saved_objects[0].attributes.uiStateJSON,
             kibanaSavedObjectMeta: resp.body.saved_objects[0].attributes.kibanaSavedObjectMeta,
           },
+          migrationVersion: resp.body.saved_objects[0].migrationVersion,
+          references: resp.body.saved_objects[0].references,
         },
         {
           id: `${getIdPrefix(spaceId)}does not exist`,

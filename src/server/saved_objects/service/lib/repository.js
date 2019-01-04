@@ -181,7 +181,7 @@ export class SavedObjectsRepository {
           id = responseId,
           type,
           attributes,
-          references,
+          references = [],
         } = objects[i];
 
         if (error) {

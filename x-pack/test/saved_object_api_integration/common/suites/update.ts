@@ -87,6 +87,7 @@ export function updateTestSuiteFactory(esArchiver: any, supertest: SuperTest<any
       attributes: {
         name: 'My second favorite',
       },
+      references: resp.body.references,
     });
   };
 
@@ -111,6 +112,7 @@ export function updateTestSuiteFactory(esArchiver: any, supertest: SuperTest<any
       attributes: {
         title: 'My second favorite vis',
       },
+      references: resp.body.references,
     });
   };
 
