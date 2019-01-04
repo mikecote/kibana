@@ -43,15 +43,7 @@ export function registerRelationships(server) {
       const size = req.query.size || 10;
       const savedObjectsClient = req.getSavedObjectsClient();
 
-      try {
-        return await savedObjectsClient.findRelationships(type, id, { size });
-      } catch (err) {
-        if (isNotFoundError(err)) {
-          throw Boom.boomify(new Error('Resource not found'), { statusCode: 404 });
-        }
-
-        throw Boom.boomify(err, { statusCode: 500 });
-      }
+      return await savedObjectsClient.findRelationships(type, id, { size });
     },
   });
 }
