@@ -17,9 +17,7 @@
  * under the License.
  */
 
-import Boom from 'boom';
 import Joi from 'joi';
-import { isNotFoundError } from '../../../../../../../../server/saved_objects/service/lib/errors';
 
 export function registerRelationships(server) {
   server.route({

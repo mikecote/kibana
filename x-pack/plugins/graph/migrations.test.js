@@ -12,7 +12,7 @@ describe('graph-workspace', () => {
 
     test('throw error on empty object', () => {
       expect(() => migration({})).toThrowErrorMatchingInlineSnapshot(
-        `"wsState is missing on document \\"undefined\\""`
+        `"wsState is missing on graph-workspace \\"undefined\\""`
       );
     });
 
@@ -24,7 +24,7 @@ describe('graph-workspace', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"wsState is not a string on document \\"1\\""`
+        `"wsState is not a string on graph-workspace \\"1\\""`
       );
     });
 
@@ -36,7 +36,7 @@ describe('graph-workspace', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"Failed to parse wsState: \\"123abc\\" because \\"Unexpected token a in JSON at position 3\\" on document \\"1\\""`
+        `"Failed to parse wsState: \\"123abc\\" because \\"Unexpected token a in JSON at position 3\\" on graph-workspace \\"1\\""`
       );
     });
 
@@ -48,7 +48,7 @@ describe('graph-workspace', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"\\"indexPattern\\" attribute is missing within wsState on document \\"1\\""`
+        `"\\"indexPattern\\" attribute is missing within wsState on graph-workspace \\"1\\""`
       );
     });
 
