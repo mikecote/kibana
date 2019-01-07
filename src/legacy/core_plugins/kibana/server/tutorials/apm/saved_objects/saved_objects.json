@@ -3,7 +3,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Services [APM]",
       "uiStateJSON": "{\"vis\": {\"params\": {\"sort\": {\"direction\": null, \"columnIndex\": null}}}}",
@@ -15,7 +15,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -25,7 +25,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Top Services by Transaction Time [APM]",
       "uiStateJSON": "{}",
@@ -37,7 +37,7 @@
     "version": 2,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -47,7 +47,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Top Services by Transaction Per Minute [APM]",
       "uiStateJSON": "{}",
@@ -59,7 +59,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -104,7 +104,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Error Occurrences [APM]",
       "uiStateJSON": "{}",
@@ -116,7 +116,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -135,7 +135,7 @@
       "description": "",
       "hits": 0,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[{\"$state\":{\"store\":\"appState\"},\"meta\":{\"value\":\"error\",\"disabled\":false,\"key\":\"processor.event\",\"negate\":false,\"type\":\"phrase\",\"alias\":null,\"index\":\"apm-*\",\"params\":{\"type\":\"phrase\",\"query\":\"error\"}},\"query\":{\"match\":{\"processor.event\":{\"type\":\"phrase\",\"query\":\"error\"}}}}],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"highlightAll\":true,\"version\":true,\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"filter\":[{\"$state\":{\"store\":\"appState\"},\"meta\":{\"value\":\"error\",\"disabled\":false,\"key\":\"processor.event\",\"negate\":false,\"type\":\"phrase\",\"alias\":null,\"index\":\"apm-*\",\"params\":{\"type\":\"phrase\",\"query\":\"error\"}},\"query\":{\"match\":{\"processor.event\":{\"type\":\"phrase\",\"query\":\"error\"}}}}],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"highlightAll\":true,\"version\":true,\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "sort": [
         "@timestamp",
@@ -149,7 +149,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -189,7 +189,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Top Errors for Time Period [APM]",
       "uiStateJSON": "{\"vis\": {\"params\": {\"sort\": {\"direction\": null, \"columnIndex\": null}}}}",
@@ -201,7 +201,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -241,7 +241,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"filter\":[],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Top Transactions for Time Period [APM]",
       "uiStateJSON": "{\"vis\": {\"params\": {\"sort\": {\"direction\": null, \"columnIndex\": null}}}}",
@@ -253,7 +253,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -263,7 +263,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Transaction Times [APM]",
       "uiStateJSON": "{}",
@@ -275,7 +275,7 @@
     "version": 2,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -285,7 +285,7 @@
     "attributes": {
       "description": "",
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "title": "Transaction Per Minute [APM]",
       "uiStateJSON": "{}",
@@ -297,7 +297,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }
@@ -349,7 +349,7 @@
       "description": "",
       "hits": 0,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"filter\":[{\"$state\":{\"store\":\"appState\"},\"meta\":{\"value\":\"span\",\"disabled\":false,\"key\":\"processor.event\",\"negate\":false,\"type\":\"phrase\",\"alias\":null,\"index\":\"apm-*\",\"params\":{\"type\":\"phrase\",\"query\":\"span\"}},\"query\":{\"match\":{\"processor.event\":{\"type\":\"phrase\",\"query\":\"span\"}}}}],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"highlightAll\":true,\"version\":true,\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"filter\":[{\"$state\":{\"store\":\"appState\"},\"meta\":{\"value\":\"span\",\"disabled\":false,\"key\":\"processor.event\",\"negate\":false,\"type\":\"phrase\",\"alias\":null,\"index\":\"apm-*\",\"params\":{\"type\":\"phrase\",\"query\":\"span\"}},\"query\":{\"match\":{\"processor.event\":{\"type\":\"phrase\",\"query\":\"span\"}}}}],\"query\":{\"language\":\"lucene\",\"query\":\"\"},\"highlightAll\":true,\"version\":true,\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       },
       "sort": [
         "span.start.us",
@@ -363,7 +363,7 @@
     "version": 1,
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "apm-*"
       }

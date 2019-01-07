@@ -88,7 +88,7 @@ Object {
       },
     };
     expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-      `"searchSourceJSON is not a string on document \\"123\\""`
+      `"searchSourceJSON is not a string on test \\"123\\""`
     );
   });
 
@@ -136,14 +136,14 @@ Object {
   "attributes": Object {
     "foo": true,
     "kibanaSavedObjectMeta": Object {
-      "searchSourceJSON": "{\\"bar\\":true,\\"indexRef\\":\\"indexPattern\\"}",
+      "searchSourceJSON": "{\\"bar\\":true,\\"indexRef\\":\\"kibanaSavedObjectMeta.searchSourceJSON.index\\"}",
     },
   },
   "id": "123",
   "references": Array [
     Object {
       "id": "pattern*",
-      "name": "indexPattern",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
       "type": "index-pattern",
     },
   ],

@@ -25,35 +25,35 @@ describe('collectIndexPatterns(req, panels)', () => {
   const panels = [
     {
       references: [{
-        name: 'indexPattern',
+        name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
         type: 'index-pattern',
         id: 'index-*'
       }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'kibanaSavedObjectMeta.searchSourceJSON.index' })
         }
       }
     }, {
       references: [{
-        name: 'indexPattern',
+        name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
         type: 'index-pattern',
         id: 'logstash-*'
       }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'kibanaSavedObjectMeta.searchSourceJSON.index' })
         }
       }
     }, {
       references: [{
-        name: 'indexPattern',
+        name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
         type: 'index-pattern',
         id: 'logstash-*'
       }],
       attributes: {
         kibanaSavedObjectMeta: {
-          searchSourceJSON: JSON.stringify({ indexRef: 'indexPattern' })
+          searchSourceJSON: JSON.stringify({ indexRef: 'kibanaSavedObjectMeta.searchSourceJSON.index' })
         }
       }
     }, {
@@ -63,7 +63,7 @@ describe('collectIndexPatterns(req, panels)', () => {
         id: 'bad-*'
       }],
       attributes: {
-        savedSearchRef: 'indexPattern',
+        savedSearchId: 'indexPattern',
         kibanaSavedObjectMeta: {
           searchSourceJSON: JSON.stringify({})
         }

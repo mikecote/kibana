@@ -35,7 +35,7 @@ describe('collectSearchSources(req, panels)', () => {
           type: 'search',
           id: 1
         }],
-        attributes: { savedSearchRef: 'search_0' }
+        attributes: { savedSearchId: 'search_0' }
       },
       {
         references: [{
@@ -43,7 +43,7 @@ describe('collectSearchSources(req, panels)', () => {
           type: 'search',
           id: 2
         }],
-        attributes: { savedSearchRef: 'search_0' }
+        attributes: { savedSearchId: 'search_0' }
       }
     ];
 

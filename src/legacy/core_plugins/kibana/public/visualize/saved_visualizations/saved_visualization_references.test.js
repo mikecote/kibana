@@ -51,8 +51,7 @@ Object {
 Object {
   "attributes": Object {
     "foo": true,
-    "savedSearchId": undefined,
-    "savedSearchRef": "search_0",
+    "savedSearchId": "search_0",
   },
   "references": Array [
     Object {
@@ -67,12 +66,12 @@ Object {
 });
 
 describe('injectReferences', () => {
-  test('injects nothing when savedSearchRef is null', () => {
+  test('injects nothing when savedSearchId is null', () => {
     const context = {
       id: '1',
       foo: true,
     };
-    injectReferences.call(context, []);
+    injectReferences(context, []);
     expect(context).toMatchInlineSnapshot(`
 Object {
   "foo": true,
@@ -85,7 +84,7 @@ Object {
     const context = {
       id: '1',
       foo: true,
-      savedSearchRef: 'search_0',
+      savedSearchId: 'search_0',
     };
     const references = [
       {
@@ -94,7 +93,7 @@ Object {
         id: '123',
       },
     ];
-    injectReferences.call(context, references);
+    injectReferences(context, references);
     expect(context).toMatchInlineSnapshot(`
 Object {
   "foo": true,
@@ -108,9 +107,9 @@ Object {
     const context = {
       id: '1',
       foo: true,
-      savedSearchRef: 'search_0',
+      savedSearchId: 'search_0',
     };
-    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+    expect(() => injectReferences(context, [])).toThrowErrorMatchingInlineSnapshot(
       `"Could not find reference \\"search_0\\""`
     );
   });

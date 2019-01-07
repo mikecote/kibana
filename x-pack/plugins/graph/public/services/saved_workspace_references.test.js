@@ -72,7 +72,7 @@ describe('injectReferences', () => {
         id: 'pattern*',
       },
     ];
-    injectReferences.call(context, references);
+    injectReferences(context, references);
     expect(context).toMatchInlineSnapshot(`
 Object {
   "foo": true,
@@ -87,7 +87,7 @@ Object {
       id: '1',
       wsState: JSON.stringify({ bar: true }),
     };
-    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+    expect(() => injectReferences(context, [])).toThrowErrorMatchingInlineSnapshot(
       `"indexPatternRef attribute is missing from \\"wsState\\""`
     );
   });
@@ -99,7 +99,7 @@ Object {
         indexPatternRef: 'indexPattern_0',
       }),
     };
-    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+    expect(() => injectReferences(context, [])).toThrowErrorMatchingInlineSnapshot(
       `"Could not find reference \\"indexPattern_0\\""`
     );
   });

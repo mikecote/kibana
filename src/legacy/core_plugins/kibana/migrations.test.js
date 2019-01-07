@@ -49,7 +49,7 @@ Object {
     "kibanaSavedObjectMeta": Object {
       "searchSourceJSON": "{}",
     },
-    "savedSearchRef": "search_0",
+    "savedSearchId": "search_0",
   },
   "id": "1",
   "references": Array [
@@ -71,7 +71,7 @@ describe('dashboard', () => {
 
     test('throw error on empty object', () => {
       expect(() => migration({})).toThrowErrorMatchingInlineSnapshot(
-        `"panelsJSON is missing on document \\"undefined\\""`
+        `"panelsJSON is missing on dashboard \\"undefined\\""`
       );
     });
 
@@ -83,7 +83,7 @@ describe('dashboard', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"panelsJSON is not a string on document \\"1\\""`
+        `"panelsJSON is not a string on dashboard \\"1\\""`
       );
     });
 
@@ -95,7 +95,7 @@ describe('dashboard', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"Failed to parse panelsJSON: \\"{123abc}\\" because \\"Unexpected number in JSON at position 1\\" on document \\"1\\""`
+        `"Failed to parse panelsJSON: \\"{123abc}\\" because \\"Unexpected number in JSON at position 1\\" on dashboard \\"1\\""`
       );
     });
 
@@ -107,7 +107,7 @@ describe('dashboard', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"\\"type\\" attribute is missing from panel \\"0\\" on document \\"1\\""`
+        `"\\"type\\" attribute is missing from panel \\"0\\" on dashboard \\"1\\""`
       );
     });
 
@@ -119,7 +119,7 @@ describe('dashboard', () => {
         },
       };
       expect(() => migration(doc)).toThrowErrorMatchingInlineSnapshot(
-        `"\\"id\\" attribute is missing from panel \\"0\\" on document \\"1\\""`
+        `"\\"id\\" attribute is missing from panel \\"0\\" on dashboard \\"1\\""`
       );
     });
 

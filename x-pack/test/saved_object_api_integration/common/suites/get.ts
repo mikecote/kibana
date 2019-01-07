@@ -115,7 +115,13 @@ export function getTestSuiteFactory(esArchiver: any, supertest: SuperTest<any>) 
         kibanaSavedObjectMeta: resp.body.attributes.kibanaSavedObjectMeta,
       },
       migrationVersion: resp.body.migrationVersion,
-      references: resp.body.references,
+      references: [
+        {
+          id: '91200a00-9efd-11e7-acb3-3dab96693fab',
+          type: 'index-pattern',
+          name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
+        },
+      ],
     });
   };
 

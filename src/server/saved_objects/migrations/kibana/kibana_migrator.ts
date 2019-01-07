@@ -22,7 +22,7 @@
  * (the shape of the mappings and documents in the index).
  */
 
-import { get, once, set, wrap } from 'lodash';
+import { get, once, set } from 'lodash';
 import { getGlobalMigrations } from '../../global_migrations';
 import { SavedObjectsSchema, SavedObjectsSchemaDefinition } from '../../schema';
 import { SavedObjectDoc, SavedObjectsSerializer } from '../../serialization';
@@ -31,7 +31,6 @@ import { buildActiveMappings, CallCluster, IndexMigrator, LogFn, MappingProperti
 import {
   DocumentMigrator,
   MigrationDefinition,
-  TransformFn,
   VersionedTransformer,
 } from '../core/document_migrator';
 
@@ -186,20 +185,18 @@ function mergeProperties(mappings: any[]): MappingProperties {
 /**
  * Adds global migrations to the migrations grabbed from the plugins. Wraps where needed.
  */
-function applyGlobalMigrations(
-  types: string[],
-  migrations: MigrationDefinition
-): MigrationDefinition {
+function applyGlobalMigrations(types: string[], migrations: MigrationDefinition) {
   const globalMigrationVersions = Object.keys(globalMigrationsByVersion);
   globalMigrationVersions.forEach(version => {
     types.forEach(type => {
       let migration = globalMigrationsByVersion[version];
       const existingMigration = get(migrations, [type, version]);
       if (existingMigration) {
-        migration = wrap(existingMigration, (fn: TransformFn, doc: SavedObjectDoc) => {
+        const typeSpecificMigration = migration;
+        migration = (doc: SavedObjectDoc) => {
           const updatedDoc = globalMigrationsByVersion[version](doc);
-          return fn(updatedDoc);
-        });
+          return typeSpecificMigration(updatedDoc);
+        };
       }
       set(migrations, [type, version], migration);
     });

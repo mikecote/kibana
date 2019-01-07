@@ -127,7 +127,7 @@ describe('injectReferences', () => {
         id: '2',
       },
     ];
-    injectReferences.call(context, references);
+    injectReferences(context, references);
     /* eslint-disable max-len */
     expect(context).toMatchInlineSnapshot(`
 Object {
@@ -150,7 +150,7 @@ Object {
         },
       ]),
     };
-    expect(() => injectReferences.call(context, [])).toThrowErrorMatchingInlineSnapshot(
+    expect(() => injectReferences(context, [])).toThrowErrorMatchingInlineSnapshot(
       `"Could not find reference \\"panel_0\\""`
     );
   });

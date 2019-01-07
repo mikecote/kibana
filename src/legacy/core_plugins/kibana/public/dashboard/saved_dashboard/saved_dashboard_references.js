@@ -17,8 +17,6 @@
  * under the License.
  */
 
-import { find } from 'lodash';
-
 export function extractReferences({ attributes, references = [] }) {
   const panelReferences = [];
   const panels = JSON.parse(attributes.panelsJSON);
@@ -50,10 +48,10 @@ export function extractReferences({ attributes, references = [] }) {
   };
 }
 
-export function injectReferences(references) {
-  const panels = JSON.parse(this.panelsJSON);
+export function injectReferences(savedObject, references) {
+  const panels = JSON.parse(savedObject.panelsJSON);
   panels.forEach((panel) => {
-    const reference = find(references, { name: panel.panelRef });
+    const reference = references.find(reference => reference.name === panel.panelRef);
     if (!reference) {
       throw new Error(`Could not find reference "${panel.panelRef}"`);
     }
@@ -61,5 +59,5 @@ export function injectReferences(references) {
     panel.type = reference.type;
     delete panel.panelRef;
   });
-  this.panelsJSON = JSON.stringify(panels);
+  savedObject.panelsJSON = JSON.stringify(panels);
 }

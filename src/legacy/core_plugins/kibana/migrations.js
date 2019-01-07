@@ -32,8 +32,7 @@ export default {
           name: 'search_0',
           id: savedSearchId
         });
-        doc.attributes.savedSearchRef = 'search_0';
-        delete doc.attributes.savedSearchId;
+        doc.attributes.savedSearchId = 'search_0';
       }
       return doc;
     }
@@ -45,21 +44,21 @@ export default {
       // Migrate panels
       const panelsJSON = get(doc, 'attributes.panelsJSON');
       if (typeof panelsJSON !== 'string') {
-        throw new Error(`panelsJSON is ${panelsJSON ? 'not a string' : 'missing'} on document "${doc.id}"`);
+        throw new Error(`panelsJSON is ${panelsJSON ? 'not a string' : 'missing'} on dashboard "${doc.id}"`);
       }
       let panels;
       try {
         panels = JSON.parse(panelsJSON);
       } catch (e) {
-        throw new Error(`Failed to parse panelsJSON: "${panelsJSON}" because "${e.message}" on document "${doc.id}"`);
+        throw new Error(`Failed to parse panelsJSON: "${panelsJSON}" because "${e.message}" on dashboard "${doc.id}"`);
       }
       panels.forEach((panel, i) => {
         panel.panelRef = `panel_${i}`;
         if (!panel.type) {
-          throw new Error(`"type" attribute is missing from panel "${i}" on document "${doc.id}"`);
+          throw new Error(`"type" attribute is missing from panel "${i}" on dashboard "${doc.id}"`);
         }
         if (!panel.id) {
-          throw new Error(`"id" attribute is missing from panel "${i}" on document "${doc.id}"`);
+          throw new Error(`"id" attribute is missing from panel "${i}" on dashboard "${doc.id}"`);
         }
         doc.references.push({
           name: `panel_${i}`,

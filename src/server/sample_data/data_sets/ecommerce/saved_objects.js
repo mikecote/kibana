@@ -37,12 +37,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -62,12 +62,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -141,12 +141,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -184,12 +184,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -209,12 +209,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -243,12 +243,12 @@ export const getSavedObjects = () => [
       ],
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"highlightAll\":true,\"version\":true,\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"highlightAll\":true,\"version\":true,\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -268,12 +268,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }
@@ -293,12 +293,12 @@ export const getSavedObjects = () => [
       "description": "",
       "version": 1,
       "kibanaSavedObjectMeta": {
-        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"indexPattern\"}"
+        "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"lucene\"},\"filter\":[],\"indexRef\":\"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
       }
     },
     "references": [
       {
-        "name": "indexPattern",
+        "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
         "type": "index-pattern",
         "id": "ff959d40-b880-11e8-a6d9-e546fe2bba5f"
       }

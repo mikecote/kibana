@@ -42,7 +42,7 @@
           }
         }
       },
-      "savedSearchRef": {
+      "savedSearchId": {
         "type": "keyword"
       },
       "title": {

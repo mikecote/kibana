@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { omit, groupBy } from 'lodash';
+import { omit } from 'lodash';
 import { getRootType, getRootPropertiesObjects } from '../../../mappings';
 import { getSearchDsl } from './search_dsl';
 import { includedFields } from './included_fields';
@@ -124,7 +124,7 @@ export class SavedObjectsRepository {
   /**
    * Creates multiple documents at once
    *
-   * @param {array} objects - [{ type, id, attributes, migrationVersion }]
+   * @param {array} objects - [{ type, id, attributes, references, migrationVersion }]
    * @param {object} [options={}]
    * @property {boolean} [options.overwrite=false] - overwrites existing documents
    * @property {string} [options.namespace]
@@ -603,7 +603,7 @@ export class SavedObjectsRepository {
    */
   async findRelationships(type, id, options = {}) {
     const {
-      size = 10,
+      size = 10000,
       namespace,
       filterTypes,
     } = options;
@@ -631,7 +631,7 @@ export class SavedObjectsRepository {
           index: this._index,
           size,
           from: 0,
-          _source: true,
+          _source: [`${targetType}.title`, 'type', 'namespace'],
           ignore: [404],
           rest_total_hits_as_int: true,
           body: {
@@ -651,7 +651,10 @@ export class SavedObjectsRepository {
       )
     );
 
-    return groupBy(relationshipObjects, 'type');
+    return relationshipObjects.reduce((result, relationshipObject) => {
+      result[relationshipObject.type] = (result[relationshipObject.type] || []).concat(relationshipObject);
+      return result;
+    }, {});
   }
 
   async _writeToCluster(method, params) {

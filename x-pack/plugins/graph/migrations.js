@@ -14,17 +14,17 @@ export default {
       // Migrate index pattern
       const wsState = get(doc, 'attributes.wsState');
       if (typeof wsState !== 'string') {
-        throw new Error(`wsState is ${wsState ? 'not a string' : 'missing'} on document "${doc.id}"`);
+        throw new Error(`wsState is ${wsState ? 'not a string' : 'missing'} on graph-workspace "${doc.id}"`);
       }
       let state;
       try {
         state = JSON.parse(JSON.parse(wsState));
       } catch (e) {
-        throw new Error(`Failed to parse wsState: "${wsState}" because "${e.message}" on document "${doc.id}"`);
+        throw new Error(`Failed to parse wsState: "${wsState}" because "${e.message}" on graph-workspace "${doc.id}"`);
       }
       const { indexPattern } = state;
       if (!indexPattern) {
-        throw new Error(`"indexPattern" attribute is missing within wsState on document "${doc.id}"`);
+        throw new Error(`"indexPattern" attribute is missing within wsState on graph-workspace "${doc.id}"`);
       }
       state.indexPatternRef = 'indexPattern_0';
       delete state.indexPattern;

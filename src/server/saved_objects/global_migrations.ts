@@ -26,7 +26,7 @@ import { TypeMigrationDefinition } from './migrations/core/document_migrator';
 import { SavedObjectDoc } from './serialization';
 
 const migrations = {
-  '7.0.0': (doc: SavedObjectDoc): SavedObjectDoc => {
+  '7.0.0': (doc: SavedObjectDoc) => {
     // Set new "references" attribute
     doc.references = doc.references || [];
     // Migrate index pattern
@@ -36,7 +36,7 @@ const migrations = {
       searchSourceJSON !== undefined &&
       searchSourceJSON !== null
     ) {
-      throw new Error(`searchSourceJSON is not a string on document "${doc.id}"`);
+      throw new Error(`searchSourceJSON is not a string on ${doc.type || 'document'} "${doc.id}"`);
     }
     if (searchSourceJSON) {
       let searchSource;
@@ -46,16 +46,16 @@ const migrations = {
         throw new Error(
           `Failed to parse searchSourceJSON: "${searchSourceJSON}" because "${
             e.message
-          }" on document "${doc.id}"`
+          }" on ${doc.type || 'document'} "${doc.id}"`
         );
       }
       if (searchSource.index) {
         doc.references.push({
-          name: 'indexPattern',
+          name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
           type: 'index-pattern',
           id: searchSource.index,
         });
-        searchSource.indexRef = 'indexPattern';
+        searchSource.indexRef = 'kibanaSavedObjectMeta.searchSourceJSON.index';
         delete searchSource.index;
         set(doc, 'attributes.kibanaSavedObjectMeta.searchSourceJSON', JSON.stringify(searchSource));
       }

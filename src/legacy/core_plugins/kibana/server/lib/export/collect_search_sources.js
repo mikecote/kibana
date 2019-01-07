@@ -17,15 +17,14 @@
  * under the License.
  */
 
-import { find } from 'lodash';
 import { collectIndexPatterns } from './collect_index_patterns';
 
-export async function collectSearchSources(savedObjectsClient, panels) {
-  const docs = panels.reduce((acc, panel) => {
-    const { savedSearchRef } = panel.attributes;
-    if (savedSearchRef) {
-      const savedSearch = find(panel.references, { name: savedSearchRef });
-      if (savedSearch && !acc.find(s => s.id === savedSearch.id) && !panels.find(p => p.id === savedSearch.id)) {
+export async function collectSearchSources(savedObjectsClient, savedObjects) {
+  const docs = savedObjects.reduce((acc, savedObject) => {
+    const { savedSearchId } = savedObject.attributes;
+    if (savedSearchId) {
+      const savedSearch = savedObject.references.find(reference => reference.name === savedSearchId);
+      if (savedSearch && !acc.find(s => s.id === savedSearch.id) && !savedObjects.find(p => p.id === savedSearch.id)) {
         acc.push({ type: 'search', id: savedSearch.id });
       }
     }
@@ -34,8 +33,8 @@ export async function collectSearchSources(savedObjectsClient, panels) {
 
   if (docs.length === 0) return [];
 
-  const { saved_objects: savedObjects } = await savedObjectsClient.bulkGet(docs);
-  const indexPatterns = await collectIndexPatterns(savedObjectsClient, savedObjects);
+  const { saved_objects: response } = await savedObjectsClient.bulkGet(docs);
+  const indexPatterns = await collectIndexPatterns(savedObjectsClient, response);
 
-  return savedObjects.concat(indexPatterns);
+  return response.concat(indexPatterns);
 }

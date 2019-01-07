@@ -73,7 +73,7 @@ export function createTestSuiteFactory(es: any, esArchiver: any, supertest: Supe
       attributes: {
         title: 'My favorite vis',
       },
-      references: resp.body.references,
+      references: [],
       migrationVersion: resp.body.migrationVersion,
     });
 
@@ -116,7 +116,7 @@ export function createTestSuiteFactory(es: any, esArchiver: any, supertest: Supe
         name: `Can't be contained to a space`,
       },
       migrationVersion: resp.body.migrationVersion,
-      references: resp.body.references,
+      references: [],
     });
 
     // query ES directory to ensure namespace wasn't specified

@@ -47,8 +47,5 @@ export function SavedObjectsClientProvider(Promise) {
     update: (...args) => {
       return Promise.resolve(savedObjectsClient.update(...args));
     },
-    findRelationships: (...args) => {
-      return Promise.resolve(savedObjectsClient.findRelationships(...args));
-    }
   };
 }

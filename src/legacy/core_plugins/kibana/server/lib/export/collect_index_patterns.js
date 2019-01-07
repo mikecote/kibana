@@ -17,11 +17,9 @@
  * under the License.
  */
 
-import { find } from 'lodash';
-
-export async function collectIndexPatterns(savedObjectsClient, panels) {
-  const docs = panels.reduce((acc, panel) => {
-    const { kibanaSavedObjectMeta, savedSearchId } = panel.attributes;
+export async function collectIndexPatterns(savedObjectsClient, savedObjects) {
+  const docs = savedObjects.reduce((acc, savedObject) => {
+    const { kibanaSavedObjectMeta, savedSearchId } = savedObject.attributes;
 
     if (kibanaSavedObjectMeta && kibanaSavedObjectMeta.searchSourceJSON && !savedSearchId) {
       let searchSourceData;
@@ -32,7 +30,7 @@ export async function collectIndexPatterns(savedObjectsClient, panels) {
       }
 
       if (searchSourceData.indexRef) {
-        const indexPattern = find(panel.references, { name: searchSourceData.indexRef });
+        const indexPattern = savedObject.references.find(reference => reference.name === searchSourceData.indexRef);
         if (indexPattern && !acc.find(s => s.id === indexPattern.id)) {
           acc.push({ type: 'index-pattern', id: indexPattern.id });
         }
@@ -43,6 +41,6 @@ export async function collectIndexPatterns(savedObjectsClient, panels) {
 
   if (docs.length === 0) return [];
 
-  const { saved_objects: savedObjects } = await savedObjectsClient.bulkGet(docs);
-  return savedObjects;
+  const { saved_objects: response } = await savedObjectsClient.bulkGet(docs);
+  return response;
 }

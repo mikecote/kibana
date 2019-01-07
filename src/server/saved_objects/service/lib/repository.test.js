@@ -568,6 +568,7 @@ describe('SavedObjectsRepository', () => {
             version: 2,
             ...mockTimestampFields,
             attributes: { title: 'Test Two' },
+            references: [],
           }
         ]
       });
@@ -606,12 +607,14 @@ describe('SavedObjectsRepository', () => {
             version: 2,
             ...mockTimestampFields,
             attributes: { title: 'Test One' },
+            references: [],
           }, {
             id: 'two',
             type: 'index-pattern',
             version: 2,
             ...mockTimestampFields,
             attributes: { title: 'Test Two' },
+            references: [],
           }
         ]
       });

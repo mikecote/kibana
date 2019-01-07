@@ -109,7 +109,13 @@ export function bulkGetTestSuiteFactory(esArchiver: any, supertest: SuperTest<an
             kibanaSavedObjectMeta: resp.body.saved_objects[0].attributes.kibanaSavedObjectMeta,
           },
           migrationVersion: resp.body.saved_objects[0].migrationVersion,
-          references: resp.body.saved_objects[0].references,
+          references: [
+            {
+              id: '91200a00-9efd-11e7-acb3-3dab96693fab',
+              type: 'index-pattern',
+              name: 'kibanaSavedObjectMeta.searchSourceJSON.index',
+            },
+          ],
         },
         {
           id: `${getIdPrefix(spaceId)}does not exist`,

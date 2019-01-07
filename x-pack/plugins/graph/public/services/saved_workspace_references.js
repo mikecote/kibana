@@ -4,8 +4,6 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { find } from 'lodash';
-
 export function extractReferences({ attributes, references = [] }) {
   // For some reason, wsState comes in stringified 2x
   const state = JSON.parse(JSON.parse(attributes.wsState));
@@ -31,16 +29,16 @@ export function extractReferences({ attributes, references = [] }) {
   };
 }
 
-export function injectReferences(references) {
-  const state = JSON.parse(this.wsState);
+export function injectReferences(savedObject, references) {
+  const state = JSON.parse(savedObject.wsState);
   if (!state.indexPatternRef) {
     throw new Error('indexPatternRef attribute is missing from "wsState"');
   }
-  const indexPatternReference = find(references, { name: state.indexPatternRef });
+  const indexPatternReference = references.find(reference => reference.name === state.indexPatternRef);
   if (!indexPatternReference) {
     throw new Error(`Could not find reference "${state.indexPatternRef}"`);
   }
   state.indexPattern = indexPatternReference.id;
   delete state.indexPatternRef;
-  this.wsState = JSON.stringify(state);
+  savedObject.wsState = JSON.stringify(state);
 }

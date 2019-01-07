@@ -38,7 +38,7 @@ export default function({ getService }: TestInvoker) {
         },
         doesntExist: {
           statusCode: 403,
-          response:  createExpectLegacyForbidden(AUTHENTICATION.NOT_A_KIBANA_USER.username),
+          response: createExpectLegacyForbidden(AUTHENTICATION.NOT_A_KIBANA_USER.username),
         },
       },
     });

@@ -4,7 +4,7 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { get, uniq, transform, intersection } from 'lodash';
+import { get, uniq } from 'lodash';
 
 export class SecureSavedObjectsClientWrapper {
   constructor(options) {
@@ -112,7 +112,7 @@ export class SecureSavedObjectsClientWrapper {
     // Go through filterTypes array and ensure each value is in authorizedTypes.
     // Or else we'll filter on what they're authorized to see.
     filterTypes = filterTypes
-      ? intersection(authorizedTypes, filterTypes)
+      ? authorizedTypes.filter(type => filterTypes.includes(type))
       : authorizedTypes;
     return await this._baseClient.findRelationships(type, id, {
       ...options,
@@ -137,17 +137,18 @@ export class SecureSavedObjectsClientWrapper {
 
   async _getAuthorizedTypes(typeOrTypes, action) {
     const actionMap = {};
-    const types = Array.isArray(typeOrTypes) ? typeOrTypes : [typeOrTypes];
+    const types = [].concat(typeOrTypes);
     types.forEach((type) => {
       const typeAction = this._actions.getSavedObjectAction(type, action);
       actionMap[typeAction] = type;
     });
     const { privileges } = await this._checkSavedObjectPrivileges(Object.keys(actionMap));
-    const authorizedTypes = transform(privileges, (result, authorized, typeAction) => {
-      if (authorized) {
-        result.push(actionMap[typeAction]);
-      }
-    }, []);
+    const authorizedTypes = Object.keys(privileges)
+      .map(privilege => {
+        const authorized = privileges[privilege];
+        if (authorized) return actionMap[privilege];
+      })
+      .filter(value => !!value);
     return authorizedTypes;
   }
 

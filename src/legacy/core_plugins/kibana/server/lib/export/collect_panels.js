@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { get, find, omit } from 'lodash';
+import { get } from 'lodash';
 
 import { collectIndexPatterns } from './collect_index_patterns';
 import { collectSearchSources } from './collect_search_sources';
@@ -28,8 +28,10 @@ export async function collectPanels(savedObjectsClient, dashboard) {
   try {
     panels = JSON.parse(get(dashboard, 'attributes.panelsJSON', '[]'));
     panels = panels.map((panel) => {
-      const reference = find(dashboard.references, { name: panel.panelRef });
-      return omit(reference, 'name');
+      const reference = dashboard.references.find(reference => reference.name === panel.panelRef);
+      const result = { ...reference };
+      delete result.name;
+      return result;
     });
   } catch(err) {
     panels = [];

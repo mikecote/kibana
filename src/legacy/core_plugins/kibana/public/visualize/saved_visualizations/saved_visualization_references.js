@@ -17,8 +17,6 @@
  * under the License.
  */
 
-import { find } from 'lodash';
-
 export function extractReferences({ attributes, references = [] }) {
   if (!attributes.savedSearchId) return { attributes, references };
   return {
@@ -32,19 +30,17 @@ export function extractReferences({ attributes, references = [] }) {
     ],
     attributes: {
       ...attributes,
-      savedSearchId: undefined,
-      savedSearchRef: 'search_0'
+      savedSearchId: 'search_0'
     }
   };
 }
 
-export function injectReferences(references) {
-  if (this.savedSearchRef) {
-    const reference = find(references, { name: this.savedSearchRef });
+export function injectReferences(savedObject, references) {
+  if (savedObject.savedSearchId) {
+    const reference = references.find(reference => reference.name === savedObject.savedSearchId);
     if (!reference) {
-      throw new Error(`Could not find reference "${this.savedSearchRef}"`);
+      throw new Error(`Could not find reference "${savedObject.savedSearchId}"`);
     }
-    this.savedSearchId = reference.id;
-    delete this.savedSearchRef;
+    savedObject.savedSearchId = reference.id;
   }
 }
