@@ -20,7 +20,7 @@
 import { Transform } from 'stream';
 
 import {
-  createMapESStream,
+  createMapEsStream,
   createListStream,
   createPromiseFromStreams,
   createConcatStream,
@@ -35,7 +35,7 @@ function createFailingTransformStream() {
   });
 }
 
-describe('createMapESStream()', () => {
+describe('createMapEsStream()', () => {
   let mockClient;
 
   beforeEach(() => {
@@ -56,7 +56,7 @@ describe('createMapESStream()', () => {
   test('provides readable streams from inputs', async () => {
     const readableStreams = await createPromiseFromStreams([
       createListStream([{ index: 'my_index' }]),
-      createMapESStream(mockClient),
+      createMapEsStream(mockClient),
       createConcatStream([]),
     ]);
     expect(readableStreams).toHaveLength(1);
@@ -65,7 +65,7 @@ describe('createMapESStream()', () => {
   test('readable streams query Elasticsearch', async () => {
     const readableStreams = await createPromiseFromStreams([
       createListStream([{ index: 'my_index' }]),
-      createMapESStream(mockClient),
+      createMapEsStream(mockClient),
       createConcatStream([]),
     ]);
     expect(readableStreams).toHaveLength(1);
@@ -83,7 +83,7 @@ describe('createMapESStream()', () => {
     try {
       await createPromiseFromStreams([
         createListStream([{ index: 'my_index' }]),
-        createMapESStream(mockClient),
+        createMapEsStream(mockClient),
         new Transform({
           objectMode: true,
           transform(obj, enc, done) {

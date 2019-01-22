@@ -21,7 +21,7 @@ import { remove } from 'lodash';
 import { Transform } from 'stream';
 import { createScrollEsStream } from './scroll_es_stream';
 
-export function createMapESStream(client) {
+export function createMapEsStream(client) {
   const activeStreams = [];
   return new Transform({
     objectMode: true,
