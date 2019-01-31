@@ -9,6 +9,10 @@ import { uiModules } from 'ui/modules';
 import { createLegacyClass } from 'ui/utils/legacy_class';
 import { SavedObjectProvider } from 'ui/courier';
 import {
+  extractReferences,
+  injectReferences,
+} from './saved_gis_map_references';
+import {
   getTimeFilters,
   getMapZoom,
   getMapCenter,
@@ -29,6 +33,8 @@ module.factory('SavedGisMap', function (Private) {
       type: SavedGisMap.type,
       mapping: SavedGisMap.mapping,
       searchSource: SavedGisMap.searchsource,
+      extractReferences,
+      injectReferences,
 
       // if this is null/undefined then the SavedObject will be assigned the defaults
       id: id,

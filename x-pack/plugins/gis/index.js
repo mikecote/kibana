@@ -9,6 +9,7 @@ import { initRoutes } from './server/routes';
 import webLogsSavedObjects from './server/sample_data/web_logs_saved_objects.json';
 import mappings from './mappings.json';
 import { checkLicense } from './check_license';
+import { migrations } from './migrations';
 import { watchStatusAndLicenseToInitialize } from
   '../../server/lib/watch_status_and_license_to_initialize';
 
@@ -32,7 +33,8 @@ export function gis(kibana) {
       ],
       home: ['plugins/gis/register_feature'],
       styleSheetPaths: `${__dirname}/public/index.scss`,
-      mappings
+      mappings,
+      migrations,
     },
     config(Joi) {
       return Joi.object({
