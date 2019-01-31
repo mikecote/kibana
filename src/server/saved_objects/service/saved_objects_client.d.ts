@@ -112,7 +112,6 @@ export declare class SavedObjectsClient {
   public find<T extends SavedObjectAttributes = any>(
     options: FindOptions
   ): Promise<FindResponse<T>>;
-  // TODO: Add proper types
   public findAsStream: (options: FindOptions) => Promise<NodeJS.ReadStream>;
   public bulkGet<T extends SavedObjectAttributes = any>(
     objects: BulkGetObjects,
