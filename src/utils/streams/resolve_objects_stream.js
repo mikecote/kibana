@@ -17,15 +17,28 @@
  * under the License.
  */
 
-export { concatStreamProviders } from './concat_stream_providers';
-export { createIntersperseStream } from './intersperse_stream';
-export { createSplitStream } from './split_stream';
-export { createListStream } from './list_stream';
-export { createReduceStream } from './reduce_stream';
-export { createJsonParseStream, createJsonStringifyStream } from './json_streams';
-export { createPromiseFromStreams } from './promise_from_streams';
-export { createConcatStream } from './concat_stream';
-export { createMapStream } from './map_stream';
-export { createReplaceStream } from './replace_stream';
-export { createScrollEsStream } from './scroll_es_stream';
-export { createResolveObjectsStream } from './resolve_objects_stream';
+import { Transform } from 'stream';
+
+export function createResolveObjectsStream(savedObjectsClient) {
+  return new Transform({
+    objectMode: true,
+    async transform(obj, enc, done) {
+      try {
+        const savedObject = await savedObjectsClient.get(obj.type, obj.id);
+        done(null, savedObject);
+      } catch (e) {
+        done(e);
+      }
+    },
+    async writev(chunks, done) {
+      try {
+        const bulkGetOptions = chunks.map(row => row.chunk);
+        const { saved_objects: savedObjects } = await savedObjectsClient.bulkGet(bulkGetOptions);
+        savedObjects.forEach(row => this.push(row));
+        done();
+      } catch (e) {
+        done(e);
+      }
+    }
+  });
+}

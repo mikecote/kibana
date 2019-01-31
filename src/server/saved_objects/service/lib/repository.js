@@ -17,12 +17,14 @@
  * under the License.
  */
 
+import { Transform } from 'stream';
 import { omit } from 'lodash';
 import { getRootPropertiesObjects } from '../../../mappings';
 import { getSearchDsl } from './search_dsl';
 import { includedFields } from './included_fields';
 import { decorateEsError } from './decorate_es_error';
 import * as errors from './errors';
+import { createScrollEsStream } from '../../../../utils/streams';
 
 // BEWARE: The SavedObjectClient depends on the implementation details of the SavedObjectsRepository
 // so any breaking changes to this repository are considered breaking changes to the SavedObjectsClient.
@@ -305,54 +307,16 @@ export class SavedObjectsRepository {
    */
   async find(options = {}) {
     const {
-      type,
-      search,
-      defaultSearchOperator = 'OR',
-      searchFields,
-      hasReference,
       page = 1,
       perPage = 20,
-      sortField,
-      sortOrder,
-      fields,
-      namespace,
     } = options;
 
-    if (!type) {
-      throw new TypeError(`options.type must be a string or an array of strings`);
-    }
-
-    if (searchFields && !Array.isArray(searchFields)) {
-      throw new TypeError('options.searchFields must be an array');
-    }
-
-    if (fields && !Array.isArray(fields)) {
-      throw new TypeError('options.fields must be an array');
-    }
-
-    const esOptions = {
-      index: this._index,
+    const esOptions = this._getFindEsOptions(options);
+    const response = await this._callCluster('search', {
+      ...esOptions,
       size: perPage,
       from: perPage * (page - 1),
-      _source: includedFields(type, fields),
-      ignore: [404],
-      rest_total_hits_as_int: true,
-      body: {
-        version: true,
-        ...getSearchDsl(this._mappings, this._schema, {
-          search,
-          defaultSearchOperator,
-          searchFields,
-          type,
-          sortField,
-          sortOrder,
-          namespace,
-          hasReference,
-        })
-      }
-    };
-
-    const response = await this._callCluster('search', esOptions);
+    });
 
     if (response.status === 404) {
       // 404 is only possible here if the index is missing, which
@@ -371,6 +335,33 @@ export class SavedObjectsRepository {
       total: response.hits.total,
       saved_objects: response.hits.hits.map(hit => this._rawToSavedObject(hit)),
     };
+  }
+
+  /**
+   * @param {object} [options={}]
+   * @property {(string|Array<string>)} [options.type]
+   * @property {string} [options.search]
+   * @property {string} [options.defaultSearchOperator]
+   * @property {Array<string>} [options.searchFields] - see Elasticsearch Simple Query String
+   *                                        Query field argument for more information
+   * @property {string} [options.sortField]
+   * @property {string} [options.sortOrder]
+   * @property {Array<string>} [options.fields]
+   * @property {string} [options.namespace]
+   * @property {object} [options.hasReference] - { type, id }
+   * @returns {promise} - { saved_objects: [{ id, type, version, attributes }], total, per_page, page }
+   */
+  async findAsStream(options) {
+    const rawToSavedObject = this._rawToSavedObject.bind(this);
+    const esOptions = this._getFindEsOptions(options);
+    const rawToSavedObjectStream = new Transform({
+      objectMode: true,
+      transform(obj, enc, done) {
+        done(null, rawToSavedObject(obj));
+      },
+    });
+    return createScrollEsStream(this._callCluster.bind(this), esOptions)
+      .pipe(rawToSavedObjectStream);
   }
 
   /**
@@ -628,5 +619,51 @@ export class SavedObjectsRepository {
   _rawToSavedObject(raw) {
     const savedObject = this._serializer.rawToSavedObject(raw);
     return omit(savedObject, 'namespace');
+  }
+
+  _getFindEsOptions(options = {}) {
+    const {
+      type,
+      search,
+      defaultSearchOperator = 'OR',
+      searchFields,
+      hasReference,
+      sortField,
+      sortOrder,
+      fields,
+      namespace,
+    } = options;
+
+    if (!type) {
+      throw new TypeError(`options.type must be a string or an array of strings`);
+    }
+
+    if (searchFields && !Array.isArray(searchFields)) {
+      throw new TypeError('options.searchFields must be an array');
+    }
+
+    if (fields && !Array.isArray(fields)) {
+      throw new TypeError('options.fields must be an array');
+    }
+
+    return {
+      index: this._index,
+      _source: includedFields(type, fields),
+      ignore: [404],
+      rest_total_hits_as_int: true,
+      body: {
+        version: true,
+        ...getSearchDsl(this._mappings, this._schema, {
+          search,
+          defaultSearchOperator,
+          searchFields,
+          type,
+          sortField,
+          sortOrder,
+          namespace,
+          hasReference,
+        })
+      }
+    };
   }
 }

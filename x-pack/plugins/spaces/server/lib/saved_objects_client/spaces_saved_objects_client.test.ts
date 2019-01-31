@@ -34,6 +34,7 @@ const createMockClient = () => {
     get: jest.fn(),
     bulkGet: jest.fn(),
     find: jest.fn(),
+    findAsStream: jest.fn(),
     create: jest.fn(),
     bulkCreate: jest.fn(),
     update: jest.fn(),
@@ -283,6 +284,128 @@ const createMockClient = () => {
 
         expect(actualReturnValue).toBe(expectedReturnValue);
         expect(baseClient.find).toHaveBeenCalledWith({
+          type: ['foo', 'bar'],
+          namespace: currentSpace.expectedNamespace,
+        });
+      });
+    });
+
+    describe('#findAsStream', () => {
+      test(`throws error if options.namespace is specified`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+
+        await expect(
+          client.findAsStream({ namespace: 'bar' })
+        ).rejects.toThrowErrorMatchingSnapshot();
+      });
+
+      test(`throws error if options.type is space`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const expectedReturnValue = Symbol();
+        baseClient.findAsStream.mockReturnValue(expectedReturnValue);
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+
+        await expect(client.findAsStream({ type: 'space' })).rejects.toThrowErrorMatchingSnapshot();
+      });
+
+      test(`passes options.type to baseClient if valid singular type specified`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const expectedReturnValue = Symbol();
+        baseClient.findAsStream.mockReturnValue(expectedReturnValue);
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+        const options = Object.freeze({ type: 'foo' });
+
+        const actualReturnValue = await client.findAsStream(options);
+
+        expect(actualReturnValue).toBe(expectedReturnValue);
+        expect(baseClient.findAsStream).toHaveBeenCalledWith({
+          type: ['foo'],
+          namespace: currentSpace.expectedNamespace,
+        });
+      });
+
+      test(`throws error if options.type is array containing space`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const expectedReturnValue = Symbol();
+        baseClient.findAsStream.mockReturnValue(expectedReturnValue);
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+
+        await expect(
+          client.findAsStream({ type: ['space', 'foo'] })
+        ).rejects.toThrowErrorMatchingSnapshot();
+      });
+
+      test(`if options.type isn't provided specifies options.type based on the types excluding the space`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const expectedReturnValue = Symbol();
+        baseClient.findAsStream.mockReturnValue(expectedReturnValue);
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+
+        await expect(
+          client.findAsStream({ type: ['space', 'foo'] })
+        ).rejects.toThrowErrorMatchingSnapshot();
+      });
+
+      test(`supplements options with undefined namespace`, async () => {
+        const request = createMockRequest({ id: currentSpace.id });
+        const baseClient = createMockClient();
+        const expectedReturnValue = Symbol();
+        baseClient.findAsStream.mockReturnValue(expectedReturnValue);
+        const spacesService = createSpacesService(server);
+
+        const client = new SpacesSavedObjectsClient({
+          request,
+          baseClient,
+          spacesService,
+          types,
+        });
+
+        const options = Object.freeze({ type: ['foo', 'bar'] });
+        const actualReturnValue = await client.findAsStream(options);
+
+        expect(actualReturnValue).toBe(expectedReturnValue);
+        expect(baseClient.findAsStream).toHaveBeenCalledWith({
           type: ['foo', 'bar'],
           namespace: currentSpace.expectedNamespace,
         });

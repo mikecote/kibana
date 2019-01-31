@@ -156,6 +156,24 @@ export class SavedObjectsClient {
   }
 
   /**
+   * @param {object} [options={}]
+   * @property {(string|Array<string>)} [options.type]
+   * @property {string} [options.search]
+   * @property {string} [options.defaultSearchOperator]
+   * @property {Array<string>} [options.searchFields] - see Elasticsearch Simple Query String
+   *                                        Query field argument for more information
+   * @property {string} [options.sortField]
+   * @property {string} [options.sortOrder]
+   * @property {Array<string>} [options.fields]
+   * @property {string} [options.namespace]
+   * @property {object} [options.hasReference] - { type, id }
+   * @returns {promise} - { saved_objects: [{ id, type, version, attributes }], total, per_page, page }
+   */
+  async findAsStream(options = {}) {
+    return this._repository.findAsStream(options);
+  }
+
+  /**
    * Returns an array of objects by id
    *
    * @param {array} objects - an array ids, or an array of objects containing id and optionally type

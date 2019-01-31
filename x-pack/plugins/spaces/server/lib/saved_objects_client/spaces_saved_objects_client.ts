@@ -169,6 +169,36 @@ export class SpacesSavedObjectsClient implements SavedObjectsClient {
   }
 
   /**
+   * @param {object} [options={}]
+   * @property {(string|Array<string>)} [options.type]
+   * @property {string} [options.search]
+   * @property {string} [options.defaultSearchOperator]
+   * @property {Array<string>} [options.searchFields] - see Elasticsearch Simple Query String
+   *                                        Query field argument for more information
+   * @property {string} [options.sortField]
+   * @property {string} [options.sortOrder]
+   * @property {Array<string>} [options.fields]
+   * @property {string} [options.namespace]
+   * @property {object} [options.hasReference] - { type, id }
+   * @returns {promise} - { saved_objects: [{ id, type, version, attributes }], total, per_page, page }
+   */
+  public async findAsStream(options: FindOptions = {}) {
+    if (options.type) {
+      throwErrorIfTypesContainsSpace(coerceToArray(options.type));
+    }
+
+    throwErrorIfNamespaceSpecified(options);
+
+    return await this.client.findAsStream({
+      ...options,
+      type: (options.type ? coerceToArray(options.type) : this.types).filter(
+        type => type !== 'space'
+      ),
+      namespace: getNamespace(this.spaceId),
+    });
+  }
+
+  /**
    * Returns an array of objects by id
    *
    * @param {array} objects - an array ids, or an array of objects containing id and optionally type

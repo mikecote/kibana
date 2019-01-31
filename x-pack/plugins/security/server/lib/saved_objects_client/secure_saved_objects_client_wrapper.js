@@ -70,6 +70,16 @@ export class SecureSavedObjectsClientWrapper {
     return this._baseClient.find(options);
   }
 
+  async findAsStream(options = {}) {
+    await this._ensureAuthorized(
+      options.type,
+      'find',
+      { options },
+    );
+
+    return this._baseClient.findAsStream(options);
+  }
+
   async bulkGet(objects = [], options = {}) {
     const types = uniq(objects.map(o => o.type));
     await this._ensureAuthorized(
