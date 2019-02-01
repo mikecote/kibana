@@ -22,6 +22,7 @@ import { Readable } from 'stream';
 const SCROLL_SIZE = 300;
 const SCROLL_TIMEOUT = '1m';
 
+// Scroll stream
 export function createScrollEsStream(callCluster, options = {}) {
   let pointer = 0;
   let isReading = false;

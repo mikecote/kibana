@@ -26,6 +26,7 @@ import {
   createResolveObjectsStream,
 } from '../../../utils/streams';
 
+// Export route
 export const createExportRoute = (prereqs) => ({
   path: '/api/saved_objects/_export',
   method: 'GET',

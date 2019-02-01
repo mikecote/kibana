@@ -19,6 +19,7 @@
 
 import { Transform } from 'stream';
 
+// Resolve objects stream
 export function createResolveObjectsStream(savedObjectsClient) {
   return new Transform({
     objectMode: true,

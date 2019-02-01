@@ -352,6 +352,7 @@ export class SavedObjectsRepository {
    * @returns {promise} - { saved_objects: [{ id, type, version, attributes }], total, per_page, page }
    */
   async findAsStream(options) {
+    // Find as stream
     const rawToSavedObject = this._rawToSavedObject.bind(this);
     const esOptions = this._getFindEsOptions(options);
     const rawToSavedObjectStream = new Transform({
