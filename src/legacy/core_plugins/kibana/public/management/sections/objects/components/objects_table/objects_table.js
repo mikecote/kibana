@@ -25,6 +25,7 @@ import { Flyout } from './components/flyout';
 import { Relationships } from './components/relationships';
 import { Table } from './components/table';
 import { toastNotifications } from 'ui/notify';
+import stringify from 'json-stable-stringify';
 
 import {
   EuiSpacer,
@@ -298,7 +299,18 @@ class ObjectsTableUI extends Component {
       []
     );
     const results = await scanAllTypes($http, exportTypes);
-    saveToFile(JSON.stringify(flattenDeep(results), null, 2));
+    // Sort by id to have same order of objects on each export
+    // The scroll API can't sort by id as they are prefixed with the type
+    // within Elasticsearch (ex: "visualization:123abc-123-abc-123abc")
+    results.sort((a, b) => {
+      if (a._id < b._id) {
+        return -1;
+      } else if (a._id > b._id) {
+        return 1;
+      }
+      return 0;
+    });
+    saveToFile(stringify(flattenDeep(results), { space: 2 }));
   };
 
   finishImport = () => {

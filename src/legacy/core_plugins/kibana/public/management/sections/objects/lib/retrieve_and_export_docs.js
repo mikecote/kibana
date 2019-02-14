@@ -18,9 +18,19 @@
  */
 
 import { saveToFile } from './';
+import stringify from 'json-stable-stringify';
 
 export async function retrieveAndExportDocs(objs, savedObjectsClient) {
-  const response = await savedObjectsClient.bulkGet(objs);
+  // Sort by id to have same order of objects on each export
+  const sortedObjects = [...objs].sort((a, b) => {
+    if (a.id < b.id) {
+      return -1;
+    } else if (a.id > b.id) {
+      return 1;
+    }
+    return 0;
+  });
+  const response = await savedObjectsClient.bulkGet(sortedObjects);
   const objects = response.savedObjects.map(obj => {
     return {
       _id: obj.id,
@@ -31,5 +41,5 @@ export async function retrieveAndExportDocs(objs, savedObjectsClient) {
     };
   });
 
-  saveToFile(JSON.stringify(objects, null, 2));
+  saveToFile(stringify(objects, { space: 2 }));
 }
