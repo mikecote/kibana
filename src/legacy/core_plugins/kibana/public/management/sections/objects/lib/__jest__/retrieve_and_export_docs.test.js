@@ -17,6 +17,7 @@
  * under the License.
  */
 
+import stringify from 'json-stable-stringify';
 import { retrieveAndExportDocs } from '../retrieve_and_export_docs';
 
 jest.mock('../save_to_file', () => ({
@@ -87,7 +88,7 @@ describe('retrieveAndExportDocs', () => {
     await retrieveAndExportDocs(objs, savedObjectsClient);
     expect(saveToFile.mock.calls.length).toBe(1);
     expect(saveToFile).toHaveBeenCalledWith(
-      JSON.stringify(
+      stringify(
         [
           {
             _id: 1,
@@ -100,8 +101,7 @@ describe('retrieveAndExportDocs', () => {
             _source: { title: 'just the foo' },
           },
         ],
-        null,
-        2
+        { space: 2 },
       )
     );
   });

@@ -18,6 +18,7 @@
  */
 
 import React from 'react';
+import stringify from 'json-stable-stringify';
 import { shallowWithIntl } from 'test_utils/enzyme_helpers';
 
 import { ObjectsTable, INCLUDED_TYPES } from '../objects_table';
@@ -283,7 +284,7 @@ describe('ObjectsTable', () => {
       await component.instance().onExportAll();
 
       expect(scanAllTypes).toHaveBeenCalledWith(defaultProps.$http, INCLUDED_TYPES);
-      expect(saveToFile).toHaveBeenCalledWith(JSON.stringify(allSavedObjects, null, 2));
+      expect(saveToFile).toHaveBeenCalledWith(stringify(allSavedObjects, { space: 2 }));
     });
   });
 
