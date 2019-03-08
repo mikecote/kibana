@@ -35,6 +35,14 @@ jest.mock('ui/errors', () => ({
   },
 }));
 
+jest.mock('../../../../../lib/fetch_export_by_type', () => ({
+  fetchExportByType: jest.fn(),
+}));
+
+jest.mock('../../../../../lib/fetch_export_objects', () => ({
+  fetchExportObjects: jest.fn(),
+}));
+
 jest.mock('ui/chrome', () => ({
   addBasePath: () => {},
 }));
