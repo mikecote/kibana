@@ -20,9 +20,18 @@
 import { SavedObject } from '../service';
 import { Retry } from './types';
 
-export function createObjectsFilter(retries: Retry[]) {
-  const retrySet = new Set<string>(retries.map(retry => `${retry.type}:${retry.id}`));
-  return (obj: SavedObject) => {
-    return retrySet.has(`${obj.type}:${obj.id}`);
-  };
+export function splitOverwrites(savedObjects: SavedObject[], retries: Retry[]) {
+  const objectsToOverwrite: SavedObject[] = [];
+  const objectsToNotOverwrite: SavedObject[] = [];
+  const overwrites = retries
+    .filter(retry => retry.overwrite)
+    .map(retry => `${retry.type}:${retry.id}`);
+  for (const savedObject of savedObjects) {
+    if (overwrites.includes(`${savedObject.type}:${savedObject.id}`)) {
+      objectsToOverwrite.push(savedObject);
+    } else {
+      objectsToNotOverwrite.push(savedObject);
+    }
+  }
+  return { objectsToOverwrite, objectsToNotOverwrite };
 }

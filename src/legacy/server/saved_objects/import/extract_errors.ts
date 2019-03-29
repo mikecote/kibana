@@ -28,6 +28,7 @@ export function extractErrors(savedObjects: SavedObject[]) {
         errors.push({
           id: savedObject.id,
           type: savedObject.type,
+          title: (savedObject as any).title,
           error: {
             type: 'conflict',
           },
@@ -37,6 +38,7 @@ export function extractErrors(savedObjects: SavedObject[]) {
       errors.push({
         id: savedObject.id,
         type: savedObject.type,
+        title: (savedObject as any).title,
         error: {
           ...savedObject.error,
           type: 'unknown',

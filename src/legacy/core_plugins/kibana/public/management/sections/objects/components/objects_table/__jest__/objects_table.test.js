@@ -24,6 +24,8 @@ import { ObjectsTable, INCLUDED_TYPES } from '../objects_table';
 import { Flyout } from '../components/flyout/';
 import { Relationships } from '../components/relationships/';
 
+jest.mock('ui/kfetch', () => jest.fn());
+
 jest.mock('../components/header', () => ({
   Header: () => 'Header',
 }));

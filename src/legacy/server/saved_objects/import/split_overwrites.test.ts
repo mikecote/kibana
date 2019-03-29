@@ -17,67 +17,76 @@
  * under the License.
  */
 
-import { SavedObject } from '../service';
-import { extractErrors } from './extract_errors';
+import { splitOverwrites } from './split_overwrites';
 
-describe('extractErrors()', () => {
-  test('returns empty array when no errors exist', () => {
-    const savedObjects: SavedObject[] = [];
-    const result = extractErrors(savedObjects);
-    expect(result).toMatchInlineSnapshot(`Array []`);
-  });
-
-  test('extracts errors from saved objects', () => {
-    const savedObjects: SavedObject[] = [
+describe('splitOverwrites()', () => {
+  test('should split array accordingly', () => {
+    const retries = [
+      {
+        type: 'a',
+        id: '1',
+        overwrite: true,
+        replaceReferences: [],
+      },
+      {
+        type: 'd',
+        id: '2',
+        overwrite: true,
+        replaceReferences: [],
+      },
+      {
+        type: 'c',
+        id: '3',
+        overwrite: true,
+        replaceReferences: [],
+      },
+    ];
+    const savedObjects = [
       {
         id: '1',
-        type: 'dashboard',
+        type: 'a',
         attributes: {},
         references: [],
       },
       {
         id: '2',
-        type: 'dashboard',
+        type: 'b',
         attributes: {},
         references: [],
-        error: {
-          statusCode: 409,
-          message: 'Conflict',
-        },
       },
       {
         id: '3',
-        type: 'dashboard',
+        type: 'c',
         attributes: {},
         references: [],
-        error: {
-          statusCode: 400,
-          message: 'Bad Request',
-        },
       },
     ];
-    const result = extractErrors(savedObjects);
+    const result = splitOverwrites(savedObjects, retries);
     expect(result).toMatchInlineSnapshot(`
-Array [
-  Object {
-    "error": Object {
-      "type": "conflict",
+Object {
+  "objectsToNotOverwrite": Array [
+    Object {
+      "attributes": Object {},
+      "id": "2",
+      "references": Array [],
+      "type": "b",
     },
-    "id": "2",
-    "title": undefined,
-    "type": "dashboard",
-  },
-  Object {
-    "error": Object {
-      "message": "Bad Request",
-      "statusCode": 400,
-      "type": "unknown",
+  ],
+  "objectsToOverwrite": Array [
+    Object {
+      "attributes": Object {},
+      "id": "1",
+      "references": Array [],
+      "type": "a",
     },
-    "id": "3",
-    "title": undefined,
-    "type": "dashboard",
-  },
-]
+    Object {
+      "attributes": Object {},
+      "id": "3",
+      "references": Array [],
+      "type": "c",
+    },
+  ],
+}
 `);
   });
 });

@@ -16,16 +16,10 @@ Note: You cannot access this endpoint via the Console in Kibana.
 The request body must be of type multipart/form-data.
 
 `file`::
-  (ndjson) The same new line delimited JSON objects given to the import API.
+  The same new line delimited JSON objects given to the import API.
 
-`overwrites` (optional)::
-  (array) A list of `type` and `id` objects allowed to be overwritten on import.
-
-`replaceReferences` (optional)::
-  (array) A list of `type`, `from` and `to` used to change imported saved object references to.
-
-`skips` (optional)::
-  (array) A list of `type` and `id` objects to skip importing.
+`retries` (optional)::
+  (array) A list of `type`, `id`, `replaceReferences` and `overwrite` objects to retry importing. The property `replaceReferences` is a list of `type`, `from` and `to` used to change the object's references.
 
 ==== Response body
 

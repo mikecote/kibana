@@ -36,13 +36,7 @@ describe('POST /api/saved_objects/_import', () => {
 
   beforeEach(() => {
     server = createMockServer();
-    savedObjectsClient.bulkCreate.mockReset();
-    savedObjectsClient.bulkGet.mockReset();
-    savedObjectsClient.create.mockReset();
-    savedObjectsClient.delete.mockReset();
-    savedObjectsClient.find.mockReset();
-    savedObjectsClient.get.mockReset();
-    savedObjectsClient.update.mockReset();
+    jest.resetAllMocks();
 
     const prereqs = {
       getSavedObjectsClient: {

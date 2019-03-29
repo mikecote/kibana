@@ -17,18 +17,37 @@
  * under the License.
  */
 
-interface ConflictError {
+export interface Retry {
+  type: string;
+  id: string;
+  overwrite: boolean;
+  replaceReferences: Array<{
+    type: string;
+    from: string;
+    to: string;
+  }>;
+}
+
+export interface ConflictError {
   type: 'conflict';
 }
 
-interface UnknownError {
+export interface UnknownError {
   type: 'unknown';
   message: string;
   statusCode: number;
 }
 
-interface MissingReferencesError {
+export interface MissingReferencesError {
   type: 'missing_references';
+  references: Array<{
+    type: string;
+    id: string;
+  }>;
+}
+
+export interface ReferencesMissingReferencesError {
+  type: 'references_missing_references';
   references: Array<{
     type: string;
     id: string;
@@ -38,5 +57,6 @@ interface MissingReferencesError {
 export interface ImportError {
   id: string;
   type: string;
-  error: ConflictError | MissingReferencesError | UnknownError;
+  title?: string;
+  error: ConflictError | MissingReferencesError | ReferencesMissingReferencesError | UnknownError;
 }

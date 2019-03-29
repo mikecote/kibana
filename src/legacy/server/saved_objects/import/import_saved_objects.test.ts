@@ -60,13 +60,7 @@ describe('importSavedObjects()', () => {
   };
 
   beforeEach(() => {
-    savedObjectsClient.bulkCreate.mockReset();
-    savedObjectsClient.bulkGet.mockReset();
-    savedObjectsClient.create.mockReset();
-    savedObjectsClient.delete.mockReset();
-    savedObjectsClient.find.mockReset();
-    savedObjectsClient.get.mockReset();
-    savedObjectsClient.update.mockReset();
+    jest.resetAllMocks();
   });
 
   test('calls bulkCreate without overwrite', async () => {
@@ -237,6 +231,7 @@ Object {
         "type": "conflict",
       },
       "id": "1",
+      "title": undefined,
       "type": "index-pattern",
     },
     Object {
@@ -244,6 +239,7 @@ Object {
         "type": "conflict",
       },
       "id": "2",
+      "title": undefined,
       "type": "search",
     },
     Object {
@@ -251,6 +247,7 @@ Object {
         "type": "conflict",
       },
       "id": "3",
+      "title": undefined,
       "type": "visualization",
     },
     Object {
@@ -258,6 +255,7 @@ Object {
         "type": "conflict",
       },
       "id": "4",
+      "title": undefined,
       "type": "dashboard",
     },
   ],

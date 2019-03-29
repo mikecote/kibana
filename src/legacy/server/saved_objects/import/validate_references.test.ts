@@ -351,6 +351,7 @@ Object {
         "type": "missing_references",
       },
       "id": "2",
+      "title": undefined,
       "type": "visualization",
     },
     Object {
@@ -372,6 +373,7 @@ Object {
         "type": "missing_references",
       },
       "id": "4",
+      "title": undefined,
       "type": "visualization",
     },
   ],

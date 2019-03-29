@@ -66,13 +66,7 @@ describe('resolveImportErrors()', () => {
   };
 
   beforeEach(() => {
-    savedObjectsClient.bulkCreate.mockReset();
-    savedObjectsClient.bulkGet.mockReset();
-    savedObjectsClient.create.mockReset();
-    savedObjectsClient.delete.mockReset();
-    savedObjectsClient.find.mockReset();
-    savedObjectsClient.get.mockReset();
-    savedObjectsClient.update.mockReset();
+    jest.resetAllMocks();
   });
 
   test('works with empty parameters', async () => {
@@ -88,10 +82,8 @@ describe('resolveImportErrors()', () => {
     const result = await resolveImportErrors({
       readStream,
       objectLimit: 4,
-      skips: [],
-      overwrites: [],
+      retries: [],
       savedObjectsClient,
-      replaceReferences: [],
     });
     expect(result).toMatchInlineSnapshot(`
 Object {
@@ -102,42 +94,57 @@ Object {
     expect(savedObjectsClient.bulkCreate).toMatchInlineSnapshot(`[MockFunction]`);
   });
 
-  test('works with skips', async () => {
+  test('works with retries', async () => {
     const readStream = new Readable({
       read() {
         savedObjects.forEach(obj => this.push(JSON.stringify(obj) + '\n'));
         this.push(null);
       },
     });
-    savedObjectsClient.bulkCreate.mockResolvedValue({
+    savedObjectsClient.bulkCreate.mockResolvedValueOnce({
       saved_objects: savedObjects,
     });
     const result = await resolveImportErrors({
       readStream,
       objectLimit: 4,
-      skips: [
-        {
-          type: 'dashboard',
-          id: '4',
-        },
-      ],
-      overwrites: [],
-      savedObjectsClient,
-      replaceReferences: [
+      retries: [
         {
           type: 'visualization',
-          from: '3',
-          to: '30',
+          id: '3',
+          replaceReferences: [],
+          overwrite: false,
         },
       ],
+      savedObjectsClient,
     });
     expect(result).toMatchInlineSnapshot(`
 Object {
   "success": true,
-  "successCount": 0,
+  "successCount": 1,
 }
 `);
-    expect(savedObjectsClient.bulkCreate).toMatchInlineSnapshot(`[MockFunction]`);
+    expect(savedObjectsClient.bulkCreate).toMatchInlineSnapshot(`
+[MockFunction] {
+  "calls": Array [
+    Array [
+      Array [
+        Object {
+          "attributes": Object {},
+          "id": "3",
+          "references": Array [],
+          "type": "visualization",
+        },
+      ],
+    ],
+  ],
+  "results": Array [
+    Object {
+      "type": "return",
+      "value": Promise {},
+    },
+  ],
+}
+`);
   });
 
   test('works with overwrites', async () => {
@@ -153,15 +160,15 @@ Object {
     const result = await resolveImportErrors({
       readStream,
       objectLimit: 4,
-      skips: [],
-      overwrites: [
+      retries: [
         {
           type: 'index-pattern',
           id: '1',
+          overwrite: true,
+          replaceReferences: [],
         },
       ],
       savedObjectsClient,
-      replaceReferences: [],
     });
     expect(result).toMatchInlineSnapshot(`
 Object {
@@ -209,16 +216,21 @@ Object {
     const result = await resolveImportErrors({
       readStream,
       objectLimit: 4,
-      skips: [],
-      overwrites: [],
-      savedObjectsClient,
-      replaceReferences: [
+      retries: [
         {
-          type: 'visualization',
-          from: '3',
-          to: '13',
+          type: 'dashboard',
+          id: '4',
+          overwrite: false,
+          replaceReferences: [
+            {
+              type: 'visualization',
+              from: '3',
+              to: '13',
+            },
+          ],
         },
       ],
+      savedObjectsClient,
     });
     expect(result).toMatchInlineSnapshot(`
 Object {
@@ -244,9 +256,6 @@ Object {
           "type": "dashboard",
         },
       ],
-      Object {
-        "overwrite": true,
-      },
     ],
   ],
   "results": Array [
