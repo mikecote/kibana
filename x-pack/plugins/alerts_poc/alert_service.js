@@ -6,6 +6,8 @@
 
 import { Scheduler } from './scheduler';
 
+const log = (message) => console.log(`[alert-service] ${message}`);
+
 export class AlertService {
   constructor() {
     this.alerts = {};
@@ -13,14 +15,26 @@ export class AlertService {
   }
   register(alert) {
     this.alerts[alert.id] = alert;
+    log(`Registered ${alert.id}`);
+  }
+  mute(id) {
+    this.alerts[id].isMuted = true;
+  }
+  unmute(id) {
+    this.alerts[id].isMuted = false;
   }
   schedule({ id, interval, actions, checkParams }) {
     const alert = this.alerts[id];
     this.scheduler.scheduleTask({
       interval: interval,
       callback: async () => {
+        if (alert.isMuted) {
+          log(`Skipping check for ${id}, alert is muted`);
+          return;
+        }
         const fire = await alert.check(checkParams);
         if (fire) {
+          log(`Firing actions for ${id}`);
           for (const fireAction of actions) {
             await fireAction();
           }

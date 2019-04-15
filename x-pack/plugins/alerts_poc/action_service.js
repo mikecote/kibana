@@ -4,12 +4,15 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
+const log = (message) => console.log(`[action-service] ${message}`);
+
 export class ActionService {
   constructor() {
     this.actions = {};
   }
   register(action) {
     this.actions[action.id] = action;
+    log(`Registered ${action.id}`);
   }
   createFireFn(id, args) {
     const fn = this.actions[id].fire;

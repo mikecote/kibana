@@ -24,10 +24,11 @@ function getAlertService() {
   const alertService = new AlertService();
   alertService.register({
     id: 'cpu-check',
-    name: 'Check CPU usage above threshold',
-    async check(args) {
+    desc: 'Check CPU usage above threshold',
+    isMuted: false,
+    async check({ theshold }) {
       const cpuUsage = Math.floor(Math.random() * 100);
-      return cpuUsage > args.theshold;
+      return cpuUsage > theshold;
     }
   });
   return alertService;
