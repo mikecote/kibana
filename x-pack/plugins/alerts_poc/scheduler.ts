@@ -8,16 +8,32 @@
 const log = (message: string, ...args: any) => console.log(`[alerts-poc][scheduler] ${message}`, ...args);
 
 export class Scheduler {
-  private taskState = new Map();
+  private tasks = new Map();
+  private taskCounter = 0;
 
   scheduleTask(interval: number, callback: (previousState: Record<string, any>) => void) {
+    const taskId = ++this.taskCounter;
+
     const intervalId = setInterval(async () => {
-      const newState = await callback(this.taskState.get(intervalId));
-      this.taskState.set(intervalId, newState);
+      const task = this.tasks.get(taskId);
+      task.previousState = await callback(task.previousState);
     }, interval);
 
-    this.taskState.set(intervalId, {});
+    this.tasks.set(taskId, {
+      intervalId,
+      previousState: {},
+    });
 
     log(`Scheduled task to run every ${interval}ms`);
+
+    return taskId;
+  }
+
+  disableTask(taskId: number) {
+    const task = this.tasks.get(taskId);
+    if (!task) {
+      throw new Error(`Cannot find task by id [${taskId}]`);
+    }
+    clearInterval(task.taskId);
   }
 }
