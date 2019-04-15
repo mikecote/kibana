@@ -8,13 +8,13 @@ import { Scheduler } from './scheduler';
 import { ActionService } from './action_service';
 
 // eslint-disable-next-line no-console
-const log = (message: string) => console.log(`[alerts-poc][alert-service] ${message}`);
+const log = (message: string, ...args: any) => console.log(`[alerts-poc][alert-service] ${message}`, ...args);
 
 interface Alert {
   id: string;
   desc: string;
   isMuted: boolean;
-  check: (checkParams: any) => Promise<boolean>;
+  execute: (services: any, checkParams: any) => Promise<void>;
 }
 
 interface ScheduledAlert {
@@ -58,13 +58,16 @@ export class AlertService {
         log(`Skipping check for ${id}, alert is muted`);
         return;
       }
-      const fire = await alert.check(checkParams);
-      if (fire) {
+      const fire = () => {
         log(`Firing actions for ${id}`);
         for (const action of actions) {
           this.actionService.fire(action.id, action.context);
         }
-      }
+      };
+      const services = {
+        fire
+      };
+      await alert.execute(services, checkParams);
     });
   }
 }

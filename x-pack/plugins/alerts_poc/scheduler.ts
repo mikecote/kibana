@@ -5,7 +5,7 @@
  */
 
 // eslint-disable-next-line no-console
-const log = (message: string) => console.log(`[alerts-poc][scheduler] ${message}`);
+const log = (message: string, ...args: any) => console.log(`[alerts-poc][scheduler] ${message}`, ...args);
 
 export class Scheduler {
   scheduleTask(interval: number, callback: () => void) {

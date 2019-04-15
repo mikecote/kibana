@@ -8,7 +8,7 @@ import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 
 // eslint-disable-next-line no-console
-const log = (message: string) => console.log(`[alerts-poc]${message}`);
+const log = (message: string, ...args: any) => console.log(`[alerts-poc]${message}`, ...args);
 
 export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
@@ -28,9 +28,12 @@ function getAlertService(actionService: ActionService) {
     id: 'cpu-check',
     desc: 'Check CPU usage above threshold',
     isMuted: false,
-    async check({ theshold }) {
+    async execute({ fire }, { threshold }) {
       const cpuUsage = Math.floor(Math.random() * 100);
-      return cpuUsage > theshold;
+
+      if (cpuUsage > threshold) {
+        fire();
+      }
     },
   });
   return alertService;
@@ -58,7 +61,7 @@ function scheduleAlerts(alertService: AlertService) {
       },
     ],
     checkParams: {
-      theshold: 10,
+      threshold: 10,
     },
   });
 }

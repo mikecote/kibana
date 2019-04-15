@@ -5,7 +5,7 @@
  */
 
 // eslint-disable-next-line no-console
-const log = (message: string) => console.log(`[alerts-poc][action-service] ${message}`);
+const log = (message: string, ...args: any) => console.log(`[alerts-poc][action-service] ${message}`, ...args);
 
 interface Action {
   id: string;
