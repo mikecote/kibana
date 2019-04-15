@@ -47,7 +47,7 @@ function getAlertService(actionService: ActionService) {
 
 function getActionService() {
   const actionService = new ActionService();
-  actionService.registerConnector('smpt', async (connectorOptions: any, params: any) => {
+  actionService.registerConnector('smtp', async (connectorOptions: any, params: any) => {
     log(`[action][connector] Sending smtp email...`);
   });
   actionService.registerConnector('slack', async (connectorOptions: any, params: any) => {
