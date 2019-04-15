@@ -8,9 +8,11 @@ const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
   console.log(`[alerts-poc][scheduler] ${message}`, ...args);
 
+export type TaskId = number;
+
 export class Scheduler {
   private tasks = new Map();
-  private taskCounter = 0;
+  private taskCounter: TaskId = 0;
 
   scheduleTask(interval: number, callback: (previousState: Record<string, any>) => void) {
     const taskId = ++this.taskCounter;
@@ -30,11 +32,11 @@ export class Scheduler {
     return taskId;
   }
 
-  disableTask(taskId: number) {
+  clearTask(taskId: TaskId) {
     const task = this.tasks.get(taskId);
     if (!task) {
       throw new Error(`Cannot find task by id [${taskId}]`);
     }
-    clearInterval(task.taskId);
+    clearInterval(task.intervalId);
   }
 }

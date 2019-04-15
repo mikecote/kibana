@@ -18,6 +18,7 @@ export function alertsPoc(kibana: any) {
       const actionService = getActionService();
       const alertService = getAlertService(actionService);
       scheduleAlerts(alertService);
+      toggleAlert(alertService);
     },
   });
 }
@@ -81,4 +82,14 @@ function scheduleAlerts(alertService: AlertService) {
       threshold: 10,
     },
   });
+}
+
+function toggleAlert(alertService: AlertService) {
+  setTimeout(() => {
+    alertService.disable('cpu-check');
+
+    setTimeout(() => {
+      alertService.enable('cpu-check');
+    }, 1000);
+  }, 1000);
 }

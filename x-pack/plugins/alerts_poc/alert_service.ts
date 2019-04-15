@@ -4,18 +4,27 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { Scheduler } from './scheduler';
+import { Scheduler, TaskId } from './scheduler';
 import { ActionService } from './action_service';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
   console.log(`[alerts-poc][alert-service] ${message}`, ...args);
 
+interface ScheduledAlertTask {
+  scheduledAlert: ScheduledAlert;
+  taskId?: TaskId;
+}
+
 interface Alert {
   id: string;
   desc: string;
   isMuted: boolean;
   execute: (services: any, checkParams: any, previousState: any) => Promise<Record<string, any>>;
+}
+
+interface InternalAlert extends Alert {
+  scheduledTasks: Array<ScheduledAlertTask>;
 }
 
 interface ScheduledAlert {
@@ -31,7 +40,7 @@ interface ScheduledAlert {
 export class AlertService {
   scheduler: Scheduler;
   actionService: ActionService;
-  alerts: { [key: string]: Alert };
+  alerts: { [key: string]: InternalAlert };
 
   constructor(actionService: ActionService) {
     this.alerts = {};
@@ -40,7 +49,10 @@ export class AlertService {
   }
 
   register(alert: Alert) {
-    this.alerts[alert.id] = alert;
+    this.alerts[alert.id] = {
+      ...alert,
+      scheduledTasks: [],
+    };
     log(`Registered ${alert.id}`);
   }
 
@@ -52,9 +64,31 @@ export class AlertService {
     this.alerts[id].isMuted = false;
   }
 
-  schedule({ id, interval, actions, checkParams }: ScheduledAlert) {
+  disable(id: string) {
+    log(`[disable] disabling all scheduled tasks for alert "${id}"`);
+    this.alerts[id].scheduledTasks.forEach(scheduledTask => {
+      if (!scheduledTask.taskId) {
+        return;
+      }
+      this.scheduler.clearTask(scheduledTask.taskId);
+      scheduledTask.taskId = undefined;
+    });
+  }
+
+  enable(id: string) {
+    log(`[enable] enabling all scheduled tasks for alert "${id}"`);
+    this.alerts[id].scheduledTasks.forEach(scheduledTask => {
+      if (scheduledTask.taskId) {
+        return;
+      }
+      this.schedule(scheduledTask.scheduledAlert);
+    });
+  }
+
+  schedule(scheduledAlert: ScheduledAlert) {
+    const { id, interval, actions, checkParams } = scheduledAlert;
     const alert = this.alerts[id];
-    this.scheduler.scheduleTask(interval, async previousState => {
+    const taskId = this.scheduler.scheduleTask(interval, async previousState => {
       if (alert.isMuted) {
         log(`Skipping check for ${id}, alert is muted`);
         return;
@@ -68,6 +102,10 @@ export class AlertService {
       };
       const services = { fire };
       return alert.execute(services, checkParams, previousState);
+    });
+    alert.scheduledTasks.push({
+      scheduledAlert,
+      taskId,
     });
   }
 }
