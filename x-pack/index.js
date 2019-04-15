@@ -5,6 +5,7 @@
  */
 
 import { xpackMain } from './plugins/xpack_main';
+import { alertsPoc } from './plugins/alerts_poc';
 import { graph } from './plugins/graph';
 import { monitoring } from './plugins/monitoring';
 import { reporting } from './plugins/reporting';
@@ -41,6 +42,7 @@ import { ossTelemetry } from './plugins/oss_telemetry';
 module.exports = function (kibana) {
   return [
     xpackMain(kibana),
+    alertsPoc(kibana),
     graph(kibana),
     monitoring(kibana),
     reporting(kibana),
