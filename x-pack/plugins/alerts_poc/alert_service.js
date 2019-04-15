@@ -9,9 +9,10 @@ import { Scheduler } from './scheduler';
 const log = (message) => console.log(`[alerts-poc][alert-service] ${message}`);
 
 export class AlertService {
-  constructor() {
+  constructor(actionService) {
     this.alerts = {};
     this.scheduler = new Scheduler();
+    this.actionService = actionService;
   }
   register(alert) {
     this.alerts[alert.id] = alert;
@@ -35,8 +36,8 @@ export class AlertService {
         const fire = await alert.check(checkParams);
         if (fire) {
           log(`Firing actions for ${id}`);
-          for (const fireAction of actions) {
-            await fireAction();
+          for (const action of actions) {
+            this.actionService.fire(action.id, action.context);
           }
         }
       },

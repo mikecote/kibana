@@ -14,8 +14,8 @@ export class ActionService {
     this.actions[action.id] = action;
     log(`Registered ${action.id}`);
   }
-  createFireFn(id, args) {
+  async fire(id, context) {
     const fn = this.actions[id].fire;
-    return async () => await fn(args);
+    await fn(context);
   }
 }

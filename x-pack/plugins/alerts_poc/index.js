@@ -12,15 +12,15 @@ export function alertsPoc(kibana) {
     id: 'alerts_poc',
     require: ['kibana', 'elasticsearch'],
     init() {
-      const alertService = getAlertService();
       const actionService = getActionService();
-      scheduleAlerts(alertService, actionService);
+      const alertService = getAlertService(actionService);
+      scheduleAlerts(alertService);
     },
   });
 }
 
-function getAlertService() {
-  const alertService = new AlertService();
+function getAlertService(actionService) {
+  const alertService = new AlertService(actionService);
   alertService.register({
     id: 'cpu-check',
     desc: 'Check CPU usage above threshold',
@@ -44,15 +44,15 @@ function getActionService() {
   return actionService;
 }
 
-function scheduleAlerts(alertService, actionService) {
+function scheduleAlerts(alertService) {
   alertService.schedule({
     id: 'cpu-check',
     interval: 10 * 1000, // 10s
     actions: [
-      actionService.createFireFn(
-        'console-log',
-        { message: 'CPU above 10%' }
-      )
+      {
+        id: 'console-log',
+        context: { message: 'CPU above 10%' },
+      },
     ],
     checkParams: {
       theshold: 10,
