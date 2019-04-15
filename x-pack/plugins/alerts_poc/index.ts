@@ -8,7 +8,7 @@ import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 
 // eslint-disable-next-line no-console
-const log = (message: string, ...args: any) => console.log(`[alerts-poc]${message}`, ...args);
+const log = (message: string, ...args: any) => console.log(`[alerts-poc] ${message}`, ...args);
 
 export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
@@ -33,7 +33,7 @@ function getAlertService(actionService: ActionService) {
 
       if (cpuUsage > threshold) {
         log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire();
+        fire({ cpuUsage });
       }
 
       return {
@@ -46,11 +46,21 @@ function getAlertService(actionService: ActionService) {
 
 function getActionService() {
   const actionService = new ActionService();
-  actionService.register({
+  actionService.registerConnector('smpt', async (connectorOptions: any, params: any) => {
+    log(`[action][connector] Sending smtp email...`);
+  });
+  actionService.registerConnector('slack', async (connectorOptions: any, params: any) => {
+    log(`[action][connector] Sending slack message...`);
+  });
+  actionService.registerConnector('console', async (connectorOptions: any, params: any) => {
+    log(`[action][connector] Logging console message...`);
+    log(params.message);
+  });
+  actionService.createAction({
     id: 'console-log',
-    async fire({ message }) {
-      log(`[action][fire] ${message}`);
-    },
+    description: 'Send message to the console',
+    connector: 'console',
+    attributes: {},
   });
   return actionService;
 }
@@ -62,7 +72,9 @@ function scheduleAlerts(alertService: AlertService) {
     actions: [
       {
         id: 'console-log',
-        context: { message: 'CPU above 10%' },
+        params: {
+          message: `The CPU usage is a little high: {cpuUsage}%`,
+        },
       },
     ],
     checkParams: {

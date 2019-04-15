@@ -7,8 +7,9 @@
 import { Scheduler } from './scheduler';
 import { ActionService } from './action_service';
 
-// eslint-disable-next-line no-console
-const log = (message: string, ...args: any) => console.log(`[alerts-poc][alert-service] ${message}`, ...args);
+const log = (message: string, ...args: any) =>
+  // eslint-disable-next-line no-console
+  console.log(`[alerts-poc][alert-service] ${message}`, ...args);
 
 interface Alert {
   id: string;
@@ -22,7 +23,7 @@ interface ScheduledAlert {
   interval: number;
   actions: Array<{
     id: string;
-    context: any;
+    params: any;
   }>;
   checkParams: any;
 }
@@ -53,21 +54,36 @@ export class AlertService {
 
   schedule({ id, interval, actions, checkParams }: ScheduledAlert) {
     const alert = this.alerts[id];
-    this.scheduler.scheduleTask(interval, async (previousState) => {
+    this.scheduler.scheduleTask(interval, async previousState => {
       if (alert.isMuted) {
         log(`Skipping check for ${id}, alert is muted`);
         return;
       }
-      const fire = () => {
+      const fire = (context: any) => {
         log(`Firing actions for ${id}`);
         for (const action of actions) {
-          this.actionService.fire(action.id, action.context);
+          const params = injectContextIntoObjectTemplatedStrings(action.params, context);
+          this.actionService.fire(action.id, params);
         }
       };
-      const services = {
-        fire
-      };
+      const services = { fire };
       return alert.execute(services, checkParams, previousState);
     });
   }
+}
+
+function injectContextIntoObjectTemplatedStrings(objectToResolve: any, objectToInject: any) {
+  const params: any = {};
+  for (const key of Object.keys(objectToResolve)) {
+    params[key] = resolveTemplate(objectToResolve[key], objectToInject);
+  }
+  return params;
+}
+
+function resolveTemplate(str: string, object: any) {
+  let result = str;
+  for (const key of Object.keys(object)) {
+    result = result.replace(`{${key}}`, object[key]);
+  }
+  return result;
 }

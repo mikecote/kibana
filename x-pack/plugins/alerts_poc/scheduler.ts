@@ -4,8 +4,9 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-// eslint-disable-next-line no-console
-const log = (message: string, ...args: any) => console.log(`[alerts-poc][scheduler] ${message}`, ...args);
+const log = (message: string, ...args: any) =>
+  // eslint-disable-next-line no-console
+  console.log(`[alerts-poc][scheduler] ${message}`, ...args);
 
 export class Scheduler {
   private taskState = new Map();

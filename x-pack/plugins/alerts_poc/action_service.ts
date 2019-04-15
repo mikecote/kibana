@@ -4,28 +4,39 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-// eslint-disable-next-line no-console
-const log = (message: string, ...args: any) => console.log(`[alerts-poc][action-service] ${message}`, ...args);
+const log = (message: string, ...args: any) =>
+  // eslint-disable-next-line no-console
+  console.log(`[alerts-poc][action-service] ${message}`, ...args);
 
 interface Action {
   id: string;
-  fire: (context: any) => void;
+  description: string;
+  connector: string;
+  attributes: any;
 }
 
 export class ActionService {
   actions: { [key: string]: Action };
+  connectors: { [key: string]: (context: any, params: any) => void };
 
   constructor() {
     this.actions = {};
+    this.connectors = {};
   }
 
-  register(action: Action) {
+  registerConnector(id: string, handler: (context: any, params: any) => void) {
+    this.connectors[id] = handler;
+    log(`Registered connector ${id}`);
+  }
+
+  createAction(action: Action) {
     this.actions[action.id] = action;
     log(`Registered ${action.id}`);
   }
 
-  async fire(id: string, context: any) {
-    const fn = this.actions[id].fire;
-    await fn(context);
+  async fire(id: string, params: any) {
+    const { connector: connectorName, attributes: connectorOptions } = this.actions[id];
+    const hander = this.connectors[connectorName];
+    await hander(connectorOptions, params);
   }
 }
