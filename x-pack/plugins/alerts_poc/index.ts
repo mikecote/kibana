@@ -7,7 +7,7 @@
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 
-export function alertsPoc(kibana) {
+export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
     id: 'alerts_poc',
     require: ['kibana', 'elasticsearch'],
@@ -19,7 +19,7 @@ export function alertsPoc(kibana) {
   });
 }
 
-function getAlertService(actionService) {
+function getAlertService(actionService: ActionService) {
   const alertService = new AlertService(actionService);
   alertService.register({
     id: 'cpu-check',
@@ -28,7 +28,7 @@ function getAlertService(actionService) {
     async check({ theshold }) {
       const cpuUsage = Math.floor(Math.random() * 100);
       return cpuUsage > theshold;
-    }
+    },
   });
   return alertService;
 }
@@ -38,13 +38,14 @@ function getActionService() {
   actionService.register({
     id: 'console-log',
     async fire({ message }) {
+      // eslint-disable-next-line no-console
       console.log(message);
     },
   });
   return actionService;
 }
 
-function scheduleAlerts(alertService) {
+function scheduleAlerts(alertService: AlertService) {
   alertService.schedule({
     id: 'cpu-check',
     interval: 10 * 1000, // 10s

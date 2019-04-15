@@ -4,17 +4,27 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-const log = (message) => console.log(`[alerts-poc][action-service] ${message}`);
+// eslint-disable-next-line no-console
+const log = (message: string) => console.log(`[alerts-poc][action-service] ${message}`);
+
+interface Action {
+  id: string;
+  fire: (context: any) => void;
+}
 
 export class ActionService {
+  actions: { [key: string]: Action };
+
   constructor() {
     this.actions = {};
   }
-  register(action) {
+
+  register(action: Action) {
     this.actions[action.id] = action;
     log(`Registered ${action.id}`);
   }
-  async fire(id, context) {
+
+  async fire(id: string, context: any) {
     const fn = this.actions[id].fire;
     await fn(context);
   }
