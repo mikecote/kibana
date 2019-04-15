@@ -7,6 +7,9 @@
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 
+// eslint-disable-next-line no-console
+const log = (message: string) => console.log(`[alerts-poc]${message}`);
+
 export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
     id: 'alerts_poc',
@@ -38,8 +41,7 @@ function getActionService() {
   actionService.register({
     id: 'console-log',
     async fire({ message }) {
-      // eslint-disable-next-line no-console
-      console.log(message);
+      log(`[action][fire] ${message}`);
     },
   });
   return actionService;
