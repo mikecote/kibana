@@ -4,7 +4,7 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-const log = (message) => console.log(`[action-service] ${message}`);
+const log = (message) => console.log(`[alerts-poc][action-service] ${message}`);
 
 export class ActionService {
   constructor() {

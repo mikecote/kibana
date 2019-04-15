@@ -12,7 +12,6 @@ export function alertsPoc(kibana) {
     id: 'alerts_poc',
     require: ['kibana', 'elasticsearch'],
     init() {
-      console.log('alerts poc');
       const alertService = getAlertService();
       const actionService = getActionService();
       scheduleAlerts(alertService, actionService);

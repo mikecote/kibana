@@ -6,7 +6,7 @@
 
 import { Scheduler } from './scheduler';
 
-const log = (message) => console.log(`[alert-service] ${message}`);
+const log = (message) => console.log(`[alerts-poc][alert-service] ${message}`);
 
 export class AlertService {
   constructor() {
