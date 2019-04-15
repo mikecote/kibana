@@ -28,12 +28,17 @@ function getAlertService(actionService: ActionService) {
     id: 'cpu-check',
     desc: 'Check CPU usage above threshold',
     isMuted: false,
-    async execute({ fire }, { threshold }) {
+    async execute({ fire }, { threshold }, state) {
       const cpuUsage = Math.floor(Math.random() * 100);
 
       if (cpuUsage > threshold) {
+        log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
         fire();
       }
+
+      return {
+        cpuUsage,
+      };
     },
   });
   return alertService;

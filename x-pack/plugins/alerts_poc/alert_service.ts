@@ -14,7 +14,7 @@ interface Alert {
   id: string;
   desc: string;
   isMuted: boolean;
-  execute: (services: any, checkParams: any) => Promise<void>;
+  execute: (services: any, checkParams: any, previousState: any) => Promise<Record<string, any>>;
 }
 
 interface ScheduledAlert {
@@ -53,7 +53,7 @@ export class AlertService {
 
   schedule({ id, interval, actions, checkParams }: ScheduledAlert) {
     const alert = this.alerts[id];
-    this.scheduler.scheduleTask(interval, async () => {
+    this.scheduler.scheduleTask(interval, async (previousState) => {
       if (alert.isMuted) {
         log(`Skipping check for ${id}, alert is muted`);
         return;
@@ -67,7 +67,7 @@ export class AlertService {
       const services = {
         fire
       };
-      await alert.execute(services, checkParams);
+      return alert.execute(services, checkParams, previousState);
     });
   }
 }

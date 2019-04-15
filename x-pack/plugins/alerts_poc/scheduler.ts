@@ -8,8 +8,16 @@
 const log = (message: string, ...args: any) => console.log(`[alerts-poc][scheduler] ${message}`, ...args);
 
 export class Scheduler {
-  scheduleTask(interval: number, callback: () => void) {
-    setInterval(callback, interval);
+  private taskState = new Map();
+
+  scheduleTask(interval: number, callback: (previousState: Record<string, any>) => void) {
+    const intervalId = setInterval(async () => {
+      const newState = await callback(this.taskState.get(intervalId));
+      this.taskState.set(intervalId, newState);
+    }, interval);
+
+    this.taskState.set(intervalId, {});
+
     log(`Scheduled task to run every ${interval}ms`);
   }
 }
