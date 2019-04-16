@@ -34,10 +34,10 @@ interface InternalAlert extends Alert {
 interface ScheduledAlert {
   id: string;
   interval: number;
-  actions: Array<{
+  actionGroups: Record<string, Array<{
     id: string;
     params: any;
-  }>;
+  }>>;
   checkParams: any;
 }
 
@@ -66,6 +66,7 @@ export class AlertService {
       if (!scheduledTask.taskId) {
         return;
       }
+      // todo: scheduler needs to have disable/enable
       this.scheduler.clearTask(scheduledTask.taskId);
       scheduledTask.taskId = undefined;
     });
@@ -82,11 +83,12 @@ export class AlertService {
   }
 
   schedule(scheduledAlert: ScheduledAlert) {
-    const { id, interval, actions, checkParams } = scheduledAlert;
+    const { id, interval, actionGroups, checkParams } = scheduledAlert;
     const alert = this.alerts[id];
     const taskId = this.scheduler.scheduleTask(interval, async previousState => {
-      const fire = (context: any) => {
+      const fire = (actionGroupId: string, context: any) => {
         log(`Firing actions for ${id}`);
+        const actions = actionGroups[actionGroupId] || actionGroups['default'];
         for (const action of actions) {
           const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
           const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
