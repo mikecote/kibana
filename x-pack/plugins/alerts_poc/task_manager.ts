@@ -14,26 +14,27 @@ export class TaskManager {
   private tasks = new Map();
   private taskCounter: TaskId = 0;
 
-  scheduleTask(interval: number, callback: (previousState: Record<string, any>) => void) {
+  scheduleTask(interval: number, executor: (previousState: Record<string, any>) => void) {
     const taskId = ++this.taskCounter;
-
-    const intervalId = setInterval(async () => {
-      const task = this.tasks.get(taskId);
-      if (task.muted && !(task.mutedUntil < Date.now())) {
-        log(`Task ${taskId} is muted, skipping execution`);
-        return;
-      }
-      task.previousState = await callback(task.previousState);
-    }, interval);
+    const intervalId = setInterval(async () => await this.runTask(taskId), interval);
 
     this.tasks.set(taskId, {
       intervalId,
       previousState: {},
+      executor,
     });
 
     log(`Scheduled task to run every ${interval}ms`);
-
     return taskId;
+  }
+
+  async runTask(taskId: TaskId) {
+    const task = this.tasks.get(taskId);
+    if (task.muted && !(task.mutedUntil < Date.now())) {
+      log(`Task ${taskId} is muted, skipping execution`);
+      return;
+    }
+    task.previousState = await task.executor(task.previousState);
   }
 
   muteTask(taskId: TaskId, duration?: number) {
