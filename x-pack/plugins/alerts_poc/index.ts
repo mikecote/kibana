@@ -86,24 +86,25 @@ function scheduleAlerts(alertService: AlertService) {
   alertService.schedule({
     id: 'cpu-check',
     interval: 10 * 1000, // 10s
-    actionGroups: { // I think these should be called "channels"
-      'default': [
+    actionGroups: {
+      // I think these should be called "channels"
+      default: [
         {
           id: 'console-log',
           params: {
             message: `The CPU usage is high: {cpuUsage}%`,
           },
-        }
+        },
       ],
-      'warning': [
+      warning: [
         {
           id: 'console-log',
           params: {
             message: `The CPU usage is a little high: {cpuUsage}%`,
           },
-        }
+        },
       ],
-      'severe': [
+      severe: [
         {
           id: 'console-log',
           params: {
@@ -112,8 +113,8 @@ function scheduleAlerts(alertService: AlertService) {
         },
         {
           id: 'turn-on-alarm-light',
-          params: {}
-        }
+          params: {},
+        },
       ],
     },
     checkParams: {
