@@ -6,11 +6,11 @@
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
-  console.log(`${new Date().toISOString()} [alerts-poc] [scheduler] ${message}`, ...args);
+  console.log(`${new Date().toISOString()} [alerts-poc] [task-manager] ${message}`, ...args);
 
 export type TaskId = number;
 
-export class Scheduler {
+export class TaskManager {
   private tasks = new Map();
   private taskCounter: TaskId = 0;
 
@@ -36,7 +36,7 @@ export class Scheduler {
     return taskId;
   }
 
-  muteTask(taskId: TaskId, duration: number) {
+  muteTask(taskId: TaskId, duration?: number) {
     const task = this.tasks.get(taskId);
     task.muted = true;
     if (duration) {

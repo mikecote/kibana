@@ -4,7 +4,7 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { Scheduler, TaskId } from './scheduler';
+import { TaskManager, TaskId } from './task_manager';
 import { ActionService } from './action_service';
 
 const log = (message: string, ...args: any) =>
@@ -42,13 +42,13 @@ interface ScheduledAlert {
 }
 
 export class AlertService {
-  scheduler: Scheduler;
+  taskManager: TaskManager;
   actionService: ActionService;
   alerts: { [key: string]: InternalAlert };
 
   constructor(actionService: ActionService) {
     this.alerts = {};
-    this.scheduler = new Scheduler();
+    this.taskManager = new TaskManager();
     this.actionService = actionService;
   }
 
@@ -66,8 +66,8 @@ export class AlertService {
       if (!scheduledTask.taskId) {
         return;
       }
-      // todo: scheduler needs to have disable/enable
-      this.scheduler.clearTask(scheduledTask.taskId);
+      // todo: task manager needs to have disable/enable
+      this.taskManager.clearTask(scheduledTask.taskId);
       scheduledTask.taskId = undefined;
     });
   }
@@ -85,7 +85,7 @@ export class AlertService {
   schedule(scheduledAlert: ScheduledAlert) {
     const { id, interval, actionGroups, checkParams } = scheduledAlert;
     const alert = this.alerts[id];
-    const taskId = this.scheduler.scheduleTask(interval, async previousState => {
+    const taskId = this.taskManager.scheduleTask(interval, async previousState => {
       const fire = (actionGroupId: string, context: any) => {
         log(`Firing actions for ${id}`);
         const actions = actionGroups[actionGroupId] || actionGroups['default'];

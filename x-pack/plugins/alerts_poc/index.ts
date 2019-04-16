@@ -62,7 +62,6 @@ function getActionService() {
     log(`[action] [connector] Sending slack message...`);
   });
   actionService.registerConnector('console', async (connectorOptions: any, params: any) => {
-    log(`[action] [connector] Logging console message...`);
     log(params.message);
   });
   actionService.registerConnector('light', async (connectorOptions: any, params: any) => {
