@@ -10,8 +10,7 @@
 
 ## Nice to haves
 
-- Scenario of 100,000 different hostnames
-	- Bulk get data, check function runs per host
+- ~~Scenario of 100,000 different hostnames~~
 - Add kibana task manager to POC
 - Resiliency
 - Audit log
