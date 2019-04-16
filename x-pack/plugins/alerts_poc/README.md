@@ -5,8 +5,8 @@
 - Example of throttling
 - ~~Default set of values per alert (subject, body, message, etc)~~
 - Figure out the "Send Message" terminology
-- Muting functionality per scheduled alert
-	- Time based?
+- ~~Muting functionality per scheduled alert~~
+	- ~~Time based?~~
 
 ## Nice to haves
 
