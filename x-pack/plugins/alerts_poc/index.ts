@@ -34,12 +34,15 @@ function getAlertService(actionService: ActionService) {
       body: 'The CPU usage is a little high: {cpuUsage}%',
       message: 'The CPU usage is a little high: {cpuUsage}%',
     },
-    async execute({ fire }, { threshold }, state) {
+    async execute({ fire }, { warningThreshold, severeThreshold }, state) {
       const cpuUsage = Math.floor(Math.random() * 100);
 
-      if (cpuUsage > threshold) {
+      if (cpuUsage > severeThreshold) {
         log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire({ cpuUsage });
+        fire('severe', { cpuUsage });
+      } else if (cpuUsage > warningThreshold) {
+        log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
+        fire('warning', { cpuUsage });
       }
 
       return {
@@ -62,10 +65,19 @@ function getActionService() {
     log(`[action] [connector] Logging console message...`);
     log(params.message);
   });
+  actionService.registerConnector('light', async (connectorOptions: any, params: any) => {
+    log(`[action][connector] Turning on light...`);
+  });
   actionService.createAction({
     id: 'console-log',
     description: 'Send message to the console',
     connector: 'console',
+    attributes: {},
+  });
+  actionService.createAction({
+    id: 'turn-on-alarm-light',
+    description: 'Turn on a physical alarm light',
+    connector: 'light',
     attributes: {},
   });
   return actionService;
@@ -75,16 +87,39 @@ function scheduleAlerts(alertService: AlertService) {
   alertService.schedule({
     id: 'cpu-check',
     interval: 10 * 1000, // 10s
-    actions: [
-      {
-        id: 'console-log',
-        params: {
-          message: `The CPU usage is a little high: {cpuUsage}%`,
+    actionGroups: { // I think these should be called "channels"
+      'default': [
+        {
+          id: 'console-log',
+          params: {
+            message: `The CPU usage is high: {cpuUsage}%`,
+          },
+        }
+      ],
+      'warning': [
+        {
+          id: 'console-log',
+          params: {
+            message: `The CPU usage is a little high: {cpuUsage}%`,
+          },
+        }
+      ],
+      'severe': [
+        {
+          id: 'console-log',
+          params: {
+            message: `The CPU usage is super duper high: {cpuUsage}%`,
+          },
         },
-      },
-    ],
+        {
+          id: 'turn-on-alarm-light',
+          params: {}
+        }
+      ],
+    },
     checkParams: {
-      threshold: 10,
+      severeThreshold: 50,
+      warningThreshold: 10,
     },
   });
 }
