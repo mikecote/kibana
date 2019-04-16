@@ -6,7 +6,7 @@
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
-  console.log(`[alerts-poc][scheduler] ${message}`, ...args);
+  console.log(`${new Date().toISOString()} [alerts-poc] [scheduler] ${message}`, ...args);
 
 export type TaskId = number;
 

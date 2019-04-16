@@ -9,7 +9,7 @@ import { ActionService } from './action_service';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
-  console.log(`[alerts-poc][alert-service] ${message}`, ...args);
+  console.log(`${new Date().toISOString()} [alerts-poc] [alert-service] ${message}`, ...args);
 
 interface ScheduledAlertTask {
   scheduledAlert: ScheduledAlert;

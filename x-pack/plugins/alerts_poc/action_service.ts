@@ -6,7 +6,7 @@
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
-  console.log(`[alerts-poc][action-service] ${message}`, ...args);
+  console.log(`${new Date().toISOString()} [alerts-poc] [action-service] ${message}`, ...args);
 
 interface Action {
   id: string;

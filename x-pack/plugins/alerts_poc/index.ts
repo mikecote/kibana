@@ -7,8 +7,9 @@
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 
-// eslint-disable-next-line no-console
-const log = (message: string, ...args: any) => console.log(`[alerts-poc] ${message}`, ...args);
+const log = (message: string, ...args: any) =>
+  // eslint-disable-next-line no-console
+  console.log(`${new Date().toISOString()} [alerts-poc] ${message}`, ...args);
 
 export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
@@ -52,13 +53,13 @@ function getAlertService(actionService: ActionService) {
 function getActionService() {
   const actionService = new ActionService();
   actionService.registerConnector('smtp', async (connectorOptions: any, params: any) => {
-    log(`[action][connector] Sending smtp email...`);
+    log(`[action] [connector] Sending smtp email...`);
   });
   actionService.registerConnector('slack', async (connectorOptions: any, params: any) => {
-    log(`[action][connector] Sending slack message...`);
+    log(`[action] [connector] Sending slack message...`);
   });
   actionService.registerConnector('console', async (connectorOptions: any, params: any) => {
-    log(`[action][connector] Logging console message...`);
+    log(`[action] [connector] Logging console message...`);
     log(params.message);
   });
   actionService.createAction({
