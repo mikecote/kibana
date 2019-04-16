@@ -28,16 +28,19 @@ interface Alert {
 }
 
 interface InternalAlert extends Alert {
-  scheduledTasks: Array<ScheduledAlertTask>;
+  scheduledTasks: ScheduledAlertTask[];
 }
 
 interface ScheduledAlert {
   id: string;
   interval: number;
-  actionGroups: Record<string, Array<{
-    id: string;
-    params: any;
-  }>>;
+  actionGroups: Record<
+    string,
+    Array<{
+      id: string;
+      params: any;
+    }>
+  >;
   checkParams: any;
 }
 
@@ -88,7 +91,7 @@ export class AlertService {
     const taskId = this.taskManager.scheduleTask(interval, async previousState => {
       const fire = (actionGroupId: string, context: any) => {
         log(`Firing actions for ${id}`);
-        const actions = actionGroups[actionGroupId] || actionGroups['default'];
+        const actions = actionGroups[actionGroupId] || actionGroups.default;
         for (const action of actions) {
           const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
           const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
