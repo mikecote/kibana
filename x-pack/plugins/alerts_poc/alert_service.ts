@@ -19,6 +19,11 @@ interface ScheduledAlertTask {
 interface Alert {
   id: string;
   desc: string;
+  defaultActionParams: {
+    subject: string;
+    body: string;
+    message: string;
+  };
   execute: (services: any, checkParams: any, previousState: any) => Promise<Record<string, any>>;
 }
 
@@ -83,7 +88,8 @@ export class AlertService {
       const fire = (context: any) => {
         log(`Firing actions for ${id}`);
         for (const action of actions) {
-          const params = injectContextIntoObjectTemplatedStrings(action.params, context);
+          const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
+          const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
           this.actionService.fire(action.id, params);
         }
       };

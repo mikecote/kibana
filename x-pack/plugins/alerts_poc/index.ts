@@ -28,6 +28,11 @@ function getAlertService(actionService: ActionService) {
   alertService.register({
     id: 'cpu-check',
     desc: 'Check CPU usage above threshold',
+    defaultActionParams: {
+      subject: '[warning] High CPU usage',
+      body: 'The CPU usage is a little high: {cpuUsage}%',
+      message: 'The CPU usage is a little high: {cpuUsage}%',
+    },
     async execute({ fire }, { threshold }, state) {
       const cpuUsage = Math.floor(Math.random() * 100);
 
