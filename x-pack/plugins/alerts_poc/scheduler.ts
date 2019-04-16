@@ -19,6 +19,10 @@ export class Scheduler {
 
     const intervalId = setInterval(async () => {
       const task = this.tasks.get(taskId);
+      if (task.muted && !(task.mutedUntil < Date.now())) {
+        log(`Task ${taskId} is muted, skipping execution`);
+        return;
+      }
       task.previousState = await callback(task.previousState);
     }, interval);
 
@@ -30,6 +34,20 @@ export class Scheduler {
     log(`Scheduled task to run every ${interval}ms`);
 
     return taskId;
+  }
+
+  muteTask(taskId: TaskId, duration: number) {
+    const task = this.tasks.get(taskId);
+    task.muted = true;
+    if (duration) {
+      task.mutedUntil = Date.now() + duration;
+    }
+  }
+
+  unmuteTask(taskId: TaskId) {
+    const task = this.tasks.get(taskId);
+    task.muted = false;
+    task.mutedUntil = null;
   }
 
   clearTask(taskId: TaskId) {
