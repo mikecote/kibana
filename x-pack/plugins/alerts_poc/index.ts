@@ -8,6 +8,7 @@ import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 import mappings from './mappings.json';
 import { SavedObjectsClient } from '../../../src/legacy/server/saved_objects';
+import { TaskManager } from './task_manager';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
@@ -18,12 +19,18 @@ export function alertsPoc(kibana: any) {
     id: 'alerts_poc',
     require: ['kibana', 'elasticsearch'],
     init(server: any) {
+      // Saved objects client
       const { callWithInternalUser } = server.plugins.elasticsearch.getCluster('admin');
       const savedObjectsClient = server.savedObjects.getSavedObjectsRepository(
         callWithInternalUser
       );
+
+      // Task manager
+      const taskManager = new TaskManager();
+
+      // Alerting services
       const actionService = getActionService(savedObjectsClient);
-      const alertService = getAlertService(actionService);
+      const alertService = getAlertService(actionService, taskManager);
       scheduleAlerts(alertService);
       toggleAlert(alertService);
     },
@@ -33,8 +40,8 @@ export function alertsPoc(kibana: any) {
   });
 }
 
-function getAlertService(actionService: ActionService) {
-  const alertService = new AlertService(actionService);
+function getAlertService(actionService: ActionService, taskManager: TaskManager) {
+  const alertService = new AlertService(actionService, taskManager);
   alertService.register({
     id: 'cpu-check',
     desc: 'Check CPU usage above threshold',

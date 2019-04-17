@@ -51,9 +51,9 @@ export class AlertService {
   actionService: ActionService;
   alerts: { [key: string]: InternalAlert };
 
-  constructor(actionService: ActionService) {
+  constructor(actionService: ActionService, taskManager: TaskManager) {
     this.alerts = {};
-    this.taskManager = new TaskManager();
+    this.taskManager = taskManager;
     this.actionService = actionService;
   }
 
