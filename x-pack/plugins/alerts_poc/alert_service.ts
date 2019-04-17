@@ -4,17 +4,11 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { TaskManager, TaskId } from './task_manager';
 import { ActionService } from './action_service';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
   console.log(`${new Date().toISOString()} [alerts-poc] [alert-service] ${message}`, ...args);
-
-interface ScheduledAlertTask {
-  scheduledAlert: ScheduledAlert;
-  taskId?: TaskId;
-}
 
 interface Alert {
   id: string;
@@ -25,10 +19,6 @@ interface Alert {
     message: string;
   };
   execute: (services: any, checkParams: any, previousState: any) => Promise<Record<string, any>>;
-}
-
-interface InternalAlert extends Alert {
-  scheduledTasks: ScheduledAlertTask[];
 }
 
 interface ScheduledAlert {
@@ -47,87 +37,114 @@ interface ScheduledAlert {
 }
 
 export class AlertService {
-  taskManager: TaskManager;
+  taskManager: any;
   actionService: ActionService;
-  alerts: { [key: string]: InternalAlert };
+  serviceId: number; // This is to avoid persisting scheduled alerts.. for now
 
-  constructor(actionService: ActionService, taskManager: TaskManager) {
-    this.alerts = {};
-    this.taskManager = taskManager;
+  constructor(actionService: ActionService, taskManager: any) {
     this.actionService = actionService;
+    this.taskManager = taskManager;
+    this.serviceId = Date.now();
   }
 
   register(alert: Alert) {
-    this.alerts[alert.id] = {
-      ...alert,
-      scheduledTasks: [],
-    };
+    this.taskManager.registerTaskDefinitions({
+      [`alert:${alert.id}`]: {
+        title: alert.desc,
+        type: `alert:${alert.id}`,
+        timeout: '1m',
+        numWorkers: 1,
+        createTaskRunner: this.createTaskRunner(alert),
+      },
+    });
     log(`Registered ${alert.id}`);
   }
 
-  disable(id: string) {
-    log(`[disable] disabling all scheduled tasks for alert "${id}"`);
-    this.alerts[id].scheduledTasks.forEach(scheduledTask => {
-      if (!scheduledTask.taskId) {
-        return;
-      }
-      // todo: task manager needs to have disable/enable
-      this.taskManager.clearTask(scheduledTask.taskId);
-      scheduledTask.taskId = undefined;
-    });
-  }
-
-  enable(id: string) {
-    log(`[enable] enabling all scheduled tasks for alert "${id}"`);
-    this.alerts[id].scheduledTasks.forEach(scheduledTask => {
-      if (scheduledTask.taskId) {
-        return;
-      }
-      this.schedule(scheduledTask.scheduledAlert);
-    });
-  }
-
   schedule(scheduledAlert: ScheduledAlert) {
-    const {
-      id,
-      interval,
-      actionGroups,
-      checkParams,
-      throttle,
-      actionGroupsPriority,
-    } = scheduledAlert;
-    const alert = this.alerts[id];
-    let lastFired: { time: number; priority: number };
-    const taskId = this.taskManager.scheduleTask(interval, async previousState => {
-      const fire = (actionGroupId: string, context: any) => {
-        log(`[fire] Firing actions for ${id}`);
-        const actionGroupPriority = actionGroupsPriority.indexOf(actionGroupId);
-        const actions = actionGroups[actionGroupId] || actionGroups.default || [];
-        if (
-          throttle &&
-          lastFired &&
-          (Date.now() - lastFired.time < throttle && lastFired.priority <= actionGroupPriority)
-        ) {
-          log('[fire] Firing is throttled, canceling');
-          return;
-        }
-        for (const action of actions) {
-          const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
-          const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
-          this.actionService.fire(action.id, params);
-        }
-        lastFired = {
-          time: Date.now(),
-          priority: actionGroupPriority,
-        };
+    this.taskManager.schedule({
+      id: scheduledAlert.id,
+      taskType: `alert:${scheduledAlert.id}`,
+      params: {
+        ...scheduledAlert,
+        serviceId: this.serviceId,
+      },
+      state: {},
+    });
+  }
+
+  shouldThrottle(actionGroupPriority: number, taskInstance: any) {
+    return (
+      taskInstance.params.throttle &&
+      taskInstance.state.lastFired &&
+      (Date.now() - taskInstance.state.lastFired.time < taskInstance.params.throttle &&
+        taskInstance.state.lastFired.priority <= actionGroupPriority)
+    );
+  }
+
+  createFireHandler(alert: Alert, taskInstance: any) {
+    return (actionGroupId: string, context: any, state: any) => {
+      log(`[fire] Firing actions for ${taskInstance.params.id}`);
+
+      // Throttling
+      const actionGroupPriority = taskInstance.params.actionGroupsPriority.indexOf(actionGroupId);
+      const shouldThrottle = this.shouldThrottle(actionGroupPriority, taskInstance);
+      if (shouldThrottle) {
+        log('[fire] Firing is throttled, canceling');
+        return;
+      }
+
+      // Firing actions
+      const actions =
+        taskInstance.params.actionGroups[actionGroupId] ||
+        taskInstance.params.actionGroups.default ||
+        [];
+      for (const action of actions) {
+        const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
+        const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
+        this.actionService.fire(action.id, params);
+      }
+
+      state.lastFired = {
+        time: Date.now(),
+        priority: actionGroupPriority,
       };
-      const services = { fire };
-      return alert.execute(services, checkParams, previousState);
-    });
-    alert.scheduledTasks.push({
-      scheduledAlert,
-      taskId,
-    });
+    };
+  }
+
+  createTaskRunner(alert: Alert) {
+    const { serviceId } = this;
+    return ({ taskInstance }: { taskInstance: any }) => {
+      const services = {
+        fire: this.createFireHandler(alert, taskInstance),
+      };
+      return {
+        async run() {
+          try {
+            if (taskInstance.params.serviceId !== serviceId) {
+              log('Skipping task from different serviceId');
+              return { state: taskInstance.state };
+            }
+            log('Running task');
+            const updatedState = await alert.execute(
+              services,
+              taskInstance.params.checkParams,
+              taskInstance.state
+            );
+            return {
+              state: updatedState,
+              runAt: taskInstance.params.interval
+                ? Date.now() + taskInstance.params.interval
+                : undefined,
+            };
+          } catch (err) {
+            return {
+              state: taskInstance.state,
+              error: { message: err.message },
+            };
+          }
+        },
+      };
+    };
   }
 }
 

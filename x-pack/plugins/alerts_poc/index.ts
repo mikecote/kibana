@@ -8,7 +8,6 @@ import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 import mappings from './mappings.json';
 import { SavedObjectsClient } from '../../../src/legacy/server/saved_objects';
-import { TaskManager } from './task_manager';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
@@ -17,7 +16,7 @@ const log = (message: string, ...args: any) =>
 export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
     id: 'alerts_poc',
-    require: ['kibana', 'elasticsearch'],
+    require: ['kibana', 'elasticsearch', 'task_manager'],
     init(server: any) {
       // Saved objects client
       const { callWithInternalUser } = server.plugins.elasticsearch.getCluster('admin');
@@ -26,13 +25,16 @@ export function alertsPoc(kibana: any) {
       );
 
       // Task manager
-      const taskManager = new TaskManager();
+      const { taskManager } = server;
 
       // Alerting services
       const actionService = getActionService(savedObjectsClient);
       const alertService = getAlertService(actionService, taskManager);
-      scheduleAlerts(alertService);
-      toggleAlert(alertService);
+
+      // TODO: Find event when taskManager is up and running
+      setTimeout(() => {
+        scheduleAlerts(alertService);
+      }, 3000);
     },
     uiExports: {
       mappings,
@@ -40,7 +42,7 @@ export function alertsPoc(kibana: any) {
   });
 }
 
-function getAlertService(actionService: ActionService, taskManager: TaskManager) {
+function getAlertService(actionService: ActionService, taskManager: any) {
   const alertService = new AlertService(actionService, taskManager);
   alertService.register({
     id: 'cpu-check',
@@ -52,18 +54,17 @@ function getAlertService(actionService: ActionService, taskManager: TaskManager)
     },
     async execute({ fire }, { warningThreshold, severeThreshold }, state) {
       const cpuUsage = Math.floor(Math.random() * 100);
+      const updatedState = { cpuUsage };
 
       if (cpuUsage > severeThreshold) {
         log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire('severe', { cpuUsage });
+        fire('severe', { cpuUsage }, updatedState);
       } else if (cpuUsage > warningThreshold) {
         log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire('warning', { cpuUsage });
+        fire('warning', { cpuUsage }, updatedState);
       }
 
-      return {
-        cpuUsage,
-      };
+      return updatedState;
     },
   });
   return alertService;
@@ -140,14 +141,4 @@ function scheduleAlerts(alertService: AlertService) {
       warningThreshold: 10,
     },
   });
-}
-
-function toggleAlert(alertService: AlertService) {
-  setTimeout(() => {
-    alertService.disable('cpu-check');
-
-    setTimeout(() => {
-      alertService.enable('cpu-check');
-    }, 1000);
-  }, 1000);
 }
