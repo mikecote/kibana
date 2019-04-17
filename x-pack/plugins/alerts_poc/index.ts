@@ -86,6 +86,8 @@ function scheduleAlerts(alertService: AlertService) {
   alertService.schedule({
     id: 'cpu-check',
     interval: 10 * 1000, // 10s
+    throttle: 30 * 1000, // 30s
+    actionGroupsPriority: ['severe', 'warning', 'default'],
     actionGroups: {
       // I think these should be called "channels"
       default: [

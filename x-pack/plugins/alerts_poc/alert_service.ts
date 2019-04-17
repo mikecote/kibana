@@ -41,7 +41,9 @@ interface ScheduledAlert {
       params: any;
     }>
   >;
+  actionGroupsPriority: string[];
   checkParams: any;
+  throttle?: number;
 }
 
 export class AlertService {
@@ -86,17 +88,38 @@ export class AlertService {
   }
 
   schedule(scheduledAlert: ScheduledAlert) {
-    const { id, interval, actionGroups, checkParams } = scheduledAlert;
+    const {
+      id,
+      interval,
+      actionGroups,
+      checkParams,
+      throttle,
+      actionGroupsPriority,
+    } = scheduledAlert;
     const alert = this.alerts[id];
+    let lastFired: { time: number; priority: number };
     const taskId = this.taskManager.scheduleTask(interval, async previousState => {
       const fire = (actionGroupId: string, context: any) => {
-        log(`Firing actions for ${id}`);
-        const actions = actionGroups[actionGroupId] || actionGroups.default;
+        log(`[fire] Firing actions for ${id}`);
+        const actionGroupPriority = actionGroupsPriority.indexOf(actionGroupId);
+        const actions = actionGroups[actionGroupId] || actionGroups.default || [];
+        if (
+          throttle &&
+          lastFired &&
+          (Date.now() - lastFired.time < throttle && lastFired.priority <= actionGroupPriority)
+        ) {
+          log('[fire] Firing is throttled, canceling');
+          return;
+        }
         for (const action of actions) {
           const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
           const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
           this.actionService.fire(action.id, params);
         }
+        lastFired = {
+          time: Date.now(),
+          priority: actionGroupPriority,
+        };
       };
       const services = { fire };
       return alert.execute(services, checkParams, previousState);
