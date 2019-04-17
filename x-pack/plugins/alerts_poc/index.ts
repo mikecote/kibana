@@ -8,6 +8,7 @@ import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 import mappings from './mappings.json';
 import { SavedObjectsClient } from '../../../src/legacy/server/saved_objects';
+import { initRoutes } from './server/routes';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
@@ -35,6 +36,9 @@ export function alertsPoc(kibana: any) {
       setTimeout(() => {
         scheduleAlerts(alertService);
       }, 3000);
+
+      // Routes
+      initRoutes(server, alertService);
     },
     uiExports: {
       mappings,
