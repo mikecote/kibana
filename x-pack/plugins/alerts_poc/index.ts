@@ -6,6 +6,8 @@
 
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
+import mappings from './mappings.json';
+import { SavedObjectsClient } from '../../../src/legacy/server/saved_objects';
 
 const log = (message: string, ...args: any) =>
   // eslint-disable-next-line no-console
@@ -15,11 +17,18 @@ export function alertsPoc(kibana: any) {
   return new kibana.Plugin({
     id: 'alerts_poc',
     require: ['kibana', 'elasticsearch'],
-    init() {
-      const actionService = getActionService();
+    init(server: any) {
+      const { callWithInternalUser } = server.plugins.elasticsearch.getCluster('admin');
+      const savedObjectsClient = server.savedObjects.getSavedObjectsRepository(
+        callWithInternalUser
+      );
+      const actionService = getActionService(savedObjectsClient);
       const alertService = getAlertService(actionService);
       scheduleAlerts(alertService);
       toggleAlert(alertService);
+    },
+    uiExports: {
+      mappings,
     },
   });
 }
@@ -53,8 +62,8 @@ function getAlertService(actionService: ActionService) {
   return alertService;
 }
 
-function getActionService() {
-  const actionService = new ActionService();
+function getActionService(savedObjectsClient: SavedObjectsClient) {
+  const actionService = new ActionService(savedObjectsClient);
   actionService.registerConnector('smtp', async (connectorOptions: any, params: any) => {
     log(`[action] [connector] Sending smtp email...`);
   });

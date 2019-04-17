@@ -1,0 +1,17 @@
+{
+  "action": {
+    "properties": {
+      "description": {
+        "type": "text"
+      },
+      "connector": {
+        "type": "keyword"
+      },
+      "attributes": {
+        "type": "nested",
+        "properties": {
+        }
+      }
+    }
+  }
+}
