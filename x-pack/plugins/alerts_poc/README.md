@@ -2,16 +2,17 @@
 
 ## To Do's
 
-- Example of throttling
+- ~~Example of throttling~~
 - ~~Default set of values per alert (subject, body, message, etc)~~
 - Figure out the "Send Message" terminology
 - ~~Muting functionality per scheduled alert~~
 	- ~~Time based?~~
+- UI
 
 ## Nice to haves
 
 - ~~Scenario of 100,000 different hostnames~~
-- Add kibana task manager to POC
+- ~~Add kibana task manager to POC~~
 - Resiliency
 - Audit log
 - Queues?
