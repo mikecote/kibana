@@ -70,7 +70,7 @@ alertService.register({
 	},
 });
 alertService.register({
-	id: 'cpu-check',
+	id: 'fleet-cpu-check',
 	description: 'Check CPU usage based on given stats',
 	async({ fire }, { warningThreshold, severeThreshold, serverInfo }, state) {
 		const cpuUsage = serverInfo.cpuUsage;
@@ -92,7 +92,7 @@ alertService.schedule({
 			{
 				id: 'exec-task',
 				params: {
-					task: 'cpu-check',
+					task: 'fleet-cpu-check',
 				},
 			},
 		],
@@ -117,7 +117,7 @@ Option 3 implementation
 
 ```
 alertService.register({
-	id: 'cpu-check',
+	id: 'fleet-cpu-check',
 	desc: 'Check CPU usage above threshold',
 	async execute(alerts) {
 		const servers = [

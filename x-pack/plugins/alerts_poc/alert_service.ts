@@ -18,8 +18,19 @@ interface Alert {
     body: string;
     message: string;
   };
-  execute: (services: any, checkParams: any, previousState: any) => Promise<Record<string, any>>;
+  execute: (services: AlertServices, checkParams: any) => Promise<Record<string, any> | void>;
 }
+
+interface AlertServices {
+  alertInstanceFactory: (id: string, callback: AlertInstanceHandler) => void;
+}
+
+interface AlertInstance {
+  fire: (actionGroupId: string, context: any, state: Record<string, any>) => void;
+  replaceState: (state: Record<string, any>) => void;
+}
+
+type AlertInstanceHandler = (instance: AlertInstance, previousState: Record<string, any>) => void;
 
 interface ScheduledAlert {
   id: string;
@@ -82,7 +93,7 @@ export class AlertService {
   }
 
   createFireHandler(alert: Alert, taskInstance: any) {
-    return (actionGroupId: string, context: any, state: any) => {
+    return async (actionGroupId: string, context: any, state: any) => {
       log(`[fire] Firing actions for ${taskInstance.params.id}`);
 
       // Throttling
@@ -101,7 +112,7 @@ export class AlertService {
       for (const action of actions) {
         const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
         const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
-        this.actionService.fire(action.id, params);
+        await this.actionService.fire(action.id, params);
       }
 
       state.lastFired = {
@@ -111,27 +122,74 @@ export class AlertService {
     };
   }
 
+  createAlertInstanceFactory(alertInstances: Record<string, any>) {
+    return (id: string, callback: AlertInstanceHandler) => {
+      if (!alertInstances[id]) {
+        alertInstances[id] = {
+          previousState: {},
+        };
+      }
+
+      const alertInstanceData = alertInstances[id];
+
+      // create and persist alert instance
+      const instance = {
+        fire(actionGroupId: string, context: any, state: Record<string, any>) {
+          alertInstanceData.hackyFireParams = {
+            actionGroupId,
+            context,
+            state,
+          };
+        },
+        replaceState(state: Record<string, any>) {
+          alertInstanceData.previousState = state;
+        },
+      };
+
+      callback(instance, alertInstanceData.previousState);
+    };
+  }
+
   createTaskRunner(alert: Alert) {
     const { serviceId } = this;
     return ({ taskInstance }: { taskInstance: any }) => {
-      const services = {
-        fire: this.createFireHandler(alert, taskInstance),
-      };
+      const fire = this.createFireHandler(alert, taskInstance);
       return {
-        async run() {
+        run: async () => {
           try {
             if (taskInstance.params.serviceId !== serviceId) {
               log('Skipping task from different serviceId');
               return { state: taskInstance.state };
             }
-            log('Running task');
-            const updatedState = await alert.execute(
-              services,
-              taskInstance.params.checkParams,
-              taskInstance.state
-            );
+
+            const alertInstances = (taskInstance.state && taskInstance.state.alertInstances) || {};
+
+            const services = {
+              alertInstanceFactory: this.createAlertInstanceFactory(alertInstances),
+            };
+
+            const updatedState = await alert.execute(services, taskInstance.params.checkParams);
+
+            for (const alertInstanceId of Object.keys(alertInstances)) {
+              const alertInstance = alertInstances[alertInstanceId];
+
+              // unpersist any alert instances that were not explicitly fired in this alert execution
+              if (!alertInstance.hackyFireParams) {
+                delete alertInstances[alertInstanceId];
+                continue;
+              }
+
+              const { actionGroupId, context, state } = alertInstance.hackyFireParams;
+              await fire(actionGroupId, context, state);
+
+              delete alertInstance.hackyFireParams;
+            }
+
             return {
-              state: updatedState,
+              state: {
+                ...(updatedState || {}),
+                alertInstances,
+              },
               runAt: taskInstance.params.interval
                 ? Date.now() + taskInstance.params.interval
                 : undefined,

@@ -49,26 +49,33 @@ export function alertsPoc(kibana: any) {
 function getAlertService(actionService: ActionService, taskManager: any) {
   const alertService = new AlertService(actionService, taskManager);
   alertService.register({
-    id: 'cpu-check',
+    id: 'fleet-cpu-check',
     desc: 'Check CPU usage above threshold',
     defaultActionParams: {
       subject: '[warning] High CPU usage',
       body: 'The CPU usage is a little high: {cpuUsage}%',
       message: 'The CPU usage is a little high: {cpuUsage}%',
     },
-    async execute({ fire }, { warningThreshold, severeThreshold }, state) {
-      const cpuUsage = Math.floor(Math.random() * 100);
-      const updatedState = { cpuUsage };
+    async execute({ alertInstanceFactory }, { warningThreshold, severeThreshold }) {
+      const queryResults = await Promise.resolve([
+        { id: '1', cpuUsage: Math.floor(Math.random() * 100) },
+        { id: '2', cpuUsage: Math.floor(Math.random() * 100) },
+        { id: '3', cpuUsage: Math.floor(Math.random() * 100) },
+      ]);
 
-      if (cpuUsage > severeThreshold) {
-        log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire('severe', { cpuUsage }, updatedState);
-      } else if (cpuUsage > warningThreshold) {
-        log(`[alert][execute] Previous CPU usage: ${state.cpuUsage}`);
-        fire('warning', { cpuUsage }, updatedState);
-      }
-
-      return updatedState;
+      queryResults.map(({ id, cpuUsage }) => {
+        alertInstanceFactory(id, (instance, previousState) => {
+          if (cpuUsage > severeThreshold) {
+            log(`[alert][execute] Previous CPU usage: ${previousState.cpuUsage}`);
+            instance.fire('severe', {}, { cpuUsage });
+            instance.replaceState({ cpuUsage });
+          } else if (cpuUsage > warningThreshold) {
+            log(`[alert][execute] Previous CPU usage: ${previousState.cpuUsage}`);
+            instance.fire('warning', {}, { cpuUsage });
+            instance.replaceState({ cpuUsage });
+          }
+        });
+      });
     },
   });
   return alertService;
@@ -83,7 +90,7 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
     log(`[action] [connector] Sending slack message...`);
   });
   actionService.registerConnector('console', async (connectorOptions: any, params: any) => {
-    log(params.message);
+    log(`[action][connector]`, params.message);
   });
   actionService.registerConnector('light', async (connectorOptions: any, params: any) => {
     log(`[action][connector] Turning on light...`);
@@ -105,7 +112,7 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
 
 function scheduleAlerts(alertService: AlertService) {
   alertService.schedule({
-    id: 'cpu-check',
+    id: 'fleet-cpu-check',
     interval: 10 * 1000, // 10s
     throttle: 30 * 1000, // 30s
     actionGroupsPriority: ['severe', 'warning', 'default'],
