@@ -5,6 +5,8 @@
  */
 
 import Slack from 'slack';
+// @ts-ignore
+import request from 'request';
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 import mappings from './mappings.json';
@@ -79,6 +81,34 @@ function getAlertService(actionService: ActionService, taskManager: any) {
       });
     },
   });
+  alertService.register({
+    id: 'availability',
+    desc: 'Availability of a website',
+    defaultActionParams: {
+      subject: '[warning] site unavailable',
+      body: 'The website {url} is unavailable.',
+      message: 'The website {url} is unavailable.',
+    },
+    async execute({ alertInstanceFactory }, { url }) {
+      await new Promise(resolve => {
+        request(
+          {
+            method: 'GET',
+            url,
+          },
+          (err: any, resp: any, body: any) => {
+            if (err || Number(resp.statusCode) !== 200) {
+              alertInstanceFactory(url, (instance, previousState) => {
+                instance.fire('default', { url }, previousState);
+                instance.replaceState({ url });
+              });
+            }
+            resolve();
+          }
+        );
+      });
+    },
+  });
   return alertService;
 }
 
@@ -100,7 +130,10 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
     log(`[action][connector] Sending to slack...`);
     // @ts-ignore
     const slack = new Slack(connectorOptions);
-    await slack.chat.postMessage(params);
+    await slack.chat.postMessage({
+      text: params.message,
+      channel: params.channel,
+    });
   });
   actionService.createAction({
     id: 'console-log',
@@ -126,6 +159,25 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
 }
 
 function scheduleAlerts(alertService: AlertService) {
+  // alertService.schedule({
+  //   id: 'availability',
+  //   interval: 10 * 1000, // 10s
+  //   throttle: 30 * 1000, // 30s
+  //   actionGroupsPriority: ['severe', 'warning', 'default'],
+  //   actionGroups: {
+  //     default: [
+  //       {
+  //         id: 'console-log',
+  //         params: {
+  //           message: 'The website {url} is unavailable.',
+  //         },
+  //       },
+  //     ],
+  //   },
+  //   checkParams: {
+  //     url: 'http://localhost:3000',
+  //   },
+  // });
   alertService.schedule({
     id: 'fleet-cpu-check',
     interval: 10 * 1000, // 10s

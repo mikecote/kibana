@@ -26,10 +26,10 @@ export class AlertSelector extends Component<Props, void> {
     });
   }
   onIntervalChange(e: any) {
-    this.props.setStepState({ interval: e.target.value });
+    this.props.setStepState({ interval: (Number(e.target.value) * 1000).toString() });
   }
   onThrottleChange(e: any) {
-    this.props.setStepState({ throttle: e.target.value });
+    this.props.setStepState({ throttle: (Number(e.target.value) * 1000).toString() });
   }
   onWarningThresholdChange(e: any) {
     const stepState = this.props.getStepState();
@@ -49,6 +49,15 @@ export class AlertSelector extends Component<Props, void> {
       },
     });
   }
+  onUrlChange(e: any) {
+    const stepState = this.props.getStepState();
+    this.props.setStepState({
+      params: {
+        ...stepState.params,
+        url: e.target.value,
+      },
+    });
+  }
   render() {
     const stepState = this.props.getStepState();
     return (
@@ -65,17 +74,19 @@ export class AlertSelector extends Component<Props, void> {
               onChange={this.onAlertChange.bind(this)}
             />
           </EuiFormRow>
-          <EuiFormRow label="Interval">
+          <EuiFormRow label="Interval (seconds)">
             <EuiFieldText
               name="interval"
-              value={stepState.interval}
+              value={(Number(stepState.interval) / 1000).toString()}
               onChange={this.onIntervalChange.bind(this)}
             />
           </EuiFormRow>
-          <EuiFormRow label="Throttle">
+          <EuiFormRow label="Throttle (seconds)">
             <EuiFieldText
               name="throttle"
-              value={stepState.throttle}
+              value={
+                stepState.throttle ? (Number(stepState.throttle) / 1000).toString() : undefined
+              }
               onChange={this.onThrottleChange.bind(this)}
             />
           </EuiFormRow>
@@ -108,6 +119,15 @@ export class AlertSelector extends Component<Props, void> {
                 />
               </EuiFormRow>
             </Fragment>
+          )}
+          {stepState.selectedAlertId === 'availability' && (
+            <EuiFormRow label="Url">
+              <EuiFieldText
+                name="url"
+                value={stepState.params.url}
+                onChange={this.onUrlChange.bind(this)}
+              />
+            </EuiFormRow>
           )}
         </EuiForm>
       </Fragment>

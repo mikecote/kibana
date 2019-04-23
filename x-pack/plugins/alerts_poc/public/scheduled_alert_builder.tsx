@@ -59,8 +59,18 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
                 title: 'Check CPU usage',
                 defaultActionParams: {
                   subject: '[warning] High CPU usage',
-                  body: 'The CPU usage is a little high: {cpuUsage}%',
-                  message: 'The CPU usage is a little high: {cpuUsage}%',
+                  body: 'The CPU usage is high on server {id}: {cpuUsage}%',
+                  message: 'The CPU usage is high on server {id}: {cpuUsage}%',
+                },
+              },
+              {
+                id: 'availability',
+                desc: 'Check site availability',
+                title: 'Check site availability',
+                defaultActionParams: {
+                  subject: '[warning] site unavailable',
+                  body: 'The website {url} is unavailable.',
+                  message: 'The website {url} is unavailable.',
                 },
               },
             ],
@@ -83,8 +93,8 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
                 description: 'Send message to the console',
               },
               {
-                id: 'turn-on-alarm-light',
-                description: 'Turn on a physical alarm light',
+                id: 'message-slack',
+                description: 'Send a slack message',
               },
             ],
           },
@@ -157,14 +167,24 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
     this.props.onClose();
   }
   nextStep() {
-    this.setState(state => ({
-      step: state.step + 1,
-    }));
+    const { state } = this;
+    let nextStepIndex = state.step + 1;
+    while (state.steps[nextStepIndex].enabled === false) {
+      nextStepIndex++;
+    }
+    this.setState({
+      step: nextStepIndex,
+    });
   }
   previousStep() {
-    this.setState(state => ({
-      step: state.step - 1,
-    }));
+    const { state } = this;
+    let previousStepIndex = state.step - 1;
+    while (state.steps[previousStepIndex].enabled === false) {
+      previousStepIndex--;
+    }
+    this.setState({
+      step: previousStepIndex,
+    });
   }
   async save() {
     const { state } = this;
@@ -173,8 +193,8 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
       pathname: '/api/schedule-action',
       body: JSON.stringify({
         id: state.steps[0].state.selectedAlertId,
-        interval: state.steps[0].state.interval,
-        throttle: state.steps[0].state.throttle,
+        interval: Number(state.steps[0].state.interval),
+        throttle: Number(state.steps[0].state.throttle),
         actionGroupsPriority: ['severe', 'warning', 'default'],
         actionGroups: {
           default: state.steps[1].state.selectedActionId

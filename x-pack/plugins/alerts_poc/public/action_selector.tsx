@@ -20,7 +20,7 @@ export class ActionSelector extends Component<Props, void> {
       (obj: any) => obj.id === alertSelectorState.selectedAlertId
     );
     const newActionId = e.target.value;
-    if (newActionId === 'console-log') {
+    if (['console-log', 'message-slack'].includes(newActionId)) {
       params.message = (alert && alert.defaultActionParams.message) || '';
     }
     this.props.setStepState({
@@ -43,6 +43,15 @@ export class ActionSelector extends Component<Props, void> {
       },
     });
   }
+  onChannelChange(e: any) {
+    const stepState = this.props.getStepState();
+    this.props.setStepState({
+      params: {
+        ...stepState.params,
+        channel: e.target.value,
+      },
+    });
+  }
   render() {
     const stepState = this.props.getStepState();
     return (
@@ -59,7 +68,16 @@ export class ActionSelector extends Component<Props, void> {
               onChange={this.onActionChange.bind(this)}
             />
           </EuiFormRow>
-          {stepState.selectedActionId === 'console-log' && (
+          {stepState.selectedActionId === 'message-slack' && (
+            <EuiFormRow label="Channel">
+              <EuiFieldText
+                name="channel"
+                value={stepState.params.channel}
+                onChange={this.onChannelChange.bind(this)}
+              />
+            </EuiFormRow>
+          )}
+          {['console-log', 'message-slack'].includes(stepState.selectedActionId) && (
             <EuiFormRow label="Message">
               <EuiFieldText
                 name="message"
