@@ -222,6 +222,7 @@
     "rxjs": "^6.2.1",
     "script-loader": "0.7.2",
     "semver": "^5.5.0",
+    "slack": "^11.0.2",
     "stream-stream": "^1.2.6",
     "style-loader": "0.23.1",
     "tar": "2.2.0",

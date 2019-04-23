@@ -4,6 +4,7 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
+import Slack from 'slack';
 import { AlertService } from './alert_service';
 import { ActionService } from './action_service';
 import mappings from './mappings.json';
@@ -35,7 +36,7 @@ export function alertsPoc(kibana: any) {
       // TODO: Find event when taskManager is up and running
       setTimeout(() => {
         scheduleAlerts(alertService);
-      }, 3000);
+      }, 5000);
 
       // Routes
       initRoutes(server, alertService);
@@ -53,8 +54,8 @@ function getAlertService(actionService: ActionService, taskManager: any) {
     desc: 'Check CPU usage above threshold',
     defaultActionParams: {
       subject: '[warning] High CPU usage',
-      body: 'The CPU usage is a little high: {cpuUsage}%',
-      message: 'The CPU usage is a little high: {cpuUsage}%',
+      body: 'The CPU usage is a little high on server {id}: {cpuUsage}%',
+      message: 'The CPU usage is a little high on server {id}: {cpuUsage}%',
     },
     async execute({ alertInstanceFactory }, { warningThreshold, severeThreshold }) {
       const queryResults = await Promise.resolve([
@@ -67,11 +68,11 @@ function getAlertService(actionService: ActionService, taskManager: any) {
         alertInstanceFactory(id, (instance, previousState) => {
           if (cpuUsage > severeThreshold) {
             log(`[alert][execute] Previous CPU usage: ${previousState.cpuUsage}`);
-            instance.fire('severe', {}, { cpuUsage });
+            instance.fire('severe', { cpuUsage, id }, previousState);
             instance.replaceState({ cpuUsage });
           } else if (cpuUsage > warningThreshold) {
             log(`[alert][execute] Previous CPU usage: ${previousState.cpuUsage}`);
-            instance.fire('warning', {}, { cpuUsage });
+            instance.fire('warning', { cpuUsage, id }, previousState);
             instance.replaceState({ cpuUsage });
           }
         });
@@ -95,6 +96,12 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
   actionService.registerConnector('light', async (connectorOptions: any, params: any) => {
     log(`[action][connector] Turning on light...`);
   });
+  actionService.registerConnector('slack', async (connectorOptions: any, params: any) => {
+    log(`[action][connector] Sending to slack...`);
+    // @ts-ignore
+    const slack = new Slack(connectorOptions);
+    await slack.chat.postMessage(params);
+  });
   actionService.createAction({
     id: 'console-log',
     description: 'Send message to the console',
@@ -106,6 +113,14 @@ function getActionService(savedObjectsClient: SavedObjectsClient) {
     description: 'Turn on a physical alarm light',
     connector: 'light',
     attributes: {},
+  });
+  actionService.createAction({
+    id: 'message-slack',
+    description: 'Send message to slack',
+    connector: 'slack',
+    attributes: {
+      token: 'PASTE_TOKEN_HERE',
+    },
   });
   return actionService;
 }
@@ -122,7 +137,7 @@ function scheduleAlerts(alertService: AlertService) {
         {
           id: 'console-log',
           params: {
-            message: `The CPU usage is high: {cpuUsage}%`,
+            message: 'The CPU usage is high on server {id}: {cpuUsage}%',
           },
         },
       ],
@@ -130,7 +145,7 @@ function scheduleAlerts(alertService: AlertService) {
         {
           id: 'console-log',
           params: {
-            message: `The CPU usage is a little high: {cpuUsage}%`,
+            message: 'The CPU usage is a little high on server {id}: {cpuUsage}%',
           },
         },
       ],
@@ -138,9 +153,16 @@ function scheduleAlerts(alertService: AlertService) {
         {
           id: 'console-log',
           params: {
-            message: `The CPU usage is super duper high: {cpuUsage}%`,
+            message: 'The CPU usage is super duper high on server {id}: {cpuUsage}%',
           },
         },
+        // {
+        //   id: 'message-slack',
+        //   params: {
+        //     channel: 'alerting',
+        //     text: `The CPU usage is super duper high on server {id}: {cpuUsage}%`,
+        //   },
+        // },
         {
           id: 'turn-on-alarm-light',
           params: {},

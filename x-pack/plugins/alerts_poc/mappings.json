@@ -10,6 +10,9 @@
       "attributes": {
         "type": "nested",
         "properties": {
+          "token": {
+            "type": "keyword"
+          }
         }
       }
     }

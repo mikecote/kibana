@@ -83,12 +83,12 @@ export class AlertService {
     });
   }
 
-  shouldThrottle(actionGroupPriority: number, taskInstance: any) {
+  shouldThrottle(actionGroupPriority: number, throttle: number, state: any) {
     return (
-      taskInstance.params.throttle &&
-      taskInstance.state.lastFired &&
-      (Date.now() - taskInstance.state.lastFired.time < taskInstance.params.throttle &&
-        taskInstance.state.lastFired.priority <= actionGroupPriority)
+      throttle &&
+      state.lastFired &&
+      (Date.now() - state.lastFired.time < throttle &&
+        state.lastFired.priority <= actionGroupPriority)
     );
   }
 
@@ -98,7 +98,11 @@ export class AlertService {
 
       // Throttling
       const actionGroupPriority = taskInstance.params.actionGroupsPriority.indexOf(actionGroupId);
-      const shouldThrottle = this.shouldThrottle(actionGroupPriority, taskInstance);
+      const shouldThrottle = this.shouldThrottle(
+        actionGroupPriority,
+        taskInstance.params.throttle,
+        state
+      );
       if (shouldThrottle) {
         log('[fire] Firing is throttled, canceling');
         return;
@@ -111,8 +115,7 @@ export class AlertService {
         [];
       for (const action of actions) {
         const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
-        let params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
-        params = injectContextIntoObjectTemplatedStrings(params, state);
+        const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
         await this.actionService.fire(action.id, params);
       }
 
@@ -182,6 +185,11 @@ export class AlertService {
 
               const { actionGroupId, context, state } = alertInstance.hackyFireParams;
               await fire(actionGroupId, context, state);
+              // Inject into the state what the fire action modifies
+              alertInstance.previousState = {
+                ...alertInstance.previousState,
+                lastFired: state.lastFired,
+              };
 
               delete alertInstance.hackyFireParams;
             }
