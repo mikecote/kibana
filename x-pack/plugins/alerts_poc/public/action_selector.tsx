@@ -48,7 +48,7 @@ export class ActionSelector extends Component<Props, void> {
     return (
       <Fragment>
         <EuiForm>
-          <EuiFormRow label="Please select an action">
+          <EuiFormRow label="Please select a default action">
             <EuiSelect
               hasNoInitialSelection
               value={stepState.selectedActionId}

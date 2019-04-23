@@ -20,6 +20,7 @@ import { ActionSelector } from './action_selector';
 import { AlertSelector } from './alert_selector';
 import { WarningActionSelector } from './warning_action_selector';
 import { SevereActionSelector } from './severe_action_selector';
+import { CreateAction } from './create_action';
 
 interface Props {
   onClose: () => void;
@@ -90,15 +91,25 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
         },
         2: {
           enabled: false,
+          Component: CreateAction,
+          state: {
+            selectedConnectorId: undefined,
+            connectors: [
+              {
+                id: 'smtp',
+                description: 'SMTP',
+              },
+            ],
+            params: {},
+          },
+        },
+        3: {
+          enabled: false,
           Component: WarningActionSelector,
           state: {
             selectedActionId: undefined,
             params: {},
             actions: [
-              {
-                id: 'new',
-                description: 'Create new action...',
-              },
               {
                 id: 'console-log',
                 description: 'Send message to the console',
@@ -110,17 +121,13 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
             ],
           },
         },
-        3: {
+        4: {
           enabled: false,
           Component: SevereActionSelector,
           state: {
             selectedActionId: undefined,
             params: {},
             actions: [
-              {
-                id: 'new',
-                description: 'Create new action...',
-              },
               {
                 id: 'console-log',
                 description: 'Send message to the console',
@@ -173,11 +180,11 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
           default: state.steps[1].state.selectedActionId
             ? [{ id: state.steps[1].state.selectedActionId, params: state.steps[1].state.params }]
             : [],
-          warning: state.steps[2].state.selectedActionId
-            ? [{ id: state.steps[2].state.selectedActionId, params: state.steps[2].state.params }]
-            : [],
-          severe: state.steps[3].state.selectedActionId
+          warning: state.steps[3].state.selectedActionId
             ? [{ id: state.steps[3].state.selectedActionId, params: state.steps[3].state.params }]
+            : [],
+          severe: state.steps[4].state.selectedActionId
+            ? [{ id: state.steps[4].state.selectedActionId, params: state.steps[4].state.params }]
             : [],
         },
         checkParams: state.steps[0].state.params,
@@ -201,8 +208,9 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
       },
     };
     if (this.state.step === 1) {
-      stateChanges.steps[2].enabled = state.advancedConfiguration;
       stateChanges.steps[3].enabled = state.advancedConfiguration;
+      stateChanges.steps[4].enabled = state.advancedConfiguration;
+      stateChanges.steps[2].enabled = state.selectedActionId === 'new';
     }
     this.setState(stateChanges);
   }
@@ -236,7 +244,7 @@ export class ScheduledAlertBuilder extends Component<Props, State> {
                 color="primary"
                 fill={true}
                 onClick={
-                  this.state.step !== Object.keys(this.state.steps).length - 1
+                  this.hasNextStep(this.state.step)
                     ? this.nextStep.bind(this)
                     : this.save.bind(this)
                 }
