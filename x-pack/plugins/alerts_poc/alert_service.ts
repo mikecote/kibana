@@ -111,7 +111,8 @@ export class AlertService {
         [];
       for (const action of actions) {
         const templatedParams = Object.assign({}, alert.defaultActionParams, action.params);
-        const params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
+        let params = injectContextIntoObjectTemplatedStrings(templatedParams, context);
+        params = injectContextIntoObjectTemplatedStrings(params, state);
         await this.actionService.fire(action.id, params);
       }
 
