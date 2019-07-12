@@ -12,18 +12,22 @@ interface CreateFireFunctionOptions {
   internalSavedObjectsRepository: SavedObjectsClientContract;
 }
 
-interface FireOptions {
+export interface FireOptions {
   id: string;
   params: Record<string, any>;
   namespace?: string;
   basePath: string;
+  source: {
+    type: string;
+    id: string;
+  };
 }
 
 export function createFireFunction({
   taskManager,
   internalSavedObjectsRepository,
 }: CreateFireFunctionOptions) {
-  return async function fire({ id, params, namespace, basePath }: FireOptions) {
+  return async function fire({ id, params, namespace, basePath, source }: FireOptions) {
     const actionSavedObject = await internalSavedObjectsRepository.get('action', id, { namespace });
     await taskManager.schedule({
       taskType: `actions:${actionSavedObject.attributes.actionTypeId}`,
@@ -32,6 +36,7 @@ export function createFireFunction({
         basePath,
         namespace,
         actionTypeParams: params,
+        source,
       },
       state: {},
       scope: ['actions'],

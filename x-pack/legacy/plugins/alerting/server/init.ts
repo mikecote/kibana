@@ -20,29 +20,36 @@ import { AlertTypeRegistry } from './alert_type_registry';
 import { AlertsClient } from './alerts_client';
 
 export function init(server: Legacy.Server) {
-  const { callWithInternalUser } = server.plugins.elasticsearch.getCluster('admin');
-  const savedObjectsRepositoryWithInternalUser = server.savedObjects.getSavedObjectsRepository(
-    callWithInternalUser
-  );
+  const { taskManager } = server;
+  const { callWithRequest } = server.plugins.elasticsearch.getCluster('admin');
 
-  function getServices(basePath: string): Services {
-    const fakeRequest: any = {
-      headers: {},
-      getBasePath: () => basePath,
-    };
+  // Encrypted attributes
+  server.plugins.encrypted_saved_objects!.registerType({
+    type: 'alert',
+    attributesToEncrypt: new Set(['apiKeyId', 'generatedApiKey']),
+    attributesToExcludeFromAAD: new Set([
+      'enabled',
+      'alertTypeId',
+      'interval',
+      'actions',
+      'alertTypeParams',
+      'scheduledTaskId',
+    ]),
+  });
+
+  function getServices(request: any): Services {
     return {
-      log: server.log.bind(server),
-      callCluster: callWithInternalUser,
-      savedObjectsClient: server.savedObjects.getScopedSavedObjectsClient(fakeRequest),
+      log: (...args) => server.log(...args),
+      callCluster: (...args) => callWithRequest(request, ...args),
+      savedObjectsClient: server.savedObjects.getScopedSavedObjectsClient(request),
     };
   }
 
-  const { taskManager } = server;
   const alertTypeRegistry = new AlertTypeRegistry({
     getServices,
     taskManager: taskManager!,
     fireAction: server.plugins.actions!.fire,
-    internalSavedObjectsRepository: savedObjectsRepositoryWithInternalUser,
+    encryptedSavedObjectsPlugin: server.plugins.encrypted_saved_objects!,
   });
 
   // Register routes

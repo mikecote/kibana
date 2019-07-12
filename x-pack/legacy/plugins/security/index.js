@@ -6,6 +6,7 @@
 
 import { resolve } from 'path';
 import { getUserProvider } from './server/lib/get_user';
+import { createApiKeyProvider } from './server/lib/create_api_key';
 import { initAuthenticateApi } from './server/routes/api/v1/authenticate';
 import { initUsersApi } from './server/routes/api/v1/users';
 import { initExternalRolesApi } from './server/routes/api/external/roles';
@@ -204,6 +205,7 @@ export const security = (kibana) => new kibana.Plugin({
     });
 
     getUserProvider(server);
+    createApiKeyProvider(server);
 
     await initAuthenticator(server);
     initAuthenticateApi(server);

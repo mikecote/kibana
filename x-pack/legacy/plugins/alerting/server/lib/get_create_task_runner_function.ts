@@ -4,7 +4,6 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { SavedObjectsClientContract } from 'src/core/server';
 import { ActionsPlugin } from '../../../actions';
 import { AlertType, Services, AlertServices } from '../types';
 import { TaskInstance } from '../../../task_manager';
@@ -13,12 +12,14 @@ import { createAlertInstanceFactory } from './create_alert_instance_factory';
 import { AlertInstance } from './alert_instance';
 import { getNextRunAt } from './get_next_run_at';
 import { validateAlertTypeParams } from './validate_alert_type_params';
+import { EncryptedSavedObjectsPlugin } from '../../../encrypted_saved_objects';
+import { getApiToken } from './get_api_token';
 
 interface CreateTaskRunnerFunctionOptions {
-  getServices: (basePath: string) => Services;
+  getServices: (basePath: string, headers?: Record<string, string>) => Services;
   alertType: AlertType;
   fireAction: ActionsPlugin['fire'];
-  internalSavedObjectsRepository: SavedObjectsClientContract;
+  encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
 }
 
 interface TaskRunnerOptions {
@@ -29,14 +30,33 @@ export function getCreateTaskRunnerFunction({
   getServices,
   alertType,
   fireAction,
-  internalSavedObjectsRepository,
+  encryptedSavedObjectsPlugin,
 }: CreateTaskRunnerFunctionOptions) {
   return ({ taskInstance }: TaskRunnerOptions) => {
     return {
       run: async () => {
-        const alertSavedObject = await internalSavedObjectsRepository.get(
+        const apiToken = await getApiToken(
+          encryptedSavedObjectsPlugin,
+          taskInstance.params.alertId
+        );
+
+        // Since we're using API keys and accessing elasticsearch can only be done
+        // via a request, we're faking one with the proper authorization headers.
+        const fakeRequest: any = {
+          headers: {
+            authorization: `ApiKey ${apiToken}`,
+          },
+          getBasePath: () => taskInstance.params.basePath,
+        };
+
+        const services = getServices(fakeRequest);
+
+        const { savedObjectsClient } = services;
+        const alertSavedObject = await savedObjectsClient.get(
           'alert',
           taskInstance.params.alertId
+          // TODO: namespace
+          // { namespace }
         );
 
         // Validate
@@ -58,7 +78,7 @@ export function getCreateTaskRunnerFunction({
         const alertInstanceFactory = createAlertInstanceFactory(alertInstances);
 
         const alertTypeServices: AlertServices = {
-          ...getServices(taskInstance.params.basePath),
+          ...services,
           alertInstanceFactory,
         };
 

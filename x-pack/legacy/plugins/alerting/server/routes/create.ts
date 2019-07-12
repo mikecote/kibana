@@ -64,7 +64,23 @@ export function createAlertRoute(server: Hapi.Server) {
     },
     async handler(request: ScheduleRequest) {
       const alertsClient = request.getAlertsClient!();
-      return await alertsClient.create({ data: request.payload });
+
+      const currentUser = await request.server.plugins.security!.getUser(request);
+      // TODO: not generate when security is disabled
+      const createdToken = await request.server.plugins.security!.createApiKey(request, {
+        // TODO: Better name
+        name: `alerting:${Date.now()}`,
+        role_descriptors: {},
+      });
+
+      return await alertsClient.create({
+        data: {
+          ...request.payload,
+          createdBy: currentUser.username,
+          apiKeyId: createdToken.id,
+          generatedApiKey: createdToken.api_key,
+        },
+      });
     },
   });
 }

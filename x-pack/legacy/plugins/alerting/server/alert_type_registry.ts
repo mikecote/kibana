@@ -6,17 +6,17 @@
 
 import Boom from 'boom';
 import { i18n } from '@kbn/i18n';
-import { SavedObjectsClientContract } from 'src/core/server';
 import { AlertType, Services } from './types';
 import { TaskManager } from '../../task_manager';
 import { getCreateTaskRunnerFunction } from './lib';
 import { ActionsPlugin } from '../../actions';
+import { EncryptedSavedObjectsPlugin } from '../../encrypted_saved_objects';
 
 interface ConstructorOptions {
   getServices: (basePath: string) => Services;
   taskManager: TaskManager;
   fireAction: ActionsPlugin['fire'];
-  internalSavedObjectsRepository: SavedObjectsClientContract;
+  encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
 }
 
 export class AlertTypeRegistry {
@@ -24,18 +24,18 @@ export class AlertTypeRegistry {
   private readonly taskManager: TaskManager;
   private readonly fireAction: ActionsPlugin['fire'];
   private readonly alertTypes: Map<string, AlertType> = new Map();
-  private readonly internalSavedObjectsRepository: SavedObjectsClientContract;
+  private readonly encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
 
   constructor({
-    internalSavedObjectsRepository,
     fireAction,
     taskManager,
     getServices,
+    encryptedSavedObjectsPlugin,
   }: ConstructorOptions) {
     this.taskManager = taskManager;
     this.fireAction = fireAction;
-    this.internalSavedObjectsRepository = internalSavedObjectsRepository;
     this.getServices = getServices;
+    this.encryptedSavedObjectsPlugin = encryptedSavedObjectsPlugin;
   }
 
   public has(id: string) {
@@ -62,7 +62,7 @@ export class AlertTypeRegistry {
           alertType,
           getServices: this.getServices,
           fireAction: this.fireAction,
-          internalSavedObjectsRepository: this.internalSavedObjectsRepository,
+          encryptedSavedObjectsPlugin: this.encryptedSavedObjectsPlugin,
         }),
       },
     });

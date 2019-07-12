@@ -66,6 +66,9 @@ export interface Alert {
   actions: AlertAction[];
   alertTypeParams: Record<string, any>;
   scheduledTaskId?: string;
+  createdBy: string;
+  apiKeyId: string;
+  generatedApiKey: string;
 }
 
 export interface RawAlert extends SavedObjectAttributes {
@@ -75,6 +78,9 @@ export interface RawAlert extends SavedObjectAttributes {
   actions: RawAlertAction[];
   alertTypeParams: SavedObjectAttributes;
   scheduledTaskId?: string;
+  createdBy: string;
+  apiKeyId: string;
+  generatedApiKey: string;
 }
 
 export interface AlertingPlugin {

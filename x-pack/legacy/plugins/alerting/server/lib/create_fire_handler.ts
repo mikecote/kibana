@@ -44,6 +44,10 @@ export function createFireHandler({
         id: action.id,
         params: action.params,
         basePath,
+        source: {
+          type: 'alert',
+          id: alertSavedObject.id,
+        },
       });
     }
   };

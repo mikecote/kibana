@@ -8,6 +8,7 @@ import { execute } from './execute';
 import { ActionTypeRegistryContract, GetServicesFunction } from '../types';
 import { TaskInstance } from '../../../task_manager';
 import { EncryptedSavedObjectsPlugin } from '../../../encrypted_saved_objects';
+import { getApiToken as getAlertApiToken } from '../../../alerting/server/lib/get_api_token';
 
 interface CreateTaskRunnerFunctionOptions {
   getServices: GetServicesFunction;
@@ -27,13 +28,30 @@ export function getCreateTaskRunnerFunction({
   return ({ taskInstance }: TaskRunnerOptions) => {
     return {
       run: async () => {
-        const { namespace, id, actionTypeParams } = taskInstance.params;
+        let requestHeaders = {};
+        const { namespace, id, actionTypeParams, source } = taskInstance.params;
+        if (source.type === 'alert') {
+          const apiToken = await getAlertApiToken(encryptedSavedObjectsPlugin, source.id);
+          requestHeaders = {
+            authorization: `ApiKey ${apiToken}`,
+          };
+        } else {
+          throw new Error(`Invalid source type "${source.type}"`);
+        }
+
+        // Since we're using API keys and accessing elasticsearch can only be done
+        // via a request, we're faking one with the proper authorization headers.
+        const fakeRequest: any = {
+          headers: requestHeaders,
+          getBasePath: () => taskInstance.params.basePath,
+        };
+
         await execute({
           namespace,
           actionTypeRegistry,
           encryptedSavedObjectsPlugin,
           actionId: id,
-          services: getServices(taskInstance.params.basePath),
+          services: getServices(fakeRequest),
           params: actionTypeParams,
         });
       },

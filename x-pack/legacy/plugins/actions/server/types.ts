@@ -6,9 +6,10 @@
 
 import { SavedObjectsClientContract } from 'src/core/server';
 import { ActionTypeRegistry } from './action_type_registry';
+import { FireOptions } from './create_fire_function';
 
 export type WithoutQueryAndParams<T> = Pick<T, Exclude<keyof T, 'query' | 'params'>>;
-export type GetServicesFunction = (basePath: string, overwrites?: Partial<Services>) => Services;
+export type GetServicesFunction = (request: any) => Services;
 export type ActionTypeRegistryContract = PublicMethodsOf<ActionTypeRegistry>;
 
 export interface SavedObjectReference {
@@ -26,7 +27,7 @@ export interface Services {
 export interface ActionsPlugin {
   registerType: ActionTypeRegistry['register'];
   listTypes: ActionTypeRegistry['list'];
-  fire(options: { id: string; params: Record<string, any>; basePath: string }): Promise<void>;
+  fire(options: FireOptions): Promise<void>;
 }
 
 export interface ActionTypeExecutorOptions {
