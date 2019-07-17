@@ -18,7 +18,7 @@ export const getSiemJobsFromJobsSummary = (data: Job[]) =>
     return job.groups.includes('siem') ? [...jobs, job] : jobs;
   }, []);
 
-export const useJobSummaryData = (jobIds: string[], refetchSummaryData = false): Return => {
+export const useJobSummaryData = (jobIds: string[] = [], refreshToggle = false): Return => {
   const [jobSummaryData, setJobSummaryData] = useState<Job[] | null>(null);
   const [loading, setLoading] = useState(true);
   const config = useContext(KibanaConfigContext);
@@ -26,17 +26,15 @@ export const useJobSummaryData = (jobIds: string[], refetchSummaryData = false):
   const userPermissions = hasMlUserPermissions(capabilities);
 
   const fetchFunc = async () => {
-    if (jobIds.length > 0) {
-      if (userPermissions) {
-        const data: Job[] = await jobsSummary(jobIds, {
-          'kbn-version': config.kbnVersion,
-        });
+    if (userPermissions) {
+      const data: Job[] = await jobsSummary(jobIds, {
+        'kbn-version': config.kbnVersion,
+      });
 
-        // TODO: API returns all jobs even though we specified jobIds -- jobsSummary call seems to match request in ML App?
-        const siemJobs = getSiemJobsFromJobsSummary(data);
+      // TODO: API returns all jobs even though we specified jobIds -- jobsSummary call seems to match request in ML App?
+      const siemJobs = getSiemJobsFromJobsSummary(data);
 
-        setJobSummaryData(siemJobs);
-      }
+      setJobSummaryData(siemJobs);
     }
     setLoading(false);
   };
@@ -44,7 +42,7 @@ export const useJobSummaryData = (jobIds: string[], refetchSummaryData = false):
   useEffect(() => {
     setLoading(true);
     fetchFunc();
-  }, [jobIds.join(','), refetchSummaryData, userPermissions]);
+  }, [refreshToggle, userPermissions]);
 
   return [loading, jobSummaryData];
 };
