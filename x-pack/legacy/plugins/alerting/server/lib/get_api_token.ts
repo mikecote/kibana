@@ -8,17 +8,11 @@ import { EncryptedSavedObjectsPlugin } from '../../../encrypted_saved_objects';
 
 export async function getApiToken(
   encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin,
-  id: string
-  // TODO: namespace
-  // namespace: string
+  id: string,
+  namespace: string
 ) {
   const {
     attributes: { apiKeyId, generatedApiKey },
-  } = await encryptedSavedObjectsPlugin.getDecryptedAsInternalUser(
-    'alert',
-    id
-    // TODO: namespace
-    // { namespace }
-  );
+  } = await encryptedSavedObjectsPlugin.getDecryptedAsInternalUser('alert', id, { namespace });
   return Buffer.from(`${apiKeyId}:${generatedApiKey}`).toString('base64');
 }

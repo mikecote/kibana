@@ -14,6 +14,8 @@ interface CreateTaskRunnerFunctionOptions {
   getServices: GetServicesFunction;
   actionTypeRegistry: ActionTypeRegistryContract;
   encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
+  spaceIdToNamespace: (spaceId: string) => string;
+  getBasePath: (spaceId: string) => string;
 }
 
 interface TaskRunnerOptions {
@@ -24,14 +26,22 @@ export function getCreateTaskRunnerFunction({
   getServices,
   actionTypeRegistry,
   encryptedSavedObjectsPlugin,
+  spaceIdToNamespace,
+  getBasePath,
 }: CreateTaskRunnerFunctionOptions) {
   return ({ taskInstance }: TaskRunnerOptions) => {
     return {
       run: async () => {
         let requestHeaders = {};
-        const { namespace, id, actionTypeParams, source } = taskInstance.params;
+        const namespace = spaceIdToNamespace(taskInstance.params.spaceId);
+
+        const { id, actionTypeParams, source } = taskInstance.params;
         if (source.type === 'alert') {
-          const apiToken = await getAlertApiToken(encryptedSavedObjectsPlugin, source.id);
+          const apiToken = await getAlertApiToken(
+            encryptedSavedObjectsPlugin,
+            source.id,
+            namespace
+          );
           requestHeaders = {
             authorization: `ApiKey ${apiToken}`,
           };
@@ -43,7 +53,7 @@ export function getCreateTaskRunnerFunction({
         // via a request, we're faking one with the proper authorization headers.
         const fakeRequest: any = {
           headers: requestHeaders,
-          getBasePath: () => taskInstance.params.basePath,
+          getBasePath: () => getBasePath(taskInstance.params.spaceId),
         };
 
         await execute({

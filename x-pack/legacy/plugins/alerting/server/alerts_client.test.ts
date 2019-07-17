@@ -19,7 +19,7 @@ const alertsClientParams = {
   taskManager,
   alertTypeRegistry,
   savedObjectsClient,
-  basePath: '/s/default',
+  spaceId: 'default',
 };
 
 beforeEach(() => jest.resetAllMocks());
@@ -51,6 +51,9 @@ function getMockData(overwrites: Record<string, any> = {}) {
         },
       },
     ],
+    createdBy: '123',
+    apiKeyId: '234',
+    generatedApiKey: '345',
     ...overwrites,
   };
 }

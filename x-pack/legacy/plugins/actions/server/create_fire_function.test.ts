@@ -10,6 +10,7 @@ import { SavedObjectsClientMock } from '../../../../../src/core/server/mocks';
 
 const mockTaskManager = taskManagerMock.create();
 const savedObjectsClient = SavedObjectsClientMock.create();
+const spaceIdToNamespace = jest.fn();
 
 beforeEach(() => jest.resetAllMocks());
 
@@ -18,6 +19,7 @@ describe('fire()', () => {
     const fireFn = createFireFunction({
       taskManager: mockTaskManager,
       internalSavedObjectsRepository: savedObjectsClient,
+      spaceIdToNamespace,
     });
     savedObjectsClient.get.mockResolvedValueOnce({
       id: '123',
@@ -27,41 +29,42 @@ describe('fire()', () => {
       },
       references: [],
     });
+    spaceIdToNamespace.mockReturnValueOnce('namespace1');
     await fireFn({
       id: '123',
       params: { baz: false },
-      namespace: 'abc',
-      basePath: '/s/default',
+      spaceId: 'default',
+      source: {
+        type: 'alert',
+        id: '123',
+      },
     });
     expect(mockTaskManager.schedule).toHaveBeenCalledTimes(1);
     expect(mockTaskManager.schedule.mock.calls[0]).toMatchInlineSnapshot(`
-Array [
-  Object {
-    "params": Object {
-      "actionTypeParams": Object {
-        "baz": false,
-      },
-      "basePath": "/s/default",
-      "id": "123",
-      "namespace": "abc",
-    },
-    "scope": Array [
-      "actions",
-    ],
-    "state": Object {},
-    "taskType": "actions:mock-action",
-  },
-]
-`);
-    expect(savedObjectsClient.get).toHaveBeenCalledTimes(1);
-    expect(savedObjectsClient.get.mock.calls[0]).toMatchInlineSnapshot(`
-Array [
-  "action",
-  "123",
-  Object {
-    "namespace": "abc",
-  },
-]
-`);
+      Array [
+        Object {
+          "params": Object {
+            "actionTypeParams": Object {
+              "baz": false,
+            },
+            "id": "123",
+            "source": Object {
+              "id": "123",
+              "type": "alert",
+            },
+            "spaceId": "default",
+          },
+          "scope": Array [
+            "actions",
+          ],
+          "state": Object {},
+          "taskType": "actions:mock-action",
+        },
+      ]
+    `);
+    expect(spaceIdToNamespace).toHaveBeenCalledWith('default');
+    expect(savedObjectsClient.get).toHaveBeenCalledWith('action', '123', {
+      namespace: 'namespace1',
+    });
   });
 });

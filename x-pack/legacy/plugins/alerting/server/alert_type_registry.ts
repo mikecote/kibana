@@ -17,6 +17,8 @@ interface ConstructorOptions {
   taskManager: TaskManager;
   fireAction: ActionsPlugin['fire'];
   encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
+  spaceIdToNamespace: (spaceId: string) => string;
+  getBasePath: (spaceId: string) => string;
 }
 
 export class AlertTypeRegistry {
@@ -25,16 +27,22 @@ export class AlertTypeRegistry {
   private readonly fireAction: ActionsPlugin['fire'];
   private readonly alertTypes: Map<string, AlertType> = new Map();
   private readonly encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
+  private readonly spaceIdToNamespace: (spaceId: string) => string;
+  private readonly getBasePath: (spaceId: string) => string;
 
   constructor({
     fireAction,
     taskManager,
     getServices,
     encryptedSavedObjectsPlugin,
+    spaceIdToNamespace,
+    getBasePath,
   }: ConstructorOptions) {
     this.taskManager = taskManager;
     this.fireAction = fireAction;
     this.getServices = getServices;
+    this.getBasePath = getBasePath;
+    this.spaceIdToNamespace = spaceIdToNamespace;
     this.encryptedSavedObjectsPlugin = encryptedSavedObjectsPlugin;
   }
 
@@ -62,6 +70,8 @@ export class AlertTypeRegistry {
           alertType,
           getServices: this.getServices,
           fireAction: this.fireAction,
+          getBasePath: this.getBasePath,
+          spaceIdToNamespace: this.spaceIdToNamespace,
           encryptedSavedObjectsPlugin: this.encryptedSavedObjectsPlugin,
         }),
       },

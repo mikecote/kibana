@@ -16,10 +16,12 @@ import { EncryptedSavedObjectsPlugin } from '../../../encrypted_saved_objects';
 import { getApiToken } from './get_api_token';
 
 interface CreateTaskRunnerFunctionOptions {
-  getServices: (basePath: string, headers?: Record<string, string>) => Services;
+  getServices: (request: any) => Services;
   alertType: AlertType;
   fireAction: ActionsPlugin['fire'];
   encryptedSavedObjectsPlugin: EncryptedSavedObjectsPlugin;
+  spaceIdToNamespace: (spaceId: string) => string;
+  getBasePath: (spaceId: string) => string;
 }
 
 interface TaskRunnerOptions {
@@ -31,13 +33,16 @@ export function getCreateTaskRunnerFunction({
   alertType,
   fireAction,
   encryptedSavedObjectsPlugin,
+  spaceIdToNamespace,
+  getBasePath,
 }: CreateTaskRunnerFunctionOptions) {
   return ({ taskInstance }: TaskRunnerOptions) => {
     return {
       run: async () => {
         const apiToken = await getApiToken(
           encryptedSavedObjectsPlugin,
-          taskInstance.params.alertId
+          taskInstance.params.alertId,
+          spaceIdToNamespace(taskInstance.params.spaceId)
         );
 
         // Since we're using API keys and accessing elasticsearch can only be done
@@ -46,18 +51,13 @@ export function getCreateTaskRunnerFunction({
           headers: {
             authorization: `ApiKey ${apiToken}`,
           },
-          getBasePath: () => taskInstance.params.basePath,
+          getBasePath: () => getBasePath(taskInstance.params.spaceId),
         };
 
         const services = getServices(fakeRequest);
 
         const { savedObjectsClient } = services;
-        const alertSavedObject = await savedObjectsClient.get(
-          'alert',
-          taskInstance.params.alertId
-          // TODO: namespace
-          // { namespace }
-        );
+        const alertSavedObject = await savedObjectsClient.get('alert', taskInstance.params.alertId);
 
         // Validate
         const validatedAlertTypeParams = validateAlertTypeParams(
@@ -68,7 +68,7 @@ export function getCreateTaskRunnerFunction({
         const fireHandler = createFireHandler({
           alertSavedObject,
           fireAction,
-          basePath: taskInstance.params.basePath,
+          spaceId: taskInstance.params.spaceId,
         });
         const alertInstances: Record<string, AlertInstance> = {};
         const alertInstancesData = taskInstance.state.alertInstances || {};

@@ -11,8 +11,10 @@ jest.mock('./lib/get_create_task_runner_function', () => ({
 import { AlertTypeRegistry } from './alert_type_registry';
 import { SavedObjectsClientMock } from '../../../../../src/core/server/mocks';
 import { taskManagerMock } from '../../task_manager/task_manager.mock';
+import { encryptedSavedObjectsMock } from '../../encrypted_saved_objects/server/plugin.mock';
 
 const taskManager = taskManagerMock.create();
+const encryptedSavedObjectsPlugin = encryptedSavedObjectsMock.create();
 
 const alertTypeRegistryParams = {
   getServices() {
@@ -25,6 +27,9 @@ const alertTypeRegistryParams = {
   taskManager,
   fireAction: jest.fn(),
   internalSavedObjectsRepository: SavedObjectsClientMock.create(),
+  spaceIdToNamespace: jest.fn().mockReturnValue(undefined),
+  getBasePath: jest.fn().mockReturnValue(undefined),
+  encryptedSavedObjectsPlugin,
 };
 
 beforeEach(() => jest.resetAllMocks());

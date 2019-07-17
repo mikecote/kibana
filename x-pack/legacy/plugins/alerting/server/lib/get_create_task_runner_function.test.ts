@@ -8,6 +8,7 @@ import Joi from 'joi';
 import { AlertExecutorOptions } from '../types';
 import { SavedObjectsClientMock } from '../../../../../../src/core/server/mocks';
 import { getCreateTaskRunnerFunction } from './get_create_task_runner_function';
+import { encryptedSavedObjectsMock } from '../../../encrypted_saved_objects/server/plugin.mock';
 
 const mockedNow = new Date('2019-06-03T18:55:25.982Z');
 const mockedLastRunAt = new Date('2019-06-03T18:55:20.982Z');
@@ -18,6 +19,7 @@ const mockedLastRunAt = new Date('2019-06-03T18:55:20.982Z');
 };
 
 const savedObjectsClient = SavedObjectsClientMock.create();
+const encryptedSavedObjectsPlugin = encryptedSavedObjectsMock.create();
 
 const getCreateTaskRunnerFunctionParams = {
   getServices() {
@@ -34,6 +36,9 @@ const getCreateTaskRunnerFunctionParams = {
   },
   fireAction: jest.fn(),
   internalSavedObjectsRepository: savedObjectsClient,
+  spaceIdToNamespace: jest.fn().mockReturnValue(undefined),
+  getBasePath: jest.fn().mockReturnValue(undefined),
+  encryptedSavedObjectsPlugin,
 };
 
 const mockedTaskInstance = {
