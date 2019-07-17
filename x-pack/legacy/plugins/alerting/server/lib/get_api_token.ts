@@ -14,5 +14,10 @@ export async function getApiToken(
   const {
     attributes: { apiKeyId, generatedApiKey },
   } = await encryptedSavedObjectsPlugin.getDecryptedAsInternalUser('alert', id, { namespace });
+
+  if (!apiKeyId || !generatedApiKey) {
+    return;
+  }
+
   return Buffer.from(`${apiKeyId}:${generatedApiKey}`).toString('base64');
 }

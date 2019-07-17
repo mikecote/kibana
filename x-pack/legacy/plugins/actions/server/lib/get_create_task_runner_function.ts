@@ -32,7 +32,7 @@ export function getCreateTaskRunnerFunction({
   return ({ taskInstance }: TaskRunnerOptions) => {
     return {
       run: async () => {
-        let requestHeaders = {};
+        const requestHeaders: any = {};
         const namespace = spaceIdToNamespace(taskInstance.params.spaceId);
 
         const { id, actionTypeParams, source } = taskInstance.params;
@@ -42,9 +42,9 @@ export function getCreateTaskRunnerFunction({
             source.id,
             namespace
           );
-          requestHeaders = {
-            authorization: `ApiKey ${apiToken}`,
-          };
+          if (apiToken) {
+            requestHeaders.authorization = `ApiKey ${apiToken}`;
+          }
         } else {
           throw new Error(`Invalid source type "${source.type}"`);
         }

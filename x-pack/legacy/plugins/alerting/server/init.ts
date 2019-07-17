@@ -50,8 +50,10 @@ export function init(server: Legacy.Server) {
     taskManager: taskManager!,
     fireAction: server.plugins.actions!.fire,
     encryptedSavedObjectsPlugin: server.plugins.encrypted_saved_objects!,
-    getBasePath: server.plugins.spaces!.getBasePath,
-    spaceIdToNamespace: server.plugins.spaces!.spaceIdToNamespace,
+    getBasePath: server.plugins.spaces ? server.plugins.spaces.getBasePath : () => undefined,
+    spaceIdToNamespace: server.plugins.spaces
+      ? server.plugins.spaces.spaceIdToNamespace
+      : () => undefined,
   });
 
   // Register routes
@@ -73,7 +75,7 @@ export function init(server: Legacy.Server) {
       savedObjectsClient,
       alertTypeRegistry,
       taskManager: taskManager!,
-      spaceId: request.server.plugins.spaces!.getSpaceId(request),
+      spaceId: request.server.plugins.spaces && request.server.plugins.spaces.getSpaceId(request),
     });
     return alertsClient;
   });

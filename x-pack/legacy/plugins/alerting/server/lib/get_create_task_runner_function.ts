@@ -45,14 +45,16 @@ export function getCreateTaskRunnerFunction({
           spaceIdToNamespace(taskInstance.params.spaceId)
         );
 
-        // Since we're using API keys and accessing elasticsearch can only be done
-        // via a request, we're faking one with the proper authorization headers.
-        const fakeRequest: any = {
-          headers: {
-            authorization: `ApiKey ${apiToken}`,
-          },
+        const fakeRequest = {
+          headers: {} as any,
           getBasePath: () => getBasePath(taskInstance.params.spaceId),
         };
+
+        // Since we're using API keys and accessing elasticsearch can only be done
+        // via a request, we're faking one with the proper authorization headers.
+        if (apiToken) {
+          fakeRequest.headers.authorization = `ApiKey ${apiToken}`;
+        }
 
         const services = getServices(fakeRequest);
 
