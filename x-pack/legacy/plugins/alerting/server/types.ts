@@ -78,9 +78,9 @@ export interface RawAlert extends SavedObjectAttributes {
   actions: RawAlertAction[];
   alertTypeParams: SavedObjectAttributes;
   scheduledTaskId?: string;
-  createdBy: string;
-  apiKeyId: string;
-  generatedApiKey: string;
+  createdBy?: string;
+  apiKeyId?: string;
+  generatedApiKey?: string;
 }
 
 export interface AlertingPlugin {
