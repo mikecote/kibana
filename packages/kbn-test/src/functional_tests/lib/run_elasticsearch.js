@@ -45,11 +45,28 @@ export async function runElasticsearch({ config, options }) {
   await cluster.start(esArgs, esEnvVars);
 
   if (isSecurityEnabled) {
-    await setupUsers(log, config.get('servers.elasticsearch.port'), [
-      config.get('servers.elasticsearch'),
-      config.get('servers.kibana'),
-    ]);
+    const protocol = config.get('servers.elasticsearch').protocol;
+    const caPath =
+      protocol === 'https' &&
+      getRelativeCertificateAuthorityPath(config.get('kbnTestServer.serverArgs'));
+    await setupUsers({
+      log,
+      esPort: config.get('servers.elasticsearch.port'),
+      updates: [config.get('servers.elasticsearch'), config.get('servers.kibana')],
+      protocol,
+      caPath,
+    });
   }
 
   return cluster;
+}
+
+function getRelativeCertificateAuthorityPath(esConfig = []) {
+  const caConfig = esConfig.find(
+    config => config.indexOf('--elasticsearch.ssl.certificateAuthorities') === 0
+  );
+  if (!caConfig) {
+    return;
+  }
+  return caConfig.split('=')[1];
 }

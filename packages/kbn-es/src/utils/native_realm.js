@@ -17,14 +17,26 @@
  * under the License.
  */
 
+import fs from 'fs';
+
 const { Client } = require('@elastic/elasticsearch');
 const chalk = require('chalk');
 
 const { log: defaultLog } = require('./log');
 
 exports.NativeRealm = class NativeRealm {
-  constructor(elasticPassword, port, log = defaultLog) {
-    this._client = new Client({ node: `http://elastic:${elasticPassword}@localhost:${port}` });
+  constructor({ elasticPassword, port, log = defaultLog, protocol = 'http', caPath }) {
+    this._client = new Client({
+      node: `${protocol}://elastic:${elasticPassword}@localhost:${port}`,
+      ssl:
+        protocol === 'https'
+          ? {
+              // TODO: Find non-blocking way to do this?
+              ca: fs.readFileSync(caPath),
+              rejectUnauthorized: true,
+            }
+          : undefined,
+    });
     this._elasticPassword = elasticPassword;
     this._log = log;
   }

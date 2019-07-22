@@ -229,6 +229,20 @@ exports.Cluster = class Cluster {
     await this._outcome;
   }
 
+  _isHttps(esConfig = []) {
+    return esConfig.includes('xpack.security.http.ssl.enabled=true');
+  }
+
+  _getRelativeCertificateAuthorityPath(esConfig = []) {
+    const caConfig = esConfig.find(
+      config => config.indexOf('xpack.security.http.ssl.certificate_authorities') === 0
+    );
+    if (!caConfig) {
+      return;
+    }
+    return caConfig.split('=')[1];
+  }
+
   /**
    * Common logic from this.start() and this.run()
    *
@@ -254,6 +268,10 @@ exports.Cluster = class Cluster {
       log: this._log,
     }).reduce((acc, cur) => acc.concat(['-E', cur]), []);
 
+    const isHttps = this._isHttps(args);
+    const caPath =
+      isHttps && path.join(installPath, 'config', this._getRelativeCertificateAuthorityPath(args));
+
     this._log.debug('%s %s', ES_BIN, args.join(' '));
 
     this._process = execa(ES_BIN, args, {
@@ -277,7 +295,13 @@ exports.Cluster = class Cluster {
 
     // once the http port is available setup the native realm
     this._nativeRealmSetup = httpPort.then(async port => {
-      const nativeRealm = new NativeRealm(options.password, port, this._log);
+      const nativeRealm = new NativeRealm({
+        port,
+        caPath,
+        log: this._log,
+        elasticPassword: options.password,
+        protocol: isHttps ? 'https' : 'http',
+      });
       await nativeRealm.setPasswords(options);
     });
 
