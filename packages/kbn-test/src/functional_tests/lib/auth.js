@@ -17,7 +17,6 @@
  * under the License.
  */
 
-import { promises as fsPromises } from 'fs';
 import { format as formatUrl } from 'url';
 
 import request from 'request';
@@ -25,22 +24,13 @@ import { delay } from 'bluebird';
 
 export const DEFAULT_SUPERUSER_PASS = 'changeme';
 
-async function updateCredentials({
-  port,
-  auth,
-  username,
-  password,
-  retries = 10,
-  protocol,
-  caPath,
-}) {
-  const caCert = caPath && (await fsPromises.readFile(caPath));
+async function updateCredentials(port, auth, username, password, retries = 10) {
   const result = await new Promise((resolve, reject) =>
     request(
       {
         method: 'PUT',
         uri: formatUrl({
-          protocol: `${protocol}:`,
+          protocol: 'http:',
           auth,
           hostname: 'localhost',
           port,
@@ -48,7 +38,6 @@ async function updateCredentials({
         }),
         json: true,
         body: { password },
-        ca: caCert,
       },
       (err, httpResponse, body) => {
         if (err) return reject(err);
@@ -66,21 +55,13 @@ async function updateCredentials({
 
   if (retries > 0) {
     await delay(2500);
-    return await updateCredentials({
-      port,
-      auth,
-      username,
-      password,
-      retries: retries - 1,
-      protocol,
-      caPath,
-    });
+    return await updateCredentials(port, auth, username, password, retries - 1);
   }
 
   throw new Error(`${statusCode} response, expected 200 -- ${JSON.stringify(body)}`);
 }
 
-export async function setupUsers({ log, esPort, updates, protocol = 'http', caPath }) {
+export async function setupUsers(log, esPort, updates) {
   // track the current credentials for the `elastic` user as
   // they will likely change as we apply updates
   let auth = `elastic:${DEFAULT_SUPERUSER_PASS}`;
@@ -88,12 +69,12 @@ export async function setupUsers({ log, esPort, updates, protocol = 'http', caPa
   for (const { username, password, roles } of updates) {
     // If working with a built-in user, just change the password
     if (['logstash_system', 'elastic', 'kibana'].includes(username)) {
-      await updateCredentials({ port: esPort, auth, username, password, protocol, caPath });
+      await updateCredentials(esPort, auth, username, password);
       log.info('setting %j user password to %j', username, password);
 
       // If not a builtin user, add them
     } else {
-      await insertUser({ port: esPort, auth, username, password, roles, protocol, caPath });
+      await insertUser(esPort, auth, username, password, roles);
       log.info('Added %j user with password to %j', username, password);
     }
 
@@ -103,23 +84,13 @@ export async function setupUsers({ log, esPort, updates, protocol = 'http', caPa
   }
 }
 
-async function insertUser({
-  port,
-  auth,
-  username,
-  password,
-  roles = [],
-  retries = 10,
-  protocol,
-  caPath,
-}) {
-  const caCert = caPath && (await fsPromises.readFile(caPath));
+async function insertUser(port, auth, username, password, roles = [], retries = 10) {
   const result = await new Promise((resolve, reject) =>
     request(
       {
         method: 'POST',
         uri: formatUrl({
-          protocol: `${protocol}:`,
+          protocol: 'http:',
           auth,
           hostname: 'localhost',
           port,
@@ -127,7 +98,6 @@ async function insertUser({
         }),
         json: true,
         body: { password, roles },
-        ca: caCert,
       },
       (err, httpResponse, body) => {
         if (err) return reject(err);
@@ -144,16 +114,7 @@ async function insertUser({
 
   if (retries > 0) {
     await delay(2500);
-    return await insertUser({
-      port,
-      auth,
-      username,
-      password,
-      roles,
-      retries: retries - 1,
-      protocol,
-      caPath,
-    });
+    return await insertUser(port, auth, username, password, retries - 1);
   }
 
   throw new Error(`${statusCode} response, expected 200 -- ${JSON.stringify(body)}`);
