@@ -123,6 +123,7 @@ describe('validateActionTypeConfig()', () => {
 describe('execute()', () => {
   test('calls the mock executor with success', async () => {
     const response = await actionType.executor({
+      id: 'some-id',
       services,
       config: { webhookUrl: 'http://example.com' },
       params: { message: 'this invocation should succeed' },
@@ -137,6 +138,7 @@ Object {
   test('calls the mock executor with failure', async () => {
     await expect(
       actionType.executor({
+        id: 'some-id',
         services,
         config: { webhookUrl: 'http://example.com' },
         params: { message: 'failure: this invocation should fail' },
