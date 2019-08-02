@@ -26,7 +26,7 @@ import { getConfig } from '../../legacy/server/path';
 import { bootstrap } from '../../core/server';
 import { readKeystore } from './read_keystore';
 
-import { DEV_SSL_CERT_PATH, DEV_SSL_KEY_PATH } from '../dev_ssl';
+import { DEV_SSL_CERT_PATH, DEV_SSL_KEY_PATH, DEV_SSL_CA_CERT_PATH } from '../dev_ssl';
 
 function canRequire(path) {
   try {
@@ -93,6 +93,14 @@ function applyConfigOverrides(rawConfig, opts, extraCliOptions) {
     if (opts.ssl && !has('server.ssl.certificate') && !has('server.ssl.key')) {
       set('server.ssl.certificate', DEV_SSL_CERT_PATH);
       set('server.ssl.key', DEV_SSL_KEY_PATH);
+    }
+
+    if (opts.ssl && !opts.elasticsearch) {
+      set('elasticsearch.hosts', 'https://localhost:9200');
+    }
+
+    if (opts.ssl && !has('elasticsearch.ssl.certificateAuthorities')) {
+      set('elasticsearch.ssl.certificateAuthorities', DEV_SSL_CA_CERT_PATH);
     }
   }
 
