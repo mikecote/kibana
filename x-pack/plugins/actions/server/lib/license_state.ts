@@ -9,6 +9,10 @@ import { Observable, Subscription } from 'rxjs';
 import { assertNever } from '../../../../../src/core/utils';
 import { ILicense, LICENSE_CHECK_STATE } from '../../../licensing/common/types';
 import { PLUGIN } from '../constants/plugin';
+import { ActionType } from '../types';
+import { ForbiddenError } from './errors';
+
+export type ILicenseState = PublicMethodsOf<LicenseState>;
 
 export interface ActionsLicenseInformation {
   showAppLink: boolean;
@@ -19,12 +23,14 @@ export interface ActionsLicenseInformation {
 export class LicenseState {
   private licenseInformation: ActionsLicenseInformation = this.checkLicense(undefined);
   private subscription: Subscription;
+  private license?: ILicense;
 
   constructor(license$: Observable<ILicense>) {
     this.subscription = license$.subscribe(this.updateInformation.bind(this));
   }
 
   private updateInformation(license: ILicense | undefined) {
+    this.license = license;
     this.licenseInformation = this.checkLicense(license);
   }
 
@@ -34,6 +40,43 @@ export class LicenseState {
 
   public getLicenseInformation() {
     return this.licenseInformation;
+  }
+
+  public ensureActionTypeValid(actionType: ActionType) {
+    if (!this.license?.isAvailable) {
+      throw new ForbiddenError(
+        i18n.translate('xpack.actions.serverSideErrors.unavailableLicenseErrorMessage', {
+          defaultMessage:
+            'Actions is unavailable - license information is not available at this time.',
+        })
+      );
+    }
+
+    const check = this.license.check(actionType.id, actionType.minimumLicenseRequired);
+
+    switch (check.state) {
+      case LICENSE_CHECK_STATE.Expired:
+        throw new ForbiddenError(
+          i18n.translate('xpack.actions.serverSideErrors.expirerdLicenseErrorMessage', {
+            defaultMessage:
+              'You cannot use action type {actionTypeId} because your {licenseType} license has expired.',
+            values: { actionTypeId: actionType.id, licenseType: this.license.type },
+          })
+        );
+      case LICENSE_CHECK_STATE.Invalid:
+      case LICENSE_CHECK_STATE.Unavailable:
+        throw new ForbiddenError(
+          i18n.translate('xpack.actions.serverSideErrors.invalidLicenseErrorMessage', {
+            defaultMessage:
+              'Your {licenseType} license does not support action type {actionTypeId}. Please upgrade your license.',
+            values: { actionTypeId: actionType.id, licenseType: this.license.type },
+          })
+        );
+      case LICENSE_CHECK_STATE.Valid:
+        break;
+      default:
+        return assertNever(check.state);
+    }
   }
 
   public checkLicense(license: ILicense | undefined): ActionsLicenseInformation {
