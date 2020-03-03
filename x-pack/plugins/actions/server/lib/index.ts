@@ -9,5 +9,5 @@ export { validateParams, validateConfig, validateSecrets } from './validate_with
 export { TaskRunnerFactory } from './task_runner_factory';
 export { ActionExecutor, ActionExecutorContract } from './action_executor';
 export { ILicenseState, LicenseState } from './license_state';
-export { verifyApiAccess } from './license_api_access';
+export { verifyApiAccess } from './verify_api_access';
 export { ForbiddenError } from './errors';

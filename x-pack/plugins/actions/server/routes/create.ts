@@ -13,7 +13,7 @@ import {
   KibanaResponseFactory,
 } from 'kibana/server';
 import { ActionResult } from '../types';
-import { ForbiddenError, LicenseState, verifyApiAccess } from '../lib';
+import { ForbiddenError, ILicenseState, verifyApiAccess } from '../lib';
 
 export const bodySchema = schema.object({
   name: schema.string(),
@@ -22,7 +22,7 @@ export const bodySchema = schema.object({
   secrets: schema.recordOf(schema.string(), schema.any(), { defaultValue: {} }),
 });
 
-export const createActionRoute = (router: IRouter, licenseState: LicenseState) => {
+export const createActionRoute = (router: IRouter, licenseState: ILicenseState) => {
   router.post(
     {
       path: `/api/action`,

@@ -9,7 +9,7 @@ import { ActionTypeRegistry } from './action_type_registry';
 import { ExecutorType } from './types';
 import { ActionExecutor, ExecutorError, TaskRunnerFactory } from './lib';
 import { configUtilsMock } from './actions_config.mock';
-import { mockLicenseState } from './lib/license_state.mock';
+import { licenseStateMock } from './lib/license_state.mock';
 
 const mockTaskManager = taskManagerMock.setup();
 const actionTypeRegistryParams = {
@@ -18,7 +18,7 @@ const actionTypeRegistryParams = {
     new ActionExecutor({ isESOUsingEphemeralEncryptionKey: false })
   ),
   actionsConfigUtils: configUtilsMock,
-  licenseState: mockLicenseState(),
+  licenseState: licenseStateMock.create(),
 };
 
 beforeEach(() => jest.resetAllMocks());

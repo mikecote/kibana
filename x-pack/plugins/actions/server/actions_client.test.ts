@@ -13,7 +13,7 @@ import { ActionExecutor, TaskRunnerFactory } from './lib';
 import { taskManagerMock } from '../../task_manager/server/task_manager.mock';
 import { configUtilsMock } from './actions_config.mock';
 import { getActionsConfigurationUtilities } from './actions_config';
-import { mockLicenseState } from './lib/license_state.mock';
+import { licenseStateMock } from './lib/license_state.mock';
 
 import {
   elasticsearchServiceMock,
@@ -32,7 +32,7 @@ const actionTypeRegistryParams = {
     new ActionExecutor({ isESOUsingEphemeralEncryptionKey: false })
   ),
   actionsConfigUtils: configUtilsMock,
-  licenseState: mockLicenseState(),
+  licenseState: licenseStateMock.create(),
 };
 
 let actionsClient: ActionsClient;
@@ -215,7 +215,7 @@ describe('create()', () => {
         new ActionExecutor({ isESOUsingEphemeralEncryptionKey: false })
       ),
       actionsConfigUtils: localConfigUtils,
-      licenseState: mockLicenseState(),
+      licenseState: licenseStateMock.create(),
     };
 
     actionTypeRegistry = new ActionTypeRegistry(localActionTypeRegistryParams);

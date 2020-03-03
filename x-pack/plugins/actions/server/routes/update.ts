@@ -12,8 +12,7 @@ import {
   IKibanaResponse,
   KibanaResponseFactory,
 } from 'kibana/server';
-import { LicenseState } from '../lib/license_state';
-import { verifyApiAccess } from '../lib/license_api_access';
+import { ILicenseState, verifyApiAccess } from '../lib';
 
 const paramSchema = schema.object({
   id: schema.string(),
@@ -25,7 +24,7 @@ const bodySchema = schema.object({
   secrets: schema.recordOf(schema.string(), schema.any(), { defaultValue: {} }),
 });
 
-export const updateActionRoute = (router: IRouter, licenseState: LicenseState) => {
+export const updateActionRoute = (router: IRouter, licenseState: ILicenseState) => {
   router.put(
     {
       path: `/api/action/{id}`,

@@ -11,8 +11,7 @@ import {
   IKibanaResponse,
   KibanaResponseFactory,
 } from 'kibana/server';
-import { LicenseState } from '../lib/license_state';
-import { verifyApiAccess } from '../lib/license_api_access';
+import { ILicenseState, verifyApiAccess } from '../lib';
 
 import { ActionExecutorContract } from '../lib';
 import { ActionTypeExecutorResult } from '../types';
@@ -27,7 +26,7 @@ const bodySchema = schema.object({
 
 export const executeActionRoute = (
   router: IRouter,
-  licenseState: LicenseState,
+  licenseState: ILicenseState,
   actionExecutor: ActionExecutorContract
 ) => {
   router.post(
