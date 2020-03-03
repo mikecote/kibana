@@ -120,6 +120,8 @@ export class ActionsClient {
     const validatedActionTypeConfig = validateConfig(actionType, config);
     const validatedActionTypeSecrets = validateSecrets(actionType, secrets);
 
+    this.actionTypeRegistry.ensureActionTypeEnabled(actionTypeId);
+
     const result = await this.savedObjectsClient.update('action', id, {
       actionTypeId,
       name,
