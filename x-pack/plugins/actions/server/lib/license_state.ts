@@ -42,12 +42,15 @@ export class LicenseState {
     return this.licenseInformation;
   }
 
-  public ensureActionTypeValid(actionType: ActionType) {
+  public ensureLicenseForActionType(actionType: ActionType) {
     if (!this.license?.isAvailable) {
       throw new ForbiddenError(
         i18n.translate('xpack.actions.serverSideErrors.unavailableLicenseErrorMessage', {
           defaultMessage:
-            'Actions is unavailable - license information is not available at this time.',
+            'Action type {actionTypeId} is disabled because license information is not available at this time.',
+          values: {
+            actionTypeId: actionType.id,
+          },
         })
       );
     }
@@ -59,7 +62,7 @@ export class LicenseState {
         throw new ForbiddenError(
           i18n.translate('xpack.actions.serverSideErrors.expirerdLicenseErrorMessage', {
             defaultMessage:
-              'You cannot use action type {actionTypeId} because your {licenseType} license has expired.',
+              'Action type {actionTypeId} is disabled because your {licenseType} license has expired.',
             values: { actionTypeId: actionType.id, licenseType: this.license.type },
           })
         );
@@ -68,7 +71,7 @@ export class LicenseState {
         throw new ForbiddenError(
           i18n.translate('xpack.actions.serverSideErrors.invalidLicenseErrorMessage', {
             defaultMessage:
-              'Your {licenseType} license does not support action type {actionTypeId}. Please upgrade your license.',
+              'Action type {actionTypeId} is disabled because your {licenseType} license does not support it. Please upgrade your license.',
             values: { actionTypeId: actionType.id, licenseType: this.license.type },
           })
         );

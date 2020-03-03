@@ -45,7 +45,7 @@ export class ActionTypeRegistry {
    */
   public ensureActionTypeEnabled(id: string) {
     this.actionsConfigUtils.ensureActionTypeEnabled(id);
-    this.licenseState.ensureActionTypeValid(this.get(id));
+    this.licenseState.ensureLicenseForActionType(this.get(id));
   }
 
   /**
