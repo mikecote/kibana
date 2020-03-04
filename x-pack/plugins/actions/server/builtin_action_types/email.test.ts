@@ -12,7 +12,7 @@ import { Logger } from '../../../../../src/core/server';
 import { savedObjectsClientMock } from '../../../../../src/core/server/mocks';
 
 import { ActionType, ActionTypeExecutorOptions } from '../types';
-import { actionConfigMock } from '../actions_config.mock';
+import { actionsConfigMock } from '../actions_config.mock';
 import { validateConfig, validateSecrets, validateParams } from '../lib';
 import { createActionTypeRegistry } from './index.test';
 import { sendEmail } from './lib/send_email';
@@ -125,7 +125,7 @@ describe('config validation', () => {
     actionType = getActionType({
       logger: mockedLogger,
       configurationUtilities: {
-        ...actionConfigMock.create(),
+        ...actionsConfigMock.create(),
         isWhitelistedHostname: hostname => hostname === NODEMAILER_AOL_SERVICE_HOST,
       },
     });

@@ -67,7 +67,6 @@ export class LicenseState {
           })
         );
       case LICENSE_CHECK_STATE.Invalid:
-      case LICENSE_CHECK_STATE.Unavailable:
         throw new ForbiddenError(
           i18n.translate('xpack.actions.serverSideErrors.invalidLicenseErrorMessage', {
             defaultMessage:

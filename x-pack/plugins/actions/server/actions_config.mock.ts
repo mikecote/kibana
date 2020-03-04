@@ -6,7 +6,7 @@
 
 import { ActionsConfigurationUtilities } from './actions_config';
 
-const createActionConfigMock = () => {
+const createActionsConfigMock = () => {
   const mocked: jest.Mocked<ActionsConfigurationUtilities> = {
     isWhitelistedHostname: jest.fn().mockReturnValue(true),
     isWhitelistedUri: jest.fn().mockReturnValue(true),
@@ -18,6 +18,6 @@ const createActionConfigMock = () => {
   return mocked;
 };
 
-export const actionConfigMock = {
-  create: createActionConfigMock,
+export const actionsConfigMock = {
+  create: createActionsConfigMock,
 };
