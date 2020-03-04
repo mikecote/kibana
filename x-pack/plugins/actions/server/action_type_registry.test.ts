@@ -5,23 +5,26 @@
  */
 
 import { taskManagerMock } from '../../task_manager/server/task_manager.mock';
-import { ActionTypeRegistry } from './action_type_registry';
+import { ActionTypeRegistry, ActionTypeRegistryOpts } from './action_type_registry';
 import { ExecutorType } from './types';
 import { ActionExecutor, ExecutorError, TaskRunnerFactory } from './lib';
-import { configUtilsMock } from './actions_config.mock';
+import { actionConfigMock } from './actions_config.mock';
 import { licenseStateMock } from './lib/license_state.mock';
 
 const mockTaskManager = taskManagerMock.setup();
-const actionTypeRegistryParams = {
-  taskManager: mockTaskManager,
-  taskRunnerFactory: new TaskRunnerFactory(
-    new ActionExecutor({ isESOUsingEphemeralEncryptionKey: false })
-  ),
-  actionsConfigUtils: configUtilsMock,
-  licenseState: licenseStateMock.create(),
-};
+let actionTypeRegistryParams: ActionTypeRegistryOpts;
 
-beforeEach(() => jest.resetAllMocks());
+beforeEach(() => {
+  jest.resetAllMocks();
+  actionTypeRegistryParams = {
+    taskManager: mockTaskManager,
+    taskRunnerFactory: new TaskRunnerFactory(
+      new ActionExecutor({ isESOUsingEphemeralEncryptionKey: false })
+    ),
+    actionsConfigUtils: actionConfigMock.create(),
+    licenseState: licenseStateMock.create(),
+  };
+});
 
 const executor: ExecutorType = async options => {
   return { status: 'ok', actionId: options.actionId };
