@@ -7,7 +7,7 @@
 import React, { useContext, createContext } from 'react';
 import { HttpSetup, IUiSettingsClient, ToastsApi, DocLinksStart } from 'kibana/public';
 import { ChartsPluginSetup } from 'src/plugins/charts/public';
-import { FieldFormatsRegistry } from 'src/plugins/data/common/field_formats';
+import { DataPublicPluginSetup } from 'src/plugins/data/public';
 import { TypeRegistry } from '../type_registry';
 import { AlertTypeModel, ActionTypeModel } from '../../types';
 
@@ -22,7 +22,7 @@ export interface AlertsContextValue<MetaData = Record<string, any>> {
   >;
   uiSettings?: IUiSettingsClient;
   charts?: ChartsPluginSetup;
-  dataFieldsFormats?: Pick<FieldFormatsRegistry, 'register'>;
+  dataFieldsFormats?: DataPublicPluginSetup['fieldFormats'];
   docLinks: DocLinksStart;
   metadata?: MetaData;
 }
