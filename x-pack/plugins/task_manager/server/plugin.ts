@@ -44,6 +44,20 @@ export class TaskManagerPlugin
     setupSavedObjects(core.savedObjects, this.config);
     this.taskManagerId = this.initContext.env.instanceUuid;
 
+    this.taskManager.then((tm) => {
+      tm.registerTaskDefinitions({
+        test: {
+          title: 'Test',
+          type: 'test',
+          createTaskRunner() {
+            return {
+              async run() {},
+            };
+          },
+        },
+      });
+    });
+
     return {
       addMiddleware: (middleware: Middleware) => {
         this.taskManager.then((tm) => tm.addMiddleware(middleware));
@@ -76,6 +90,26 @@ export class TaskManagerPlugin
     // Task manager into two services, setup and start, instead
     // of the single instance of TaskManager
     this.taskManager.then((tm) => tm.start());
+
+    this.taskManager.then(async (tm) => {
+      console.log('Scheduling tasks', new Date());
+      const promises = [];
+      for (let i = 0; i < 10000; i++) {
+        promises.push(
+          tm.schedule({
+            taskType: 'test',
+            params: {},
+            state: {},
+          })
+        );
+      }
+      try {
+        await Promise.all(promises);
+        console.log('Finished scheduling tasks', new Date());
+      } catch (e) {
+        console.log('Error', e);
+      }
+    });
 
     return {
       fetch: (...args) => this.taskManager.then((tm) => tm.fetch(...args)),
