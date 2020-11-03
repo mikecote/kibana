@@ -46,6 +46,7 @@ import { ConnectorAddModal } from './connector_add_modal';
 import { actionTypeCompare } from '../../lib/action_type_compare';
 import { checkActionFormActionTypeEnabled } from '../../lib/check_action_type_enabled';
 import { VIEW_LICENSE_OPTIONS_LINK } from '../../../common/constants';
+import { DEFAULT_HIDDEN_ACTION_TYPES } from '../../constants';
 import { hasSaveActionsCapability } from '../../lib/capabilities';
 
 interface ActionAccordionFormProps {
@@ -579,6 +580,7 @@ export const ActionForm = ({
     const preconfiguredConnectors = connectors.filter((connector) => connector.isPreconfigured);
     actionTypeNodes = actionTypeRegistry
       .list()
+      .filter(({ id }) => !DEFAULT_HIDDEN_ACTION_TYPES.includes(id))
       .filter((item) => actionTypesIndex[item.id])
       .filter((item) => !!item.actionParamsFields)
       .sort((a, b) =>
