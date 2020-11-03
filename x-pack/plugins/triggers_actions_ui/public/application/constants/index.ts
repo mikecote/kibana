@@ -21,3 +21,5 @@ export enum SORT_ORDERS {
 }
 
 export const DEFAULT_SEARCH_PAGE_SIZE: number = 10;
+
+export const DEFAULT_HIDDEN_ACTION_TYPES = ['.case'];

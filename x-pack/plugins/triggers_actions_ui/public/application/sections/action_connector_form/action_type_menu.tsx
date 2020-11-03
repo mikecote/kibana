@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { EuiFlexItem, EuiCard, EuiIcon, EuiFlexGrid, EuiSpacer } from '@elastic/eui';
 import { i18n } from '@kbn/i18n';
 import { EuiToolTip } from '@elastic/eui';
+import { DEFAULT_HIDDEN_ACTION_TYPES } from '../../constants';
 import { ActionType, ActionTypeIndex } from '../../../types';
 import { loadActionTypes } from '../../lib/action_connector_api';
 import { useActionsConnectorsContext } from '../../context/actions_connectors_context';
@@ -30,7 +31,11 @@ export const ActionTypeMenu = ({
   useEffect(() => {
     (async () => {
       try {
-        const availableActionTypes = actionTypes ?? (await loadActionTypes({ http }));
+        const availableActionTypes =
+          actionTypes ??
+          (await loadActionTypes({ http })).filter(
+            ({ id }) => !DEFAULT_HIDDEN_ACTION_TYPES.includes(id)
+          );
         const index: ActionTypeIndex = {};
         for (const actionTypeItem of availableActionTypes) {
           index[actionTypeItem.id] = actionTypeItem;

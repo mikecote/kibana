@@ -33,6 +33,7 @@ import {
   hasSaveActionsCapability,
   hasExecuteActionsCapability,
 } from '../../../lib/capabilities';
+import { DEFAULT_HIDDEN_ACTION_TYPES } from '../../../constants';
 import { DeleteModalConfirmation } from '../../../components/delete_modal_confirmation';
 import { ActionsConnectorsContextProvider } from '../../../context/actions_connectors_context';
 import { checkActionTypeEnabled } from '../../../lib/check_action_type_enabled';
@@ -106,6 +107,7 @@ export const ActionsConnectorsList: React.FunctionComponent = () => {
 
   const actionTypesList: Array<{ value: string; name: string }> = actionTypesIndex
     ? Object.values(actionTypesIndex)
+        .filter(({ id }) => !DEFAULT_HIDDEN_ACTION_TYPES.includes(id))
         .map((actionType) => ({
           value: actionType.id,
           name: `${actionType.name} (${getActionsCountByActionType(actions, actionType.id)})`,
@@ -117,7 +119,11 @@ export const ActionsConnectorsList: React.FunctionComponent = () => {
     setIsLoadingActions(true);
     try {
       const actionsResponse = await loadAllActions({ http });
-      setActions(actionsResponse);
+      setActions(
+        actionsResponse.filter(
+          ({ actionTypeId }) => !DEFAULT_HIDDEN_ACTION_TYPES.includes(actionTypeId)
+        )
+      );
     } catch (e) {
       toastNotifications.addDanger({
         title: i18n.translate(
