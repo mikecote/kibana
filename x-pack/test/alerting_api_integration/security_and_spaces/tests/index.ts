@@ -65,11 +65,11 @@ export default function alertingApiIntegrationTests({
       await setupSpacesAndUsers(spacesService, securityService);
     });
 
-    after(async () => {
-      await tearDownUsers(securityService);
+    // after(async () => {
+    //   await tearDownUsers(securityService);
 
-      await esArchiver.unload('empty_kibana');
-    });
+    //   await esArchiver.unload('empty_kibana');
+    // });
 
     loadTestFile(require.resolve('./actions'));
     loadTestFile(require.resolve('./alerting'));

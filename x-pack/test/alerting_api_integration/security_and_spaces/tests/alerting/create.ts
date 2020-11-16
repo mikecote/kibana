@@ -25,7 +25,7 @@ export default function createAlertTests({ getService }: FtrProviderContext) {
   describe('create', () => {
     const objectRemover = new ObjectRemover(supertest);
 
-    after(() => objectRemover.removeAll());
+    // after(() => objectRemover.removeAll());
 
     async function getScheduledTask(id: string) {
       return await es.get({
@@ -37,7 +37,7 @@ export default function createAlertTests({ getService }: FtrProviderContext) {
     for (const scenario of UserAtSpaceScenarios) {
       const { user, space } = scenario;
       describe(scenario.id, () => {
-        it('should handle create alert request appropriately', async () => {
+        it.only('should handle create alert request appropriately', async () => {
           const { body: createdAction } = await supertest
             .post(`${getUrlPrefix(space.id)}/api/actions/action`)
             .set('kbn-xsrf', 'foo')
@@ -55,6 +55,7 @@ export default function createAlertTests({ getService }: FtrProviderContext) {
             .auth(user.username, user.password)
             .send(
               getTestAlertData({
+                schedule: { interval: '10s' },
                 actions: [
                   {
                     id: createdAction.id,

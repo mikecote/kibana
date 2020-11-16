@@ -245,19 +245,19 @@ const Space1AllAtSpace2: Space1AllAtSpace2 = {
 };
 
 export const UserAtSpaceScenarios: [
-  NoKibanaPrivilegesAtSpace1,
+  // NoKibanaPrivilegesAtSpace1,
   SuperuserAtSpace1,
-  GlobalReadAtSpace1,
-  Space1AllAtSpace1,
-  Space1AllAtSpace2,
-  Space1AllWithRestrictedFixtureAtSpace1,
-  Space1AllAlertingNoneActionsAtSpace1
+  // GlobalReadAtSpace1,
+  // Space1AllAtSpace1,
+  // Space1AllAtSpace2,
+  // Space1AllWithRestrictedFixtureAtSpace1,
+  // Space1AllAlertingNoneActionsAtSpace1
 ] = [
-  NoKibanaPrivilegesAtSpace1,
+  // NoKibanaPrivilegesAtSpace1,
   SuperuserAtSpace1,
-  GlobalReadAtSpace1,
-  Space1AllAtSpace1,
-  Space1AllAtSpace2,
-  Space1AllWithRestrictedFixtureAtSpace1,
-  Space1AllAlertingNoneActionsAtSpace1,
+  // GlobalReadAtSpace1,
+  // Space1AllAtSpace1,
+  // Space1AllAtSpace2,
+  // Space1AllWithRestrictedFixtureAtSpace1,
+  // Space1AllAlertingNoneActionsAtSpace1,
 ];

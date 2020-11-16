@@ -398,7 +398,10 @@ export function defineAlertTypes(
     actionGroups: [{ id: 'default', name: 'Default' }],
     producer: 'alertsFixture',
     defaultActionGroupId: 'default',
-    async executor() {},
+    async executor() {
+      console.log('Running', new Date().toISOString());
+      await new Promise(resolve => setTimeout(resolve, 30000));
+    },
   };
   const onlyContextVariablesAlertType: AlertType = {
     id: 'test.onlyContextVariables',
