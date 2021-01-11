@@ -66,13 +66,31 @@ export function createTaskPoller<T, H>({
 
   const errors$ = new Subject<Err<PollingError<T>>>();
 
+  const pollIntervalSubject = new Subject<number>();
+  pollInterval$.subscribe((val) => {
+    pollIntervalSubject.next(val);
+  });
+
+  const nextMinute = new Date();
+  nextMinute.setMinutes(nextMinute.getMinutes() + 1);
+  nextMinute.setSeconds(0);
+  nextMinute.setMilliseconds(0);
+
+  setTimeout(() => {
+    console.log('***', new Date().toISOString(), 'PUSH');
+    pollIntervalSubject.next(3000);
+  }, nextMinute.getTime() - Date.now());
+
+  console.log('***', new Date().toISOString(), 'WAITING', nextMinute.getTime() - Date.now(), 'to reset interval');
+
   const requestWorkProcessing$ = merge(
     // emit a polling event on demand
     pollRequests$,
     // emit a polling event on a fixed interval
-    pollInterval$.pipe(
+    pollIntervalSubject.pipe(
       switchMap((period) => {
-        logger.debug(`Task poller now using interval of ${period}ms`);
+        console.log(`*** Task poller now using interval of ${period}ms`)
+        logger.info(`Task poller now using interval of ${period}ms`);
         return interval(period);
       }),
       mapTo(none)

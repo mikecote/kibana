@@ -51,7 +51,7 @@ export class TaskPool {
   constructor(opts: Opts) {
     this.logger = opts.logger;
     opts.maxWorkers$.subscribe((maxWorkers) => {
-      this.logger.debug(`Task pool now using ${maxWorkers} as the max worker value`);
+      this.logger.info(`Task pool now using ${maxWorkers} as the max worker value`);
       this.maxWorkers = maxWorkers;
     });
   }
@@ -91,7 +91,7 @@ export class TaskPool {
   };
 
   public cancelRunningTasks() {
-    this.logger.debug('Cancelling running tasks.');
+    this.logger.info('Cancelling running tasks.');
     for (const task of this.running) {
       this.cancelTask(task);
     }
@@ -145,7 +145,7 @@ export class TaskPool {
           err.message
         }`;
         if (isTaskSavedObjectNotFoundError(err, taskRunner.id)) {
-          this.logger.debug(errorLogLine);
+          this.logger.info(errorLogLine);
         } else {
           this.logger.warn(errorLogLine);
         }
@@ -176,7 +176,7 @@ export class TaskPool {
 
   private async cancelTask(task: TaskRunner) {
     try {
-      this.logger.debug(`Cancelling task ${task.toString()}.`);
+      this.logger.info(`Cancelling task ${task.toString()}.`);
       this.running.delete(task);
       await task.cancel();
     } catch (err) {

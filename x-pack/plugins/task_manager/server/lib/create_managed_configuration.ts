@@ -43,17 +43,18 @@ export function createManagedConfiguration({
   errors$,
 }: ManagedConfigurationOpts): ManagedConfiguration {
   const errorCheck$ = countErrors(errors$, ADJUST_THROUGHPUT_INTERVAL);
+  const pollIntervalConfiguration$ = errorCheck$.pipe(
+    createPollIntervalScan(logger, startingPollInterval),
+    startWith(startingPollInterval),
+    distinctUntilChanged()
+  );
   return {
     maxWorkersConfiguration$: errorCheck$.pipe(
       createMaxWorkersScan(logger, startingMaxWorkers),
       startWith(startingMaxWorkers),
       distinctUntilChanged()
     ),
-    pollIntervalConfiguration$: errorCheck$.pipe(
-      createPollIntervalScan(logger, startingPollInterval),
-      startWith(startingPollInterval),
-      distinctUntilChanged()
-    ),
+    pollIntervalConfiguration$,
   };
 }
 
@@ -74,7 +75,7 @@ function createMaxWorkersScan(logger: Logger, startingMaxWorkers: number) {
       );
     }
     if (newMaxWorkers !== previousMaxWorkers) {
-      logger.debug(
+      logger.info(
         `Max workers configuration changing from ${previousMaxWorkers} to ${newMaxWorkers} after seeing ${errorCount} error(s)`
       );
       if (previousMaxWorkers === startingMaxWorkers) {
@@ -103,7 +104,7 @@ function createPollIntervalScan(logger: Logger, startingPollInterval: number) {
       );
     }
     if (newPollInterval !== previousPollInterval) {
-      logger.debug(
+      logger.info(
         `Poll interval configuration changing from ${previousPollInterval} to ${newPollInterval} after seeing ${errorCount} error(s)`
       );
       if (previousPollInterval === startingPollInterval) {

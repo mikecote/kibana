@@ -190,7 +190,7 @@ export class TaskManagerRunner implements TaskRunner {
    * @returns {Promise<Result<SuccessfulRunResult, FailedRunResult>>}
    */
   public async run(): Promise<Result<SuccessfulRunResult, FailedRunResult>> {
-    this.logger.debug(`Running task ${this}`);
+    this.logger.info(`Running task ${this}`);
     const modifiedContext = await this.beforeRun({
       taskInstance: this.instance,
     });
@@ -247,7 +247,7 @@ export class TaskManagerRunner implements TaskRunner {
 
       const timeUntilClaimExpires = howManyMsUntilOwnershipClaimExpires(ownershipClaimedUntil);
       if (timeUntilClaimExpires < 0) {
-        this.logger.debug(
+        this.logger.info(
           `[Task Runner] Task ${id} started after ownership expired (${Math.abs(
             timeUntilClaimExpires
           )}ms after expiry)`
@@ -275,7 +275,7 @@ export class TaskManagerRunner implements TaskRunner {
         ownershipClaimedUntil
       );
       if (timeUntilClaimExpiresAfterUpdate < 0) {
-        this.logger.debug(
+        this.logger.info(
           `[Task Runner] Task ${id} ran after ownership expired (${Math.abs(
             timeUntilClaimExpiresAfterUpdate
           )}ms after expiry)`
@@ -309,7 +309,7 @@ export class TaskManagerRunner implements TaskRunner {
       return task.cancel();
     }
 
-    this.logger.debug(`The task ${this} is not cancellable.`);
+    this.logger.info(`The task ${this} is not cancellable.`);
   }
 
   private validateResult(

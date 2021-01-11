@@ -3,6 +3,7 @@
  * or more contributor license agreements. Licensed under the Elastic License;
  * you may not use this file except in compliance with the Elastic License.
  */
+import uuid from 'uuid';
 import { combineLatest, Observable, Subject } from 'rxjs';
 import { first, map, distinctUntilChanged } from 'rxjs/operators';
 import {
@@ -66,7 +67,8 @@ export class TaskManagerPlugin
     this.elasticsearchAndSOAvailability$ = getElasticsearchAndSOAvailability(core.status.core$);
 
     setupSavedObjects(core.savedObjects, this.config);
-    this.taskManagerId = this.initContext.env.instanceUuid;
+    // this.taskManagerId = this.initContext.env.instanceUuid;
+    this.taskManagerId = uuid.v4();
 
     if (!this.taskManagerId) {
       this.logger.error(

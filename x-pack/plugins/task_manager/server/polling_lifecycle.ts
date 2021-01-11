@@ -273,7 +273,7 @@ export async function claimAvailableTasks(
     }
   } else {
     performance.mark('claimAvailableTasks.noAvailableWorkers');
-    logger.debug(
+    logger.info(
       `[Task Ownership]: Task Manager has skipped Claiming Ownership of available tasks at it has ran out Available Workers.`
     );
     return asErr(FillPoolResult.NoAvailableWorkers);

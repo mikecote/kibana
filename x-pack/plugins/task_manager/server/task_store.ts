@@ -210,6 +210,7 @@ export class TaskStore {
     claimTasksById = [],
     size,
   }: OwnershipClaimingOpts): Promise<ClaimOwnershipResult> => {
+    console.log('***', new Date().toISOString(), 'claimAvailableTasks');
     const claimTasksByIdWithRawIds = claimTasksById.map((id) =>
       this.serializer.generateRawId(undefined, 'task', id)
     );
@@ -260,6 +261,7 @@ export class TaskStore {
     claimTasksById: OwnershipClaimingOpts['claimTasksById'],
     size: OwnershipClaimingOpts['size']
   ): Promise<number> {
+    console.log('***', new Date().toISOString(), 'markAvailableTasksAsClaimed');
     const registeredTaskTypes = this.definitions.getAllTypes();
     const taskMaxAttempts = [...this.definitions].reduce((accumulator, [type, { maxAttempts }]) => {
       return { ...accumulator, [type]: maxAttempts || this.maxAttempts };
@@ -319,6 +321,7 @@ export class TaskStore {
     claimTasksById: OwnershipClaimingOpts['claimTasksById'],
     size: OwnershipClaimingOpts['size']
   ): Promise<ConcreteTaskInstance[]> {
+    console.log('***', new Date().toISOString(), 'sweepForClaimedTasks');
     const claimedTasksQuery = tasksClaimedByOwner(this.taskManagerId);
     const { docs } = await this.search({
       query:
