@@ -192,6 +192,14 @@ export function toElasticsearchQuery(
     }
   }, []);
 
+  if (queries?.length === 1) {
+    return {
+      bool: {
+        must: queries[0],
+      },
+    };
+  }
+
   return {
     bool: {
       should: queries || [],
