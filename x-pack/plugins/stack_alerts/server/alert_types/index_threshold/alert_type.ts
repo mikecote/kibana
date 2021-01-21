@@ -133,6 +133,36 @@ export function getAlertType(
         index: {
           type: 'keyword',
         },
+        timeField: {
+          type: 'keyword',
+        },
+        aggType: {
+          type: 'keyword',
+        },
+        aggField: {
+          type: 'keyword',
+        },
+        groupBy: {
+          type: 'keyword',
+        },
+        termField: {
+          type: 'keyword',
+        },
+        termSize: {
+          type: 'integer',
+        },
+        timeWindowSize: {
+          type: 'integer',
+        },
+        timeWindowUnit: {
+          type: 'keyword',
+        },
+        thresholdComparator: {
+          type: 'keyword',
+        },
+        threshold: {
+          type: 'integer',
+        },
       },
     },
     actionVariables: {

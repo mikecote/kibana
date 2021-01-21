@@ -14,6 +14,7 @@ import {
   SavedObject,
   PluginInitializerContext,
   SavedObjectsUtils,
+  SavedObjectAttributes,
 } from '../../../../../src/core/server';
 import { esKuery } from '../../../../../src/plugins/data/server';
 import { ActionsClient, ActionsAuthorization } from '../../../actions/server';
@@ -275,7 +276,7 @@ export class AlertsClient {
       updatedBy: username,
       createdAt: new Date(createTime).toISOString(),
       updatedAt: new Date(createTime).toISOString(),
-      params: validatedAlertTypeParams as RawAlert['params'],
+      params: this.splitParamsByType(alertType.id, validatedAlertTypeParams as RawAlert['params']),
       muteAll: false,
       mutedInstanceIds: [],
       notifyWhen,
@@ -733,7 +734,7 @@ export class AlertsClient {
       ...attributes,
       ...data,
       ...apiKeyAttributes,
-      params: validatedAlertTypeParams as RawAlert['params'],
+      params: this.splitParamsByType(alertType.id, validatedAlertTypeParams as RawAlert['params']),
       actions,
       notifyWhen,
       updatedBy: username,
@@ -1374,6 +1375,17 @@ export class AlertsClient {
     { createdAt, updatedAt, meta, notifyWhen, scheduledTaskId, ...rawAlert }: Partial<RawAlert>,
     references: SavedObjectReference[] | undefined
   ): PartialAlert<Params> {
+    const params = rawAlert.params
+      ? (Object.keys(rawAlert.params).reduce(
+          (prevVal: SavedObjectAttributes, currentValue: string) => {
+            if (typeof rawAlert.params![currentValue] === 'object') {
+              return { ...prevVal, ...(rawAlert.params![currentValue] as SavedObjectAttributes) };
+            }
+            return prevVal;
+          },
+          {} as SavedObjectAttributes
+        ) as Alert['params'])
+      : undefined;
     // Not the prettiest code here, but if we want to use most of the
     // alert fields from the rawAlert using `...rawAlert` kind of access, we
     // need to specifically delete the executionStatus as it's a different type
@@ -1398,6 +1410,7 @@ export class AlertsClient {
       ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       ...(scheduledTaskId ? { scheduledTaskId } : {}),
       ...(executionStatus ? { executionStatus } : {}),
+      ...(params ? { params } : {}),
     };
   }
 
@@ -1480,6 +1493,16 @@ export class AlertsClient {
       alertAttributes.meta.versionApiKeyLastmodified = this.kibanaVersion;
     }
     return alertAttributes;
+  }
+
+  private splitParamsByType(alertTypeId: string, params: RawAlert['params']): RawAlert['params'] {
+    const alertType = this.alertTypeRegistry.get(alertTypeId);
+    if (alertType.paramMappings) {
+      return {
+        [alertTypeId.replace(/\./g, '__')]: params,
+      };
+    }
+    return { default: params };
   }
 }
 
