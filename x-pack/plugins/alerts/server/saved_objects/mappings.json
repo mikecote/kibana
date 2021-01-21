@@ -47,8 +47,12 @@
         }
       },
       "params": {
-        "enabled": false,
-        "type": "object"
+        "properties": {
+          "default": {
+            "enabled": false,
+            "type": "object"
+          }
+        }
       },
       "scheduledTaskId": {
         "type": "keyword"

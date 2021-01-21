@@ -9,9 +9,12 @@ import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import typeDetect from 'type-detect';
 import { intersection } from 'lodash';
+import { SavedObjectsServiceSetup } from 'kibana/server';
 import { LicensingPluginSetup } from '../../licensing/server';
 import { RunContext, TaskManagerSetupContract } from '../../task_manager/server';
 import { TaskRunnerFactory } from './task_runner';
+import { augmentAlertParamsMapping } from './saved_objects';
+import { EncryptedSavedObjectsPluginSetup } from '../../encrypted_saved_objects/server';
 import {
   AlertType,
   AlertTypeParams,
@@ -33,6 +36,8 @@ export interface ConstructorOptions {
   taskRunnerFactory: TaskRunnerFactory;
   licenseState: ILicenseState;
   licensing: LicensingPluginSetup;
+  savedObjects: SavedObjectsServiceSetup;
+  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
 }
 
 export interface RegistryAlertType
@@ -112,12 +117,23 @@ export class AlertTypeRegistry {
   private readonly taskRunnerFactory: TaskRunnerFactory;
   private readonly licenseState: ILicenseState;
   private readonly licensing: LicensingPluginSetup;
+  private readonly savedObjects: SavedObjectsServiceSetup;
+  private readonly encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
 
-  constructor({ taskManager, taskRunnerFactory, licenseState, licensing }: ConstructorOptions) {
+  constructor({
+    taskManager,
+    taskRunnerFactory,
+    licenseState,
+    licensing,
+    savedObjects,
+    encryptedSavedObjects,
+  }: ConstructorOptions) {
     this.taskManager = taskManager;
     this.taskRunnerFactory = taskRunnerFactory;
     this.licenseState = licenseState;
     this.licensing = licensing;
+    this.savedObjects = savedObjects;
+    this.encryptedSavedObjects = encryptedSavedObjects;
   }
 
   public has(id: string) {
@@ -190,6 +206,14 @@ export class AlertTypeRegistry {
       this.licensing.featureUsage.register(
         getAlertTypeFeatureUsageName(alertType.name),
         alertType.minimumLicenseRequired
+      );
+    }
+    if (alertType.paramMappings) {
+      augmentAlertParamsMapping(
+        this.savedObjects,
+        this.encryptedSavedObjects,
+        alertType.id,
+        alertType.paramMappings
       );
     }
   }

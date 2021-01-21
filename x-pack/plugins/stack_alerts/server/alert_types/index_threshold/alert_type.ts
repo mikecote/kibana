@@ -128,6 +128,13 @@ export function getAlertType(
     validate: {
       params: ParamsSchema,
     },
+    paramMappings: {
+      properties: {
+        index: {
+          type: 'keyword',
+        },
+      },
+    },
     actionVariables: {
       context: [
         { name: 'message', description: actionVariableContextMessageLabel },

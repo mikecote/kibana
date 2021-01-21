@@ -210,6 +210,8 @@ export class AlertingPlugin {
       taskRunnerFactory: this.taskRunnerFactory,
       licenseState: this.licenseState,
       licensing: plugins.licensing,
+      savedObjects: core.savedObjects,
+      encryptedSavedObjects: plugins.encryptedSavedObjects,
     });
     this.alertTypeRegistry = alertTypeRegistry;
 

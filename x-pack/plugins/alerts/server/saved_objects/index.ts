@@ -20,6 +20,8 @@ export const AlertAttributesExcludedFromAAD = [
   'executionStatus',
 ];
 
+const augmentedAlertParamMappings: Record<string, unknown> = {};
+
 // useful for Pick<RawAlert, AlertAttributesExcludedFromAADType> which is a
 // type which is a subset of RawAlert with just attributes excluded from AAD
 
@@ -71,5 +73,33 @@ export function setupSavedObjects(
   encryptedSavedObjects.registerType({
     type: 'api_key_pending_invalidation',
     attributesToEncrypt: new Set(['apiKeyId']),
+  });
+}
+
+export function augmentAlertParamsMapping(
+  savedObjects: SavedObjectsServiceSetup,
+  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
+  type: string,
+  paramMappings: Record<string, unknown>
+) {
+  augmentedAlertParamMappings[type.replace(/\./g, '__')] = paramMappings;
+  savedObjects.replaceType({
+    name: 'alert',
+    hidden: true,
+    namespaceType: 'single',
+    migrations: getMigrations(encryptedSavedObjects),
+    mappings: {
+      ...mappings.alert,
+      properties: {
+        ...mappings.alert.properties,
+        params: {
+          ...mappings.alert.properties.params,
+          properties: {
+            ...mappings.alert.properties.params.properties,
+            ...augmentedAlertParamMappings,
+          },
+        },
+      },
+    },
   });
 }

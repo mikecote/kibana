@@ -13,6 +13,7 @@ const createRegistryMock = (): jest.Mocked<
 > => {
   const mock = {
     registerType: jest.fn(),
+    replaceType: jest.fn(),
     getType: jest.fn(),
     getVisibleTypes: jest.fn(),
     getAllTypes: jest.fn(),

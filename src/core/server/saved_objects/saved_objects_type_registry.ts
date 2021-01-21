@@ -27,10 +27,22 @@ export class SavedObjectTypeRegistry {
   /**
    * Register a {@link SavedObjectsType | type} inside the registry.
    * A type can only be registered once. subsequent calls with the same type name will throw an error.
+   * Use replaceType instead.
    */
   public registerType(type: SavedObjectsType) {
     if (this.types.has(type.name)) {
       throw new Error(`Type '${type.name}' is already registered`);
+    }
+    validateType(type);
+    this.types.set(type.name, deepFreeze(type));
+  }
+
+  /**
+   * Replace a {@link SavedObjectsType | type} inside the registry.
+   */
+  public replaceType(type: SavedObjectsType) {
+    if (!this.types.has(type.name)) {
+      throw new Error(`Type '${type.name}' is not registered`);
     }
     validateType(type);
     this.types.set(type.name, deepFreeze(type));

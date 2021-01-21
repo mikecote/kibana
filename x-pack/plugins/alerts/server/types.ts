@@ -131,6 +131,7 @@ export interface AlertType<
   validate?: {
     params?: AlertTypeParamsValidator<Params>;
   };
+  paramMappings?: Record<string, unknown>;
   actionGroups: Array<ActionGroup<ActionGroupIds>>;
   defaultActionGroupId: ActionGroup<ActionGroupIds>['id'];
   recoveryActionGroup?: ActionGroup<RecoveryActionGroupId>;

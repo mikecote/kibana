@@ -268,6 +268,7 @@ export class LegacyService implements CoreService {
         setClientFactoryProvider: setupDeps.core.savedObjects.setClientFactoryProvider,
         addClientWrapper: setupDeps.core.savedObjects.addClientWrapper,
         registerType: setupDeps.core.savedObjects.registerType,
+        replaceType: setupDeps.core.savedObjects.replaceType,
       },
       status: {
         isStatusPageAnonymous: setupDeps.core.status.isStatusPageAnonymous,

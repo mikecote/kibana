@@ -142,6 +142,13 @@ export interface SavedObjectsServiceSetup {
    * ```
    */
   registerType: (type: SavedObjectsType) => void;
+
+  /**
+   * Replace a registered {@link SavedObjectsType | savedObjects type} definition.
+   *
+   * See registerType for more details about the parameters.
+   */
+  replaceType: (type: SavedObjectsType) => void;
 }
 
 /**
@@ -337,6 +344,12 @@ export class SavedObjectsService
           throw new Error('cannot call `registerType` after service startup.');
         }
         this.typeRegistry.registerType(type);
+      },
+      replaceType: (type) => {
+        if (this.started) {
+          throw new Error('cannot call `replaceType` after service startup.');
+        }
+        this.typeRegistry.replaceType(type);
       },
     };
   }
