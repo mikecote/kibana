@@ -4,7 +4,13 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
-import { SavedObjectsServiceSetup } from 'kibana/server';
+import {
+  SavedObjectsServiceSetup,
+  SavedObjectsType,
+  SavedObjectsComplexFieldMapping,
+  SavedObjectsTypeMappingDefinition,
+  SavedObjectsFieldMapping,
+} from 'kibana/server';
 import mappings from './mappings.json';
 import { getMigrations } from './migrations';
 import { EncryptedSavedObjectsPluginSetup } from '../../../encrypted_saved_objects/server';
@@ -20,7 +26,7 @@ export const AlertAttributesExcludedFromAAD = [
   'executionStatus',
 ];
 
-const augmentedAlertParamMappings: Record<string, unknown> = {};
+const alertTypeParamMappings: Record<string, SavedObjectsFieldMapping> = {};
 
 // useful for Pick<RawAlert, AlertAttributesExcludedFromAADType> which is a
 // type which is a subset of RawAlert with just attributes excluded from AAD
@@ -44,6 +50,33 @@ export function setupSavedObjects(
     namespaceType: 'single',
     migrations: getMigrations(encryptedSavedObjects),
     mappings: mappings.alert,
+    hooks: [
+      savedObjects.createHooks({
+        mappings(currentMappings: SavedObjectsType['mappings']) {
+          const paramMappings = Object.keys(alertTypeParamMappings).reduce(
+            (acc: Record<string, unknown>, alertTypeId) => {
+              acc[alertTypeId.replace(/\./g, '__')] = alertTypeParamMappings[alertTypeId];
+              return acc;
+            },
+            {}
+          );
+          return {
+            ...currentMappings,
+            properties: {
+              ...currentMappings.properties,
+              params: {
+                ...currentMappings.properties.params,
+                properties: {
+                  ...(currentMappings.properties.params as SavedObjectsComplexFieldMapping)
+                    .properties,
+                  ...paramMappings,
+                },
+              },
+            },
+          } as SavedObjectsTypeMappingDefinition;
+        },
+      }),
+    ],
   });
 
   savedObjects.registerType({
@@ -76,30 +109,9 @@ export function setupSavedObjects(
   });
 }
 
-export function augmentAlertParamsMapping(
-  savedObjects: SavedObjectsServiceSetup,
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
-  type: string,
-  paramMappings: Record<string, unknown>
+export function setAlertTypeParamMapping(
+  alertTypeId: string,
+  paramMappings: SavedObjectsFieldMapping
 ) {
-  augmentedAlertParamMappings[type.replace(/\./g, '__')] = paramMappings;
-  savedObjects.replaceType({
-    name: 'alert',
-    hidden: true,
-    namespaceType: 'single',
-    migrations: getMigrations(encryptedSavedObjects),
-    mappings: {
-      ...mappings.alert,
-      properties: {
-        ...mappings.alert.properties,
-        params: {
-          ...mappings.alert.properties.params,
-          properties: {
-            ...mappings.alert.properties.params.properties,
-            ...augmentedAlertParamMappings,
-          },
-        },
-      },
-    },
-  });
+  alertTypeParamMappings[alertTypeId] = paramMappings;
 }

@@ -29,7 +29,13 @@ import {
   SavedObjectConfig,
 } from './saved_objects_config';
 import { KibanaRequest, InternalHttpServiceSetup } from '../http';
-import { SavedObjectsClientContract, SavedObjectsType, SavedObjectStatusMeta } from './types';
+import {
+  SavedObjectsClientContract,
+  SavedObjectHook,
+  SavedObjectHookConfigs,
+  SavedObjectsType,
+  SavedObjectStatusMeta,
+} from './types';
 import { ISavedObjectsRepository, SavedObjectsRepository } from './service/lib/repository';
 import {
   SavedObjectsClientFactoryProvider,
@@ -143,12 +149,7 @@ export interface SavedObjectsServiceSetup {
    */
   registerType: (type: SavedObjectsType) => void;
 
-  /**
-   * Replace a registered {@link SavedObjectsType | savedObjects type} definition.
-   *
-   * See registerType for more details about the parameters.
-   */
-  replaceType: (type: SavedObjectsType) => void;
+  createHooks: (configs: Partial<SavedObjectHookConfigs>) => SavedObjectHook;
 }
 
 /**
@@ -345,11 +346,18 @@ export class SavedObjectsService
         }
         this.typeRegistry.registerType(type);
       },
-      replaceType: (type) => {
-        if (this.started) {
-          throw new Error('cannot call `replaceType` after service startup.');
-        }
-        this.typeRegistry.replaceType(type);
+      createHooks: (configs: Partial<SavedObjectHookConfigs>): SavedObjectHook => {
+        return (prevConfig: SavedObjectsType) => {
+          return {
+            ...prevConfig,
+            mappings: configs.mappings
+              ? configs.mappings(prevConfig.mappings)
+              : prevConfig.mappings,
+            migrations: configs.migrations
+              ? configs.migrations(prevConfig.migrations)
+              : prevConfig.migrations,
+          };
+        };
       },
     };
   }
@@ -369,6 +377,12 @@ export class SavedObjectsService
       .pipe(first())
       .toPromise();
     const client = elasticsearch.client;
+
+    for (const soType of this.typeRegistry.getAllTypes()) {
+      if (soType.hooks) {
+        this.typeRegistry.replaceType(soType.hooks.reduce((acc, hook) => hook(acc), soType));
+      }
+    }
 
     const migrator = this.createMigrator(
       kibanaConfig,

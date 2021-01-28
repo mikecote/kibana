@@ -13,7 +13,7 @@ import { SavedObjectsServiceSetup } from 'kibana/server';
 import { LicensingPluginSetup } from '../../licensing/server';
 import { RunContext, TaskManagerSetupContract } from '../../task_manager/server';
 import { TaskRunnerFactory } from './task_runner';
-import { augmentAlertParamsMapping } from './saved_objects';
+import { setAlertTypeParamMapping } from './saved_objects';
 import { EncryptedSavedObjectsPluginSetup } from '../../encrypted_saved_objects/server';
 import {
   AlertType,
@@ -117,23 +117,12 @@ export class AlertTypeRegistry {
   private readonly taskRunnerFactory: TaskRunnerFactory;
   private readonly licenseState: ILicenseState;
   private readonly licensing: LicensingPluginSetup;
-  private readonly savedObjects: SavedObjectsServiceSetup;
-  private readonly encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
 
-  constructor({
-    taskManager,
-    taskRunnerFactory,
-    licenseState,
-    licensing,
-    savedObjects,
-    encryptedSavedObjects,
-  }: ConstructorOptions) {
+  constructor({ taskManager, taskRunnerFactory, licenseState, licensing }: ConstructorOptions) {
     this.taskManager = taskManager;
     this.taskRunnerFactory = taskRunnerFactory;
     this.licenseState = licenseState;
     this.licensing = licensing;
-    this.savedObjects = savedObjects;
-    this.encryptedSavedObjects = encryptedSavedObjects;
   }
 
   public has(id: string) {
@@ -209,12 +198,7 @@ export class AlertTypeRegistry {
       );
     }
     if (alertType.paramMappings) {
-      augmentAlertParamsMapping(
-        this.savedObjects,
-        this.encryptedSavedObjects,
-        alertType.id,
-        alertType.paramMappings
-      );
+      setAlertTypeParamMapping(alertType.id, alertType.paramMappings);
     }
   }
 

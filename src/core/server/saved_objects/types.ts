@@ -41,6 +41,13 @@ export {
   SavedObjectsMigrationVersion,
 } from '../../types';
 
+export interface SavedObjectHookConfigs {
+  mappings: (currentMapping: SavedObjectsType['mappings']) => SavedObjectsType['mappings'];
+  migrations: (currentMigrations: SavedObjectsType['migrations']) => SavedObjectsType['migrations'];
+}
+
+export type SavedObjectHook = (config: SavedObjectsType) => SavedObjectsType;
+
 /**
  * Meta information about the SavedObjectService's status. Available to plugins via {@link CoreSetup.status}.
  *
@@ -281,6 +288,7 @@ export interface SavedObjectsType {
    * An optional {@link SavedObjectsTypeManagementDefinition | saved objects management section} definition for the type.
    */
   management?: SavedObjectsTypeManagementDefinition;
+  hooks?: SavedObjectHook[];
 }
 
 /**
