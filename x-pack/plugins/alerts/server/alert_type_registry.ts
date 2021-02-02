@@ -9,6 +9,7 @@ import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import typeDetect from 'type-detect';
 import { intersection } from 'lodash';
+import { SavedObjectsServiceSetup } from 'kibana/server';
 import { LicensingPluginSetup } from '../../licensing/server';
 import { RunContext, TaskManagerSetupContract } from '../../task_manager/server';
 import { TaskRunnerFactory } from './task_runner';
@@ -25,14 +26,19 @@ import {
   RecoveredActionGroupId,
   ActionGroup,
 } from '../common';
+import mappings from './saved_objects/mappings.json';
 import { ILicenseState } from './lib/license_state';
 import { getAlertTypeFeatureUsageName } from './lib/get_alert_type_feature_usage_name';
+import { EncryptedSavedObjectsPluginSetup } from '../../encrypted_saved_objects/server';
+import { AlertAttributesExcludedFromAAD } from './saved_objects';
 
 export interface ConstructorOptions {
   taskManager: TaskManagerSetupContract;
   taskRunnerFactory: TaskRunnerFactory;
   licenseState: ILicenseState;
   licensing: LicensingPluginSetup;
+  savedObjects: SavedObjectsServiceSetup;
+  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
 }
 
 export interface RegistryAlertType
@@ -45,6 +51,7 @@ export interface RegistryAlertType
     | 'actionVariables'
     | 'producer'
     | 'minimumLicenseRequired'
+    | 'soType'
   > {
   id: string;
   enabledInLicense: boolean;
@@ -78,6 +85,7 @@ export type NormalizedAlertType<
   ActionGroupIds extends string,
   RecoveryActionGroupId extends string
 > = {
+  soType: string;
   actionGroups: Array<ActionGroup<ActionGroupIds | RecoveryActionGroupId>>;
 } & Omit<
   AlertType<Params, State, InstanceState, InstanceContext, ActionGroupIds, RecoveryActionGroupId>,
@@ -112,12 +120,16 @@ export class AlertTypeRegistry {
   private readonly taskRunnerFactory: TaskRunnerFactory;
   private readonly licenseState: ILicenseState;
   private readonly licensing: LicensingPluginSetup;
+  private readonly savedObjects: SavedObjectsServiceSetup;
+  private readonly encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
 
-  constructor({ taskManager, taskRunnerFactory, licenseState, licensing }: ConstructorOptions) {
-    this.taskManager = taskManager;
-    this.taskRunnerFactory = taskRunnerFactory;
-    this.licenseState = licenseState;
-    this.licensing = licensing;
+  constructor(opts: ConstructorOptions) {
+    this.taskManager = opts.taskManager;
+    this.taskRunnerFactory = opts.taskRunnerFactory;
+    this.licenseState = opts.licenseState;
+    this.licensing = opts.licensing;
+    this.savedObjects = opts.savedObjects;
+    this.encryptedSavedObjects = opts.encryptedSavedObjects;
   }
 
   public has(id: string) {
@@ -192,6 +204,29 @@ export class AlertTypeRegistry {
         alertType.minimumLicenseRequired
       );
     }
+
+    // Register SO type
+    this.savedObjects.registerType({
+      name: normalizedAlertType.soType,
+      hidden: true,
+      namespaceType: 'single',
+      migrations: {},
+      indexPattern: '.kibana_rules',
+      mappings: {
+        ...mappings.alert,
+        properties: {
+          ...mappings.alert.properties,
+          params: alertType.paramMappings
+            ? alertType.paramMappings
+            : mappings.alert.properties.params,
+        },
+      },
+    });
+    this.encryptedSavedObjects.registerType({
+      type: normalizedAlertType.soType,
+      attributesToEncrypt: new Set(['apiKey']),
+      attributesToExcludeFromAAD: new Set(AlertAttributesExcludedFromAAD),
+    });
   }
 
   public get<
@@ -244,6 +279,7 @@ export class AlertTypeRegistry {
           {
             name,
             actionGroups,
+            soType,
             recoveryActionGroup,
             defaultActionGroupId,
             actionVariables,
@@ -258,6 +294,7 @@ export class AlertTypeRegistry {
           defaultActionGroupId,
           actionVariables,
           producer,
+          soType,
           minimumLicenseRequired,
           enabledInLicense: !!this.licenseState.getLicenseCheckForAlertType(
             id,
@@ -339,6 +376,7 @@ function augmentActionGroupsWithReserved<
 
   return {
     ...alertType,
+    soType: `rule_type_${alertType.id.replace(/\./g, '_')}`,
     actionGroups: [...actionGroups, ...reservedActionGroups],
     recoveryActionGroup: recoveryActionGroup ?? RecoveredActionGroup,
   };

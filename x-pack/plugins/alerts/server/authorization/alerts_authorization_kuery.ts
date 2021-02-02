@@ -8,20 +8,23 @@ import { remove } from 'lodash';
 import { nodeBuilder } from '../../../../../src/plugins/data/common';
 import { KueryNode } from '../../../../../src/plugins/data/server';
 import { RegistryAlertTypeWithAuth } from './alerts_authorization';
+import { AlertTypeRegistry } from '../types';
 
 export function asFiltersByAlertTypeAndConsumer(
-  alertTypes: Set<RegistryAlertTypeWithAuth>
+  alertTypes: Set<RegistryAlertTypeWithAuth>,
+  alertTypeRegistry: AlertTypeRegistry
 ): KueryNode {
   return nodeBuilder.or(
     Array.from(alertTypes).reduce<KueryNode[]>((filters, { id, authorizedConsumers }) => {
       ensureFieldIsSafeForQuery('alertTypeId', id);
+      const { soType } = alertTypeRegistry.get(id);
       filters.push(
         nodeBuilder.and([
-          nodeBuilder.is(`alert.attributes.alertTypeId`, id),
+          nodeBuilder.is(`${soType}.attributes.alertTypeId`, id),
           nodeBuilder.or(
             Object.keys(authorizedConsumers).map((consumer) => {
               ensureFieldIsSafeForQuery('consumer', consumer);
-              return nodeBuilder.is(`alert.attributes.consumer`, consumer);
+              return nodeBuilder.is(`${soType}.attributes.consumer`, consumer);
             })
           ),
         ])

@@ -131,7 +131,7 @@ export interface ActionsPluginsStart {
 const includedHiddenTypes = [
   ACTION_SAVED_OBJECT_TYPE,
   ACTION_TASK_PARAMS_SAVED_OBJECT_TYPE,
-  ALERT_SAVED_OBJECT_TYPE,
+  // ALERT_SAVED_OBJECT_TYPE,
 ];
 
 export class ActionsPlugin implements Plugin<Promise<PluginSetupContract>, PluginStartContract> {

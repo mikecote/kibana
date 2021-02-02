@@ -172,6 +172,8 @@ interface GetAlertInstanceSummaryParams {
   dateStart?: string;
 }
 
+const idMapToSoType: Record<string, string> = {};
+
 export class AlertsClient {
   private readonly logger: Logger;
   private readonly getUserName: () => Promise<string | null>;
@@ -188,6 +190,7 @@ export class AlertsClient {
   private readonly encryptedSavedObjectsClient: EncryptedSavedObjectsClient;
   private readonly kibanaVersion!: PluginInitializerContext['env']['packageInfo']['version'];
   private readonly auditLogger?: AuditLogger;
+  private allSoTypes: string[];
 
   constructor({
     alertTypeRegistry,
@@ -221,6 +224,7 @@ export class AlertsClient {
     this.getEventLogClient = getEventLogClient;
     this.kibanaVersion = kibanaVersion;
     this.auditLogger = auditLogger;
+    this.allSoTypes = [...this.alertTypeRegistry.list()].map((alertType) => alertType.soType);
   }
 
   public async create<Params extends AlertTypeParams = never>({
@@ -228,6 +232,8 @@ export class AlertsClient {
     options,
   }: CreateOptions<Params>): Promise<Alert<Params>> {
     const id = options?.id || SavedObjectsUtils.generateId();
+    // Throws an error if alert type isn't registered
+    const alertType = this.alertTypeRegistry.get(data.alertTypeId);
 
     try {
       await this.authorization.ensureAuthorized(
@@ -239,7 +245,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.CREATE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: alertType.soType, id },
           error,
         })
       );
@@ -247,9 +253,6 @@ export class AlertsClient {
     }
 
     this.alertTypeRegistry.ensureAlertTypeEnabled(data.alertTypeId);
-
-    // Throws an error if alert type isn't registered
-    const alertType = this.alertTypeRegistry.get(data.alertTypeId);
 
     const validatedAlertTypeParams = validateAlertTypeParams(
       data.params,
@@ -291,14 +294,14 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.CREATE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: alertType.soType, id },
       })
     );
 
     let createdAlert: SavedObject<RawAlert>;
     try {
       createdAlert = await this.unsecuredSavedObjectsClient.create(
-        'alert',
+        alertType.soType,
         this.updateMeta(rawAlert),
         {
           ...options,
@@ -326,7 +329,7 @@ export class AlertsClient {
       } catch (e) {
         // Cleanup data, something went wrong scheduling the task
         try {
-          await this.unsecuredSavedObjectsClient.delete('alert', createdAlert.id);
+          await this.unsecuredSavedObjectsClient.delete(alertType.soType, createdAlert.id);
         } catch (err) {
           // Skip the cleanup error and throw the task manager error to avoid confusion
           this.logger.error(
@@ -335,11 +338,13 @@ export class AlertsClient {
         }
         throw e;
       }
-      await this.unsecuredSavedObjectsClient.update<RawAlert>('alert', createdAlert.id, {
+      await this.unsecuredSavedObjectsClient.update<RawAlert>(alertType.soType, createdAlert.id, {
         scheduledTaskId: scheduledTask.id,
       });
       createdAlert.attributes.scheduledTaskId = scheduledTask.id;
     }
+    // HACK: Store a map of id:soType so we can reference it later in the same server session
+    idMapToSoType[createdAlert.id] = alertType.soType;
     return this.getAlertFromRaw<Params>(createdAlert.id, createdAlert.attributes, references);
   }
 
@@ -348,7 +353,8 @@ export class AlertsClient {
   }: {
     id: string;
   }): Promise<SanitizedAlert<Params>> {
-    const result = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+    const soType = idMapToSoType[id];
+    const result = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
     try {
       await this.authorization.ensureAuthorized(
         result.attributes.alertTypeId,
@@ -359,7 +365,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.GET,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -368,7 +374,7 @@ export class AlertsClient {
     this.auditLogger?.log(
       alertAuditEvent({
         action: AlertAuditAction.GET,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
     return this.getAlertFromRaw<Params>(result.id, result.attributes, result.references);
@@ -394,6 +400,7 @@ export class AlertsClient {
     id,
     dateStart,
   }: GetAlertInstanceSummaryParams): Promise<AlertInstanceSummary> {
+    const soType = idMapToSoType[id];
     this.logger.debug(`getAlertInstanceSummary(): getting alert ${id}`);
     const alert = await this.get({ id });
     await this.authorization.ensureAuthorized(
@@ -413,7 +420,7 @@ export class AlertsClient {
     this.logger.debug(`getAlertInstanceSummary(): search the event log for alert ${id}`);
     let events: IEvent[];
     try {
-      const queryResults = await eventLogClient.findEventsBySavedObjectIds('alert', [id], {
+      const queryResults = await eventLogClient.findEventsBySavedObjectIds(soType, [id], {
         page: 1,
         per_page: 10000,
         start: parsedDateStart.toISOString(),
@@ -469,17 +476,18 @@ export class AlertsClient {
           ? nodeBuilder.and([esKuery.fromKueryExpression(options.filter), authorizationFilter])
           : authorizationFilter) ?? options.filter,
       fields: fields ? this.includeFieldsRequiredForAuthentication(fields) : fields,
-      type: 'alert',
+      type: this.allSoTypes,
     });
 
     const authorizedData = data.map(({ id, attributes, references }) => {
       try {
         ensureAlertTypeIsAuthorized(attributes.alertTypeId, attributes.consumer);
       } catch (error) {
+        const soType = idMapToSoType[id];
         this.auditLogger?.log(
           alertAuditEvent({
             action: AlertAuditAction.FIND,
-            savedObject: { type: 'alert', id },
+            savedObject: { type: soType, id },
             error,
           })
         );
@@ -492,14 +500,15 @@ export class AlertsClient {
       );
     });
 
-    authorizedData.forEach(({ id }) =>
+    authorizedData.forEach(({ id }) => {
+      const soType = idMapToSoType[id];
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.FIND,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
         })
-      )
-    );
+      );
+    });
 
     logSuccessfulAuthorization();
 
@@ -521,18 +530,23 @@ export class AlertsClient {
           filter: authorizationFilter,
           logSuccessfulAuthorization,
         } = await this.authorization.getFindAuthorizationFilter();
+        const statusFilter = nodeBuilder.or(
+          this.allSoTypes.map((soType) =>
+            nodeBuilder.is(`${soType}.attributes.executionStatus.status`, status)
+          )
+        );
         const filter = options.filter
-          ? `${options.filter} and alert.attributes.executionStatus.status:(${status})`
-          : `alert.attributes.executionStatus.status:(${status})`;
+          ? nodeBuilder.and([esKuery.fromKueryExpression(options.filter), statusFilter])
+          : statusFilter;
         const { total } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
           ...options,
           filter:
             (authorizationFilter && filter
-              ? nodeBuilder.and([esKuery.fromKueryExpression(filter), authorizationFilter])
+              ? nodeBuilder.and([filter, authorizationFilter])
               : authorizationFilter) ?? filter,
           page: 1,
           perPage: 0,
-          type: 'alert',
+          type: this.allSoTypes,
         });
 
         logSuccessfulAuthorization();
@@ -554,9 +568,10 @@ export class AlertsClient {
     let apiKeyToInvalidate: string | null = null;
     let attributes: RawAlert;
 
+    const soType = idMapToSoType[id];
     try {
       const decryptedAlert = await this.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawAlert>(
-        'alert',
+        soType,
         id,
         { namespace: this.namespace }
       );
@@ -569,7 +584,7 @@ export class AlertsClient {
         `delete(): Failed to load API key to invalidate on alert ${id}: ${e.message}`
       );
       // Still attempt to load the scheduledTaskId using SOC
-      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
       taskIdToRemove = alert.attributes.scheduledTaskId;
       attributes = alert.attributes;
     }
@@ -584,7 +599,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.DELETE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -595,11 +610,11 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.DELETE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
-    const removeResult = await this.unsecuredSavedObjectsClient.delete('alert', id);
+    const removeResult = await this.unsecuredSavedObjectsClient.delete(soType, id);
 
     await Promise.all([
       taskIdToRemove ? this.taskManager.removeIfExists(taskIdToRemove) : null,
@@ -631,10 +646,11 @@ export class AlertsClient {
     data,
   }: UpdateOptions<Params>): Promise<PartialAlert<Params>> {
     let alertSavedObject: SavedObject<RawAlert>;
+    const soType = idMapToSoType[id];
 
     try {
       alertSavedObject = await this.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawAlert>(
-        'alert',
+        soType,
         id,
         { namespace: this.namespace }
       );
@@ -644,7 +660,7 @@ export class AlertsClient {
         `update(): Failed to load API key to invalidate on alert ${id}: ${e.message}`
       );
       // Still attempt to load the object using SOC
-      alertSavedObject = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+      alertSavedObject = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
     }
 
     try {
@@ -657,7 +673,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.UPDATE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -668,7 +684,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.UPDATE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
@@ -742,7 +758,7 @@ export class AlertsClient {
     });
     try {
       updatedObject = await this.unsecuredSavedObjectsClient.create<RawAlert>(
-        'alert',
+        alertType.soType,
         createAttributes,
         {
           id,
@@ -791,10 +807,11 @@ export class AlertsClient {
     let apiKeyToInvalidate: string | null = null;
     let attributes: RawAlert;
     let version: string | undefined;
+    const soType = idMapToSoType[id];
 
     try {
       const decryptedAlert = await this.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawAlert>(
-        'alert',
+        soType,
         id,
         { namespace: this.namespace }
       );
@@ -807,7 +824,7 @@ export class AlertsClient {
         `updateApiKey(): Failed to load API key to invalidate on alert ${id}: ${e.message}`
       );
       // Still attempt to load the attributes and version using SOC
-      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
       attributes = alert.attributes;
       version = alert.version;
     }
@@ -825,7 +842,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.UPDATE_API_KEY,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -847,14 +864,14 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.UPDATE_API_KEY,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
     this.alertTypeRegistry.ensureAlertTypeEnabled(attributes.alertTypeId);
 
     try {
-      await this.unsecuredSavedObjectsClient.update('alert', id, updateAttributes, { version });
+      await this.unsecuredSavedObjectsClient.update(soType, id, updateAttributes, { version });
     } catch (e) {
       // Avoid unused API key
       markApiKeyForInvalidation(
@@ -886,10 +903,11 @@ export class AlertsClient {
     let apiKeyToInvalidate: string | null = null;
     let attributes: RawAlert;
     let version: string | undefined;
+    const soType = idMapToSoType[id];
 
     try {
       const decryptedAlert = await this.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawAlert>(
-        'alert',
+        soType,
         id,
         { namespace: this.namespace }
       );
@@ -902,7 +920,7 @@ export class AlertsClient {
         `enable(): Failed to load API key to invalidate on alert ${id}: ${e.message}`
       );
       // Still attempt to load the attributes and version using SOC
-      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
       attributes = alert.attributes;
       version = alert.version;
     }
@@ -921,7 +939,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.ENABLE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -932,7 +950,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.ENABLE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
@@ -951,7 +969,7 @@ export class AlertsClient {
         updatedAt: new Date().toISOString(),
       });
       try {
-        await this.unsecuredSavedObjectsClient.update('alert', id, updateAttributes, { version });
+        await this.unsecuredSavedObjectsClient.update(soType, id, updateAttributes, { version });
       } catch (e) {
         // Avoid unused API key
         markApiKeyForInvalidation(
@@ -966,7 +984,7 @@ export class AlertsClient {
         attributes.alertTypeId,
         attributes.schedule as IntervalSchedule
       );
-      await this.unsecuredSavedObjectsClient.update('alert', id, {
+      await this.unsecuredSavedObjectsClient.update(soType, id, {
         scheduledTaskId: scheduledTask.id,
       });
       if (apiKeyToInvalidate) {
@@ -991,10 +1009,11 @@ export class AlertsClient {
     let apiKeyToInvalidate: string | null = null;
     let attributes: RawAlert;
     let version: string | undefined;
+    const soType = idMapToSoType[id];
 
     try {
       const decryptedAlert = await this.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawAlert>(
-        'alert',
+        soType,
         id,
         { namespace: this.namespace }
       );
@@ -1007,7 +1026,7 @@ export class AlertsClient {
         `disable(): Failed to load API key to invalidate on alert ${id}: ${e.message}`
       );
       // Still attempt to load the attributes and version using SOC
-      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>('alert', id);
+      const alert = await this.unsecuredSavedObjectsClient.get<RawAlert>(soType, id);
       attributes = alert.attributes;
       version = alert.version;
     }
@@ -1022,7 +1041,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.DISABLE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -1033,7 +1052,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.DISABLE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
@@ -1041,7 +1060,7 @@ export class AlertsClient {
 
     if (attributes.enabled === true) {
       await this.unsecuredSavedObjectsClient.update(
-        'alert',
+        soType,
         id,
         this.updateMeta({
           ...attributes,
@@ -1079,8 +1098,9 @@ export class AlertsClient {
   }
 
   private async muteAllWithOCC({ id }: { id: string }) {
+    const soType = idMapToSoType[id];
     const { attributes, version } = await this.unsecuredSavedObjectsClient.get<RawAlert>(
-      'alert',
+      soType,
       id
     );
 
@@ -1098,7 +1118,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.MUTE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -1109,7 +1129,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.MUTE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
@@ -1127,7 +1147,8 @@ export class AlertsClient {
       this.unsecuredSavedObjectsClient,
       id,
       updateAttributes,
-      updateOptions
+      updateOptions,
+      soType
     );
   }
 
@@ -1140,8 +1161,9 @@ export class AlertsClient {
   }
 
   private async unmuteAllWithOCC({ id }: { id: string }) {
+    const soType = idMapToSoType[id];
     const { attributes, version } = await this.unsecuredSavedObjectsClient.get<RawAlert>(
-      'alert',
+      soType,
       id
     );
 
@@ -1159,7 +1181,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.UNMUTE,
-          savedObject: { type: 'alert', id },
+          savedObject: { type: soType, id },
           error,
         })
       );
@@ -1170,7 +1192,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.UNMUTE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id },
+        savedObject: { type: soType, id },
       })
     );
 
@@ -1188,7 +1210,8 @@ export class AlertsClient {
       this.unsecuredSavedObjectsClient,
       id,
       updateAttributes,
-      updateOptions
+      updateOptions,
+      soType
     );
   }
 
@@ -1201,8 +1224,9 @@ export class AlertsClient {
   }
 
   private async muteInstanceWithOCC({ alertId, alertInstanceId }: MuteOptions) {
+    const soType = idMapToSoType[alertId];
     const { attributes, version } = await this.unsecuredSavedObjectsClient.get<Alert>(
-      'alert',
+      soType,
       alertId
     );
 
@@ -1220,7 +1244,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.MUTE_INSTANCE,
-          savedObject: { type: 'alert', id: alertId },
+          savedObject: { type: soType, id: alertId },
           error,
         })
       );
@@ -1231,7 +1255,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.MUTE_INSTANCE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id: alertId },
+        savedObject: { type: soType, id: alertId },
       })
     );
 
@@ -1241,7 +1265,7 @@ export class AlertsClient {
     if (!attributes.muteAll && !mutedInstanceIds.includes(alertInstanceId)) {
       mutedInstanceIds.push(alertInstanceId);
       await this.unsecuredSavedObjectsClient.update(
-        'alert',
+        soType,
         alertId,
         this.updateMeta({
           mutedInstanceIds,
@@ -1268,8 +1292,9 @@ export class AlertsClient {
     alertId: string;
     alertInstanceId: string;
   }) {
+    const soType = idMapToSoType[alertId];
     const { attributes, version } = await this.unsecuredSavedObjectsClient.get<Alert>(
-      'alert',
+      soType,
       alertId
     );
 
@@ -1286,7 +1311,7 @@ export class AlertsClient {
       this.auditLogger?.log(
         alertAuditEvent({
           action: AlertAuditAction.UNMUTE_INSTANCE,
-          savedObject: { type: 'alert', id: alertId },
+          savedObject: { type: soType, id: alertId },
           error,
         })
       );
@@ -1297,7 +1322,7 @@ export class AlertsClient {
       alertAuditEvent({
         action: AlertAuditAction.UNMUTE_INSTANCE,
         outcome: EventOutcome.UNKNOWN,
-        savedObject: { type: 'alert', id: alertId },
+        savedObject: { type: soType, id: alertId },
       })
     );
 
@@ -1306,7 +1331,7 @@ export class AlertsClient {
     const mutedInstanceIds = attributes.mutedInstanceIds || [];
     if (!attributes.muteAll && mutedInstanceIds.includes(alertInstanceId)) {
       await this.unsecuredSavedObjectsClient.update<RawAlert>(
-        'alert',
+        soType,
         alertId,
         this.updateMeta({
           updatedBy: await this.getUserName(),

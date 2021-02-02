@@ -246,7 +246,7 @@ export class AlertsAuthorization {
 
       const authorizedEntries: Map<string, Set<string>> = new Map();
       return {
-        filter: asFiltersByAlertTypeAndConsumer(authorizedAlertTypes),
+        filter: asFiltersByAlertTypeAndConsumer(authorizedAlertTypes, this.alertTypeRegistry),
         ensureAlertTypeIsAuthorized: (alertTypeId: string, consumer: string) => {
           if (!authorizedAlertTypeIdsToConsumers.has(`${alertTypeId}/${consumer}`)) {
             throw Boom.forbidden(

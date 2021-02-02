@@ -210,6 +210,8 @@ export class AlertingPlugin {
       taskRunnerFactory: this.taskRunnerFactory,
       licenseState: this.licenseState,
       licensing: plugins.licensing,
+      savedObjects: core.savedObjects,
+      encryptedSavedObjects: plugins.encryptedSavedObjects,
     });
     this.alertTypeRegistry = alertTypeRegistry;
 
@@ -253,7 +255,12 @@ export class AlertingPlugin {
       );
     });
 
-    initializeAlertingHealth(this.logger, plugins.taskManager, core.getStartServices());
+    initializeAlertingHealth(
+      this.logger,
+      plugins.taskManager,
+      core.getStartServices(),
+      alertTypeRegistry
+    );
 
     core.http.registerRouteHandlerContext<AlertingRequestHandlerContext, 'alerting'>(
       'alerting',
@@ -318,10 +325,11 @@ export class AlertingPlugin {
       licenseState,
     } = this;
 
+    const soTypes = [...this.alertTypeRegistry!.list()].map((alertType) => alertType.soType);
     licenseState?.setNotifyUsage(plugins.licensing.featureUsage.notifyUsage);
 
     const encryptedSavedObjectsClient = plugins.encryptedSavedObjects.getClient({
-      includedHiddenTypes: ['alert'],
+      includedHiddenTypes: soTypes,
     });
 
     const spaceIdToNamespace = (spaceId?: string) => {
@@ -361,24 +369,28 @@ export class AlertingPlugin {
 
     taskRunnerFactory.initialize({
       logger,
-      getServices: this.getServicesFactory(core.savedObjects, core.elasticsearch),
+      getServices: this.getServicesFactory(core.savedObjects, core.elasticsearch, soTypes),
       getAlertsClientWithRequest,
       spaceIdToNamespace,
       actionsPlugin: plugins.actions,
       encryptedSavedObjectsClient,
       basePathService: core.http.basePath,
       eventLogger: this.eventLogger!,
-      internalSavedObjectsRepository: core.savedObjects.createInternalRepository(['alert']),
+      internalSavedObjectsRepository: core.savedObjects.createInternalRepository(soTypes),
       alertTypeRegistry: this.alertTypeRegistry!,
     });
 
-    this.eventLogService!.registerSavedObjectProvider('alert', (request) => {
-      const client = getAlertsClientWithRequest(request);
-      return (objects?: SavedObjectsBulkGetObject[]) =>
-        objects
-          ? Promise.all(objects.map(async (objectItem) => await client.get({ id: objectItem.id })))
-          : Promise.resolve([]);
-    });
+    for (const soType of soTypes) {
+      this.eventLogService!.registerSavedObjectProvider(soType, (request) => {
+        const client = getAlertsClientWithRequest(request);
+        return (objects?: SavedObjectsBulkGetObject[]) =>
+          objects
+            ? Promise.all(
+                objects.map(async (objectItem) => await client.get({ id: objectItem.id }))
+              )
+            : Promise.resolve([]);
+      });
+    }
 
     scheduleAlertingTelemetry(this.telemetryLogger, plugins.taskManager);
 
@@ -389,7 +401,7 @@ export class AlertingPlugin {
       listTypes: alertTypeRegistry!.list.bind(this.alertTypeRegistry!),
       getAlertsClientWithRequest,
       getFrameworkHealth: async () =>
-        await getHealth(core.savedObjects.createInternalRepository(['alert'])),
+        await getHealth(core.savedObjects.createInternalRepository(soTypes), soTypes),
     };
   }
 
@@ -399,24 +411,30 @@ export class AlertingPlugin {
     const { alertTypeRegistry, alertsClientFactory } = this;
     return async function alertsRouteHandlerContext(context, request) {
       const [{ savedObjects }] = await core.getStartServices();
+      const soTypes = [...alertTypeRegistry!.list()].map((alertType) => alertType.soType);
       return {
         getAlertsClient: () => {
           return alertsClientFactory!.create(request, savedObjects);
         },
         listTypes: alertTypeRegistry!.list.bind(alertTypeRegistry!),
         getFrameworkHealth: async () =>
-          await getHealth(savedObjects.createInternalRepository(['alert'])),
+          await getHealth(savedObjects.createInternalRepository(soTypes), soTypes),
       };
     };
   };
 
   private getServicesFactory(
     savedObjects: SavedObjectsServiceStart,
-    elasticsearch: ElasticsearchServiceStart
+    elasticsearch: ElasticsearchServiceStart,
+    soTypes: string[]
   ): (request: KibanaRequest) => Services {
     return (request) => ({
       callCluster: elasticsearch.legacy.client.asScoped(request).callAsCurrentUser,
-      savedObjectsClient: this.getScopedClientWithAlertSavedObjectType(savedObjects, request),
+      savedObjectsClient: this.getScopedClientWithAlertSavedObjectType(
+        savedObjects,
+        request,
+        soTypes
+      ),
       scopedClusterClient: elasticsearch.client.asScoped(request).asCurrentUser,
       getLegacyScopedClusterClient(clusterClient: ILegacyClusterClient) {
         return clusterClient.asScoped(request);
@@ -426,9 +444,10 @@ export class AlertingPlugin {
 
   private getScopedClientWithAlertSavedObjectType(
     savedObjects: SavedObjectsServiceStart,
-    request: KibanaRequest
+    request: KibanaRequest,
+    soTypes: string[]
   ) {
-    return savedObjects.getScopedClient(request, { includedHiddenTypes: ['alert', 'action'] });
+    return savedObjects.getScopedClient(request, { includedHiddenTypes: [...soTypes, 'action'] });
   }
 
   public stop() {

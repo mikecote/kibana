@@ -89,6 +89,8 @@ export class AlertsClientFactory {
       ),
     });
 
+    const soTypes = [...this.alertTypeRegistry.list()].map((alertType) => alertType.soType);
+
     return new AlertsClient({
       spaceId,
       kibanaVersion: this.kibanaVersion,
@@ -97,7 +99,7 @@ export class AlertsClientFactory {
       alertTypeRegistry: this.alertTypeRegistry,
       unsecuredSavedObjectsClient: savedObjects.getScopedClient(request, {
         excludedWrappers: ['security'],
-        includedHiddenTypes: ['alert', 'api_key_pending_invalidation'],
+        includedHiddenTypes: [...soTypes, 'api_key_pending_invalidation'],
       }),
       authorization,
       actionsAuthorization: actions.getActionsAuthorizationWithRequest(request),

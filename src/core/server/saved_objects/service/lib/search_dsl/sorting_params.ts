@@ -38,9 +38,29 @@ export function getSortingParams(
   if (types.length > 1) {
     const rootField = getProperty(mappings, sortField);
     if (!rootField) {
-      throw Boom.badRequest(
-        `Unable to sort multiple types by field ${sortField}, not a root property`
-      );
+      return {
+        sort: {
+          _script: {
+            type: 'string',
+            order: sortOrder,
+            script: {
+              lang: 'painless',
+              source: types
+                .map(
+                  (soType) => `
+                    if (doc['${soType}.${sortField}'].size()!=0) {
+                      return doc['${soType}.${sortField}'].value;
+                    }
+                  `
+                )
+                .join('\n'),
+            },
+          },
+        },
+      };
+      // throw Boom.badRequest(
+      //   `Unable to sort multiple types by field ${sortField}, not a root property`
+      // );
     }
 
     return {

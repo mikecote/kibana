@@ -35,14 +35,15 @@ export async function partiallyUpdateAlert(
   savedObjectsClient: SavedObjectClientForUpdate,
   id: string,
   attributes: PartiallyUpdateableAlertAttributes,
-  options: PartiallyUpdateAlertSavedObjectOptions = {}
+  options: PartiallyUpdateAlertSavedObjectOptions = {},
+  soType: string
 ): Promise<void> {
   // ensure we only have the valid attributes excluded from AAD
   const attributeUpdates = pick(attributes, AlertAttributesExcludedFromAAD);
   const updateOptions: SavedObjectsUpdateOptions = pick(options, 'namespace', 'version', 'refresh');
 
   try {
-    await savedObjectsClient.update<RawAlert>('alert', id, attributeUpdates, updateOptions);
+    await savedObjectsClient.update<RawAlert>(soType, id, attributeUpdates, updateOptions);
   } catch (err) {
     if (options?.ignore404 && SavedObjectsErrorHelpers.isNotFoundError(err)) {
       return;

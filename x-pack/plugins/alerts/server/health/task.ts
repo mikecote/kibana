@@ -14,6 +14,7 @@ import { AlertsConfig } from '../config';
 import { AlertingPluginsStart } from '../plugin';
 import { HealthStatus } from '../types';
 import { getHealth } from './get_health';
+import { AlertTypeRegistry } from '../alert_type_registry';
 
 export const HEALTH_TASK_TYPE = 'alerting_health_check';
 
@@ -22,9 +23,10 @@ export const HEALTH_TASK_ID = `Alerting-${HEALTH_TASK_TYPE}`;
 export function initializeAlertingHealth(
   logger: Logger,
   taskManager: TaskManagerSetupContract,
-  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>
+  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>,
+  alertTypeRegistry: AlertTypeRegistry
 ) {
-  registerAlertingHealthCheckTask(logger, taskManager, coreStartServices);
+  registerAlertingHealthCheckTask(logger, taskManager, coreStartServices, alertTypeRegistry);
 }
 
 export async function scheduleAlertingHealthCheck(
@@ -51,27 +53,31 @@ export async function scheduleAlertingHealthCheck(
 function registerAlertingHealthCheckTask(
   logger: Logger,
   taskManager: TaskManagerSetupContract,
-  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>
+  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>,
+  alertTypeRegistry: AlertTypeRegistry
 ) {
   taskManager.registerTaskDefinitions({
     [HEALTH_TASK_TYPE]: {
       title: 'Alerting framework health check task',
-      createTaskRunner: healthCheckTaskRunner(logger, coreStartServices),
+      createTaskRunner: healthCheckTaskRunner(logger, coreStartServices, alertTypeRegistry),
     },
   });
 }
 
 export function healthCheckTaskRunner(
   logger: Logger,
-  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>
+  coreStartServices: Promise<[CoreStart, AlertingPluginsStart, unknown]>,
+  alertTypeRegistry: AlertTypeRegistry
 ) {
   return ({ taskInstance }: RunContext) => {
     const { state } = taskInstance;
     return {
       async run() {
         try {
+          const soTypes = [...alertTypeRegistry!.list()].map((alertType) => alertType.soType);
           const alertingHealthStatus = await getHealth(
-            (await coreStartServices)[0].savedObjects.createInternalRepository(['alert'])
+            (await coreStartServices)[0].savedObjects.createInternalRepository(soTypes),
+            soTypes
           );
           return {
             state: {

@@ -5,8 +5,8 @@
  */
 
 import { SavedObjectsServiceSetup } from 'kibana/server';
-import mappings from './mappings.json';
-import { getMigrations } from './migrations';
+// import mappings from './mappings.json';
+// import { getMigrations } from './migrations';
 import { EncryptedSavedObjectsPluginSetup } from '../../../encrypted_saved_objects/server';
 
 export { partiallyUpdateAlert } from './partially_update_alert';
@@ -36,13 +36,13 @@ export function setupSavedObjects(
   savedObjects: SavedObjectsServiceSetup,
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup
 ) {
-  savedObjects.registerType({
-    name: 'alert',
-    hidden: true,
-    namespaceType: 'single',
-    migrations: getMigrations(encryptedSavedObjects),
-    mappings: mappings.alert,
-  });
+  // savedObjects.registerType({
+  //   name: 'alert',
+  //   hidden: true,
+  //   namespaceType: 'single',
+  //   migrations: getMigrations(encryptedSavedObjects),
+  //   mappings: mappings.alert,
+  // });
 
   savedObjects.registerType({
     name: 'api_key_pending_invalidation',
@@ -60,12 +60,12 @@ export function setupSavedObjects(
     },
   });
 
-  // Encrypted attributes
-  encryptedSavedObjects.registerType({
-    type: 'alert',
-    attributesToEncrypt: new Set(['apiKey']),
-    attributesToExcludeFromAAD: new Set(AlertAttributesExcludedFromAAD),
-  });
+  // // Encrypted attributes
+  // encryptedSavedObjects.registerType({
+  //   type: 'alert',
+  //   attributesToEncrypt: new Set(['apiKey']),
+  //   attributesToExcludeFromAAD: new Set(AlertAttributesExcludedFromAAD),
+  // });
 
   // Encrypted attributes
   encryptedSavedObjects.registerType({
