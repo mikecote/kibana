@@ -16,6 +16,9 @@ export const nodeBuilder = {
       nodeTypes.literal.buildNode(false),
     ]);
   },
+  not: (node: KueryNode): KueryNode => {
+    return nodeTypes.function.buildNode('not', node);
+  },
   or: (nodes: KueryNode[]): KueryNode => {
     return nodes.length > 1 ? nodeTypes.function.buildNode('or', nodes) : nodes[0];
   },

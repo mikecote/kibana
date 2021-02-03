@@ -126,6 +126,7 @@ export async function loadAlerts({
       default_search_operator: 'AND',
       sort_field: 'name.keyword',
       sort_order: 'asc',
+      sort_type: 'string',
     },
   });
 }

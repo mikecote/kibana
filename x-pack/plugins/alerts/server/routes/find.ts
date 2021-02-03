@@ -24,6 +24,7 @@ const querySchema = schema.object({
   search_fields: schema.maybe(schema.oneOf([schema.arrayOf(schema.string()), schema.string()])),
   sort_field: schema.maybe(schema.string()),
   sort_order: schema.maybe(schema.oneOf([schema.literal('asc'), schema.literal('desc')])),
+  sort_type: schema.maybe(schema.string()),
   has_reference: schema.maybe(
     // use nullable as maybe is currently broken
     // in config-schema
@@ -64,6 +65,7 @@ export const findAlertRoute = (router: AlertingRouter, licenseState: ILicenseSta
         sort_field: 'sortField',
         sort_order: 'sortOrder',
         filter: 'filter',
+        sort_type: 'sortType',
       };
 
       const options = renameKeys<FindOptions, Record<string, unknown>>(renameMap, query);

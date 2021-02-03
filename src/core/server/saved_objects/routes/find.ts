@@ -37,6 +37,7 @@ export const registerFindRoute = (router: IRouter, { coreUsageData }: RouteDepen
             schema.oneOf([schema.string(), schema.arrayOf(schema.string())])
           ),
           sort_field: schema.maybe(schema.string()),
+          sort_type: schema.maybe(schema.string()),
           has_reference: schema.maybe(
             schema.oneOf([referenceSchema, schema.arrayOf(referenceSchema)])
           ),
@@ -67,6 +68,7 @@ export const registerFindRoute = (router: IRouter, { coreUsageData }: RouteDepen
         searchFields:
           typeof query.search_fields === 'string' ? [query.search_fields] : query.search_fields,
         sortField: query.sort_field,
+        sortType: query.sort_type,
         hasReference: query.has_reference,
         hasReferenceOperator: query.has_reference_operator,
         fields: typeof query.fields === 'string' ? [query.fields] : query.fields,

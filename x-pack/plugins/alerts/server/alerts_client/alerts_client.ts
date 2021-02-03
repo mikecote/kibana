@@ -99,6 +99,7 @@ export interface FindOptions extends IndexType {
   searchFields?: string[];
   sortField?: string;
   sortOrder?: string;
+  sortType?: string;
   hasReference?: {
     type: string;
     id: string;

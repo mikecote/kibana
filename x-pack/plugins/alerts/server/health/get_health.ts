@@ -5,6 +5,7 @@
  */
 import { ISavedObjectsRepository } from 'src/core/server';
 import { AlertsHealth, HealthStatus, RawAlert, AlertExecutionStatusErrorReasons } from '../types';
+import { nodeBuilder } from '../../../../../src/plugins/data/common';
 
 export const getHealth = async (
   internalSavedObjectsRepository: ISavedObjectsRepository,
@@ -25,74 +26,114 @@ export const getHealth = async (
     },
   };
 
-  // const { saved_objects: decryptErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
-  //   filter: `alert.attributes.executionStatus.status:error and alert.attributes.executionStatus.error.reason:${AlertExecutionStatusErrorReasons.Decrypt}`,
-  //   fields: ['executionStatus'],
-  //   type: soTypes,
-  //   sortField: 'executionStatus.lastExecutionDate',
-  //   sortOrder: 'desc',
-  //   page: 1,
-  //   perPage: 1,
-  // });
+  const { saved_objects: decryptErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
+    filter: nodeBuilder.or(
+      soTypes.map((soType) =>
+        nodeBuilder.and([
+          nodeBuilder.is(`${soType}.attributes.executionStatus.status`, 'error'),
+          nodeBuilder.is(
+            `${soType}.attributes.executionStatus.error.reason`,
+            AlertExecutionStatusErrorReasons.Decrypt
+          ),
+        ])
+      )
+    ),
+    fields: ['executionStatus'],
+    type: soTypes,
+    sortField: 'executionStatus.lastExecutionDate',
+    sortOrder: 'desc',
+    sortType: 'number',
+    page: 1,
+    perPage: 1,
+  });
 
-  // if (decryptErrorData.length > 0) {
-  //   healthStatuses.decryptionHealth = {
-  //     status: HealthStatus.Warning,
-  //     timestamp: decryptErrorData[0].attributes.executionStatus.lastExecutionDate,
-  //   };
-  // }
+  if (decryptErrorData.length > 0) {
+    healthStatuses.decryptionHealth = {
+      status: HealthStatus.Warning,
+      timestamp: decryptErrorData[0].attributes.executionStatus.lastExecutionDate,
+    };
+  }
 
-  // const { saved_objects: executeErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
-  //   filter: `alert.attributes.executionStatus.status:error and alert.attributes.executionStatus.error.reason:${AlertExecutionStatusErrorReasons.Execute}`,
-  //   fields: ['executionStatus'],
-  //   type: soTypes,
-  //   sortField: 'executionStatus.lastExecutionDate',
-  //   sortOrder: 'desc',
-  //   page: 1,
-  //   perPage: 1,
-  // });
+  const { saved_objects: executeErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
+    filter: nodeBuilder.or(
+      soTypes.map((soType) =>
+        nodeBuilder.and([
+          nodeBuilder.is(`${soType}.attributes.executionStatus.status`, 'error'),
+          nodeBuilder.is(
+            `${soType}.attributes.executionStatus.error.reason`,
+            AlertExecutionStatusErrorReasons.Execute
+          ),
+        ])
+      )
+    ),
+    fields: ['executionStatus'],
+    type: soTypes,
+    sortField: 'executionStatus.lastExecutionDate',
+    sortOrder: 'desc',
+    sortType: 'number',
+    page: 1,
+    perPage: 1,
+  });
 
-  // if (executeErrorData.length > 0) {
-  //   healthStatuses.executionHealth = {
-  //     status: HealthStatus.Warning,
-  //     timestamp: executeErrorData[0].attributes.executionStatus.lastExecutionDate,
-  //   };
-  // }
+  if (executeErrorData.length > 0) {
+    healthStatuses.executionHealth = {
+      status: HealthStatus.Warning,
+      timestamp: executeErrorData[0].attributes.executionStatus.lastExecutionDate,
+    };
+  }
 
-  // const { saved_objects: readErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
-  //   filter: `alert.attributes.executionStatus.status:error and alert.attributes.executionStatus.error.reason:${AlertExecutionStatusErrorReasons.Read}`,
-  //   fields: ['executionStatus'],
-  //   type: soTypes,
-  //   sortField: 'executionStatus.lastExecutionDate',
-  //   sortOrder: 'desc',
-  //   page: 1,
-  //   perPage: 1,
-  // });
+  const { saved_objects: readErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
+    filter: nodeBuilder.or(
+      soTypes.map((soType) =>
+        nodeBuilder.and([
+          nodeBuilder.is(`${soType}.attributes.executionStatus.status`, 'error'),
+          nodeBuilder.is(
+            `${soType}.attributes.executionStatus.error.reason`,
+            AlertExecutionStatusErrorReasons.Read
+          ),
+        ])
+      )
+    ),
+    fields: ['executionStatus'],
+    type: soTypes,
+    sortField: 'executionStatus.lastExecutionDate',
+    sortOrder: 'desc',
+    sortType: 'number',
+    page: 1,
+    perPage: 1,
+  });
 
-  // if (readErrorData.length > 0) {
-  //   healthStatuses.readHealth = {
-  //     status: HealthStatus.Warning,
-  //     timestamp: readErrorData[0].attributes.executionStatus.lastExecutionDate,
-  //   };
-  // }
+  if (readErrorData.length > 0) {
+    healthStatuses.readHealth = {
+      status: HealthStatus.Warning,
+      timestamp: readErrorData[0].attributes.executionStatus.lastExecutionDate,
+    };
+  }
 
-  // const { saved_objects: noErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
-  //   filter: 'not alert.attributes.executionStatus.status:error',
-  //   fields: ['executionStatus'],
-  //   type: soTypes,
-  //   sortField: 'executionStatus.lastExecutionDate',
-  //   sortOrder: 'desc',
-  // });
-  // const lastExecutionDate =
-  //   noErrorData.length > 0
-  //     ? noErrorData[0].attributes.executionStatus.lastExecutionDate
-  //     : new Date().toISOString();
+  const { saved_objects: noErrorData } = await internalSavedObjectsRepository.find<RawAlert>({
+    filter: nodeBuilder.not(
+      nodeBuilder.or(
+        soTypes.map((soType) =>
+          nodeBuilder.is(`${soType}.attributes.executionStatus.status`, 'error')
+        )
+      )
+    ),
+    fields: ['executionStatus'],
+    type: soTypes,
+    sortField: 'executionStatus.lastExecutionDate',
+    sortOrder: 'desc',
+    sortType: 'number',
+  });
+  const lastExecutionDate =
+    noErrorData.length > 0
+      ? noErrorData[0].attributes.executionStatus.lastExecutionDate
+      : new Date().toISOString();
 
-  // for (const [, statusItem] of Object.entries(healthStatuses)) {
-  //   if (statusItem.status === HealthStatus.OK) {
-  //     statusItem.timestamp = lastExecutionDate;
-  //   }
-  // }
+  for (const [, statusItem] of Object.entries(healthStatuses)) {
+    if (statusItem.status === HealthStatus.OK) {
+      statusItem.timestamp = lastExecutionDate;
+    }
+  }
 
   return healthStatuses;
 };

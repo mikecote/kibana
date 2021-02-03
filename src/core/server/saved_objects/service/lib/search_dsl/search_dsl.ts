@@ -23,6 +23,7 @@ interface GetSearchDslOptions {
   rootSearchFields?: string[];
   sortField?: string;
   sortOrder?: string;
+  sortType?: string;
   namespaces?: string[];
   typeToNamespacesMap?: Map<string, string[] | undefined>;
   hasReference?: HasReferenceQueryParams | HasReferenceQueryParams[];
@@ -43,6 +44,7 @@ export function getSearchDsl(
     rootSearchFields,
     sortField,
     sortOrder,
+    sortType,
     namespaces,
     typeToNamespacesMap,
     hasReference,
@@ -72,6 +74,6 @@ export function getSearchDsl(
       hasReferenceOperator,
       kueryNode,
     }),
-    ...getSortingParams(mappings, type, sortField, sortOrder),
+    ...getSortingParams(mappings, type, sortField, sortOrder, sortType),
   };
 }

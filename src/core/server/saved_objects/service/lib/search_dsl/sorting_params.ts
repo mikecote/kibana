@@ -15,7 +15,8 @@ export function getSortingParams(
   mappings: IndexMapping,
   type: string | string[],
   sortField?: string,
-  sortOrder?: string
+  sortOrder?: string,
+  sortType?: string
 ) {
   if (!sortField) {
     return {};
@@ -38,10 +39,15 @@ export function getSortingParams(
   if (types.length > 1) {
     const rootField = getProperty(mappings, sortField);
     if (!rootField) {
+      if (!sortType) {
+        throw Boom.badRequest(
+          `Unable to sort multiple types by field ${sortField}, unless sortType is provided`
+        );
+      }
       return {
         sort: {
           _script: {
-            type: 'string',
+            type: sortType,
             order: sortOrder,
             script: {
               lang: 'painless',
@@ -58,9 +64,6 @@ export function getSortingParams(
           },
         },
       };
-      // throw Boom.badRequest(
-      //   `Unable to sort multiple types by field ${sortField}, not a root property`
-      // );
     }
 
     return {
