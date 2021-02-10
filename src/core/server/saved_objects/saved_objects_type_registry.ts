@@ -34,7 +34,7 @@ export class SavedObjectTypeRegistry {
       throw new Error(`Type '${type.name}' is already registered`);
     }
     validateType(type);
-    this.types.set(type.name, deepFreeze(type));
+    this.types.set(type.name, deepFreeze(type) as SavedObjectsType);
   }
 
   /**
@@ -45,7 +45,7 @@ export class SavedObjectTypeRegistry {
       throw new Error(`Type '${type.name}' is not registered`);
     }
     validateType(type);
-    this.types.set(type.name, deepFreeze(type));
+    this.types.set(type.name, deepFreeze(type) as SavedObjectsType);
   }
 
   /**

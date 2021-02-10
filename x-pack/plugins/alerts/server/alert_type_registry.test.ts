@@ -11,6 +11,8 @@ import { taskManagerMock } from '../../task_manager/server/mocks';
 import { ILicenseState } from './lib/license_state';
 import { licenseStateMock } from './lib/license_state.mock';
 import { licensingMock } from '../../licensing/server/mocks';
+import { coreMock } from '../../../../src/core/server/mocks';
+import { encryptedSavedObjectsMock } from '../../encrypted_saved_objects/server/mocks';
 let mockedLicenseState: jest.Mocked<ILicenseState>;
 let alertTypeRegistryParams: ConstructorOptions;
 
@@ -24,6 +26,8 @@ beforeEach(() => {
     taskRunnerFactory: new TaskRunnerFactory(),
     licenseState: mockedLicenseState,
     licensing: licensingMock.createSetup(),
+    savedObjects: coreMock.createSetup().savedObjects,
+    encryptedSavedObjects: encryptedSavedObjectsMock.createSetup(),
   };
 });
 

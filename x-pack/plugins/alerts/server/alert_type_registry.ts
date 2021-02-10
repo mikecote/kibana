@@ -30,7 +30,7 @@ import {
 } from '../common';
 import { ILicenseState } from './lib/license_state';
 import { getAlertTypeFeatureUsageName } from './lib/get_alert_type_feature_usage_name';
-
+import { validateAlertTypeParamMappings } from './lib/validate_alert_type_param_mappings';
 export interface ConstructorOptions {
   taskManager: TaskManagerSetupContract;
   taskRunnerFactory: TaskRunnerFactory;
@@ -197,7 +197,11 @@ export class AlertTypeRegistry {
         alertType.minimumLicenseRequired
       );
     }
-    if (alertType.paramMappings) {
+    // Should this throw an error or just not register the mappings? Throwing an error will prevent Kibana from starting.
+    if (
+      alertType.paramMappings &&
+      validateAlertTypeParamMappings(alertType.id, alertType.paramMappings)
+    ) {
       setAlertTypeParamMapping(alertType.id, alertType.paramMappings);
     }
   }
