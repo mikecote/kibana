@@ -4,7 +4,11 @@
  * 2.0; you may not use this file except in compliance with the Elastic License
  * 2.0.
  */
-import type { IRouter, RequestHandlerContext, SavedObjectsFieldMapping } from 'src/core/server';
+import type {
+  IRouter,
+  RequestHandlerContext,
+  SavedObjectsComplexFieldMapping,
+} from 'src/core/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import { PublicAlertInstance } from './alert_instance';
 import { AlertTypeRegistry as OrigAlertTypeRegistry } from './alert_type_registry';
@@ -132,7 +136,7 @@ export interface AlertType<
   validate?: {
     params?: AlertTypeParamsValidator<Params>;
   };
-  paramMappings?: SavedObjectsFieldMapping;
+  paramMappings?: SavedObjectsComplexFieldMapping;
   actionGroups: Array<ActionGroup<ActionGroupIds>>;
   defaultActionGroupId: ActionGroup<ActionGroupIds>['id'];
   recoveryActionGroup?: ActionGroup<RecoveryActionGroupId>;

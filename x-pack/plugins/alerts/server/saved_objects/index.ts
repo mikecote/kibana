@@ -15,6 +15,7 @@ import {
 import mappings from './mappings.json';
 import { getMigrations } from './migrations';
 import { EncryptedSavedObjectsPluginSetup } from '../../../encrypted_saved_objects/server';
+import { normalizeAlertTypeIdForMapping } from '../lib/validate_alert_type_param_mappings';
 
 export { partiallyUpdateAlert } from './partially_update_alert';
 
@@ -56,7 +57,8 @@ export function setupSavedObjects(
         mappings(currentMappings: SavedObjectsType['mappings']) {
           const paramMappings = Object.keys(alertTypeParamMappings).reduce(
             (acc: Record<string, unknown>, alertTypeId) => {
-              acc[alertTypeId.replace(/\./g, '__')] = alertTypeParamMappings[alertTypeId];
+              acc[normalizeAlertTypeIdForMapping(alertTypeId)] =
+                alertTypeParamMappings[alertTypeId];
               return acc;
             },
             {}
