@@ -328,6 +328,11 @@ export const AlertsList: React.FunctionComponent = () => {
       sortable: false,
     },
     {
+      field: 'paramsAggField',
+      name: 'Agg Field',
+      sortable: false,
+    },
+    {
       field: 'actionsText',
       name: i18n.translate(
         'xpack.triggersActionsUI.sections.alertsList.alertsListTable.columns.actionsText',
@@ -790,6 +795,7 @@ function convertAlertsToTableItems(
     tagsText: alert.tags.join(', '),
     paramsTimeWindowSize: alert.params.timeWindowSize ?? 0,
     paramsAggType: alert.params.aggType ?? '',
+    paramsAggField: alert.params.aggField ?? '',
     alertType: alertTypesIndex.get(alert.alertTypeId)?.name ?? alert.alertTypeId,
     isEditable:
       hasAllPrivilege(alert, alertTypesIndex.get(alert.alertTypeId)) &&

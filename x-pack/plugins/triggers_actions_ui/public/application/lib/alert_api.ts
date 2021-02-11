@@ -152,7 +152,9 @@ export async function loadAlerts({
     query: {
       page: page.index + 1,
       per_page: page.size,
-      search_fields: searchText ? JSON.stringify(['name', 'tags']) : undefined,
+      search_fields: searchText
+        ? JSON.stringify(['name', 'tags', 'params.aggField.text'])
+        : undefined,
       search: searchText,
       filter: filters.length ? filters.join(' and ') : undefined,
       default_search_operator: 'AND',
@@ -185,7 +187,9 @@ export async function loadAlertAggregations({
   });
   return await http.get(`${BASE_ALERT_API_PATH}/_aggregate`, {
     query: {
-      search_fields: searchText ? JSON.stringify(['name', 'tags']) : undefined,
+      search_fields: searchText
+        ? JSON.stringify(['name', 'tags', 'params.aggField.text'])
+        : undefined,
       search: searchText,
       filter: filters.length ? filters.join(' and ') : undefined,
       default_search_operator: 'AND',

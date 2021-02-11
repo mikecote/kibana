@@ -121,6 +121,11 @@ export function getAlertType(
         },
         aggField: {
           type: 'keyword',
+          fields: {
+            text: {
+              type: 'text',
+            },
+          },
         },
         groupBy: {
           type: 'keyword',

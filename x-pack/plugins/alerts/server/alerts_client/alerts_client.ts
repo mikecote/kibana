@@ -453,6 +453,12 @@ export class AlertsClient {
       ? injectAlertTypeIdIntoSort(options.sortField, options.filter, options.alertTypeId)
       : options.sortField;
 
+    const searchFieldsWithAlertType = options.searchFields
+      ? options.searchFields.map((searchField: string) =>
+          injectAlertTypeIdIntoSort(searchField, options.filter, options.alertTypeId)
+        )
+      : options.searchFields;
+
     let authorizationTuple;
     try {
       authorizationTuple = await this.authorization.getFindAuthorizationFilter();
@@ -484,6 +490,7 @@ export class AlertsClient {
           : authorizationFilter) ?? filterWithAlertType,
       fields: fields ? this.includeFieldsRequiredForAuthentication(fields) : fields,
       sortField: sortFieldWithAlertType,
+      searchFields: searchFieldsWithAlertType,
       type: 'alert',
     });
 
@@ -533,6 +540,12 @@ export class AlertsClient {
       ? injectAlertTypeIdIntoFilter(options.filter, options.alertTypeId)
       : options.filter;
 
+    const searchFieldsWithAlertType = options.searchFields
+      ? options.searchFields.map((searchField: string) =>
+          injectAlertTypeIdIntoSort(searchField, options.filter, options.alertTypeId)
+        )
+      : options.searchFields;
+
     // Replace this when saved objects supports aggregations https://github.com/elastic/kibana/pull/64002
     const alertExecutionStatus = await Promise.all(
       AlertExecutionStatusValues.map(async (status: string) => {
@@ -552,6 +565,7 @@ export class AlertsClient {
           page: 1,
           perPage: 0,
           type: 'alert',
+          searchFields: searchFieldsWithAlertType,
         });
 
         logSuccessfulAuthorization();
