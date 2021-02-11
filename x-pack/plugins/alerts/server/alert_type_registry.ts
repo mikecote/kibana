@@ -197,7 +197,7 @@ export class AlertTypeRegistry {
         alertType.minimumLicenseRequired
       );
     }
-    // Should this throw an error or just not register the mappings? Throwing an error will prevent Kibana from starting.
+
     if (
       alertType.paramMappings &&
       validateAlertTypeParamMappings(alertType.id, alertType.paramMappings)

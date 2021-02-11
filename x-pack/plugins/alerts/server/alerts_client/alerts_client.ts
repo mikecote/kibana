@@ -57,7 +57,11 @@ import { partiallyUpdateAlert } from '../saved_objects';
 import { markApiKeyForInvalidation } from '../invalidate_pending_api_keys/mark_api_key_for_invalidation';
 import { alertAuditEvent, AlertAuditAction } from './audit_events';
 import { nodeBuilder } from '../../../../../src/plugins/data/common';
-
+import {
+  normalizeAlertTypeIdForMapping,
+  injectAlertTypeIdIntoFilter,
+  injectAlertTypeIdIntoSort,
+} from '../lib/validate_alert_type_param_mappings';
 export interface RegistryAlertTypeWithAuth extends RegistryAlertType {
   authorizedConsumers: string[];
 }
@@ -106,6 +110,7 @@ export interface FindOptions extends IndexType {
   };
   fields?: string[];
   filter?: string;
+  alertTypeId?: string;
 }
 
 export interface AggregateOptions extends IndexType {
@@ -117,6 +122,7 @@ export interface AggregateOptions extends IndexType {
     id: string;
   };
   filter?: string;
+  alertTypeId?: string;
 }
 
 interface IndexType {
@@ -439,6 +445,14 @@ export class AlertsClient {
   public async find<Params extends AlertTypeParams = never>({
     options: { fields, ...options } = {},
   }: { options?: FindOptions } = {}): Promise<FindResult<Params>> {
+    const filterWithAlertType = options.filter
+      ? injectAlertTypeIdIntoFilter(options.filter, options.alertTypeId)
+      : options.filter;
+
+    const sortFieldWithAlertType = options.sortField
+      ? injectAlertTypeIdIntoSort(options.sortField, options.filter, options.alertTypeId)
+      : options.sortField;
+
     let authorizationTuple;
     try {
       authorizationTuple = await this.authorization.getFindAuthorizationFilter();
@@ -465,10 +479,11 @@ export class AlertsClient {
     } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
       ...options,
       filter:
-        (authorizationFilter && options.filter
-          ? nodeBuilder.and([esKuery.fromKueryExpression(options.filter), authorizationFilter])
-          : authorizationFilter) ?? options.filter,
+        (authorizationFilter && filterWithAlertType
+          ? nodeBuilder.and([esKuery.fromKueryExpression(filterWithAlertType), authorizationFilter])
+          : authorizationFilter) ?? filterWithAlertType,
       fields: fields ? this.includeFieldsRequiredForAuthentication(fields) : fields,
+      sortField: sortFieldWithAlertType,
       type: 'alert',
     });
 
@@ -514,6 +529,10 @@ export class AlertsClient {
   public async aggregate({
     options: { fields, ...options } = {},
   }: { options?: AggregateOptions } = {}): Promise<AggregateResult> {
+    const filterWithAlertType = options.filter
+      ? injectAlertTypeIdIntoFilter(options.filter, options.alertTypeId)
+      : options.filter;
+
     // Replace this when saved objects supports aggregations https://github.com/elastic/kibana/pull/64002
     const alertExecutionStatus = await Promise.all(
       AlertExecutionStatusValues.map(async (status: string) => {
@@ -521,8 +540,8 @@ export class AlertsClient {
           filter: authorizationFilter,
           logSuccessfulAuthorization,
         } = await this.authorization.getFindAuthorizationFilter();
-        const filter = options.filter
-          ? `${options.filter} and alert.attributes.executionStatus.status:(${status})`
+        const filter = filterWithAlertType
+          ? `${filterWithAlertType} and alert.attributes.executionStatus.status:(${status})`
           : `alert.attributes.executionStatus.status:(${status})`;
         const { total } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
           ...options,
@@ -1499,7 +1518,7 @@ export class AlertsClient {
     const alertType = this.alertTypeRegistry.get(alertTypeId);
     if (alertType.paramMappings) {
       return {
-        [alertTypeId.replace(/\./g, '__')]: params,
+        [normalizeAlertTypeIdForMapping(alertTypeId)]: params,
       };
     }
     return { default: params };
