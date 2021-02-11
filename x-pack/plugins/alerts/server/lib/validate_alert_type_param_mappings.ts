@@ -82,7 +82,7 @@ export function injectAlertTypeIdIntoSort(
     throw new Error(`Must specify alertTypeId when sorting on alert type parameters`);
   }
 
-  return sortField.replace(`params.`, `params.${normalizeAlertTypeIdForMapping(alertTypeId)}.`);
+  return sortField.replace(`params.`, `searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}.`);
 }
 
 export function injectAlertTypeIdIntoFilter(filter: string, alertTypeId?: string): string {
@@ -105,7 +105,7 @@ export function injectAlertTypeIdIntoFilter(filter: string, alertTypeId?: string
   // function will need to be updated.
   return filter.replace(
     `alert.attributes.params`,
-    `alert.attributes.params.${normalizeAlertTypeIdForMapping(alertTypeId)}`
+    `alert.attributes.searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}`
   );
 }
 
