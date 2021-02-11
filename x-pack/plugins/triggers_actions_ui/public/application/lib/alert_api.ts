@@ -69,14 +69,19 @@ export const mapFiltersToKql = ({
   typesFilter,
   actionTypesFilter,
   alertStatusesFilter,
+  aggTypesFilter,
 }: {
   typesFilter?: string[];
   actionTypesFilter?: string[];
   alertStatusesFilter?: string[];
+  aggTypesFilter?: string[];
 }): string[] => {
   const filters = [];
   if (typesFilter && typesFilter.length) {
     filters.push(`alert.attributes.alertTypeId:(${typesFilter.join(' or ')})`);
+  }
+  if (aggTypesFilter && aggTypesFilter.length) {
+    filters.push(`alert.attributes.params.aggType:(${aggTypesFilter.join(' or ')})`);
   }
   if (actionTypesFilter && actionTypesFilter.length) {
     filters.push(
@@ -95,27 +100,54 @@ export const mapFiltersToKql = ({
   return filters;
 };
 
+const mapSortFields = (sort?: { direction: string; field: string }) => {
+  if (sort) {
+    let sortField = sort.field;
+    switch (sort.field) {
+      case 'name':
+        sortField = 'name.keyword';
+        break;
+      case 'paramsTimeWindowSize':
+        sortField = 'params.timeWindowSize';
+        break;
+    }
+    return { ...sort, field: sortField };
+  }
+  return sort;
+};
+
 export async function loadAlerts({
   http,
   page,
+  sort,
   searchText,
+  aggTypesFilter,
   typesFilter,
   actionTypesFilter,
   alertStatusesFilter,
 }: {
   http: HttpSetup;
   page: { index: number; size: number };
+  sort?: { direction: string; field: string };
   searchText?: string;
+  aggTypesFilter?: string[];
   typesFilter?: string[];
   actionTypesFilter?: string[];
   alertStatusesFilter?: string[];
+  sortField?: string;
 }): Promise<{
   page: number;
   perPage: number;
   total: number;
   data: Alert[];
 }> {
-  const filters = mapFiltersToKql({ typesFilter, actionTypesFilter, alertStatusesFilter });
+  const mappedSort = mapSortFields(sort);
+  const filters = mapFiltersToKql({
+    typesFilter,
+    actionTypesFilter,
+    alertStatusesFilter,
+    aggTypesFilter,
+  });
   return await http.get(`${BASE_ALERT_API_PATH}/_find`, {
     query: {
       page: page.index + 1,
@@ -124,8 +156,8 @@ export async function loadAlerts({
       search: searchText,
       filter: filters.length ? filters.join(' and ') : undefined,
       default_search_operator: 'AND',
-      sort_field: 'name.keyword',
-      sort_order: 'asc',
+      sort_field: mappedSort?.field ?? 'name.keyword',
+      sort_order: mappedSort?.direction ?? 'asc',
     },
   });
 }
@@ -134,16 +166,23 @@ export async function loadAlertAggregations({
   http,
   searchText,
   typesFilter,
+  aggTypesFilter,
   actionTypesFilter,
   alertStatusesFilter,
 }: {
   http: HttpSetup;
   searchText?: string;
   typesFilter?: string[];
+  aggTypesFilter?: string[];
   actionTypesFilter?: string[];
   alertStatusesFilter?: string[];
 }): Promise<AlertAggregations> {
-  const filters = mapFiltersToKql({ typesFilter, actionTypesFilter, alertStatusesFilter });
+  const filters = mapFiltersToKql({
+    typesFilter,
+    actionTypesFilter,
+    aggTypesFilter,
+    alertStatusesFilter,
+  });
   return await http.get(`${BASE_ALERT_API_PATH}/_aggregate`, {
     query: {
       search_fields: searchText ? JSON.stringify(['name', 'tags']) : undefined,

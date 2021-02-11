@@ -7,7 +7,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { i18n } from '@kbn/i18n';
-import { capitalize, sortBy } from 'lodash';
+// import { capitalize, sortBy } from 'lodash';
 import { FormattedMessage } from '@kbn/i18n/react';
 import React, { useEffect, useState, Fragment } from 'react';
 import {
@@ -34,7 +34,7 @@ import { AlertAdd } from '../../alert_form';
 import { BulkOperationPopover } from '../../common/components/bulk_operation_popover';
 import { AlertQuickEditButtonsWithApi as AlertQuickEditButtons } from '../../common/components/alert_quick_edit_buttons';
 import { CollapsedItemActionsWithApi as CollapsedItemActions } from './collapsed_item_actions';
-import { TypeFilter } from './type_filter';
+// import { TypeFilter } from './type_filter';
 import { ActionTypeFilter } from './action_type_filter';
 import { AlertStatusFilter, getHealthColor } from './alert_status_filter';
 import {
@@ -60,8 +60,12 @@ import { checkAlertTypeEnabled } from '../../../lib/check_alert_type_enabled';
 import { DEFAULT_HIDDEN_ACTION_TYPES } from '../../../../common/constants';
 import './alerts_list.scss';
 import { CenterJustifiedSpinner } from '../../../components/center_justified_spinner';
+import { AggTypeFilter } from './agg_type_filter';
 
 const ENTER_KEY = 13;
+
+type SortField = 'name' | 'paramsTimeWindowSize';
+type SortDirection = 'asc' | 'desc';
 
 interface AlertTypeState {
   isLoading: boolean;
@@ -82,7 +86,7 @@ export const AlertsList: React.FunctionComponent = () => {
     application: { capabilities },
     alertTypeRegistry,
     actionTypeRegistry,
-    kibanaFeatures,
+    // kibanaFeatures,
   } = useKibana().services;
   const canExecuteActions = hasExecuteActionsCapability(capabilities);
 
@@ -90,9 +94,17 @@ export const AlertsList: React.FunctionComponent = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isPerformingAction, setIsPerformingAction] = useState<boolean>(false);
   const [page, setPage] = useState<Pagination>({ index: 0, size: DEFAULT_SEARCH_PAGE_SIZE });
+  const [sort, setSort] = useState<{
+    direction: SortDirection;
+    field: SortField;
+  }>({
+    direction: 'asc' as const,
+    field: 'name' as const,
+  });
   const [searchText, setSearchText] = useState<string | undefined>();
   const [inputText, setInputText] = useState<string | undefined>();
-  const [typesFilter, setTypesFilter] = useState<string[]>([]);
+  const [typesFilter /* , setTypesFilter*/] = useState<string[]>(['.index-threshold']);
+  const [aggTypesFilter, setAggTypesFilter] = useState<string[]>([]);
   const [actionTypesFilter, setActionTypesFilter] = useState<string[]>([]);
   const [alertStatusesFilter, setAlertStatusesFilter] = useState<string[]>([]);
   const [alertFlyoutVisible, setAlertFlyoutVisibility] = useState<boolean>(false);
@@ -128,6 +140,7 @@ export const AlertsList: React.FunctionComponent = () => {
     JSON.stringify(typesFilter),
     JSON.stringify(actionTypesFilter),
     JSON.stringify(alertStatusesFilter),
+    JSON.stringify(aggTypesFilter),
   ]);
 
   useEffect(() => {
@@ -184,7 +197,9 @@ export const AlertsList: React.FunctionComponent = () => {
         const alertsResponse = await loadAlerts({
           http,
           page,
+          sort,
           searchText,
+          aggTypesFilter,
           typesFilter,
           actionTypesFilter,
           alertStatusesFilter,
@@ -219,6 +234,7 @@ export const AlertsList: React.FunctionComponent = () => {
         http,
         searchText,
         typesFilter,
+        aggTypesFilter,
         actionTypesFilter,
         alertStatusesFilter,
       });
@@ -262,7 +278,7 @@ export const AlertsList: React.FunctionComponent = () => {
         'xpack.triggersActionsUI.sections.alertsList.alertsListTable.columns.nameTitle',
         { defaultMessage: 'Name' }
       ),
-      sortable: false,
+      sortable: true,
       truncateText: true,
       'data-test-subj': 'alertsTableCell-name',
       render: (name: string, alert: AlertTableItem) => {
@@ -300,6 +316,16 @@ export const AlertsList: React.FunctionComponent = () => {
       ),
       sortable: false,
       'data-test-subj': 'alertsTableCell-tagsText',
+    },
+    {
+      field: 'paramsTimeWindowSize',
+      name: 'Time Window Size',
+      sortable: true,
+    },
+    {
+      field: 'paramsAggType',
+      name: 'Agg Type',
+      sortable: false,
     },
     {
       field: 'actionsText',
@@ -358,44 +384,48 @@ export const AlertsList: React.FunctionComponent = () => {
     (alertType) => alertType.authorizedConsumers[ALERTS_FEATURE_ID]?.all
   );
 
-  const getProducerFeatureName = (producer: string) => {
-    return kibanaFeatures?.find((featureItem) => featureItem.id === producer)?.name;
-  };
+  // const getProducerFeatureName = (producer: string) => {
+  //   return kibanaFeatures?.find((featureItem) => featureItem.id === producer)?.name;
+  // };
 
-  const groupAlertTypesByProducer = () => {
-    return authorizedAlertTypes.reduce(
-      (
-        result: Record<
-          string,
-          Array<{
-            value: string;
-            name: string;
-          }>
-        >,
-        alertType
-      ) => {
-        const producer = alertType.producer;
-        (result[producer] = result[producer] || []).push({
-          value: alertType.id,
-          name: alertType.name,
-        });
-        return result;
-      },
-      {}
-    );
-  };
+  // const groupAlertTypesByProducer = () => {
+  //   return authorizedAlertTypes.reduce(
+  //     (
+  //       result: Record<
+  //         string,
+  //         Array<{
+  //           value: string;
+  //           name: string;
+  //         }>
+  //       >,
+  //       alertType
+  //     ) => {
+  //       const producer = alertType.producer;
+  //       (result[producer] = result[producer] || []).push({
+  //         value: alertType.id,
+  //         name: alertType.name,
+  //       });
+  //       return result;
+  //     },
+  //     {}
+  //   );
+  // };
 
   const toolsRight = [
-    <TypeFilter
-      key="type-filter"
-      onChange={(types: string[]) => setTypesFilter(types)}
-      options={sortBy(Object.entries(groupAlertTypesByProducer())).map(
-        ([groupName, alertTypesOptions]) => ({
-          groupName: getProducerFeatureName(groupName) ?? capitalize(groupName),
-          subOptions: alertTypesOptions.sort((a, b) => a.name.localeCompare(b.name)),
-        })
-      )}
+    <AggTypeFilter
+      key="agg-type-filter"
+      onChange={(types: string[]) => setAggTypesFilter(types)}
     />,
+    // <TypeFilter
+    //   key="type-filter"
+    //   onChange={(types: string[]) => setTypesFilter(types)}
+    //   options={sortBy(Object.entries(groupAlertTypesByProducer())).map(
+    //     ([groupName, alertTypesOptions]) => ({
+    //       groupName: getProducerFeatureName(groupName) ?? capitalize(groupName),
+    //       subOptions: alertTypesOptions.sort((a, b) => a.name.localeCompare(b.name)),
+    //     })
+    //   )}
+    // />,
     <ActionTypeFilter
       key="action-type-filter"
       actionTypes={actionTypes}
@@ -634,8 +664,24 @@ export const AlertsList: React.FunctionComponent = () => {
             setSelectedIds(updatedSelectedItemsList.map((item) => item.id));
           },
         }}
-        onChange={({ page: changedPage }: { page: Pagination }) => {
-          setPage(changedPage);
+        sorting={{
+          sort: {
+            direction: sort.direction,
+            field: sort.field,
+          },
+        }}
+        onChange={(changed: {
+          page: Pagination;
+          sort: { field: string; direction: SortDirection };
+        }) => {
+          console.log(changed);
+          setPage(changed.page);
+          setSort(
+            changed.sort as {
+              direction: SortDirection;
+              field: SortField;
+            }
+          );
         }}
       />
     </Fragment>
@@ -742,6 +788,8 @@ function convertAlertsToTableItems(
     ...alert,
     actionsText: alert.actions.length,
     tagsText: alert.tags.join(', '),
+    paramsTimeWindowSize: alert.params.timeWindowSize ?? 0,
+    paramsAggType: alert.params.aggType ?? '',
     alertType: alertTypesIndex.get(alert.alertTypeId)?.name ?? alert.alertTypeId,
     isEditable:
       hasAllPrivilege(alert, alertTypesIndex.get(alert.alertTypeId)) &&
