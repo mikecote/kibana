@@ -67,11 +67,11 @@ export function setupSavedObjects(
             ...currentMappings,
             properties: {
               ...currentMappings.properties,
-              params: {
-                ...currentMappings.properties.params,
+              searchableParamsByType: {
+                ...currentMappings.properties.searchableParamsByType,
                 properties: {
-                  ...(currentMappings.properties.params as SavedObjectsComplexFieldMapping)
-                    .properties,
+                  ...(currentMappings.properties
+                    .searchableParamsByType as SavedObjectsComplexFieldMapping).properties,
                   ...paramMappings,
                 },
               },
