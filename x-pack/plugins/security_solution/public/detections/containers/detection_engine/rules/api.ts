@@ -117,7 +117,7 @@ export const fetchRules = async ({
     ? [`alert.attributes.tags: "__internal_immutable:true"`]
     : [];
   const filtersWithoutTags = [
-    ...(filterOptions.filter.length ? [`alert.attributes.name: ${filterOptions.filter}`] : []),
+    // ...(filterOptions.filter.length ? [`alert.attributes.name: ${filterOptions.filter}`] : []),
     ...showCustomRuleFilter,
     ...showElasticRuleFilter,
   ].join(' AND ');
@@ -140,6 +140,10 @@ export const fetchRules = async ({
     per_page: pagination.perPage,
     sort_field: getFieldNameForSortField(filterOptions.sortField),
     sort_order: filterOptions.sortOrder,
+    search_fields: filterOptions.filter
+        ? ['name', 'params.description', 'params.falsePositives', 'params.threat.tactic.name', 'params.threat.technique.name', 'params.threat.technique.subtechnique.name']
+        : undefined,
+    search: filterOptions.filter ? filterOptions.filter : undefined,
     ...(filterString !== '' ? { filter: filterString } : {}),
   };
 

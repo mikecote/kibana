@@ -331,4 +331,6 @@ export interface FindRuleOptions {
   filter: QueryFilterOrUndefined;
   fields: FieldsOrUndefined;
   sortOrder: SortOrderOrUndefined;
+  searchFields: string[] | undefined;
+  search: string | undefined;
 }

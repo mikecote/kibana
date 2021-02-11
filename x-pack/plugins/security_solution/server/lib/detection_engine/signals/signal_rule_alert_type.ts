@@ -107,6 +107,93 @@ export const signalRulesAlertType = ({
         validate: (object: unknown) => RuleTypeParams;
       },
     },
+    paramMappings: {
+      properties: {
+        description: {
+          type: 'text',
+        },
+        falsePositives: {
+          type: 'text',
+        },
+        riskScore: {
+          type: 'integer',
+        },
+        severity: {
+          type: 'keyword',
+        },
+        threat: {
+          type: 'nested',
+          properties: {
+            framework: {
+              type: 'keyword',
+            },
+            tactic: {
+              properties: {
+                name: {
+                  type: 'keyword',
+                  fields: {
+                    text: {
+                      type: 'text',
+                    }
+                  }
+                },
+                id: {
+                  type: 'keyword',
+                  index: false,
+                },
+                reference: {
+                  type: 'keyword',
+                  index: false,
+                }
+              },
+            },
+            technique: {
+              properties: {
+                name: {
+                  type: 'keyword',
+                  fields: {
+                    text: {
+                      type: 'text',
+                    }
+                  }
+                },
+                id: {
+                  type: 'keyword',
+                  index: false,
+                },
+                reference: {
+                  type: 'keyword',
+                  index: false,
+                },
+                subtechnique: {
+                  properties: {
+                    name: {
+                      type: 'keyword',
+                      fields: {
+                        text: {
+                          type: 'text',
+                        }
+                      }
+                    },
+                    id: {
+                      type: 'keyword',
+                      index: false,
+                    },
+                    reference: {
+                      type: 'keyword',
+                      index: false,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        type: {
+          type: 'keyword',
+        },
+      },
+    },
     producer: SERVER_APP_ID,
     minimumLicenseRequired: 'basic',
     async executor({

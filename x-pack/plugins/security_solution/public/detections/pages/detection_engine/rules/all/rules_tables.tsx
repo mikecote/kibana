@@ -253,10 +253,11 @@ export const RulesTables = React.memo<RulesTableProps>(
 
     const tableOnChangeCallback = useCallback(
       ({ page, sort }: EuiBasicTableOnChange) => {
+        const sortField = sort?.field === 'risk_score' ? 'params.riskScore' : (sort?.field === 'severity' ? 'params.severity' : sort?.field);
         dispatch({
           type: 'updateFilterOptions',
           filterOptions: {
-            sortField: (sort?.field as RulesSortingFields) ?? INITIAL_SORT_FIELD, // Narrowing EuiBasicTable sorting types
+            sortField: (sortField as RulesSortingFields) ?? INITIAL_SORT_FIELD, // Narrowing EuiBasicTable sorting types
             sortOrder: sort?.direction ?? 'desc',
           },
           pagination: { page: page.index + 1, perPage: page.size },

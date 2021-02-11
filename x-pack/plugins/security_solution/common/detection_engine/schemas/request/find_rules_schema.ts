@@ -11,6 +11,9 @@ import { queryFilter, fields, sort_field, sort_order, PerPage, Page } from '../c
 import { DefaultPerPage } from '../types/default_per_page';
 import { DefaultPage } from '../types/default_page';
 
+export const search_fields = t.array(t.string);
+export const search = t.string;
+
 export const findRulesSchema = t.exact(
   t.partial({
     fields,
@@ -19,6 +22,8 @@ export const findRulesSchema = t.exact(
     page: DefaultPage, // defaults to "1" if not sent in during decode
     sort_field,
     sort_order,
+    search_fields,
+    search,
   })
 );
 

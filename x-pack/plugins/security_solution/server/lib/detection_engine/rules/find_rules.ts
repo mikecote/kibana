@@ -26,6 +26,8 @@ export const findRules = async ({
   filter,
   sortField,
   sortOrder,
+  searchFields,
+  search,
 }: FindRuleOptions): Promise<FindResult<RuleTypeParams>> => {
   return alertsClient.find({
     options: {
@@ -35,6 +37,8 @@ export const findRules = async ({
       filter: getFilter(filter),
       sortOrder,
       sortField,
+      search,
+      ...(searchFields ? { searchFields } : {}),
     },
   });
 };

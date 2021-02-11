@@ -168,6 +168,7 @@ export const getColumns = ({
           {value}
         </EuiText>
       ),
+      sortable: true,
       truncateText: true,
       width: '10%',
     },
@@ -177,6 +178,7 @@ export const getColumns = ({
       render: (value: Rule['severity']) => <SeverityBadge value={value} />,
       truncateText: true,
       width: '12%',
+      sortable: true,
     },
     {
       field: 'status_date',

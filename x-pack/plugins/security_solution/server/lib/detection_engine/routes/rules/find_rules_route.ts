@@ -57,6 +57,8 @@ export const findRulesRoute = (router: SecuritySolutionPluginRouter) => {
           sortOrder: query.sort_order,
           filter: query.filter,
           fields: query.fields,
+          searchFields: query.search_fields,
+          search: query.search,
         });
 
         // if any rules attempted to execute but failed before the rule executor is called,
