@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 import Boom from '@hapi/boom';
@@ -14,7 +15,7 @@ import {
   SavedObject,
   PluginInitializerContext,
   SavedObjectsUtils,
-  SavedObjectAttributes,
+  SavedObjectsComplexFieldMapping,
 } from '../../../../../src/core/server';
 import { esKuery } from '../../../../../src/plugins/data/server';
 import { ActionsClient, ActionsAuthorization } from '../../../actions/server';
@@ -156,6 +157,7 @@ export interface CreateOptions<Params extends AlertTypeParams> {
     | 'executionStatus'
   > & { actions: NormalizedAlertAction[] };
   options?: {
+    id?: string;
     migrationVersion?: Record<string, string>;
   };
 }
@@ -233,7 +235,7 @@ export class AlertsClient {
     data,
     options,
   }: CreateOptions<Params>): Promise<Alert<Params>> {
-    const id = SavedObjectsUtils.generateId();
+    const id = options?.id || SavedObjectsUtils.generateId();
 
     try {
       await this.authorization.ensureAuthorized(
@@ -282,7 +284,11 @@ export class AlertsClient {
       updatedBy: username,
       createdAt: new Date(createTime).toISOString(),
       updatedAt: new Date(createTime).toISOString(),
-      params: this.splitParamsByType(alertType.id, validatedAlertTypeParams as RawAlert['params']),
+      params: validatedAlertTypeParams as RawAlert['params'],
+      searchableParamsByType: this.getSearchableParamsData(
+        alertType.id,
+        validatedAlertTypeParams as RawAlert['params']
+      ),
       muteAll: false,
       mutedInstanceIds: [],
       notifyWhen,
@@ -767,7 +773,11 @@ export class AlertsClient {
       ...attributes,
       ...data,
       ...apiKeyAttributes,
-      params: this.splitParamsByType(alertType.id, validatedAlertTypeParams as RawAlert['params']),
+      params: validatedAlertTypeParams as RawAlert['params'],
+      searchableParamsByType: this.getSearchableParamsData(
+        alertType.id,
+        validatedAlertTypeParams as RawAlert['params']
+      ),
       actions,
       notifyWhen,
       updatedBy: username,
@@ -1408,17 +1418,6 @@ export class AlertsClient {
     { createdAt, updatedAt, meta, notifyWhen, scheduledTaskId, ...rawAlert }: Partial<RawAlert>,
     references: SavedObjectReference[] | undefined
   ): PartialAlert<Params> {
-    const params = rawAlert.params
-      ? (Object.keys(rawAlert.params).reduce(
-          (prevVal: SavedObjectAttributes, currentValue: string) => {
-            if (typeof rawAlert.params![currentValue] === 'object') {
-              return { ...prevVal, ...(rawAlert.params![currentValue] as SavedObjectAttributes) };
-            }
-            return prevVal;
-          },
-          {} as SavedObjectAttributes
-        ) as Alert['params'])
-      : undefined;
     // Not the prettiest code here, but if we want to use most of the
     // alert fields from the rawAlert using `...rawAlert` kind of access, we
     // need to specifically delete the executionStatus as it's a different type
@@ -1443,7 +1442,6 @@ export class AlertsClient {
       ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
       ...(scheduledTaskId ? { scheduledTaskId } : {}),
       ...(executionStatus ? { executionStatus } : {}),
-      ...(params ? { params } : {}),
     };
   }
 
@@ -1528,14 +1526,20 @@ export class AlertsClient {
     return alertAttributes;
   }
 
-  private splitParamsByType(alertTypeId: string, params: RawAlert['params']): RawAlert['params'] {
+  private getSearchableParamsData(
+    alertTypeId: string,
+    params: RawAlert['params']
+  ): RawAlert['params'] | null {
     const alertType = this.alertTypeRegistry.get(alertTypeId);
     if (alertType.paramMappings) {
+      const keys = Object.keys(
+        (alertType.paramMappings as SavedObjectsComplexFieldMapping).properties
+      );
       return {
-        [normalizeAlertTypeIdForMapping(alertTypeId)]: params,
+        [normalizeAlertTypeIdForMapping(alertTypeId)]: pick(params, keys),
       };
     }
-    return { default: params };
+    return null;
   }
 }
 

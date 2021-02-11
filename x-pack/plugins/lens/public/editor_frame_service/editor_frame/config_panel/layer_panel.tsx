@@ -1,15 +1,17 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
+
 import './layer_panel.scss';
 
 import React, { useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { EuiPanel, EuiSpacer, EuiFlexGroup, EuiFlexItem, EuiFormRow } from '@elastic/eui';
 import { i18n } from '@kbn/i18n';
 import { NativeRenderer } from '../../../native_renderer';
-import { StateSetter, Visualization } from '../../../types';
+import { StateSetter, Visualization, DraggedOperation, DropType } from '../../../types';
 import {
   DragContext,
   DragDropIdentifier,
@@ -24,6 +26,7 @@ import { RemoveLayerButton } from './remove_layer_button';
 import { EmptyDimensionButton } from './empty_dimension_button';
 import { DimensionButton } from './dimension_button';
 import { DraggableDimensionButton } from './draggable_dimension_button';
+import { useFocusUpdate } from './use_focus_update';
 
 const initialActiveDimensionState = {
   isNew: false,
@@ -43,7 +46,7 @@ export function LayerPanel(
       newVisualizationState: unknown
     ) => void;
     onRemoveLayer: () => void;
-    setLayerRef: (layerId: string, instance: HTMLDivElement | null) => void;
+    registerNewLayerRef: (layerId: string, instance: HTMLDivElement | null) => void;
   }
 ) {
   const dragDropContext = useContext(DragContext);
@@ -56,7 +59,7 @@ export function LayerPanel(
     layerId,
     isOnlyLayer,
     onRemoveLayer,
-    setLayerRef,
+    registerNewLayerRef,
     layerIndex,
     activeVisualization,
     updateVisualization,
@@ -68,7 +71,10 @@ export function LayerPanel(
     setActiveDimension(initialActiveDimensionState);
   }, [activeVisualization.id]);
 
-  const setLayerRefMemoized = useCallback((el) => setLayerRef(layerId, el), [layerId, setLayerRef]);
+  const registerLayerRef = useCallback((el) => registerNewLayerRef(layerId, el), [
+    layerId,
+    registerNewLayerRef,
+  ]);
 
   const layerVisualizationConfigProps = {
     layerId,
@@ -112,14 +118,35 @@ export function LayerPanel(
   const { setDimension, removeDimension } = activeVisualization;
   const layerDatasourceOnDrop = layerDatasource.onDrop;
 
+  const allAccessors = groups.flatMap((group) =>
+    group.accessors.map((accessor) => accessor.columnId)
+  );
+
+  const {
+    setNextFocusedId: setNextFocusedButtonId,
+    removeRef: removeButtonRef,
+    registerNewRef: registerNewButtonRef,
+  } = useFocusUpdate(allAccessors);
+
   const onDrop = useMemo(() => {
-    return (droppedItem: DragDropIdentifier, targetItem: DragDropIdentifier) => {
-      const { columnId, groupId, layerId: targetLayerId, isNew } = (targetItem as unknown) as {
-        groupId: string;
-        columnId: string;
-        layerId: string;
-        isNew?: boolean;
-      };
+    return (
+      droppedItem: DragDropIdentifier,
+      targetItem: DragDropIdentifier,
+      dropType?: DropType
+    ) => {
+      if (!dropType) {
+        return;
+      }
+      const {
+        columnId,
+        groupId,
+        layerId: targetLayerId,
+      } = (targetItem as unknown) as DraggedOperation;
+      if (dropType === 'reorder' || dropType === 'field_replace' || dropType === 'field_add') {
+        setNextFocusedButtonId(droppedItem.id);
+      } else {
+        setNextFocusedButtonId(columnId);
+      }
 
       const filterOperations =
         groups.find(({ groupId: gId }) => gId === targetItem.groupId)?.filterOperations ||
@@ -129,10 +156,9 @@ export function LayerPanel(
         ...layerDatasourceDropProps,
         droppedItem,
         columnId,
-        groupId,
         layerId: targetLayerId,
-        isNew,
         filterOperations,
+        dropType,
       });
       if (dropResult) {
         updateVisualization(
@@ -164,11 +190,12 @@ export function LayerPanel(
     setDimension,
     removeDimension,
     layerDatasourceDropProps,
+    setNextFocusedButtonId,
   ]);
 
   return (
     <ChildDragDropProvider {...dragDropContext}>
-      <section tabIndex={-1} ref={setLayerRefMemoized} className="lnsLayerPanel">
+      <section tabIndex={-1} ref={registerLayerRef} className="lnsLayerPanel">
         <EuiPanel data-test-subj={`lns-layerPanel-${layerIndex}`} paddingSize="s">
           <EuiFlexGroup gutterSize="s" alignItems="flexStart" responsive={false}>
             <EuiFlexItem grow={false} className="lnsLayerPanel__settingsFlexItem">
@@ -257,6 +284,7 @@ export function LayerPanel(
 
                       return (
                         <DraggableDimensionButton
+                          registerNewButtonRef={registerNewButtonRef}
                           accessorIndex={accessorIndex}
                           columnId={columnId}
                           dragDropContext={dragDropContext}
@@ -297,6 +325,7 @@ export function LayerPanel(
                                     prevState: props.visualizationState,
                                   })
                                 );
+                                removeButtonRef(id);
                               }}
                             >
                               <NativeRenderer
@@ -315,7 +344,6 @@ export function LayerPanel(
                   </ReorderProvider>
                   {group.supportsMoreColumns ? (
                     <EmptyDimensionButton
-                      dragDropContext={dragDropContext}
                       group={group}
                       groupIndex={groupIndex}
                       layerId={layerId}
