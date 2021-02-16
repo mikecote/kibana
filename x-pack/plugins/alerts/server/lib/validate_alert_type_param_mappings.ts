@@ -1,7 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the Elastic License;
- * you may not use this file except in compliance with the Elastic License.
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 import { i18n } from '@kbn/i18n';
@@ -82,7 +83,10 @@ export function injectAlertTypeIdIntoSort(
     throw new Error(`Must specify alertTypeId when sorting on alert type parameters`);
   }
 
-  return sortField.replace(`params.`, `searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}.`);
+  return sortField.replace(
+    `params.`,
+    `searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}.`
+  );
 }
 
 export function injectAlertTypeIdIntoFilter(filter: string, alertTypeId?: string): string {

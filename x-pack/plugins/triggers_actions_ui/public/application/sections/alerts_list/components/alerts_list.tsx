@@ -8,7 +8,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { i18n } from '@kbn/i18n';
-// import { capitalize, sortBy } from 'lodash';
+import { capitalize, sortBy } from 'lodash';
 import { FormattedMessage } from '@kbn/i18n/react';
 import React, { useEffect, useState, Fragment } from 'react';
 import {
@@ -36,7 +36,7 @@ import { AlertAdd } from '../../alert_form';
 import { BulkOperationPopover } from '../../common/components/bulk_operation_popover';
 import { AlertQuickEditButtonsWithApi as AlertQuickEditButtons } from '../../common/components/alert_quick_edit_buttons';
 import { CollapsedItemActionsWithApi as CollapsedItemActions } from './collapsed_item_actions';
-// import { TypeFilter } from './type_filter';
+import { TypeFilter } from './type_filter';
 import { ActionTypeFilter } from './action_type_filter';
 import { AlertStatusFilter, getHealthColor } from './alert_status_filter';
 import {
@@ -91,7 +91,7 @@ export const AlertsList: React.FunctionComponent = () => {
     application: { capabilities },
     alertTypeRegistry,
     actionTypeRegistry,
-    // kibanaFeatures,
+    kibanaFeatures,
   } = useKibana().services;
   const canExecuteActions = hasExecuteActionsCapability(capabilities);
 
@@ -108,7 +108,7 @@ export const AlertsList: React.FunctionComponent = () => {
   });
   const [searchText, setSearchText] = useState<string | undefined>();
   const [inputText, setInputText] = useState<string | undefined>();
-  const [typesFilter /* , setTypesFilter*/] = useState<string[]>(['.index-threshold']);
+  const [typesFilter, setTypesFilter] = useState<string[]>([]);
   const [aggTypesFilter, setAggTypesFilter] = useState<string[]>([]);
   const [actionTypesFilter, setActionTypesFilter] = useState<string[]>([]);
   const [alertStatusesFilter, setAlertStatusesFilter] = useState<string[]>([]);
@@ -438,48 +438,48 @@ export const AlertsList: React.FunctionComponent = () => {
     (alertType) => alertType.authorizedConsumers[ALERTS_FEATURE_ID]?.all
   );
 
-  // const getProducerFeatureName = (producer: string) => {
-  //   return kibanaFeatures?.find((featureItem) => featureItem.id === producer)?.name;
-  // };
+  const getProducerFeatureName = (producer: string) => {
+    return kibanaFeatures?.find((featureItem) => featureItem.id === producer)?.name;
+  };
 
-  // const groupAlertTypesByProducer = () => {
-  //   return authorizedAlertTypes.reduce(
-  //     (
-  //       result: Record<
-  //         string,
-  //         Array<{
-  //           value: string;
-  //           name: string;
-  //         }>
-  //       >,
-  //       alertType
-  //     ) => {
-  //       const producer = alertType.producer;
-  //       (result[producer] = result[producer] || []).push({
-  //         value: alertType.id,
-  //         name: alertType.name,
-  //       });
-  //       return result;
-  //     },
-  //     {}
-  //   );
-  // };
+  const groupAlertTypesByProducer = () => {
+    return authorizedAlertTypes.reduce(
+      (
+        result: Record<
+          string,
+          Array<{
+            value: string;
+            name: string;
+          }>
+        >,
+        alertType
+      ) => {
+        const producer = alertType.producer;
+        (result[producer] = result[producer] || []).push({
+          value: alertType.id,
+          name: alertType.name,
+        });
+        return result;
+      },
+      {}
+    );
+  };
 
   const toolsRight = [
     <AggTypeFilter
       key="agg-type-filter"
       onChange={(types: string[]) => setAggTypesFilter(types)}
     />,
-    // <TypeFilter
-    //   key="type-filter"
-    //   onChange={(types: string[]) => setTypesFilter(types)}
-    //   options={sortBy(Object.entries(groupAlertTypesByProducer())).map(
-    //     ([groupName, alertTypesOptions]) => ({
-    //       groupName: getProducerFeatureName(groupName) ?? capitalize(groupName),
-    //       subOptions: alertTypesOptions.sort((a, b) => a.name.localeCompare(b.name)),
-    //     })
-    //   )}
-    // />,
+    <TypeFilter
+      key="type-filter"
+      onChange={(types: string[]) => setTypesFilter(types)}
+      options={sortBy(Object.entries(groupAlertTypesByProducer())).map(
+        ([groupName, alertTypesOptions]) => ({
+          groupName: getProducerFeatureName(groupName) ?? capitalize(groupName),
+          subOptions: alertTypesOptions.sort((a, b) => a.name.localeCompare(b.name)),
+        })
+      )}
+    />,
     <ActionTypeFilter
       key="action-type-filter"
       actionTypes={actionTypes}

@@ -203,7 +203,7 @@ export class AlertTypeRegistry {
       alertType.paramMappings &&
       validateAlertTypeParamMappings(alertType.id, alertType.paramMappings)
     ) {
-      setAlertTypeParamMapping(alertType.id, alertType.paramMappings);
+      setAlertTypeParamMapping(alertType.paramMappings);
     }
   }
 

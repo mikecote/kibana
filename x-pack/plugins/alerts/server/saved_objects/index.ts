@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { i18n } from '@kbn/i18n';
 import {
   SavedObjectsServiceSetup,
   SavedObjectsType,
@@ -15,7 +16,6 @@ import {
 import mappings from './mappings.json';
 import { getMigrations } from './migrations';
 import { EncryptedSavedObjectsPluginSetup } from '../../../encrypted_saved_objects/server';
-import { normalizeAlertTypeIdForMapping } from '../lib/validate_alert_type_param_mappings';
 
 export { partiallyUpdateAlert } from './partially_update_alert';
 
@@ -28,7 +28,7 @@ export const AlertAttributesExcludedFromAAD = [
   'executionStatus',
 ];
 
-const alertTypeParamMappings: Record<string, SavedObjectsFieldMapping> = {};
+const alertParamMappings: Record<string, SavedObjectsFieldMapping> = {};
 
 // useful for Pick<RawAlert, AlertAttributesExcludedFromAADType> which is a
 // type which is a subset of RawAlert with just attributes excluded from AAD
@@ -55,14 +55,6 @@ export function setupSavedObjects(
     hooks: [
       savedObjects.createHooks({
         mappings(currentMappings: SavedObjectsType['mappings']) {
-          const paramMappings = Object.keys(alertTypeParamMappings).reduce(
-            (acc: Record<string, unknown>, alertTypeId) => {
-              acc[normalizeAlertTypeIdForMapping(alertTypeId)] =
-                alertTypeParamMappings[alertTypeId];
-              return acc;
-            },
-            {}
-          );
           return {
             ...currentMappings,
             properties: {
@@ -72,7 +64,7 @@ export function setupSavedObjects(
                 properties: {
                   ...(currentMappings.properties
                     .searchableParamsByType as SavedObjectsComplexFieldMapping).properties,
-                  ...paramMappings,
+                  ...alertParamMappings,
                 },
               },
             },
@@ -112,9 +104,24 @@ export function setupSavedObjects(
   });
 }
 
-export function setAlertTypeParamMapping(
-  alertTypeId: string,
-  paramMappings: SavedObjectsFieldMapping
-) {
-  alertTypeParamMappings[alertTypeId] = paramMappings;
+// TODO Only throw error if field is mapped in different ways
+export function setAlertTypeParamMapping(paramMappings: SavedObjectsComplexFieldMapping) {
+  const alertParamMappedKeys = Object.keys(alertParamMappings);
+  const alertTypeParamMappedKeys = Object.keys(paramMappings.properties);
+  const mappedKeysIntersection = alertParamMappedKeys.filter((key: string) =>
+    alertTypeParamMappedKeys.includes(key)
+  );
+  if (mappedKeysIntersection.length > 0) {
+    throw new Error(
+      i18n.translate('xpack.alerts.setAlertTypeParamMapping.paramMappingExists', {
+        defaultMessage: 'Param fields {fields} has already has mapping defined.',
+        values: {
+          fields: mappedKeysIntersection.join(', '),
+        },
+      })
+    );
+  }
+
+  Object.assign(alertParamMappings, paramMappings.properties);
+  console.log(alertParamMappings);
 }

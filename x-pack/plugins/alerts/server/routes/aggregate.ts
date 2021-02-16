@@ -31,7 +31,6 @@ const querySchema = schema.object({
     )
   ),
   filter: schema.maybe(schema.string()),
-  alert_type_id: schema.maybe(schema.string()),
 });
 
 export const aggregateAlertRoute = (router: AlertingRouter, licenseState: ILicenseState) => {
@@ -55,7 +54,6 @@ export const aggregateAlertRoute = (router: AlertingRouter, licenseState: ILicen
         has_reference: 'hasReference',
         search: 'search',
         filter: 'filter',
-        alert_type_id: 'alertTypeId',
       };
 
       const options = renameKeys<FindOptions, Record<string, unknown>>(renameMap, query);

@@ -58,11 +58,6 @@ import { partiallyUpdateAlert } from '../saved_objects';
 import { markApiKeyForInvalidation } from '../invalidate_pending_api_keys/mark_api_key_for_invalidation';
 import { alertAuditEvent, AlertAuditAction } from './audit_events';
 import { nodeBuilder } from '../../../../../src/plugins/data/common';
-import {
-  normalizeAlertTypeIdForMapping,
-  injectAlertTypeIdIntoFilter,
-  injectAlertTypeIdIntoSort,
-} from '../lib/validate_alert_type_param_mappings';
 export interface RegistryAlertTypeWithAuth extends RegistryAlertType {
   authorizedConsumers: string[];
 }
@@ -111,7 +106,6 @@ export interface FindOptions extends IndexType {
   };
   fields?: string[];
   filter?: string;
-  alertTypeId?: string;
 }
 
 export interface AggregateOptions extends IndexType {
@@ -123,7 +117,6 @@ export interface AggregateOptions extends IndexType {
     id: string;
   };
   filter?: string;
-  alertTypeId?: string;
 }
 
 interface IndexType {
@@ -451,17 +444,15 @@ export class AlertsClient {
   public async find<Params extends AlertTypeParams = never>({
     options: { fields, ...options } = {},
   }: { options?: FindOptions } = {}): Promise<FindResult<Params>> {
-    const filterWithAlertType = options.filter
-      ? injectAlertTypeIdIntoFilter(options.filter, options.alertTypeId)
+    const filterUpdated = options.filter
+      ? options.filter.replace('params.', 'searchableParamsByType.')
       : options.filter;
-
-    const sortFieldWithAlertType = options.sortField
-      ? injectAlertTypeIdIntoSort(options.sortField, options.filter, options.alertTypeId)
+    const sortFieldUpdated = options.sortField
+      ? options.sortField.replace('params.', 'searchableParamsByType.')
       : options.sortField;
-
-    const searchFieldsWithAlertType = options.searchFields
+    const searchFieldsUpdated = options.searchFields
       ? options.searchFields.map((searchField: string) =>
-          injectAlertTypeIdIntoSort(searchField, options.filter, options.alertTypeId)
+          searchField.replace('params.', 'searchableParamsByType.')
         )
       : options.searchFields;
 
@@ -491,12 +482,12 @@ export class AlertsClient {
     } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
       ...options,
       filter:
-        (authorizationFilter && filterWithAlertType
-          ? nodeBuilder.and([esKuery.fromKueryExpression(filterWithAlertType), authorizationFilter])
-          : authorizationFilter) ?? filterWithAlertType,
+        (authorizationFilter && filterUpdated
+          ? nodeBuilder.and([esKuery.fromKueryExpression(filterUpdated), authorizationFilter])
+          : authorizationFilter) ?? filterUpdated,
       fields: fields ? this.includeFieldsRequiredForAuthentication(fields) : fields,
-      sortField: sortFieldWithAlertType,
-      searchFields: searchFieldsWithAlertType,
+      sortField: sortFieldUpdated,
+      searchFields: searchFieldsUpdated,
       type: 'alert',
     });
 
@@ -542,13 +533,12 @@ export class AlertsClient {
   public async aggregate({
     options: { fields, ...options } = {},
   }: { options?: AggregateOptions } = {}): Promise<AggregateResult> {
-    const filterWithAlertType = options.filter
-      ? injectAlertTypeIdIntoFilter(options.filter, options.alertTypeId)
+    const filterUpdated = options.filter
+      ? options.filter.replace('params.', 'searchableParamsByType.')
       : options.filter;
-
-    const searchFieldsWithAlertType = options.searchFields
+    const searchFieldsUpdated = options.searchFields
       ? options.searchFields.map((searchField: string) =>
-          injectAlertTypeIdIntoSort(searchField, options.filter, options.alertTypeId)
+          searchField.replace('params.', 'searchableParamsByType.')
         )
       : options.searchFields;
 
@@ -559,8 +549,8 @@ export class AlertsClient {
           filter: authorizationFilter,
           logSuccessfulAuthorization,
         } = await this.authorization.getFindAuthorizationFilter();
-        const filter = filterWithAlertType
-          ? `${filterWithAlertType} and alert.attributes.executionStatus.status:(${status})`
+        const filter = filterUpdated
+          ? `${filterUpdated} and alert.attributes.executionStatus.status:(${status})`
           : `alert.attributes.executionStatus.status:(${status})`;
         const { total } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
           ...options,
@@ -571,7 +561,7 @@ export class AlertsClient {
           page: 1,
           perPage: 0,
           type: 'alert',
-          searchFields: searchFieldsWithAlertType,
+          searchFields: searchFieldsUpdated,
         });
 
         logSuccessfulAuthorization();
@@ -1535,9 +1525,7 @@ export class AlertsClient {
       const keys = Object.keys(
         (alertType.paramMappings as SavedObjectsComplexFieldMapping).properties
       );
-      return {
-        [normalizeAlertTypeIdForMapping(alertTypeId)]: pick(params, keys),
-      };
+      return pick(params, keys);
     }
     return null;
   }
