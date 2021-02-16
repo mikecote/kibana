@@ -11,6 +11,7 @@ import { queryFilter, fields, sort_field, sort_order, PerPage, Page } from '../c
 import { DefaultPerPage } from '../types/default_per_page';
 import { DefaultPage } from '../types/default_page';
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
 export const search_fields = t.array(t.string);
 export const search = t.string;
 

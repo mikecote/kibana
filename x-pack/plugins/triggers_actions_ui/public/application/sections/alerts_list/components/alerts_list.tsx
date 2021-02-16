@@ -28,6 +28,7 @@ import {
   EuiToolTip,
 } from '@elastic/eui';
 import { useHistory } from 'react-router-dom';
+import styled from 'styled-components';
 
 import { isEmpty } from 'lodash';
 import { ActionType, Alert, AlertTableItem, AlertTypeIndex, Pagination } from '../../../../types';
@@ -68,6 +69,8 @@ const ENTER_KEY = 13;
 
 type SortField = 'name' | 'paramsTimeWindowSize';
 type SortDirection = 'asc' | 'desc';
+
+const MyEuiBasicTable = styled(EuiBasicTable as any)`` as any;
 
 interface AlertTypeState {
   isLoading: boolean;
@@ -680,7 +683,7 @@ export const AlertsList: React.FunctionComponent = () => {
       {/* Large to remain consistent with ActionsList table spacing */}
       <EuiSpacer size="l" />
 
-      <EuiBasicTable
+      <MyEuiBasicTable
         loading={alertsState.isLoading || alertTypesState.isLoading || isPerformingAction}
         /* Don't display alerts until we have the alert types initialized */
         items={
@@ -725,7 +728,6 @@ export const AlertsList: React.FunctionComponent = () => {
           page: Pagination;
           sort: { field: string; direction: SortDirection };
         }) => {
-          console.log(changed);
           setPage(changed.page);
           setSort(
             changed.sort as {

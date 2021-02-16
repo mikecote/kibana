@@ -253,7 +253,12 @@ export const RulesTables = React.memo<RulesTableProps>(
 
     const tableOnChangeCallback = useCallback(
       ({ page, sort }: EuiBasicTableOnChange) => {
-        const sortField = sort?.field === 'risk_score' ? 'params.riskScore' : (sort?.field === 'severity' ? 'params.severity' : sort?.field);
+        const sortField =
+          sort?.field === 'risk_score'
+            ? 'params.riskScore'
+            : sort?.field === 'severity'
+            ? 'params.severity'
+            : sort?.field;
         dispatch({
           type: 'updateFilterOptions',
           filterOptions: {

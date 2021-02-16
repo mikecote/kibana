@@ -134,8 +134,8 @@ export const signalRulesAlertType = ({
                   fields: {
                     text: {
                       type: 'text',
-                    }
-                  }
+                    },
+                  },
                 },
                 id: {
                   type: 'keyword',
@@ -144,7 +144,7 @@ export const signalRulesAlertType = ({
                 reference: {
                   type: 'keyword',
                   index: false,
-                }
+                },
               },
             },
             technique: {
@@ -154,8 +154,8 @@ export const signalRulesAlertType = ({
                   fields: {
                     text: {
                       type: 'text',
-                    }
-                  }
+                    },
+                  },
                 },
                 id: {
                   type: 'keyword',
@@ -172,8 +172,8 @@ export const signalRulesAlertType = ({
                       fields: {
                         text: {
                           type: 'text',
-                        }
-                      }
+                        },
+                      },
                     },
                     id: {
                       type: 'keyword',
