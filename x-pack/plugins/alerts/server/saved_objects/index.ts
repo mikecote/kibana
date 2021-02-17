@@ -16,6 +16,7 @@ import {
 import mappings from './mappings.json';
 import { getMigrations } from './migrations';
 import { EncryptedSavedObjectsPluginSetup } from '../../../encrypted_saved_objects/server';
+import { injectIgnoreMalformed } from '../lib/validate_alert_type_param_mappings';
 
 export { partiallyUpdateAlert } from './partially_update_alert';
 
@@ -59,11 +60,11 @@ export function setupSavedObjects(
             ...currentMappings,
             properties: {
               ...currentMappings.properties,
-              searchableParamsByType: {
-                ...currentMappings.properties.searchableParamsByType,
+              params: {
+                ...currentMappings.properties.params,
                 properties: {
-                  ...(currentMappings.properties
-                    .searchableParamsByType as SavedObjectsComplexFieldMapping).properties,
+                  ...(currentMappings.properties.params as SavedObjectsComplexFieldMapping)
+                    .properties,
                   ...alertParamMappings,
                 },
               },
@@ -122,6 +123,6 @@ export function setAlertTypeParamMapping(paramMappings: SavedObjectsComplexField
     );
   }
 
-  Object.assign(alertParamMappings, paramMappings.properties);
-  console.log(alertParamMappings);
+  Object.assign(alertParamMappings, injectIgnoreMalformed(paramMappings).properties);
+  console.log(JSON.stringify(alertParamMappings, null, 2));
 }

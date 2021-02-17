@@ -46,12 +46,11 @@
           }
         }
       },
-      "searchableParamsByType": {
-        "properties": {}
-      },
       "params": {
-        "enabled": false,
-        "type": "object"
+        "dynamic": false,
+        "type": "object",
+        "properties": {
+        }
       },
       "scheduledTaskId": {
         "type": "keyword"

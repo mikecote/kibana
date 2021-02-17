@@ -151,5 +151,6 @@ export interface SavedObjectsComplexFieldMapping {
   enabled?: boolean;
   doc_values?: boolean;
   type?: string;
+  ignore_malformed?: boolean;
   properties: SavedObjectsMappingProperties;
 }

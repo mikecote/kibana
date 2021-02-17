@@ -278,10 +278,6 @@ export class AlertsClient {
       createdAt: new Date(createTime).toISOString(),
       updatedAt: new Date(createTime).toISOString(),
       params: validatedAlertTypeParams as RawAlert['params'],
-      searchableParamsByType: this.getSearchableParamsData(
-        alertType.id,
-        validatedAlertTypeParams as RawAlert['params']
-      ),
       muteAll: false,
       mutedInstanceIds: [],
       notifyWhen,
@@ -444,18 +440,6 @@ export class AlertsClient {
   public async find<Params extends AlertTypeParams = never>({
     options: { fields, ...options } = {},
   }: { options?: FindOptions } = {}): Promise<FindResult<Params>> {
-    const filterUpdated = options.filter
-      ? options.filter.replace('params.', 'searchableParamsByType.')
-      : options.filter;
-    const sortFieldUpdated = options.sortField
-      ? options.sortField.replace('params.', 'searchableParamsByType.')
-      : options.sortField;
-    const searchFieldsUpdated = options.searchFields
-      ? options.searchFields.map((searchField: string) =>
-          searchField.replace('params.', 'searchableParamsByType.')
-        )
-      : options.searchFields;
-
     let authorizationTuple;
     try {
       authorizationTuple = await this.authorization.getFindAuthorizationFilter();
@@ -482,12 +466,12 @@ export class AlertsClient {
     } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
       ...options,
       filter:
-        (authorizationFilter && filterUpdated
-          ? nodeBuilder.and([esKuery.fromKueryExpression(filterUpdated), authorizationFilter])
-          : authorizationFilter) ?? filterUpdated,
+        (authorizationFilter && options.filter
+          ? nodeBuilder.and([esKuery.fromKueryExpression(options.filter), authorizationFilter])
+          : authorizationFilter) ?? options.filter,
       fields: fields ? this.includeFieldsRequiredForAuthentication(fields) : fields,
-      sortField: sortFieldUpdated,
-      searchFields: searchFieldsUpdated,
+      sortField: options.sortField,
+      searchFields: options.searchFields,
       type: 'alert',
     });
 
@@ -533,15 +517,6 @@ export class AlertsClient {
   public async aggregate({
     options: { fields, ...options } = {},
   }: { options?: AggregateOptions } = {}): Promise<AggregateResult> {
-    const filterUpdated = options.filter
-      ? options.filter.replace('params.', 'searchableParamsByType.')
-      : options.filter;
-    const searchFieldsUpdated = options.searchFields
-      ? options.searchFields.map((searchField: string) =>
-          searchField.replace('params.', 'searchableParamsByType.')
-        )
-      : options.searchFields;
-
     // Replace this when saved objects supports aggregations https://github.com/elastic/kibana/pull/64002
     const alertExecutionStatus = await Promise.all(
       AlertExecutionStatusValues.map(async (status: string) => {
@@ -549,8 +524,8 @@ export class AlertsClient {
           filter: authorizationFilter,
           logSuccessfulAuthorization,
         } = await this.authorization.getFindAuthorizationFilter();
-        const filter = filterUpdated
-          ? `${filterUpdated} and alert.attributes.executionStatus.status:(${status})`
+        const filter = options.filter
+          ? `${options.filter} and alert.attributes.executionStatus.status:(${status})`
           : `alert.attributes.executionStatus.status:(${status})`;
         const { total } = await this.unsecuredSavedObjectsClient.find<RawAlert>({
           ...options,
@@ -561,7 +536,7 @@ export class AlertsClient {
           page: 1,
           perPage: 0,
           type: 'alert',
-          searchFields: searchFieldsUpdated,
+          searchFields: options.searchFields,
         });
 
         logSuccessfulAuthorization();
@@ -764,10 +739,6 @@ export class AlertsClient {
       ...data,
       ...apiKeyAttributes,
       params: validatedAlertTypeParams as RawAlert['params'],
-      searchableParamsByType: this.getSearchableParamsData(
-        alertType.id,
-        validatedAlertTypeParams as RawAlert['params']
-      ),
       actions,
       notifyWhen,
       updatedBy: username,
@@ -1514,20 +1485,6 @@ export class AlertsClient {
       alertAttributes.meta.versionApiKeyLastmodified = this.kibanaVersion;
     }
     return alertAttributes;
-  }
-
-  private getSearchableParamsData(
-    alertTypeId: string,
-    params: RawAlert['params']
-  ): RawAlert['params'] | null {
-    const alertType = this.alertTypeRegistry.get(alertTypeId);
-    if (alertType.paramMappings) {
-      const keys = Object.keys(
-        (alertType.paramMappings as SavedObjectsComplexFieldMapping).properties
-      );
-      return pick(params, keys);
-    }
-    return null;
   }
 }
 

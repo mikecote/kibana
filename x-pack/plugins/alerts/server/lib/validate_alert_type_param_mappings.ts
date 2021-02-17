@@ -14,7 +14,6 @@ import {
   SavedObjectsMappingProperties,
 } from 'kibana/server';
 
-const ALERT_TYPE_PARAMS_FIELD_PREFIX = 'alert.attributes.params';
 const ALERT_TYPE_ID_FIELD_REGEX = new RegExp('alert.attributes.alertTypeId:[\\s(]*([^\\s]+)');
 
 export const MAX_ALLOWED_ALERT_TYPE_MAPPED_PARAM_FIELDS = 15;
@@ -66,51 +65,43 @@ export function normalizeAlertTypeIdForMapping(alertTypeId: string): string {
   return alertTypeId.replace(/\./g, '__');
 }
 
-export function injectAlertTypeIdIntoSort(
-  sortField: string,
-  filter?: string,
-  alertTypeId?: string
-): string {
-  if (!sortField.startsWith('params.')) {
-    return sortField;
+export function injectIgnoreMalformed(paramMappings: SavedObjectsComplexFieldMapping) {
+  const result: SavedObjectsComplexFieldMapping = { properties: {} };
+  for (const key of Object.keys(paramMappings.properties)) {
+    const { type } = paramMappings.properties[key];
+    if (type && ['nested', 'object'].includes(type)) {
+      // recursion
+      result.properties[key] = {
+        ...paramMappings.properties[key],
+        ...injectIgnoreMalformed(paramMappings.properties[key] as SavedObjectsComplexFieldMapping),
+      };
+    } else if (
+      type &&
+      [
+        'long',
+        'integer',
+        'short',
+        'byte',
+        'double',
+        'float',
+        'half_float',
+        'scaled_float',
+        'date',
+        'date_nanos',
+        'geo_point',
+        'geo_shape',
+        'ip',
+      ].includes(type)
+    ) {
+      result.properties[key] = {
+        ...paramMappings.properties[key],
+        ignore_malformed: true,
+      };
+    } else {
+      result.properties[key] = paramMappings.properties[key];
+    }
   }
-
-  // if alertTypeId is not explicitly passed in, try to extract from the filter
-  alertTypeId = alertTypeId ? alertTypeId : getAlertTypeIdFromFilter(filter);
-
-  // throw exception if sortField contains alert params but not alert type is specified
-  if (!alertTypeId) {
-    throw new Error(`Must specify alertTypeId when sorting on alert type parameters`);
-  }
-
-  return sortField.replace(
-    `params.`,
-    `searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}.`
-  );
-}
-
-export function injectAlertTypeIdIntoFilter(filter: string, alertTypeId?: string): string {
-  if (!filter.includes(ALERT_TYPE_PARAMS_FIELD_PREFIX)) {
-    return filter;
-  }
-
-  // if alertTypeId is not explicitly passed in, try to extract from the filter
-  alertTypeId = alertTypeId ? alertTypeId : getAlertTypeIdFromFilter(filter);
-
-  // throw exception if filter contains alert params but not alert type is specified
-  if (!alertTypeId) {
-    throw new Error(`Must specify alertTypeId when filtering on alert type parameters`);
-  }
-
-  // the saved object service validates against the mapping before executing
-  // so parameter/alertTypeId mismatches will be caught there.
-
-  // if we want to support an array of alertTypeIds in the future, this replace
-  // function will need to be updated.
-  return filter.replace(
-    `alert.attributes.params`,
-    `alert.attributes.searchableParamsByType.${normalizeAlertTypeIdForMapping(alertTypeId)}`
-  );
+  return result;
 }
 
 export function getAlertTypeIdFromFilter(filter?: string): string | undefined {
