@@ -9,7 +9,6 @@ import {
   EuiBasicTable,
   EuiLoadingContent,
   EuiProgress,
-  EuiOverlayMask,
   EuiConfirmModal,
   EuiWindowEvent,
 } from '@elastic/eui';
@@ -496,18 +495,16 @@ export const RulesTables = React.memo<RulesTableProps>(
               <EuiLoadingContent data-test-subj="initialLoadingPanelAllRulesTable" lines={10} />
             )}
             {showIdleModal && (
-              <EuiOverlayMask>
-                <EuiConfirmModal
-                  title={i18n.REFRESH_PROMPT_TITLE}
-                  onCancel={handleIdleModalContinue}
-                  onConfirm={handleIdleModalContinue}
-                  confirmButtonText={i18n.REFRESH_PROMPT_CONFIRM}
-                  defaultFocusedButton="confirm"
-                  data-test-subj="allRulesIdleModal"
-                >
-                  <p>{i18n.REFRESH_PROMPT_BODY}</p>
-                </EuiConfirmModal>
-              </EuiOverlayMask>
+              <EuiConfirmModal
+                title={i18n.REFRESH_PROMPT_TITLE}
+                onCancel={handleIdleModalContinue}
+                onConfirm={handleIdleModalContinue}
+                confirmButtonText={i18n.REFRESH_PROMPT_CONFIRM}
+                defaultFocusedButton="confirm"
+                data-test-subj="allRulesIdleModal"
+              >
+                <p>{i18n.REFRESH_PROMPT_BODY}</p>
+              </EuiConfirmModal>
             )}
             {shouldShowRulesTable && (
               <>
