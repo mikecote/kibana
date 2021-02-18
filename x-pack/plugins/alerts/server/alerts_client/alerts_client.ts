@@ -15,7 +15,6 @@ import {
   SavedObject,
   PluginInitializerContext,
   SavedObjectsUtils,
-  SavedObjectsComplexFieldMapping,
 } from '../../../../../src/core/server';
 import { esKuery } from '../../../../../src/plugins/data/server';
 import { ActionsClient, ActionsAuthorization } from '../../../actions/server';
