@@ -148,7 +148,10 @@ export interface CreateOptions<Params extends AlertTypeParams> {
     | 'mutedInstanceIds'
     | 'actions'
     | 'executionStatus'
-  > & { actions: NormalizedAlertAction[] };
+  > & {
+    actions: NormalizedAlertAction[];
+    searchable?: Array<{ 'alert.field': string; 'alert.value': string | string[] | undefined }>;
+  };
   options?: {
     migrationVersion?: Record<string, string>;
   };

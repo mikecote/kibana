@@ -114,8 +114,45 @@ export const fetchRules = async ({
   const showElasticRuleFilter = filterOptions.showElasticRules
     ? [`alert.attributes.tags: "__internal_immutable:true"`]
     : [];
+  const searchFilter = [];
+  if (filterOptions.filter.length) {
+    searchFilter.push(`alert.attributes.name: ${filterOptions.filter}`);
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: author and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: description and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: note and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: falsePositives and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.framework and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.tactic.id and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.tactic.name and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.technique.id and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.technique.name and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.technique.subtechnique.id and alert.value: ${filterOptions.filter}}`
+    );
+    searchFilter.push(
+      `alert.attributes.searchable:{ alert.field: threat.technique.subtechnique.id and alert.value: ${filterOptions.filter}}`
+    );
+  }
   const filtersWithoutTags = [
-    ...(filterOptions.filter.length ? [`alert.attributes.name: ${filterOptions.filter}`] : []),
+    ...(searchFilter.length ? [searchFilter.join(' OR ')] : []),
     ...showCustomRuleFilter,
     ...showElasticRuleFilter,
   ].join(' AND ');

@@ -49,6 +49,17 @@
       "params": {
         "type": "flattened"
       },
+      "searchable": {
+        "type": "nested",
+        "properties": {
+          "alert.field": {
+            "type": "keyword"
+          },
+          "alert.value": {
+            "type": "text"
+          }
+        }
+      },
       "scheduledTaskId": {
         "type": "keyword"
       },

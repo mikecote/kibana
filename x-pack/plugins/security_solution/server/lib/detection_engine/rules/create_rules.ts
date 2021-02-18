@@ -4,6 +4,11 @@
  * you may not use this file except in compliance with the Elastic License.
  */
 
+import {
+  Threat,
+  ThreatTechnique,
+  ThreatSubtechnique,
+} from '../../../../common/detection_engine/schemas/common/schemas';
 import { transformRuleToAlertAction } from '../../../../common/detection_engine/transform_actions';
 import { Alert } from '../../../../../alerts/common';
 import { SERVER_APP_ID, SIGNALS_ID } from '../../../../common/constants';
@@ -61,6 +66,49 @@ export const createRules = async ({
   exceptionsList,
   actions,
 }: CreateRulesOptions): Promise<Alert<RuleTypeParams>> => {
+  const searchable = [
+    {
+      'alert.field': 'author',
+      'alert.value': author,
+    },
+    {
+      'alert.field': 'description',
+      'alert.value': description,
+    },
+    {
+      'alert.field': 'note',
+      'alert.value': note,
+    },
+    {
+      'alert.field': 'falsePositives',
+      'alert.value': falsePositives,
+    },
+  ];
+  (threat || []).forEach((t: Threat) => {
+    searchable.push({ 'alert.field': 'threat.framework', 'alert.value': t.framework });
+    if (t.tactic) {
+      searchable.push({ 'alert.field': 'threat.tactic.id', 'alert.value': t.tactic.id });
+      searchable.push({ 'alert.field': 'threat.tactic.name', 'alert.value': t.tactic.name });
+    }
+    if (t.technique) {
+      t.technique.forEach((tt: ThreatTechnique) => {
+        searchable.push({ 'alert.field': 'threat.technique.id', 'alert.value': tt.id });
+        searchable.push({ 'alert.field': 'threat.technique.name', 'alert.value': tt.name });
+        if (tt.subtechnique) {
+          tt.subtechnique.forEach((tts: ThreatSubtechnique) => {
+            searchable.push({
+              'alert.field': 'threat.technique.subtechnique.id',
+              'alert.value': tts.id,
+            });
+            searchable.push({
+              'alert.field': 'threat.technique.subtechnique.name',
+              'alert.value': tts.name,
+            });
+          });
+        }
+      });
+    }
+  });
   return alertsClient.create<RuleTypeParams>({
     data: {
       name,
@@ -114,6 +162,7 @@ export const createRules = async ({
         version,
         exceptionsList,
       },
+      searchable,
       schedule: { interval },
       enabled,
       actions: actions.map(transformRuleToAlertAction),
