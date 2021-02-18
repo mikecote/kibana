@@ -146,9 +146,6 @@ export function getAlertType(
         thresholdComparator: {
           type: 'keyword',
         },
-        threshold: {
-          type: 'integer',
-        },
       },
     },
     actionVariables: {
