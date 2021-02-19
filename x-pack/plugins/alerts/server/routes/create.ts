@@ -36,6 +36,14 @@ export const bodySchema = schema.object({
   schedule: schema.object({
     interval: schema.string({ validate: validateDurationSchema }),
   }),
+  searchable: schema.nullable(
+    schema.arrayOf(
+      schema.object({
+        field: schema.string(),
+        value: schema.string(),
+      })
+    )
+  ),
   actions: schema.arrayOf(
     schema.object({
       group: schema.string(),

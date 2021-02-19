@@ -18,6 +18,7 @@
  */
 
 import Boom from '@hapi/boom';
+import { get } from 'lodash';
 import { getProperty, IndexMapping } from '../../../mappings';
 
 const TOP_LEVEL_FIELDS = ['_id', '_score'];
@@ -67,25 +68,41 @@ export function getSortingParams(
   }
 
   const [typeField] = types;
-  const key = `${typeField}.${sortField}`;
-  // let field = getProperty(mappings, key);
-  // if (!field) {
-  //   // type field does not exist, try checking the root properties
-  //   key = sortField;
-  //   field = getProperty(mappings, sortField);
-  //   if (!field) {
-  //     throw Boom.badRequest(`Unknown sort field ${sortField}`);
-  //   }
-  // }
+  let key = `${typeField}.${sortField}`;
+  let field = getProperty(mappings, key);
+  if (!field && !fieldDefined(mappings, `${typeField}.${sortField}`)) {
+    // type field does not exist, try checking the root properties
+    key = sortField;
+    field = getProperty(mappings, sortField);
+    if (!field) {
+      throw Boom.badRequest(`Unknown sort field ${sortField}`);
+    }
+  }
 
   return {
     sort: [
       {
         [key]: {
           order: sortOrder,
-          // unmapped_type: field.type,
+          unmapped_type: field?.type,
         },
       },
     ],
   };
 }
+
+const fieldDefined = (indexMappings: IndexMapping, key: string) => {
+  const path = [];
+  for (const attribute of key.split('.')) {
+    path.push(attribute);
+    const mappingKey = 'properties.' + path.join('.properties.');
+    const mapping = get(indexMappings, mappingKey);
+    if (mapping == null) {
+      return false;
+    }
+    if (mapping.type === 'flattened') {
+      return true;
+    }
+  }
+  return true;
+};

@@ -150,7 +150,7 @@ export interface CreateOptions<Params extends AlertTypeParams> {
     | 'executionStatus'
   > & {
     actions: NormalizedAlertAction[];
-    searchable?: Array<{ 'alert.field': string; 'alert.value': string | string[] | undefined }>;
+    searchable?: Array<{ field: string; value: string | string[] | undefined }>;
   };
   options?: {
     migrationVersion?: Record<string, string>;

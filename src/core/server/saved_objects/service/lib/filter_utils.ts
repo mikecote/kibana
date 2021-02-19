@@ -116,10 +116,10 @@ export const validateFilterKueryNode = ({
   storeValue = false,
   path = 'arguments',
 }: ValidateFilterKueryNodeParams): ValidateFilterKueryNode[] => {
-  let localNestedKeys: string | undefined;
+  let localNestedKeys: string | undefined = nestedKeys;
   return astFilter.arguments.reduce((kueryNode: string[], ast: KueryNode, index: number) => {
     if (hasNestedKey && ast.type === 'literal' && ast.value != null) {
-      localNestedKeys = ast.value;
+      localNestedKeys = localNestedKeys ? `${localNestedKeys}.${ast.value}` : ast.value;
     }
     if (ast.arguments) {
       const myPath = `${path}.${index}`;
@@ -131,7 +131,7 @@ export const validateFilterKueryNode = ({
           indexMapping,
           storeValue: ast.type === 'function' && astFunctionType.includes(ast.function),
           path: `${myPath}.arguments`,
-          hasNestedKey: ast.type === 'function' && ast.function === 'nested',
+          hasNestedKey: hasNestedKey || (ast.type === 'function' && ast.function === 'nested'),
           nestedKeys: localNestedKeys,
         }),
       ];
@@ -202,21 +202,32 @@ export const hasFilterKeyError = (
     ) {
       return `This key '${key}' does NOT match the filter proposition SavedObjectType.attributes.key`;
     }
-    // if (
-    //   (keySplit.length === 2 && !fieldDefined(indexMapping, keySplit[1])) ||
-    //   (keySplit.length > 2 &&
-    //     !fieldDefined(
-    //       indexMapping,
-    //       `${keySplit[0]}.${keySplit.slice(2, keySplit.length).join('.')}`
-    //     ))
-    // ) {
-    //   return `This key '${key}' does NOT exist in ${types.join()} saved object index patterns`;
-    // }
+    if (
+      (keySplit.length === 2 && !fieldDefined(indexMapping, keySplit[1])) ||
+      (keySplit.length > 2 &&
+        !fieldDefined(
+          indexMapping,
+          `${keySplit[0]}.${keySplit.slice(2, keySplit.length).join('.')}`
+        ))
+    ) {
+      return `This key '${key}' does NOT exist in ${types.join()} saved object index patterns`;
+    }
   }
   return null;
 };
 
 const fieldDefined = (indexMappings: IndexMapping, key: string) => {
-  const mappingKey = 'properties.' + key.split('.').join('.properties.');
-  return get(indexMappings, mappingKey) != null;
+  const path = [];
+  for (const attribute of key.split('.')) {
+    path.push(attribute);
+    const mappingKey = 'properties.' + path.join('.properties.');
+    const mapping = get(indexMappings, mappingKey);
+    if (mapping == null) {
+      return false;
+    }
+    if (mapping.type === 'flattened') {
+      return true;
+    }
+  }
+  return true;
 };

@@ -52,10 +52,10 @@
       "searchable": {
         "type": "nested",
         "properties": {
-          "alert.field": {
+          "field": {
             "type": "keyword"
           },
-          "alert.value": {
+          "value": {
             "type": "text"
           }
         }

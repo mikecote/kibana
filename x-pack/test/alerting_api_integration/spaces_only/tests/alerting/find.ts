@@ -121,6 +121,24 @@ export default function createFindTests({ getService }: FtrProviderContext) {
       expect(response.body.data[0].params.strValue).to.eql('my b');
     });
 
+    it('should be able to filter on searchable values', async () => {
+      await Promise.all([
+        createAlert({ searchable: [{ field: 'strValue', value: 'my a' }] }),
+        createAlert({ searchable: [{ field: 'strValue', value: 'my b' }] }),
+        createAlert({ searchable: [{ field: 'strValue', value: 'my c' }] }),
+      ]);
+
+      const response = await supertest.get(
+        `${getUrlPrefix(
+          Spaces.space1.id
+        )}/api/alerts/_find?filter=alert.attributes.searchable:{ field: "strValue" and value: "my b" }`
+      );
+
+      expect(response.status).to.eql(200);
+      expect(response.body.total).to.equal(1);
+      expect(response.body.data[0].searchable[0].value).to.eql('my b');
+    });
+
     async function createAlert(overwrites = {}) {
       const { body: createdAlert } = await supertest
         .post(`${getUrlPrefix(Spaces.space1.id)}/api/alerts/alert`)
