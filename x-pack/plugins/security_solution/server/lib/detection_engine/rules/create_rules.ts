@@ -68,41 +68,41 @@ export const createRules = async ({
 }: CreateRulesOptions): Promise<Alert<RuleTypeParams>> => {
   const searchable = [
     {
-      'alert.field': 'author',
-      'alert.value': author,
+      field: 'author',
+      value: author,
     },
     {
-      'alert.field': 'description',
-      'alert.value': description,
+      field: 'description',
+      value: description,
     },
     {
-      'alert.field': 'note',
-      'alert.value': note,
+      field: 'note',
+      value: note,
     },
     {
-      'alert.field': 'falsePositives',
-      'alert.value': falsePositives,
+      field: 'falsePositives',
+      value: falsePositives,
     },
   ];
   (threat || []).forEach((t: Threat) => {
-    searchable.push({ 'alert.field': 'threat.framework', 'alert.value': t.framework });
+    searchable.push({ field: 'threat.framework', value: t.framework });
     if (t.tactic) {
-      searchable.push({ 'alert.field': 'threat.tactic.id', 'alert.value': t.tactic.id });
-      searchable.push({ 'alert.field': 'threat.tactic.name', 'alert.value': t.tactic.name });
+      searchable.push({ field: 'threat.tactic.id', value: t.tactic.id });
+      searchable.push({ field: 'threat.tactic.name', value: t.tactic.name });
     }
     if (t.technique) {
       t.technique.forEach((tt: ThreatTechnique) => {
-        searchable.push({ 'alert.field': 'threat.technique.id', 'alert.value': tt.id });
-        searchable.push({ 'alert.field': 'threat.technique.name', 'alert.value': tt.name });
+        searchable.push({ field: 'threat.technique.id', value: tt.id });
+        searchable.push({ field: 'threat.technique.name', value: tt.name });
         if (tt.subtechnique) {
           tt.subtechnique.forEach((tts: ThreatSubtechnique) => {
             searchable.push({
-              'alert.field': 'threat.technique.subtechnique.id',
-              'alert.value': tts.id,
+              field: 'threat.technique.subtechnique.id',
+              value: tts.id,
             });
             searchable.push({
-              'alert.field': 'threat.technique.subtechnique.name',
-              'alert.value': tts.name,
+              field: 'threat.technique.subtechnique.name',
+              value: tts.name,
             });
           });
         }

@@ -118,37 +118,37 @@ export const fetchRules = async ({
   if (filterOptions.filter.length) {
     searchFilter.push(`alert.attributes.name: ${filterOptions.filter}`);
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: author and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: author and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: description and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: description and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: note and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: note and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: falsePositives and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: falsePositives and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.framework and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.framework and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.tactic.id and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.tactic.id and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.tactic.name and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.tactic.name and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.technique.id and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.technique.id and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.technique.name and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.technique.name and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.technique.subtechnique.id and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.technique.subtechnique.id and value: ${filterOptions.filter}}`
     );
     searchFilter.push(
-      `alert.attributes.searchable:{ alert.field: threat.technique.subtechnique.id and alert.value: ${filterOptions.filter}}`
+      `alert.attributes.searchable:{ field: threat.technique.subtechnique.id and value: ${filterOptions.filter}}`
     );
   }
   const filtersWithoutTags = [
