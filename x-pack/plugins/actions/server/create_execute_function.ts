@@ -104,6 +104,7 @@ export function createExecutionEnqueuerFunction({
       },
       {
         references: taskReferences,
+        refresh: false,
       }
     );
 
