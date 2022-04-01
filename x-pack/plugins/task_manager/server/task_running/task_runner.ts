@@ -307,9 +307,20 @@ export class TaskManagerRunner implements TaskRunner {
         id: this.instance.task.id,
         description: 'run task',
       };
+      const start = Date.now();
       const result = await this.executionContext.withContext(ctx, () =>
         withSpan({ name: 'run', type: 'task manager' }, () => this.task!.run())
       );
+      if (
+        this.instance.task.taskType.indexOf('alerting:') === 0 ||
+        this.instance.task.taskType.indexOf('actions:') === 0
+      ) {
+        console.log(
+          `*** task "${this.instance.task.taskType}" "${
+            this.instance.task.id
+          }" finished running after ${Date.now() - start}ms`
+        );
+      }
       const validatedResult = this.validateResult(result);
       const processedResult = await withSpan({ name: 'process result', type: 'task manager' }, () =>
         this.processResult(validatedResult, stopTaskTimer())
