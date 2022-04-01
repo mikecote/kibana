@@ -33,10 +33,12 @@
         "type": "text"
       },
       "params": {
-        "type": "text"
+        "type": "object",
+        "enabled": false
       },
       "state": {
-        "type": "text"
+        "type": "object",
+        "enabled": false
       },
       "user": {
         "type": "keyword"
