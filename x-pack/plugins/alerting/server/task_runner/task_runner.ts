@@ -10,11 +10,16 @@ import type { Request } from '@hapi/hapi';
 import { UsageCounter } from 'src/plugins/usage_collection/server';
 import uuid from 'uuid';
 import { addSpaceIdToPath } from '../../../spaces/server';
-import { KibanaRequest, Logger } from '../../../../../src/core/server';
 import { TaskRunnerContext } from './task_runner_factory';
 import { ConcreteTaskInstance, throwUnrecoverableError } from '../../../task_manager/server';
 import { createExecutionHandler, ExecutionHandler } from './create_execution_handler';
 import { Alert as CreatedAlert, createAlertFactory } from '../alert';
+import {
+  KibanaRequest,
+  Logger,
+  SavedObject,
+  SavedObjectReference,
+} from '../../../../../src/core/server';
 import {
   createWrappedScopedClusterClientFactory,
   ElasticsearchError,
@@ -148,22 +153,15 @@ export class TaskRunner<
     this.inMemoryMetrics = inMemoryMetrics;
   }
 
-  private async getDecryptedAttributes(
-    ruleId: string,
-    spaceId: string
-  ): Promise<{ apiKey: string | null; enabled: boolean; consumer: string }> {
+  private async getDecryptedRule(ruleId: string, spaceId: string): Promise<SavedObject<RawRule>> {
     const namespace = this.context.spaceIdToNamespace(spaceId);
     // Only fetch encrypted attributes here, we'll create a saved objects client
     // scoped with the API key to fetch the remaining data.
-    const {
-      attributes: { apiKey, enabled, consumer },
-    } = await this.context.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawRule>(
+    return await this.context.encryptedSavedObjectsClient.getDecryptedAsInternalUser<RawRule>(
       'alert',
       ruleId,
       { namespace }
     );
-
-    return { apiKey, enabled, consumer };
   }
 
   private getFakeKibanaRequest(spaceId: string, apiKey: RawRule['apiKey']) {
@@ -608,50 +606,49 @@ export class TaskRunner<
     const {
       params: { alertId: ruleId, spaceId },
     } = this.taskInstance;
-    let enabled: boolean;
-    let apiKey: string | null;
-    let consumer: string;
+    let decryptedRule: RawRule;
+    let references: SavedObjectReference[];
     try {
-      const decryptedAttributes = await this.getDecryptedAttributes(ruleId, spaceId);
-      apiKey = decryptedAttributes.apiKey;
-      enabled = decryptedAttributes.enabled;
-      consumer = decryptedAttributes.consumer;
+      const result = await this.getDecryptedRule(ruleId, spaceId);
+      decryptedRule = result.attributes;
+      references = result.references;
     } catch (err) {
       throw new ErrorWithReason(AlertExecutionStatusErrorReasons.Decrypt, err);
     }
 
-    this.ruleConsumer = consumer;
+    this.ruleConsumer = decryptedRule.consumer;
 
-    if (!enabled) {
+    if (!decryptedRule.enabled) {
       throw new ErrorWithReason(
         AlertExecutionStatusErrorReasons.Disabled,
         new Error(`Rule failed to execute because rule ran after it was disabled.`)
       );
     }
 
-    const fakeRequest = this.getFakeKibanaRequest(spaceId, apiKey);
+    const fakeRequest = this.getFakeKibanaRequest(spaceId, decryptedRule.apiKey);
 
     // Get rules client with space level permissions
     const rulesClient = this.context.getRulesClientWithRequest(fakeRequest);
 
-    let rule: SanitizedAlert<Params>;
+    const rule: SanitizedAlert<Params> = rulesClient.getAlertFromRaw(
+      decryptedRule.id as string,
+      decryptedRule.alertTypeId as string,
+      {
+        ...decryptedRule,
+        apiKey: null,
+      },
+      references
+    );
 
-    // Ensure API key is still valid and user has access
-    try {
-      rule = await rulesClient.get({ id: ruleId });
-
-      if (apm.currentTransaction) {
-        apm.currentTransaction.name = `Execute Alerting Rule: "${rule.name}"`;
-        apm.currentTransaction.addLabels({
-          alerting_rule_consumer: rule.consumer,
-          alerting_rule_name: rule.name,
-          alerting_rule_tags: rule.tags.join(', '),
-          alerting_rule_type_id: rule.alertTypeId,
-          alerting_rule_params: JSON.stringify(rule.params),
-        });
-      }
-    } catch (err) {
-      throw new ErrorWithReason(AlertExecutionStatusErrorReasons.Read, err);
+    if (apm.currentTransaction) {
+      apm.currentTransaction.name = `Execute Alerting Rule: "${rule.name}"`;
+      apm.currentTransaction.addLabels({
+        alerting_rule_consumer: rule.consumer,
+        alerting_rule_name: rule.name,
+        alerting_rule_tags: rule.tags.join(', '),
+        alerting_rule_type_id: rule.alertTypeId,
+        alerting_rule_params: JSON.stringify(rule.params),
+      });
     }
 
     this.ruleName = rule.name;
@@ -671,7 +668,7 @@ export class TaskRunner<
     return {
       monitoring: asOk(rule.monitoring),
       state: await promiseResult<RuleExecutionState, Error>(
-        this.validateAndExecuteRule(fakeRequest, apiKey, rule, event)
+        this.validateAndExecuteRule(fakeRequest, decryptedRule.apiKey, rule, event)
       ),
       schedule: asOk(
         // fetch the rule again to ensure we return the correct schedule as it may have

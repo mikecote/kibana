@@ -2102,7 +2102,7 @@ export class RulesClient {
     }) as Rule['actions'];
   }
 
-  private getAlertFromRaw<Params extends RuleTypeParams>(
+  public getAlertFromRaw<Params extends RuleTypeParams>(
     id: string,
     ruleTypeId: string,
     rawRule: RawRule,
