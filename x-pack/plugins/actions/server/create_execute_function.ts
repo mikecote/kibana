@@ -13,7 +13,6 @@ import {
   PreConfiguredAction,
   ActionTaskExecutorParams,
 } from './types';
-import { ACTION_TASK_PARAMS_SAVED_OBJECT_TYPE } from './constants/saved_objects';
 import { ExecuteOptions as ActionExecutorOptions } from './lib/action_executor';
 import { extractSavedObjectReferences, isSavedObjectExecutionSource } from './lib';
 import { RelatedSavedObjects } from './lib/related_saved_objects';
@@ -92,31 +91,26 @@ export function createExecutionEnqueuerFunction({
       taskReferences.push(...references);
     }
 
-    const actionTaskParamsRecord = await unsecuredSavedObjectsClient.create(
-      ACTION_TASK_PARAMS_SAVED_OBJECT_TYPE,
+    await taskManager.schedule(
       {
-        actionId: id,
-        params,
-        apiKey,
-        executionId,
-        consumer,
-        relatedSavedObjects: relatedSavedObjectWithRefs,
+        taskType: `actions:${action.actionTypeId}`,
+        params: {
+          spaceId,
+          isPersisted: true,
+          taskParams: {
+            actionId: id,
+            params,
+            apiKey,
+            executionId,
+            consumer,
+            relatedSavedObjects: relatedSavedObjectWithRefs,
+          },
+        },
+        state: {},
+        scope: ['actions'],
       },
-      {
-        references: taskReferences,
-        refresh: false,
-      }
+      { references: taskReferences }
     );
-
-    await taskManager.schedule({
-      taskType: `actions:${action.actionTypeId}`,
-      params: {
-        spaceId,
-        actionTaskParamsId: actionTaskParamsRecord.id,
-      },
-      state: {},
-      scope: ['actions'],
-    });
   };
 }
 
