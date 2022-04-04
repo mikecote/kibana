@@ -85,7 +85,6 @@ export function createExecutionEnqueuerFunction({
       references: SavedObjectReference[];
     }> = [];
 
-    console.log('*** executable enqueuer', items.length);
     const chunks = chunk(items, BULK_SCHEDULE_SIZE);
     for (const part of chunks) {
       for (const item of part) {
