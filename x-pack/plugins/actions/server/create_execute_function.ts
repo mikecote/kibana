@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { chunk } from 'lodash';
 import { SavedObjectsClientContract, SavedObjectReference } from '../../../../src/core/server';
 import {
   TaskManagerStartContract,
@@ -19,6 +20,8 @@ import {
 import { ExecuteOptions as ActionExecutorOptions } from './lib/action_executor';
 import { extractSavedObjectReferences, isSavedObjectExecutionSource } from './lib';
 import { RelatedSavedObjects } from './lib/related_saved_objects';
+
+const BULK_SCHEDULE_SIZE = 1000;
 
 interface CreateExecuteFunctionOptions {
   taskManager: TaskManagerStartContract;
@@ -81,45 +84,50 @@ export function createExecutionEnqueuerFunction({
       taskInstance: TaskInstanceWithDeprecatedFields;
       references: SavedObjectReference[];
     }> = [];
-    for (const item of items) {
-      const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
-      // Get saved object references from action ID and relatedSavedObjects
-      const { references, relatedSavedObjectWithRefs } = extractSavedObjectReferences(
-        item.id,
-        foundConnector.isPreconfigured,
-        item.relatedSavedObjects
-      );
-      const executionSourceReference = executionSourceAsSavedObjectReferences(item.source);
 
-      const taskReferences = [];
-      if (executionSourceReference.references) {
-        taskReferences.push(...executionSourceReference.references);
-      }
-      if (references) {
-        taskReferences.push(...references);
-      }
+    console.log('*** executable enqueuer', items.length);
+    const chunks = chunk(items, BULK_SCHEDULE_SIZE);
+    for (const part of chunks) {
+      for (const item of part) {
+        const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
+        // Get saved object references from action ID and relatedSavedObjects
+        const { references, relatedSavedObjectWithRefs } = extractSavedObjectReferences(
+          item.id,
+          foundConnector.isPreconfigured,
+          item.relatedSavedObjects
+        );
+        const executionSourceReference = executionSourceAsSavedObjectReferences(item.source);
 
-      bulkScheduleOpts.push({
-        references: taskReferences,
-        taskInstance: {
-          taskType: `actions:${foundConnector.connector.actionTypeId}`,
-          params: {
-            spaceId: item.spaceId,
-            isPersisted: true,
-            taskParams: {
-              actionId: item.id,
-              params: item.params,
-              apiKey: item.apiKey,
-              executionId: item.executionId,
-              consumer: item.consumer,
-              relatedSavedObjects: relatedSavedObjectWithRefs,
+        const taskReferences = [];
+        if (executionSourceReference.references) {
+          taskReferences.push(...executionSourceReference.references);
+        }
+        if (references) {
+          taskReferences.push(...references);
+        }
+
+        bulkScheduleOpts.push({
+          references: taskReferences,
+          taskInstance: {
+            taskType: `actions:${foundConnector.connector.actionTypeId}`,
+            params: {
+              spaceId: item.spaceId,
+              isPersisted: true,
+              taskParams: {
+                actionId: item.id,
+                params: item.params,
+                apiKey: item.apiKey,
+                executionId: item.executionId,
+                consumer: item.consumer,
+                relatedSavedObjects: relatedSavedObjectWithRefs,
+              },
             },
           },
-        },
-      });
-    }
+        });
+      }
 
-    await taskManager.bulkSchedule(bulkScheduleOpts);
+      await taskManager.bulkSchedule(bulkScheduleOpts);
+    }
   };
 }
 

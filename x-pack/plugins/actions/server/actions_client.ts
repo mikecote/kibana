@@ -518,19 +518,8 @@ export class ActionsClient {
   }
 
   public async enqueueExecution(options: EnqueueExecutionOptions[]): Promise<void> {
-    const sources = [...new Set(options.map((option) => option.source))];
-    await Promise.all(
-      sources.map(async (source) => {
-        if (
-          (await getAuthorizationModeBySource(this.unsecuredSavedObjectsClient, source)) ===
-          AuthorizationMode.RBAC
-        ) {
-          await this.authorization.ensureAuthorized('execute');
-        } else {
-          trackLegacyRBACExemption('enqueueExecution', this.usageCounter);
-        }
-      })
-    );
+    // TODO Legacy RBAC exemption?
+    await this.authorization.ensureAuthorized('execute');
     return this.executionEnqueuer(this.unsecuredSavedObjectsClient, options);
   }
 
