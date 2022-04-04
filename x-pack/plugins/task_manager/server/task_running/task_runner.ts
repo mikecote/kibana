@@ -544,10 +544,13 @@ export class TaskManagerRunner implements TaskRunner {
       // if retrying is possible (new runAt) or this is an recurring task - reschedule
       mapOk(
         ({ runAt, schedule: reschedule, state, attempts = 0 }: Partial<ConcreteTaskInstance>) => {
-          const { startedAt, schedule } = this.instance.task;
+          const { schedule, runAt: runAtFromTask } = this.instance.task;
+          const nextRun = intervalFromDate(
+            runAtFromTask!,
+            reschedule?.interval ?? schedule?.interval
+          )!;
           return asOk({
-            runAt:
-              runAt || intervalFromDate(startedAt!, reschedule?.interval ?? schedule?.interval)!,
+            runAt: runAt || new Date(Math.max(Date.now(), nextRun.getTime())),
             state,
             schedule: reschedule ?? schedule,
             attempts,
