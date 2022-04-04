@@ -76,6 +76,8 @@ export function createExecutionHandler<
   ) => {
     const itemsToEnqueue: ExecuteOptions[] = [];
     const eventLogDocs: IEvent[] = [];
+    const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
+
     for (const { actionGroup, actionSubgroup, context, state, alertId } of items) {
       if (!ruleTypeActionGroups.has(actionGroup)) {
         logger.error(`Invalid action group "${actionGroup}" for rule "${ruleType.id}".`);
@@ -121,8 +123,6 @@ export function createExecutionHandler<
       alertExecutionStore.numberOfScheduledActions += actions.length;
 
       const ruleLabel = `${ruleType.id}:${ruleId}: '${ruleName}'`;
-
-      const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
       // let ephemeralActionsToSchedule = maxEphemeralActionsPerRule;
 
       for (const action of actions) {
@@ -216,13 +216,12 @@ export function createExecutionHandler<
 
         eventLogDocs.push(event);
       }
-
-      if (itemsToEnqueue.length > 0) {
-        await actionsClient.enqueueExecution(itemsToEnqueue);
-      }
-      for (const event of eventLogDocs) {
-        eventLogger.logEvent(event);
-      }
+    }
+    if (itemsToEnqueue.length > 0) {
+      await actionsClient.enqueueExecution(itemsToEnqueue);
+    }
+    for (const event of eventLogDocs) {
+      eventLogger.logEvent(event);
     }
   };
 }
