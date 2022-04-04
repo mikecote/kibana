@@ -12,7 +12,16 @@ import apm from 'elastic-apm-node';
 import minimatch from 'minimatch';
 import { Subject, Observable, from, of } from 'rxjs';
 import { map, mergeScan } from 'rxjs/operators';
-import { difference, partition, groupBy, mapValues, countBy, pick, isPlainObject } from 'lodash';
+import {
+  difference,
+  partition,
+  groupBy,
+  mapValues,
+  countBy,
+  pick,
+  isPlainObject,
+  min,
+} from 'lodash';
 import { some, none } from 'fp-ts/lib/Option';
 
 import { Logger } from '../../../../../src/core/server';
@@ -107,7 +116,7 @@ interface TaskClaimingBatch<Concurrency extends BatchConcurrency, TaskType> {
   tasksTypes: TaskType;
 }
 type UnlimitedBatch = TaskClaimingBatch<BatchConcurrency.Unlimited, Set<string>>;
-type LimitedBatch = TaskClaimingBatch<BatchConcurrency.Limited, string>;
+type LimitedBatch = TaskClaimingBatch<BatchConcurrency.Limited, Set<string>>;
 
 export const TASK_MANAGER_MARK_AS_CLAIMED = 'mark-available-tasks-as-claimed';
 
@@ -165,11 +174,36 @@ export class TaskClaiming {
           .join(', ')}`
       );
     }
+
+    for (const taskDef of definitions.getAllDefinitions()) {
+      if (taskDef.concurrencyScope) {
+        for (const comparedTaskDef of definitions.getAllDefinitions()) {
+          if (
+            taskDef.concurrencyScope === comparedTaskDef.concurrencyScope &&
+            taskDef.maxConcurrency !== comparedTaskDef.maxConcurrency
+          ) {
+            throw new Error(
+              `maxConcurrency mismatch for task definitions within ${taskDef.concurrencyScope} concurrencyScope`
+            );
+          }
+        }
+      }
+    }
+
+    const groupedLimitedConcurrency = groupBy(limitedConcurrency, (item) => {
+      return item.concurrencyScope || `byTaskType:${item.type}`;
+    });
+    const groupedLimitedConcurrencyKeys = Object.keys(groupedLimitedConcurrency);
+
     return [
       ...(unlimitedConcurrency
         ? [asUnlimited(new Set(unlimitedConcurrency.map(({ type }) => type)))]
         : []),
-      ...(limitedConcurrency ? limitedConcurrency.map(({ type }) => asLimited(type)) : []),
+      ...(groupedLimitedConcurrencyKeys.length
+        ? groupedLimitedConcurrencyKeys.map((key) =>
+            asLimited(new Set(groupedLimitedConcurrency[key].map((item) => item.type)))
+          )
+        : []),
     ];
   }
 
@@ -224,14 +258,14 @@ export class TaskClaiming {
         (accumulatedResult, batch) => {
           const stopTaskTimer = startTaskTimer();
           const capacity = isLimited(batch)
-            ? this.getCapacity(batch.tasksTypes)
+            ? min([...batch.tasksTypes].map((type) => this.getCapacity(type)))!
             : this.getCapacity();
           return from(
             this.executeClaimAvailableTasks({
               claimOwnershipUntil,
               claimTasksById: claimTasksById.splice(0, capacity),
               size: capacity,
-              taskTypes: isLimited(batch) ? new Set([batch.tasksTypes]) : batch.tasksTypes,
+              taskTypes: batch.tasksTypes,
             }).then((result) => {
               const { stats, docs } = accumulateClaimOwnershipResults(accumulatedResult, result);
               stats.tasksConflicted = correctVersionConflictsForContinuation(
@@ -518,7 +552,7 @@ function isLimited(
 ): batch is LimitedBatch {
   return batch.concurrency === BatchConcurrency.Limited;
 }
-function asLimited(tasksType: string): LimitedBatch {
+function asLimited(tasksType: Set<string>): LimitedBatch {
   return {
     concurrency: BatchConcurrency.Limited,
     tasksTypes: tasksType,

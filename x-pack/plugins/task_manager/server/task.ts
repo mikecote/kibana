@@ -137,6 +137,7 @@ export const taskDefinitionSchema = schema.object(
         min: 0,
       })
     ),
+    concurrencyScope: schema.maybe(schema.string()),
   },
   {
     validate({ timeout }) {

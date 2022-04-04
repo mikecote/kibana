@@ -108,10 +108,9 @@ export class TaskPool {
    * @returns {Promise<boolean>}
    */
   public run = async (tasks: TaskRunner[]): Promise<TaskPoolRunResult> => {
-    const [tasksToRun, leftOverTasks] = partitionListByCount(tasks, this.availableWorkers);
-    if (tasksToRun.length) {
+    if (tasks.length) {
       await Promise.all(
-        tasksToRun
+        tasks
           .filter(
             (taskRunner) =>
               !Array.from(this.tasksInPool.keys()).some((executionId: string) =>
@@ -142,12 +141,7 @@ export class TaskPool {
       );
     }
 
-    if (leftOverTasks.length) {
-      if (this.availableWorkers) {
-        return this.run(leftOverTasks);
-      }
-      return TaskPoolRunResult.RanOutOfCapacity;
-    } else if (!this.availableWorkers) {
+    if (!this.availableWorkers) {
       return TaskPoolRunResult.RunningAtCapacity;
     }
     return TaskPoolRunResult.RunningAllClaimedTasks;

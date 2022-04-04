@@ -265,6 +265,8 @@ export class RuleTypeRegistry {
       [`alerting:${ruleType.id}`]: {
         title: ruleType.name,
         timeout: ruleType.ruleTaskTimeout,
+        maxConcurrency: 10,
+        concurrencyScope: 'alerting',
         createTaskRunner: (context: RunContext) =>
           this.taskRunnerFactory.create<
             Params,
