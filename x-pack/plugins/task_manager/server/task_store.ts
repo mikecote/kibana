@@ -20,6 +20,7 @@ import {
   ISavedObjectsRepository,
   SavedObjectsUpdateResponse,
   ElasticsearchClient,
+  SavedObjectReference,
 } from '../../../../src/core/server';
 
 import { asOk, asErr, Result } from './lib/result_type';
@@ -144,6 +145,30 @@ export class TaskStore {
     }
 
     return savedObjectToConcreteTaskInstance(savedObject);
+  }
+
+  public async bulkSchedule(
+    items: Array<{ taskInstance: TaskInstance; references: SavedObjectReference[] }>
+  ): Promise<void> {
+    const taskTypes = [...new Set(items.map((item) => item.taskInstance.taskType))];
+    for (const taskType of taskTypes) {
+      this.definitions.ensureHas(taskType);
+    }
+
+    try {
+      await this.savedObjectsRepository.bulkCreate<SerializedConcreteTaskInstance>(
+        items.map((item) => ({
+          id: item.taskInstance.id,
+          type: 'task',
+          attributes: taskInstanceToAttributes(item.taskInstance),
+          references: item.references,
+        })),
+        { refresh: false }
+      );
+    } catch (e) {
+      this.errors$.next(e);
+      throw e;
+    }
   }
 
   /**

@@ -14,7 +14,7 @@ import uuid from 'uuid';
 import { pick } from 'lodash';
 import { merge, Subject } from 'rxjs';
 import agent from 'elastic-apm-node';
-import { Logger } from '../../../../src/core/server';
+import { Logger, SavedObjectReference } from '../../../../src/core/server';
 import { asOk, either, map, mapErr, promiseResult, isErr } from './lib/result_type';
 import {
   isTaskRunEvent,
@@ -109,6 +109,26 @@ export class TaskScheduling {
       ...modifiedTask,
       traceparent: traceparent || '',
     });
+  }
+
+  public async bulkSchedule(
+    items: Array<{
+      taskInstance: TaskInstanceWithDeprecatedFields;
+      options?: Record<string, unknown>;
+      references: SavedObjectReference[];
+    }>
+  ): Promise<void> {
+    const bulkScheduleItems = await Promise.all(
+      items.map(async (item) => {
+        const { taskInstance: modifiedTask } = await this.middleware.beforeSave({
+          ...item.options,
+          taskInstance: ensureDeprecatedFieldsAreCorrected(item.taskInstance, this.logger),
+        });
+        return { taskInstance: modifiedTask, references: item.references };
+      })
+    );
+
+    await this.store.bulkSchedule(bulkScheduleItems);
   }
 
   /**

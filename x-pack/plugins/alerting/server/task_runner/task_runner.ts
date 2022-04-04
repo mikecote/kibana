@@ -284,30 +284,6 @@ export class TaskRunner<
     }
   }
 
-  private async executeAlert(
-    alertId: string,
-    alert: CreatedAlert<InstanceState, InstanceContext>,
-    executionHandler: ExecutionHandler<ActionGroupIds | RecoveryActionGroupId>,
-    alertExecutionStore: AlertExecutionStore
-  ) {
-    const {
-      actionGroup,
-      subgroup: actionSubgroup,
-      context,
-      state,
-    } = alert.getScheduledActionOptions()!;
-    alert.updateLastScheduledActions(actionGroup, actionSubgroup);
-    alert.unscheduleActions();
-    return executionHandler({
-      actionGroup,
-      actionSubgroup,
-      context,
-      state,
-      alertId,
-      alertExecutionStore,
-    });
-  }
-
   private async executeAlerts(
     fakeRequest: KibanaRequest,
     rule: SanitizedAlert<Params>,
@@ -526,10 +502,26 @@ export class TaskRunner<
         }
       );
 
-      await Promise.all(
+      await executionHandler(
+        alertExecutionStore,
         alertsWithExecutableActions.map(
-          ([alertId, alert]: [string, CreatedAlert<InstanceState, InstanceContext>]) =>
-            this.executeAlert(alertId, alert, executionHandler, alertExecutionStore)
+          ([alertId, alert]: [string, CreatedAlert<InstanceState, InstanceContext>]) => {
+            const {
+              actionGroup,
+              subgroup: actionSubgroup,
+              context,
+              state,
+            } = alert.getScheduledActionOptions()!;
+            alert.updateLastScheduledActions(actionGroup, actionSubgroup);
+            alert.unscheduleActions();
+            return {
+              actionGroup,
+              actionSubgroup,
+              context,
+              state,
+              alertId,
+            };
+          }
         )
       );
 
@@ -1199,6 +1191,7 @@ async function scheduleActionsForRecoveredAlerts<
   } = params;
   const recoveredIds = Object.keys(recoveredAlerts);
 
+  const alertsToRecoverWithActions = [];
   for (const id of recoveredIds) {
     if (mutedAlertIdsSet.has(id)) {
       logger.debug(
@@ -1208,16 +1201,16 @@ async function scheduleActionsForRecoveredAlerts<
       const alert = recoveredAlerts[id];
       alert.updateLastScheduledActions(recoveryActionGroup.id);
       alert.unscheduleActions();
-      await executionHandler({
+      alertsToRecoverWithActions.push({
         actionGroup: recoveryActionGroup.id,
         context: alert.getContext(),
         state: {},
         alertId: id,
-        alertExecutionStore,
       });
       alert.scheduleActions(recoveryActionGroup.id);
     }
   }
+  await executionHandler(alertExecutionStore, alertsToRecoverWithActions);
 }
 
 function logActiveAndRecoveredAlerts<

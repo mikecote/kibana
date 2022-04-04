@@ -48,7 +48,7 @@ export interface TaskManagerSetupContract {
 
 export type TaskManagerStartContract = Pick<
   TaskScheduling,
-  'schedule' | 'runNow' | 'ephemeralRunNow' | 'ensureScheduled'
+  'schedule' | 'bulkSchedule' | 'runNow' | 'ephemeralRunNow' | 'ensureScheduled'
 > &
   Pick<TaskStore, 'fetch' | 'get' | 'remove'> & {
     removeIfExists: TaskStore['remove'];
@@ -236,6 +236,7 @@ export class TaskManagerPlugin
       remove: (id: string) => taskStore.remove(id),
       removeIfExists: (id: string) => removeIfExists(taskStore, id),
       schedule: (...args) => taskScheduling.schedule(...args),
+      bulkSchedule: (...args) => taskScheduling.bulkSchedule(...args),
       ensureScheduled: (...args) => taskScheduling.ensureScheduled(...args),
       runNow: (...args) => taskScheduling.runNow(...args),
       ephemeralRunNow: (task: EphemeralTask) => taskScheduling.ephemeralRunNow(task),

@@ -5,8 +5,11 @@
  * 2.0.
  */
 
-import { SavedObjectsClientContract } from '../../../../src/core/server';
-import { RunNowResult, TaskManagerStartContract } from '../../task_manager/server';
+import { SavedObjectsClientContract, SavedObjectReference } from '../../../../src/core/server';
+import {
+  TaskManagerStartContract,
+  TaskInstanceWithDeprecatedFields,
+} from '../../task_manager/server';
 import {
   RawAction,
   ActionTypeRegistryContract,
@@ -35,7 +38,7 @@ export interface ExecuteOptions extends Pick<ActionExecutorOptions, 'params' | '
 
 export type ExecutionEnqueuer<T> = (
   unsecuredSavedObjectsClient: SavedObjectsClientContract,
-  options: ExecuteOptions
+  options: ExecuteOptions[]
 ) => Promise<T>;
 
 export function createExecutionEnqueuerFunction({
@@ -46,16 +49,7 @@ export function createExecutionEnqueuerFunction({
 }: CreateExecuteFunctionOptions): ExecutionEnqueuer<void> {
   return async function execute(
     unsecuredSavedObjectsClient: SavedObjectsClientContract,
-    {
-      id,
-      params,
-      spaceId,
-      consumer,
-      source,
-      apiKey,
-      executionId,
-      relatedSavedObjects,
-    }: ExecuteOptions
+    items: ExecuteOptions[]
   ) {
     if (!isESOCanEncrypt) {
       throw new Error(
@@ -63,54 +57,69 @@ export function createExecutionEnqueuerFunction({
       );
     }
 
-    const { action, isPreconfigured } = await getAction(
+    const connectorIds = [...new Set(items.map((item) => item.id))];
+    const foundConnectors = await getConnectors(
       unsecuredSavedObjectsClient,
       preconfiguredActions,
-      id
+      connectorIds
     );
-    validateCanActionBeUsed(action);
 
-    const { actionTypeId } = action;
-    if (!actionTypeRegistry.isActionExecutable(id, actionTypeId, { notifyUsage: true })) {
-      actionTypeRegistry.ensureActionTypeEnabled(actionTypeId);
+    for (const foundConnector of foundConnectors) {
+      validateCanActionBeUsed(foundConnector.connector);
+
+      const { actionTypeId } = foundConnector.connector;
+      if (
+        !actionTypeRegistry.isActionExecutable(foundConnector.id, actionTypeId, {
+          notifyUsage: true,
+        })
+      ) {
+        actionTypeRegistry.ensureActionTypeEnabled(actionTypeId);
+      }
     }
 
-    // Get saved object references from action ID and relatedSavedObjects
-    const { references, relatedSavedObjectWithRefs } = extractSavedObjectReferences(
-      id,
-      isPreconfigured,
-      relatedSavedObjects
-    );
-    const executionSourceReference = executionSourceAsSavedObjectReferences(source);
+    const bulkScheduleOpts: Array<{
+      taskInstance: TaskInstanceWithDeprecatedFields;
+      references: SavedObjectReference[];
+    }> = [];
+    for (const item of items) {
+      const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
+      // Get saved object references from action ID and relatedSavedObjects
+      const { references, relatedSavedObjectWithRefs } = extractSavedObjectReferences(
+        item.id,
+        foundConnector.isPreconfigured,
+        item.relatedSavedObjects
+      );
+      const executionSourceReference = executionSourceAsSavedObjectReferences(item.source);
 
-    const taskReferences = [];
-    if (executionSourceReference.references) {
-      taskReferences.push(...executionSourceReference.references);
-    }
-    if (references) {
-      taskReferences.push(...references);
-    }
+      const taskReferences = [];
+      if (executionSourceReference.references) {
+        taskReferences.push(...executionSourceReference.references);
+      }
+      if (references) {
+        taskReferences.push(...references);
+      }
 
-    await taskManager.schedule(
-      {
-        taskType: `actions:${action.actionTypeId}`,
-        params: {
-          spaceId,
-          isPersisted: true,
-          taskParams: {
-            actionId: id,
-            params,
-            apiKey,
-            executionId,
-            consumer,
-            relatedSavedObjects: relatedSavedObjectWithRefs,
+      bulkScheduleOpts.push({
+        references: taskReferences,
+        taskInstance: {
+          taskType: `actions:${foundConnector.connector.actionTypeId}`,
+          params: {
+            spaceId: item.spaceId,
+            isPersisted: true,
+            taskParams: {
+              actionId: item.id,
+              params: item.params,
+              apiKey: item.apiKey,
+              executionId: item.executionId,
+              consumer: item.consumer,
+              relatedSavedObjects: relatedSavedObjectWithRefs,
+            },
           },
         },
-        state: {},
-        scope: ['actions'],
-      },
-      { references: taskReferences }
-    );
+      });
+    }
+
+    await taskManager.bulkSchedule(bulkScheduleOpts);
   };
 }
 
@@ -118,39 +127,46 @@ export function createEphemeralExecutionEnqueuerFunction({
   taskManager,
   actionTypeRegistry,
   preconfiguredActions,
-}: CreateExecuteFunctionOptions): ExecutionEnqueuer<RunNowResult> {
+}: CreateExecuteFunctionOptions): ExecutionEnqueuer<void> {
   return async function execute(
     unsecuredSavedObjectsClient: SavedObjectsClientContract,
-    { id, params, spaceId, source, consumer, apiKey, executionId }: ExecuteOptions
-  ): Promise<RunNowResult> {
-    const { action } = await getAction(unsecuredSavedObjectsClient, preconfiguredActions, id);
-    validateCanActionBeUsed(action);
+    items: ExecuteOptions[]
+  ): Promise<void> {
+    // TODO: make true bulk
+    for (const item of items) {
+      const { action } = await getAction(
+        unsecuredSavedObjectsClient,
+        preconfiguredActions,
+        item.id
+      );
+      validateCanActionBeUsed(action);
 
-    const { actionTypeId } = action;
-    if (!actionTypeRegistry.isActionExecutable(id, actionTypeId, { notifyUsage: true })) {
-      actionTypeRegistry.ensureActionTypeEnabled(actionTypeId);
+      const { actionTypeId } = action;
+      if (!actionTypeRegistry.isActionExecutable(item.id, actionTypeId, { notifyUsage: true })) {
+        actionTypeRegistry.ensureActionTypeEnabled(actionTypeId);
+      }
+
+      const taskParams: ActionTaskExecutorParams = {
+        spaceId: item.spaceId,
+        taskParams: {
+          actionId: item.id,
+          consumer: item.consumer,
+          // Saved Objects won't allow us to enforce unknown rather than any
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          params: item.params as Record<string, any>,
+          ...(item.apiKey ? { apiKey: item.apiKey } : {}),
+          ...(item.executionId ? { executionId: item.executionId } : {}),
+        },
+        ...executionSourceAsSavedObjectReferences(item.source),
+      };
+
+      taskManager.ephemeralRunNow({
+        taskType: `actions:${action.actionTypeId}`,
+        params: taskParams,
+        state: {},
+        scope: ['actions'],
+      });
     }
-
-    const taskParams: ActionTaskExecutorParams = {
-      spaceId,
-      taskParams: {
-        actionId: id,
-        consumer,
-        // Saved Objects won't allow us to enforce unknown rather than any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        params: params as Record<string, any>,
-        ...(apiKey ? { apiKey } : {}),
-        ...(executionId ? { executionId } : {}),
-      },
-      ...executionSourceAsSavedObjectReferences(source),
-    };
-
-    return taskManager.ephemeralRunNow({
-      taskType: `actions:${action.actionTypeId}`,
-      params: taskParams,
-      state: {},
-      scope: ['actions'],
-    });
   };
 }
 
@@ -188,4 +204,45 @@ async function getAction(
 
   const { attributes } = await unsecuredSavedObjectsClient.get<RawAction>('action', actionId);
   return { action: attributes, isPreconfigured: false };
+}
+
+async function getConnectors(
+  unsecuredSavedObjectsClient: SavedObjectsClientContract,
+  preconfiguredConnectors: PreConfiguredAction[],
+  connectorIds: string[]
+): Promise<
+  Array<{ connector: PreConfiguredAction | RawAction; isPreconfigured: boolean; id: string }>
+> {
+  const result: Array<{
+    connector: PreConfiguredAction | RawAction;
+    isPreconfigured: boolean;
+    id: string;
+  }> = [];
+
+  const connectorIdsToFetch = [];
+  for (const connectorId of connectorIds) {
+    const pcConnector = preconfiguredConnectors.find((connector) => connector.id === connectorId);
+    if (pcConnector) {
+      result.push({ connector: pcConnector, isPreconfigured: true, id: connectorId });
+    } else {
+      connectorIdsToFetch.push(connectorId);
+    }
+  }
+
+  const bulkGetResult = await unsecuredSavedObjectsClient.bulkGet<RawAction>(
+    connectorIdsToFetch.map((id) => ({
+      id,
+      type: 'action',
+    }))
+  );
+  for (const item of bulkGetResult.saved_objects) {
+    if (item.error) throw item.error;
+    result.push({
+      isPreconfigured: false,
+      connector: item.attributes,
+      id: item.id,
+    });
+  }
+
+  return result;
 }

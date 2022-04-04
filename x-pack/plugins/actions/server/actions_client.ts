@@ -517,29 +517,39 @@ export class ActionsClient {
     });
   }
 
-  public async enqueueExecution(options: EnqueueExecutionOptions): Promise<void> {
-    const { source } = options;
-    if (
-      (await getAuthorizationModeBySource(this.unsecuredSavedObjectsClient, source)) ===
-      AuthorizationMode.RBAC
-    ) {
-      await this.authorization.ensureAuthorized('execute');
-    } else {
-      trackLegacyRBACExemption('enqueueExecution', this.usageCounter);
-    }
+  public async enqueueExecution(options: EnqueueExecutionOptions[]): Promise<void> {
+    const sources = [...new Set(options.map((option) => option.source))];
+    await Promise.all(
+      sources.map(async (source) => {
+        if (
+          (await getAuthorizationModeBySource(this.unsecuredSavedObjectsClient, source)) ===
+          AuthorizationMode.RBAC
+        ) {
+          await this.authorization.ensureAuthorized('execute');
+        } else {
+          trackLegacyRBACExemption('enqueueExecution', this.usageCounter);
+        }
+      })
+    );
     return this.executionEnqueuer(this.unsecuredSavedObjectsClient, options);
   }
 
-  public async ephemeralEnqueuedExecution(options: EnqueueExecutionOptions): Promise<RunNowResult> {
-    const { source } = options;
-    if (
-      (await getAuthorizationModeBySource(this.unsecuredSavedObjectsClient, source)) ===
-      AuthorizationMode.RBAC
-    ) {
-      await this.authorization.ensureAuthorized('execute');
-    } else {
-      trackLegacyRBACExemption('ephemeralEnqueuedExecution', this.usageCounter);
-    }
+  public async ephemeralEnqueuedExecution(
+    options: EnqueueExecutionOptions[]
+  ): Promise<RunNowResult> {
+    const sources = [...new Set(options.map((option) => option.source))];
+    await Promise.all(
+      sources.map(async (source) => {
+        if (
+          (await getAuthorizationModeBySource(this.unsecuredSavedObjectsClient, source)) ===
+          AuthorizationMode.RBAC
+        ) {
+          await this.authorization.ensureAuthorized('execute');
+        } else {
+          trackLegacyRBACExemption('ephemeralEnqueuedExecution', this.usageCounter);
+        }
+      })
+    );
     return this.ephemeralExecutionEnqueuer(this.unsecuredSavedObjectsClient, options);
   }
 

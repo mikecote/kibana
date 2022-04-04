@@ -153,7 +153,6 @@ export interface ExecutionHandlerOptions<ActionGroupIds extends string> {
   alertId: string;
   context: AlertInstanceContext;
   state: AlertInstanceState;
-  alertExecutionStore: AlertExecutionStore;
 }
 
 export enum ActionsCompletion {

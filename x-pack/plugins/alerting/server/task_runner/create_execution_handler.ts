@@ -6,7 +6,8 @@
  */
 import { transformActionParams } from './transform_action_params';
 import { asSavedObjectExecutionSource } from '../../../actions/server';
-import { SAVED_OBJECT_REL_PRIMARY } from '../../../event_log/server';
+import { ExecuteOptions } from '../../../actions/server/create_execute_function';
+import { SAVED_OBJECT_REL_PRIMARY, IEvent } from '../../../event_log/server';
 import { EVENT_LOG_ACTIONS } from '../plugin';
 import { injectActionParams } from './inject_action_params';
 import {
@@ -17,12 +18,18 @@ import {
 } from '../types';
 
 import { UntypedNormalizedRuleType } from '../rule_type_registry';
-import { isEphemeralTaskRejectedDueToCapacityError } from '../../../task_manager/server';
+// import { isEphemeralTaskRejectedDueToCapacityError } from '../../../task_manager/server';
 import { createAlertEventLogRecordObject } from '../lib/create_alert_event_log_record_object';
-import { ActionsCompletion, CreateExecutionHandlerOptions, ExecutionHandlerOptions } from './types';
+import {
+  ActionsCompletion,
+  CreateExecutionHandlerOptions,
+  ExecutionHandlerOptions,
+  AlertExecutionStore,
+} from './types';
 
 export type ExecutionHandler<ActionGroupIds extends string> = (
-  options: ExecutionHandlerOptions<ActionGroupIds>
+  alertExecutionStore: AlertExecutionStore,
+  items: Array<ExecutionHandlerOptions<ActionGroupIds>>
 ) => Promise<void>;
 
 export function createExecutionHandler<
@@ -63,150 +70,159 @@ export function createExecutionHandler<
   const ruleTypeActionGroups = new Map(
     ruleType.actionGroups.map((actionGroup) => [actionGroup.id, actionGroup.name])
   );
-  return async ({
-    actionGroup,
-    actionSubgroup,
-    context,
-    state,
-    alertExecutionStore,
-    alertId,
-  }: ExecutionHandlerOptions<ActionGroupIds | RecoveryActionGroupId>) => {
-    if (!ruleTypeActionGroups.has(actionGroup)) {
-      logger.error(`Invalid action group "${actionGroup}" for rule "${ruleType.id}".`);
-      return;
-    }
+  return async (
+    alertExecutionStore: AlertExecutionStore,
+    items: Array<ExecutionHandlerOptions<ActionGroupIds | RecoveryActionGroupId>>
+  ) => {
+    const itemsToEnqueue: ExecuteOptions[] = [];
+    const eventLogDocs: IEvent[] = [];
+    for (const { actionGroup, actionSubgroup, context, state, alertId } of items) {
+      if (!ruleTypeActionGroups.has(actionGroup)) {
+        logger.error(`Invalid action group "${actionGroup}" for rule "${ruleType.id}".`);
+        return;
+      }
 
-    const actions = ruleActions
-      .filter(({ group }) => group === actionGroup)
-      .map((action) => {
-        return {
+      const actions = ruleActions
+        .filter(({ group }) => group === actionGroup)
+        .map((action) => {
+          return {
+            ...action,
+            params: transformActionParams({
+              actionsPlugin,
+              alertId: ruleId,
+              alertType: ruleType.id,
+              actionTypeId: action.actionTypeId,
+              alertName: ruleName,
+              spaceId,
+              tags,
+              alertInstanceId: alertId,
+              alertActionGroup: actionGroup,
+              alertActionGroupName: ruleTypeActionGroups.get(actionGroup)!,
+              alertActionSubgroup: actionSubgroup,
+              context,
+              actionParams: action.params,
+              actionId: action.id,
+              state,
+              kibanaBaseUrl,
+              alertParams: ruleParams,
+            }),
+          };
+        })
+        .map((action) => ({
           ...action,
-          params: transformActionParams({
-            actionsPlugin,
-            alertId: ruleId,
-            alertType: ruleType.id,
-            actionTypeId: action.actionTypeId,
-            alertName: ruleName,
+          params: injectActionParams({
+            ruleId,
             spaceId,
-            tags,
-            alertInstanceId: alertId,
-            alertActionGroup: actionGroup,
-            alertActionGroupName: ruleTypeActionGroups.get(actionGroup)!,
-            alertActionSubgroup: actionSubgroup,
-            context,
             actionParams: action.params,
-            actionId: action.id,
-            state,
-            kibanaBaseUrl,
-            alertParams: ruleParams,
+            actionTypeId: action.actionTypeId,
           }),
-        };
-      })
-      .map((action) => ({
-        ...action,
-        params: injectActionParams({
-          ruleId,
-          spaceId,
-          actionParams: action.params,
-          actionTypeId: action.actionTypeId,
-        }),
-      }));
+        }));
 
-    alertExecutionStore.numberOfScheduledActions += actions.length;
+      alertExecutionStore.numberOfScheduledActions += actions.length;
 
-    const ruleLabel = `${ruleType.id}:${ruleId}: '${ruleName}'`;
+      const ruleLabel = `${ruleType.id}:${ruleId}: '${ruleName}'`;
 
-    const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
-    let ephemeralActionsToSchedule = maxEphemeralActionsPerRule;
+      const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
+      // let ephemeralActionsToSchedule = maxEphemeralActionsPerRule;
 
-    for (const action of actions) {
-      if (alertExecutionStore.numberOfTriggeredActions >= ruleType.config!.execution.actions.max) {
-        alertExecutionStore.triggeredActionsStatus = ActionsCompletion.PARTIAL;
-        break;
-      }
-
-      if (
-        !actionsPlugin.isActionExecutable(action.id, action.actionTypeId, { notifyUsage: true })
-      ) {
-        logger.warn(
-          `Rule "${ruleId}" skipped scheduling action "${action.id}" because it is disabled`
-        );
-        continue;
-      }
-
-      alertExecutionStore.numberOfTriggeredActions++;
-
-      const namespace = spaceId === 'default' ? {} : { namespace: spaceId };
-
-      const enqueueOptions = {
-        id: action.id,
-        params: action.params,
-        spaceId,
-        apiKey: apiKey ?? null,
-        consumer: ruleConsumer,
-        source: asSavedObjectExecutionSource({
-          id: ruleId,
-          type: 'alert',
-        }),
-        executionId,
-        relatedSavedObjects: [
-          {
-            id: ruleId,
-            type: 'alert',
-            namespace: namespace.namespace,
-            typeId: ruleType.id,
-          },
-        ],
-      };
-
-      // TODO would be nice  to add the action name here, but it's not available
-      const actionLabel = `${action.actionTypeId}:${action.id}`;
-      if (supportsEphemeralTasks && ephemeralActionsToSchedule > 0) {
-        ephemeralActionsToSchedule--;
-        try {
-          await actionsClient.ephemeralEnqueuedExecution(enqueueOptions);
-        } catch (err) {
-          if (isEphemeralTaskRejectedDueToCapacityError(err)) {
-            await actionsClient.enqueueExecution(enqueueOptions);
-          }
+      for (const action of actions) {
+        if (
+          alertExecutionStore.numberOfTriggeredActions >= ruleType.config!.execution.actions.max
+        ) {
+          alertExecutionStore.triggeredActionsStatus = ActionsCompletion.PARTIAL;
+          break;
         }
-      } else {
-        await actionsClient.enqueueExecution(enqueueOptions);
+
+        if (
+          !actionsPlugin.isActionExecutable(action.id, action.actionTypeId, { notifyUsage: true })
+        ) {
+          logger.warn(
+            `Rule "${ruleId}" skipped scheduling action "${action.id}" because it is disabled`
+          );
+          continue;
+        }
+
+        alertExecutionStore.numberOfTriggeredActions++;
+
+        const namespace = spaceId === 'default' ? {} : { namespace: spaceId };
+
+        itemsToEnqueue.push({
+          id: action.id,
+          params: action.params,
+          spaceId,
+          apiKey: apiKey ?? null,
+          consumer: ruleConsumer,
+          source: asSavedObjectExecutionSource({
+            id: ruleId,
+            type: 'alert',
+          }),
+          executionId,
+          relatedSavedObjects: [
+            {
+              id: ruleId,
+              type: 'alert',
+              namespace: namespace.namespace,
+              typeId: ruleType.id,
+            },
+          ],
+        });
+
+        // TODO would be nice  to add the action name here, but it's not available
+        const actionLabel = `${action.actionTypeId}:${action.id}`;
+        // if (supportsEphemeralTasks && ephemeralActionsToSchedule > 0) {
+        //   ephemeralActionsToSchedule--;
+        //   try {
+        //     await actionsClient.ephemeralEnqueuedExecution(enqueueOptions);
+        //   } catch (err) {
+        //     if (isEphemeralTaskRejectedDueToCapacityError(err)) {
+        //       await actionsClient.enqueueExecution(enqueueOptions);
+        //     }
+        //   }
+        // } else {
+        //   await actionsClient.enqueueExecution(enqueueOptions);
+        // }
+
+        const event = createAlertEventLogRecordObject({
+          ruleId,
+          ruleType: ruleType as UntypedNormalizedRuleType,
+          consumer: ruleConsumer,
+          action: EVENT_LOG_ACTIONS.executeAction,
+          executionId,
+          spaceId,
+          instanceId: alertId,
+          group: actionGroup,
+          subgroup: actionSubgroup,
+          ruleName,
+          savedObjects: [
+            {
+              type: 'alert',
+              id: ruleId,
+              typeId: ruleType.id,
+              relation: SAVED_OBJECT_REL_PRIMARY,
+            },
+            {
+              type: 'action',
+              id: action.id,
+              typeId: action.actionTypeId,
+            },
+          ],
+          ...namespace,
+          message: `alert: ${ruleLabel} instanceId: '${alertId}' scheduled ${
+            actionSubgroup
+              ? `actionGroup(subgroup): '${actionGroup}(${actionSubgroup})'`
+              : `actionGroup: '${actionGroup}'`
+          } action: ${actionLabel}`,
+        });
+
+        eventLogDocs.push(event);
       }
 
-      const event = createAlertEventLogRecordObject({
-        ruleId,
-        ruleType: ruleType as UntypedNormalizedRuleType,
-        consumer: ruleConsumer,
-        action: EVENT_LOG_ACTIONS.executeAction,
-        executionId,
-        spaceId,
-        instanceId: alertId,
-        group: actionGroup,
-        subgroup: actionSubgroup,
-        ruleName,
-        savedObjects: [
-          {
-            type: 'alert',
-            id: ruleId,
-            typeId: ruleType.id,
-            relation: SAVED_OBJECT_REL_PRIMARY,
-          },
-          {
-            type: 'action',
-            id: action.id,
-            typeId: action.actionTypeId,
-          },
-        ],
-        ...namespace,
-        message: `alert: ${ruleLabel} instanceId: '${alertId}' scheduled ${
-          actionSubgroup
-            ? `actionGroup(subgroup): '${actionGroup}(${actionSubgroup})'`
-            : `actionGroup: '${actionGroup}'`
-        } action: ${actionLabel}`,
-      });
-
-      eventLogger.logEvent(event);
+      if (itemsToEnqueue.length > 0) {
+        await actionsClient.enqueueExecution(itemsToEnqueue);
+      }
+      for (const event of eventLogDocs) {
+        eventLogger.logEvent(event);
+      }
     }
   };
 }
