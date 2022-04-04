@@ -218,18 +218,14 @@ export class TaskClaiming {
     claimTasksById = [],
   }: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>): Observable<ClaimOwnershipResult> {
     const initialCapacity = this.getCapacity();
-    return from(this.getClaimingBatches()).pipe(
+    const batches = this.getClaimingBatches();
+    return from(batches).pipe(
       mergeScan(
         (accumulatedResult, batch) => {
           const stopTaskTimer = startTaskTimer();
-          const capacity = Math.min(
-            initialCapacity - accumulatedResult.stats.tasksClaimed,
-            isLimited(batch) ? this.getCapacity(batch.tasksTypes) : this.getCapacity()
-          );
-          // if we have no more capacity, short circuit here
-          if (capacity <= 0) {
-            return of(accumulatedResult);
-          }
+          const capacity = isLimited(batch)
+            ? this.getCapacity(batch.tasksTypes)
+            : this.getCapacity();
           return from(
             this.executeClaimAvailableTasks({
               claimOwnershipUntil,
@@ -249,8 +245,7 @@ export class TaskClaiming {
         },
         // initialise the accumulation with no results
         accumulateClaimOwnershipResults(),
-        // only run one batch at a time
-        1
+        batches.length
       )
     );
   }
@@ -261,6 +256,17 @@ export class TaskClaiming {
     size,
     taskTypes,
   }: OwnershipClaimingOpts): Promise<ClaimOwnershipResult> => {
+    if (size <= 0) {
+      return {
+        stats: {
+          tasksUpdated: 0,
+          tasksConflicted: 0,
+          tasksRejected: 0,
+          tasksClaimed: 0,
+        },
+        docs: [],
+      };
+    }
     const claimTasksByIdWithRawIds = this.taskStore.convertToSavedObjectIds(claimTasksById);
     const { updated: tasksUpdated, version_conflicts: tasksConflicted } =
       await this.markAvailableTasksAsClaimed({

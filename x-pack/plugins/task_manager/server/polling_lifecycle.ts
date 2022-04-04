@@ -144,11 +144,8 @@ export class TaskPollingLifecycle {
       getCapacity: (taskType?: string) =>
         taskType && this.definitions.get(taskType)?.maxConcurrency
           ? Math.max(
-              Math.min(
-                this.pool.availableWorkers,
-                this.definitions.get(taskType)!.maxConcurrency! -
-                  this.pool.getOccupiedWorkersByType(taskType)
-              ),
+              this.definitions.get(taskType)!.maxConcurrency! -
+                this.pool.getOccupiedWorkersByType(taskType),
               0
             )
           : this.pool.availableWorkers,
