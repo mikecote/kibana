@@ -139,6 +139,7 @@ export class TaskPollingLifecycle {
       excludedTaskTypes: config.unsafe.exclude_task_types,
       definitions,
       unusedTypes,
+      buffer: Math.ceil(config.poll_interval / 1000),
       logger: this.logger,
       getCapacity: (taskType?: string) =>
         taskType && this.definitions.get(taskType)?.maxConcurrency

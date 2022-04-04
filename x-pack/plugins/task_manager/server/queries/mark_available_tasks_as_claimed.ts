@@ -59,6 +59,17 @@ export const IdleTaskWithExpiredRunAt: MustCondition = {
   },
 };
 
+export function idleTaskWithSoonToExpireOrExpiredRunAt(buffer: number) {
+  return {
+    bool: {
+      must: [
+        { term: { 'task.status': 'idle' } },
+        { range: { 'task.runAt': { lte: `now+${buffer}s` } } },
+      ],
+    },
+  };
+}
+
 export const InactiveTasks: MustNotCondition = {
   bool: {
     must_not: [

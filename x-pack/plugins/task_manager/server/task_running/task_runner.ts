@@ -287,6 +287,16 @@ export class TaskManagerRunner implements TaskRunner {
         }`
       );
     }
+
+    // TODO: Make work with retried tasks
+    const timeDiff = this.instance.task.runAt.getTime() - Date.now();
+    if (timeDiff > 0) {
+      this.logger.debug(
+        `[Task Runner] Task ${this.instance.task.id} is picked up ahead of schedule, waiting ${timeDiff}ms to run`
+      );
+      await new Promise((resolve) => setTimeout(resolve, timeDiff));
+    }
+
     this.logger.debug(`Running task ${this}`);
 
     const apmTrans = apm.startTransaction(this.taskType, TASK_MANAGER_RUN_TRANSACTION_TYPE, {

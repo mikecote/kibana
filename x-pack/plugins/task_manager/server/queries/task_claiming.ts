@@ -37,7 +37,7 @@ import {
 
 import {
   updateFieldsAndMarkAsFailed,
-  IdleTaskWithExpiredRunAt,
+  idleTaskWithSoonToExpireOrExpiredRunAt,
   InactiveTasks,
   RunningOrClaimingTaskWithExpiredRetryAt,
   SortByRunAtAndRetryAt,
@@ -62,6 +62,7 @@ export interface TaskClaimingOpts {
   maxAttempts: number;
   excludedTaskTypes: string[];
   getCapacity: (taskType?: string) => number;
+  buffer: number;
 }
 
 export interface OwnershipClaimingOpts {
@@ -123,6 +124,7 @@ export class TaskClaiming {
   private readonly taskMaxAttempts: Record<string, number>;
   private readonly excludedTaskTypes: string[];
   private readonly unusedTypes: string[];
+  private readonly buffer: number;
 
   /**
    * Constructs a new TaskStore.
@@ -140,6 +142,7 @@ export class TaskClaiming {
     this.taskMaxAttempts = Object.fromEntries(this.normalizeMaxAttempts(this.definitions));
     this.excludedTaskTypes = opts.excludedTaskTypes;
     this.unusedTypes = opts.unusedTypes;
+    this.buffer = opts.buffer;
 
     this.events$ = new Subject<TaskClaim>();
   }
@@ -386,7 +389,10 @@ export class TaskClaiming {
     const queryForScheduledTasks = mustBeAllOf(
       // Either a task with idle status and runAt <= now or
       // status running or claiming with a retryAt <= now.
-      shouldBeOneOf(IdleTaskWithExpiredRunAt, RunningOrClaimingTaskWithExpiredRetryAt)
+      shouldBeOneOf(
+        idleTaskWithSoonToExpireOrExpiredRunAt(this.buffer),
+        RunningOrClaimingTaskWithExpiredRetryAt
+      )
     );
 
     // The documents should be sorted by runAt/retryAt, unless there are pinned
