@@ -81,13 +81,12 @@ export function createExecutionEnqueuerFunction({
       }
     }
 
-    const bulkScheduleOpts: Array<{
-      taskInstance: TaskInstanceWithDeprecatedFields;
-      references: SavedObjectReference[];
-    }> = [];
-
     const chunks = chunk(items, BULK_SCHEDULE_SIZE);
     for (const part of chunks) {
+      const bulkScheduleOpts: Array<{
+        taskInstance: TaskInstanceWithDeprecatedFields;
+        references: SavedObjectReference[];
+      }> = [];
       for (const item of part) {
         await new Promise((resolve) => setImmediate(resolve));
         const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
