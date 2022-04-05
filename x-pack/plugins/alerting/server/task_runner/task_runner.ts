@@ -435,7 +435,7 @@ export class TaskRunner<
 
     const recoveredAlerts = getRecoveredAlerts(alerts, originalAlertIds);
 
-    logActiveAndRecoveredAlerts({
+    await logActiveAndRecoveredAlerts({
       logger: this.logger,
       activeAlerts: alertsWithScheduledActions,
       recoveredAlerts,
@@ -443,14 +443,14 @@ export class TaskRunner<
       canSetRecoveryContext: ruleType.doesSetRecoveryContext ?? false,
     });
 
-    trackAlertDurations({
+    await trackAlertDurations({
       originalAlerts,
       currentAlerts: alertsWithScheduledActions,
       recoveredAlerts,
     });
 
     if (this.shouldLogAndScheduleActionsForAlerts()) {
-      generateNewAndRecoveredAlertEvents({
+      await generateNewAndRecoveredAlertEvents({
         eventLogger,
         executionId: this.executionId,
         originalAlerts,
@@ -998,7 +998,7 @@ export class TaskRunner<
   }
 }
 
-function trackAlertDurations<
+async function trackAlertDurations<
   InstanceState extends AlertInstanceState,
   InstanceContext extends AlertInstanceContext
 >(params: TrackAlertDurationsParams<InstanceState, InstanceContext>) {
@@ -1011,12 +1011,14 @@ function trackAlertDurations<
 
   // Inject start time into alert state of new alerts
   for (const id of newAlertIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const state = currentAlerts[id].getState();
     currentAlerts[id].replaceState({ ...state, start: currentTime });
   }
 
   // Calculate duration to date for active alerts
   for (const id of currentAlertIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const state = originalAlertIds.includes(id)
       ? originalAlerts[id].getState()
       : currentAlerts[id].getState();
@@ -1032,6 +1034,7 @@ function trackAlertDurations<
 
   // Inject end time into alert state of recovered alerts
   for (const id of recoveredAlertIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const state = recoveredAlerts[id].getState();
     const duration = state.start
       ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) * 1000 * 1000 // nanoseconds
@@ -1044,7 +1047,7 @@ function trackAlertDurations<
   }
 }
 
-function generateNewAndRecoveredAlertEvents<
+async function generateNewAndRecoveredAlertEvents<
   InstanceState extends AlertInstanceState,
   InstanceContext extends AlertInstanceContext
 >(params: GenerateNewAndRecoveredAlertEventsParams<InstanceState, InstanceContext>) {
@@ -1072,6 +1075,7 @@ function generateNewAndRecoveredAlertEvents<
   }
 
   for (const id of recoveredAlertIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const { group: actionGroup, subgroup: actionSubgroup } =
       recoveredAlerts[id].getLastScheduledActions() ?? {};
     const state = recoveredAlerts[id].getState();
@@ -1087,6 +1091,7 @@ function generateNewAndRecoveredAlertEvents<
   }
 
   for (const id of newIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const { actionGroup, subgroup: actionSubgroup } =
       currentAlerts[id].getScheduledActionOptions() ?? {};
     const state = currentAlerts[id].getState();
@@ -1095,6 +1100,7 @@ function generateNewAndRecoveredAlertEvents<
   }
 
   for (const id of currentAlertIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     const { actionGroup, subgroup: actionSubgroup } =
       currentAlerts[id].getScheduledActionOptions() ?? {};
     const state = currentAlerts[id].getState();
@@ -1193,6 +1199,7 @@ async function scheduleActionsForRecoveredAlerts<
 
   const alertsToRecoverWithActions = [];
   for (const id of recoveredIds) {
+    await new Promise((resolve) => setImmediate(resolve));
     if (mutedAlertIdsSet.has(id)) {
       logger.debug(
         `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: instance is muted`
@@ -1213,7 +1220,7 @@ async function scheduleActionsForRecoveredAlerts<
   await executionHandler(alertExecutionStore, alertsToRecoverWithActions);
 }
 
-function logActiveAndRecoveredAlerts<
+async function logActiveAndRecoveredAlerts<
   InstanceState extends AlertInstanceState,
   InstanceContext extends AlertInstanceContext,
   ActionGroupIds extends string,
@@ -1256,6 +1263,7 @@ function logActiveAndRecoveredAlerts<
 
     if (canSetRecoveryContext) {
       for (const id of recoveredAlertIds) {
+        await new Promise((resolve) => setImmediate(resolve));
         if (!recoveredAlerts[id].hasContext()) {
           logger.debug(
             `rule ${ruleLabel} has no recovery context specified for recovered alert ${id}`

@@ -120,6 +120,7 @@ export class TaskScheduling {
   ): Promise<void> {
     const bulkScheduleItems = await Promise.all(
       items.map(async (item) => {
+        await new Promise((resolve) => setImmediate(resolve));
         const { taskInstance: modifiedTask } = await this.middleware.beforeSave({
           ...item.options,
           taskInstance: ensureDeprecatedFieldsAreCorrected(item.taskInstance, this.logger),

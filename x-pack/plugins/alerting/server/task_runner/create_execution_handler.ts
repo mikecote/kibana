@@ -79,6 +79,7 @@ export function createExecutionHandler<
     const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
 
     for (const { actionGroup, actionSubgroup, context, state, alertId } of items) {
+      await new Promise((resolve) => setImmediate(resolve));
       if (!ruleTypeActionGroups.has(actionGroup)) {
         logger.error(`Invalid action group "${actionGroup}" for rule "${ruleType.id}".`);
         return;
@@ -221,6 +222,7 @@ export function createExecutionHandler<
       await actionsClient.enqueueExecution(itemsToEnqueue);
     }
     for (const event of eventLogDocs) {
+      await new Promise((resolve) => setImmediate(resolve));
       eventLogger.logEvent(event);
     }
   };

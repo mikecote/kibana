@@ -68,6 +68,7 @@ export function createExecutionEnqueuerFunction({
     );
 
     for (const foundConnector of foundConnectors) {
+      await new Promise((resolve) => setImmediate(resolve));
       validateCanActionBeUsed(foundConnector.connector);
 
       const { actionTypeId } = foundConnector.connector;
@@ -88,6 +89,7 @@ export function createExecutionEnqueuerFunction({
     const chunks = chunk(items, BULK_SCHEDULE_SIZE);
     for (const part of chunks) {
       for (const item of part) {
+        await new Promise((resolve) => setImmediate(resolve));
         const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
         // Get saved object references from action ID and relatedSavedObjects
         const { references, relatedSavedObjectWithRefs } = extractSavedObjectReferences(
