@@ -29,7 +29,7 @@ import { TaskScheduling } from './task_scheduling';
 import { healthRoute } from './routes';
 import { createMonitoringStats, MonitoringStats } from './monitoring';
 import { EphemeralTaskLifecycle } from './ephemeral_task_lifecycle';
-import { EphemeralTask } from './task';
+import { EphemeralTask, TaskStatus } from './task';
 import { registerTaskManagerUsageCollector } from './usage';
 import { TASK_MANAGER_INDEX } from './constants';
 
@@ -178,6 +178,40 @@ export class TaskManagerPlugin
       definitions: this.definitions,
       taskManagerId: `kibana:${this.taskManagerId!}`,
     });
+
+    // Release tasks that are running with same server UUID
+    (async () => {
+      try {
+        await taskStore.updateByQuery({
+          query: {
+            bool: {
+              filter: {
+                bool: {
+                  must: [
+                    {
+                      term: {
+                        'task.ownerId': `kibana:${this.taskManagerId!}`,
+                      },
+                    },
+                    {
+                      term: {
+                        'task.status': TaskStatus.Running,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+          script: {
+            source: `ctx._source.task.status = "idle"; ctx._source.task.remove('ownerId'); ctx._source.task.remove('retryAt');`,
+            lang: 'painless',
+          },
+        });
+      } catch (e) {
+        this.logger.error(`Failed to release previously running tasks: ${e}`);
+      }
+    })();
 
     const managedConfiguration = createManagedConfiguration({
       logger: this.logger,
