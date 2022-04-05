@@ -157,12 +157,17 @@ export class TaskStore {
 
     try {
       await this.savedObjectsRepository.bulkCreate<SerializedConcreteTaskInstance>(
-        items.map((item) => ({
-          id: item.taskInstance.id,
-          type: 'task',
-          attributes: taskInstanceToAttributes(item.taskInstance),
-          references: item.references,
-        })),
+        await Promise.all(
+          items.map(async (item) => {
+            await new Promise((resolve) => setImmediate(resolve));
+            return {
+              id: item.taskInstance.id,
+              type: 'task',
+              attributes: taskInstanceToAttributes(item.taskInstance),
+              references: item.references,
+            };
+          })
+        ),
         { refresh: false }
       );
     } catch (e) {

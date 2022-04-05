@@ -118,6 +118,7 @@ export class TaskPool {
               )
           )
           .map(async (taskRunner) => {
+            await new Promise((resolve) => setImmediate(resolve));
             // We use taskRunner.taskExecutionId instead of taskRunner.id as key for the task pool map because
             // task cancellation is a non-blocking procedure. We calculate the expiration and immediately remove
             // the task from the task pool. There is a race condition that can occur when a recurring tasks's schedule
