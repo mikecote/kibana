@@ -441,7 +441,13 @@ export class TaskClaiming {
     // the score seems to favor newer documents rather than older documents, so
     // if there are not pinned tasks being queried, we do NOT want to sort by score
     // at all, just by runAt/retryAt.
-    const sort: NonNullable<SearchOpts['sort']> = [SortByRunAtAndRetryAt];
+    const sort: NonNullable<SearchOpts['sort']> = [
+      {
+        // NOTE: Task Manager will priorities normal tasks before the ones due for retry
+        'task.retryAt': { order: 'asc', missing: '_first' },
+        'task.runAt': { order: 'asc' },
+      },
+    ];
     if (claimTasksById && claimTasksById.length) {
       sort.unshift('_score');
     }
