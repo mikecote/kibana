@@ -441,6 +441,7 @@ export class TaskRunner<
     > = {};
     for (const id in alerts) {
       if (alerts.hasOwnProperty(id)) {
+        await new Promise((resolve) => setImmediate(resolve));
         const hasScheduledActions = alerts[id].hasScheduledActions();
         if (hasScheduledActions && !originalAlertIds.has(id)) {
           newAlerts[id] = alerts[id];
@@ -501,6 +502,7 @@ export class TaskRunner<
       const executionItems = [];
       for (const id in generatedAlerts) {
         if (generatedAlerts.hasOwnProperty(id)) {
+          await new Promise((resolve) => setImmediate(resolve));
           const alert = generatedAlerts[id];
           const throttled = alert.isThrottled(throttle);
           const muted = mutedAlertIdsSet.has(id);
