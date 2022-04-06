@@ -10,6 +10,7 @@ import { ExecuteOptions } from '../../../actions/server/create_execute_function'
 import { SAVED_OBJECT_REL_PRIMARY, IEvent } from '../../../event_log/server';
 import { EVENT_LOG_ACTIONS } from '../plugin';
 import { injectActionParams } from './inject_action_params';
+import { EventLoopManager } from '../lib/event_loop_manager';
 import {
   AlertInstanceContext,
   AlertInstanceState,
@@ -78,8 +79,9 @@ export function createExecutionHandler<
     const eventLogDocs: IEvent[] = [];
     const actionsClient = await actionsPlugin.getActionsClientWithRequest(request);
 
+    const eventLoopManager = new EventLoopManager();
     for (const { actionGroup, actionSubgroup, context, state, alertId } of items) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager.releaseEventLoopIfNecessary();
       if (!ruleTypeActionGroups.has(actionGroup)) {
         logger.error(`Invalid action group "${actionGroup}" for rule "${ruleType.id}".`);
         return;
@@ -221,8 +223,9 @@ export function createExecutionHandler<
     if (itemsToEnqueue.length > 0) {
       await actionsClient.enqueueExecution(itemsToEnqueue);
     }
+    const eventLoopManager2 = new EventLoopManager();
     for (const event of eventLogDocs) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager2.releaseEventLoopIfNecessary();
       eventLogger.logEvent(event);
     }
   };

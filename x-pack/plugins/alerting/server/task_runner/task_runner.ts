@@ -14,6 +14,7 @@ import { TaskRunnerContext } from './task_runner_factory';
 import { ConcreteTaskInstance, throwUnrecoverableError } from '../../../task_manager/server';
 import { createExecutionHandler, ExecutionHandler } from './create_execution_handler';
 import { Alert as CreatedAlert, createAlertFactory } from '../alert';
+import { EventLoopManager } from '../lib/event_loop_manager';
 import {
   KibanaRequest,
   Logger,
@@ -439,9 +440,10 @@ export class TaskRunner<
       string,
       CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
     > = {};
+    const eventLoopManager = new EventLoopManager();
     for (const id in alerts) {
       if (alerts.hasOwnProperty(id)) {
-        await new Promise((resolve) => setImmediate(resolve));
+        await eventLoopManager.releaseEventLoopIfNecessary();
         const hasScheduledActions = alerts[id].hasScheduledActions();
         if (hasScheduledActions && !originalAlertIds.has(id)) {
           newAlerts[id] = alerts[id];
@@ -500,9 +502,10 @@ export class TaskRunner<
       const mutedAlertIdsSet = new Set(mutedInstanceIds);
 
       const executionItems = [];
+      const eventLoopManager2 = new EventLoopManager();
       for (const id in generatedAlerts) {
         if (generatedAlerts.hasOwnProperty(id)) {
-          await new Promise((resolve) => setImmediate(resolve));
+          await eventLoopManager2.releaseEventLoopIfNecessary();
           const alert = generatedAlerts[id];
           const throttled = alert.isThrottled(throttle);
           const muted = mutedAlertIdsSet.has(id);
@@ -1036,18 +1039,20 @@ async function trackAlertDurations<
   const { generatedAlerts, newAlerts, originalAlerts, recoveredAlerts } = params;
 
   // Inject start time into alert state of new alerts
+  const eventLoopManager = new EventLoopManager();
   for (const id in newAlerts) {
     if (newAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager.releaseEventLoopIfNecessary();
       const state = newAlerts[id].getState();
       newAlerts[id].replaceState({ ...state, start: currentTime });
     }
   }
 
   // Calculate duration to date for active alerts
+  const eventLoopManager2 = new EventLoopManager();
   for (const id in generatedAlerts) {
     if (generatedAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager2.releaseEventLoopIfNecessary();
       const state = originalAlerts[id]
         ? originalAlerts[id].getState()
         : generatedAlerts[id].getState();
@@ -1065,9 +1070,10 @@ async function trackAlertDurations<
   }
 
   // Inject end time into alert state of recovered alerts
+  const eventLoopManager3 = new EventLoopManager();
   for (const id in recoveredAlerts) {
     if (recoveredAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager3.releaseEventLoopIfNecessary();
       const state = recoveredAlerts[id].getState();
       const duration = state.start
         ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) *
@@ -1115,9 +1121,10 @@ async function generateNewAndRecoveredAlertEvents<
     });
   }
 
+  const eventLoopManager = new EventLoopManager();
   for (const id in recoveredAlerts) {
     if (recoveredAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager.releaseEventLoopIfNecessary();
       const { group: actionGroup, subgroup: actionSubgroup } =
         recoveredAlerts[id].getLastScheduledActions() ?? {};
       const state = recoveredAlerts[id].getState();
@@ -1133,9 +1140,10 @@ async function generateNewAndRecoveredAlertEvents<
     }
   }
 
+  const eventLoopManager2 = new EventLoopManager();
   for (const id in newAlerts) {
     if (newAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager2.releaseEventLoopIfNecessary();
       const { actionGroup, subgroup: actionSubgroup } =
         newAlerts[id].getScheduledActionOptions() ?? {};
       const state = newAlerts[id].getState();
@@ -1144,9 +1152,10 @@ async function generateNewAndRecoveredAlertEvents<
     }
   }
 
+  const eventLoopManager3 = new EventLoopManager();
   for (const id in generatedAlerts) {
     if (generatedAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager3.releaseEventLoopIfNecessary();
       const { actionGroup, subgroup: actionSubgroup } =
         generatedAlerts[id].getScheduledActionOptions() ?? {};
       const state = generatedAlerts[id].getState();
@@ -1243,9 +1252,10 @@ async function scheduleActionsForRecoveredAlerts<
     alertExecutionStore,
   } = params;
   const alertsToRecoverWithActions = [];
+  const eventLoopManager = new EventLoopManager();
   for (const id in recoveredAlerts) {
     if (recoveredAlerts.hasOwnProperty(id)) {
-      await new Promise((resolve) => setImmediate(resolve));
+      await eventLoopManager.releaseEventLoopIfNecessary();
       if (mutedAlertIdsSet.has(id)) {
         logger.debug(
           `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: instance is muted`
@@ -1297,9 +1307,10 @@ async function logActiveAndRecoveredAlerts<
 
   if (recoveredAlertsCount > 0) {
     if (canSetRecoveryContext) {
+      const eventLoopManager = new EventLoopManager();
       for (const id in recoveredAlerts) {
         if (recoveredAlerts.hasOwnProperty(id)) {
-          await new Promise((resolve) => setImmediate(resolve));
+          await eventLoopManager.releaseEventLoopIfNecessary();
           if (!recoveredAlerts[id].hasContext()) {
             logger.debug(
               `rule ${ruleLabel} has no recovery context specified for recovered alert ${id}`
