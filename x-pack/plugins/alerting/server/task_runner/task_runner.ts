@@ -5,7 +5,7 @@
  * 2.0.
  */
 import apm from 'elastic-apm-node';
-import { cloneDeep, mapValues, omit, pickBy, set, without } from 'lodash';
+import { cloneDeep, omit, set } from 'lodash';
 import type { Request } from '@hapi/hapi';
 import { UsageCounter } from 'src/plugins/usage_collection/server';
 import uuid from 'uuid';
@@ -26,7 +26,6 @@ import {
   ErrorWithReason,
   executionStatusFromError,
   executionStatusFromState,
-  getRecoveredAlerts,
   ruleExecutionStatusToRaw,
   validateRuleTypeParams,
 } from '../lib';
@@ -315,13 +314,12 @@ export class TaskRunner<
     const namespace = this.context.spaceIdToNamespace(spaceId);
     const ruleType = this.ruleTypeRegistry.get(alertTypeId);
 
-    const alerts = mapValues<
-      Record<string, RawAlertInstance>,
-      CreatedAlert<InstanceState, InstanceContext>
-    >(
-      alertRawInstances,
-      (rawAlert, alertId) => new CreatedAlert<InstanceState, InstanceContext>(alertId, rawAlert)
-    );
+    const alerts: Record<string, CreatedAlert<InstanceState, InstanceContext>> = {};
+    for (const id in alertRawInstances) {
+      if (alertRawInstances.hasOwnProperty(id)) {
+        alerts[id] = new CreatedAlert<InstanceState, InstanceContext>(id, alertRawInstances[id]);
+      }
+    }
 
     const originalAlerts = cloneDeep(alerts);
     const originalAlertIds = new Set(Object.keys(originalAlerts));
@@ -425,19 +423,43 @@ export class TaskRunner<
       name: rule.name,
     };
 
+    const newAlerts: Record<
+      string,
+      CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>
+    > = {};
+    const ongoingAlerts: Record<
+      string,
+      CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>
+    > = {};
+    const generatedAlerts: Record<
+      string,
+      CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>
+    > = {};
+    const recoveredAlerts: Record<
+      string,
+      CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
+    > = {};
+    for (const id in alerts) {
+      if (alerts.hasOwnProperty(id)) {
+        const hasScheduledActions = alerts[id].hasScheduledActions();
+        if (hasScheduledActions && !originalAlertIds.has(id)) {
+          newAlerts[id] = alerts[id];
+          generatedAlerts[id] = alerts[id];
+        } else if (hasScheduledActions) {
+          ongoingAlerts[id] = alerts[id];
+          generatedAlerts[id] = alerts[id];
+        } else {
+          recoveredAlerts[id] = alerts[id];
+        }
+      }
+    }
+
     const searchMetrics = wrappedScopedClusterClient.getMetrics();
-
-    // Cleanup alerts that are no longer scheduling actions to avoid over populating the alertInstances object
-    const alertsWithScheduledActions = pickBy(
-      alerts,
-      (alert: CreatedAlert<InstanceState, InstanceContext>) => alert.hasScheduledActions()
-    );
-
-    const recoveredAlerts = getRecoveredAlerts(alerts, originalAlertIds);
 
     await logActiveAndRecoveredAlerts({
       logger: this.logger,
-      activeAlerts: alertsWithScheduledActions,
+      newAlerts,
+      ongoingAlerts,
       recoveredAlerts,
       ruleLabel,
       canSetRecoveryContext: ruleType.doesSetRecoveryContext ?? false,
@@ -445,7 +467,8 @@ export class TaskRunner<
 
     await trackAlertDurations({
       originalAlerts,
-      currentAlerts: alertsWithScheduledActions,
+      generatedAlerts,
+      newAlerts,
       recoveredAlerts,
     });
 
@@ -453,8 +476,8 @@ export class TaskRunner<
       await generateNewAndRecoveredAlertEvents({
         eventLogger,
         executionId: this.executionId,
-        originalAlerts,
-        currentAlerts: alertsWithScheduledActions,
+        newAlerts,
+        generatedAlerts,
         recoveredAlerts,
         ruleId,
         ruleLabel,
@@ -475,16 +498,16 @@ export class TaskRunner<
     if (!ruleIsSnoozed && this.shouldLogAndScheduleActionsForAlerts()) {
       const mutedAlertIdsSet = new Set(mutedInstanceIds);
 
-      const alertsWithExecutableActions = Object.entries(alertsWithScheduledActions).filter(
-        ([alertName, alert]: [string, CreatedAlert<InstanceState, InstanceContext>]) => {
+      const executionItems = [];
+      for (const id in generatedAlerts) {
+        if (generatedAlerts.hasOwnProperty(id)) {
+          const alert = generatedAlerts[id];
           const throttled = alert.isThrottled(throttle);
-          const muted = mutedAlertIdsSet.has(alertName);
-          let shouldExecuteAction = true;
+          const muted = mutedAlertIdsSet.has(id);
 
           if (throttled || muted) {
-            shouldExecuteAction = false;
             this.logger.debug(
-              `skipping scheduling of actions for '${alertName}' in rule ${ruleLabel}: rule is ${
+              `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: rule is ${
                 muted ? 'muted' : 'throttled'
               }`
             );
@@ -492,20 +515,10 @@ export class TaskRunner<
             notifyWhen === 'onActionGroupChange' &&
             !alert.scheduledActionGroupOrSubgroupHasChanged()
           ) {
-            shouldExecuteAction = false;
             this.logger.debug(
-              `skipping scheduling of actions for '${alertName}' in rule ${ruleLabel}: alert is active but action group has not changed`
+              `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: alert is active but action group has not changed`
             );
-          }
-
-          return shouldExecuteAction;
-        }
-      );
-
-      await executionHandler(
-        alertExecutionStore,
-        alertsWithExecutableActions.map(
-          ([alertId, alert]: [string, CreatedAlert<InstanceState, InstanceContext>]) => {
+          } else {
             const {
               actionGroup,
               subgroup: actionSubgroup,
@@ -514,16 +527,18 @@ export class TaskRunner<
             } = alert.getScheduledActionOptions()!;
             alert.updateLastScheduledActions(actionGroup, actionSubgroup);
             alert.unscheduleActions();
-            return {
+            executionItems.push({
               actionGroup,
               actionSubgroup,
               context,
               state,
-              alertId,
-            };
+              alertId: id,
+            });
           }
-        )
-      );
+        }
+      }
+
+      await executionHandler(alertExecutionStore, executionItems);
 
       await scheduleActionsForRecoveredAlerts<
         InstanceState,
@@ -555,14 +570,18 @@ export class TaskRunner<
       }
     }
 
+    const alertInstances: Record<string, RawAlertInstance> = {};
+    for (const id in generatedAlerts) {
+      if (generatedAlerts.hasOwnProperty(id)) {
+        alertInstances[id] = generatedAlerts[id].toRaw();
+      }
+    }
+
     return {
       metrics: searchMetrics,
       alertExecutionStore,
       alertTypeState: updatedRuleTypeState || undefined,
-      alertInstances: mapValues<
-        Record<string, CreatedAlert<InstanceState, InstanceContext>>,
-        RawAlertInstance
-      >(alertsWithScheduledActions, (alert) => alert.toRaw()),
+      alertInstances,
     };
   }
 
@@ -1000,123 +1019,149 @@ export class TaskRunner<
 
 async function trackAlertDurations<
   InstanceState extends AlertInstanceState,
-  InstanceContext extends AlertInstanceContext
->(params: TrackAlertDurationsParams<InstanceState, InstanceContext>) {
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string
+>(
+  params: TrackAlertDurationsParams<
+    InstanceState,
+    InstanceContext,
+    ActionGroupIds,
+    RecoveryActionGroupId
+  >
+) {
   const currentTime = new Date().toISOString();
-  const { currentAlerts, originalAlerts, recoveredAlerts } = params;
-  const originalAlertIds = Object.keys(originalAlerts);
-  const currentAlertIds = Object.keys(currentAlerts);
-  const recoveredAlertIds = Object.keys(recoveredAlerts);
-  const newAlertIds = without(currentAlertIds, ...originalAlertIds);
+  const { generatedAlerts, newAlerts, originalAlerts, recoveredAlerts } = params;
 
   // Inject start time into alert state of new alerts
-  for (const id of newAlertIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const state = currentAlerts[id].getState();
-    currentAlerts[id].replaceState({ ...state, start: currentTime });
+  for (const id in newAlerts) {
+    if (newAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const state = newAlerts[id].getState();
+      newAlerts[id].replaceState({ ...state, start: currentTime });
+    }
   }
 
   // Calculate duration to date for active alerts
-  for (const id of currentAlertIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const state = originalAlertIds.includes(id)
-      ? originalAlerts[id].getState()
-      : currentAlerts[id].getState();
-    const duration = state.start
-      ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) * 1000 * 1000 // nanoseconds
-      : undefined;
-    currentAlerts[id].replaceState({
-      ...state,
-      ...(state.start ? { start: state.start } : {}),
-      ...(duration !== undefined ? { duration } : {}),
-    });
+  for (const id in generatedAlerts) {
+    if (generatedAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const state = originalAlerts[id]
+        ? originalAlerts[id].getState()
+        : generatedAlerts[id].getState();
+      const duration = state.start
+        ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) *
+          1000 *
+          1000 // nanoseconds
+        : undefined;
+      generatedAlerts[id].replaceState({
+        ...state,
+        ...(state.start ? { start: state.start } : {}),
+        ...(duration !== undefined ? { duration } : {}),
+      });
+    }
   }
 
   // Inject end time into alert state of recovered alerts
-  for (const id of recoveredAlertIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const state = recoveredAlerts[id].getState();
-    const duration = state.start
-      ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) * 1000 * 1000 // nanoseconds
-      : undefined;
-    recoveredAlerts[id].replaceState({
-      ...state,
-      ...(duration ? { duration } : {}),
-      ...(state.start ? { end: currentTime } : {}),
-    });
+  for (const id in recoveredAlerts) {
+    if (recoveredAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const state = recoveredAlerts[id].getState();
+      const duration = state.start
+        ? (new Date(currentTime).valueOf() - new Date(state.start as string).valueOf()) *
+          1000 *
+          1000 // nanoseconds
+        : undefined;
+      recoveredAlerts[id].replaceState({
+        ...state,
+        ...(duration ? { duration } : {}),
+        ...(state.start ? { end: currentTime } : {}),
+      });
+    }
   }
 }
 
 async function generateNewAndRecoveredAlertEvents<
   InstanceState extends AlertInstanceState,
-  InstanceContext extends AlertInstanceContext
->(params: GenerateNewAndRecoveredAlertEventsParams<InstanceState, InstanceContext>) {
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string
+>(
+  params: GenerateNewAndRecoveredAlertEventsParams<
+    InstanceState,
+    InstanceContext,
+    ActionGroupIds,
+    RecoveryActionGroupId
+  >
+) {
   const {
     eventLogger,
     executionId,
     ruleId,
     namespace,
-    currentAlerts,
-    originalAlerts,
+    newAlerts,
+    generatedAlerts,
     recoveredAlerts,
     rule,
     ruleType,
     spaceId,
   } = params;
-  const originalAlertIds = Object.keys(originalAlerts);
-  const currentAlertIds = Object.keys(currentAlerts);
-  const recoveredAlertIds = Object.keys(recoveredAlerts);
-  const newIds = without(currentAlertIds, ...originalAlertIds);
 
   if (apm.currentTransaction) {
     apm.currentTransaction.addLabels({
-      alerting_new_alerts: newIds.length,
+      alerting_new_alerts: Object.keys(newAlerts).length,
     });
   }
 
-  for (const id of recoveredAlertIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const { group: actionGroup, subgroup: actionSubgroup } =
-      recoveredAlerts[id].getLastScheduledActions() ?? {};
-    const state = recoveredAlerts[id].getState();
-    const message = `${params.ruleLabel} alert '${id}' has recovered`;
-    logAlertEvent(
-      id,
-      EVENT_LOG_ACTIONS.recoveredInstance,
-      message,
-      state,
-      actionGroup,
-      actionSubgroup
-    );
+  for (const id in recoveredAlerts) {
+    if (recoveredAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const { group: actionGroup, subgroup: actionSubgroup } =
+        recoveredAlerts[id].getLastScheduledActions() ?? {};
+      const state = recoveredAlerts[id].getState();
+      const message = `${params.ruleLabel} alert '${id}' has recovered`;
+      logAlertEvent(
+        id,
+        EVENT_LOG_ACTIONS.recoveredInstance,
+        message,
+        state,
+        actionGroup,
+        actionSubgroup
+      );
+    }
   }
 
-  for (const id of newIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const { actionGroup, subgroup: actionSubgroup } =
-      currentAlerts[id].getScheduledActionOptions() ?? {};
-    const state = currentAlerts[id].getState();
-    const message = `${params.ruleLabel} created new alert: '${id}'`;
-    logAlertEvent(id, EVENT_LOG_ACTIONS.newInstance, message, state, actionGroup, actionSubgroup);
+  for (const id in newAlerts) {
+    if (newAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const { actionGroup, subgroup: actionSubgroup } =
+        newAlerts[id].getScheduledActionOptions() ?? {};
+      const state = newAlerts[id].getState();
+      const message = `${params.ruleLabel} created new alert: '${id}'`;
+      logAlertEvent(id, EVENT_LOG_ACTIONS.newInstance, message, state, actionGroup, actionSubgroup);
+    }
   }
 
-  for (const id of currentAlertIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const { actionGroup, subgroup: actionSubgroup } =
-      currentAlerts[id].getScheduledActionOptions() ?? {};
-    const state = currentAlerts[id].getState();
-    const message = `${params.ruleLabel} active alert: '${id}' in ${
-      actionSubgroup
-        ? `actionGroup(subgroup): '${actionGroup}(${actionSubgroup})'`
-        : `actionGroup: '${actionGroup}'`
-    }`;
-    logAlertEvent(
-      id,
-      EVENT_LOG_ACTIONS.activeInstance,
-      message,
-      state,
-      actionGroup,
-      actionSubgroup
-    );
+  for (const id in generatedAlerts) {
+    if (generatedAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const { actionGroup, subgroup: actionSubgroup } =
+        generatedAlerts[id].getScheduledActionOptions() ?? {};
+      const state = generatedAlerts[id].getState();
+      const message = `${params.ruleLabel} active alert: '${id}' in ${
+        actionSubgroup
+          ? `actionGroup(subgroup): '${actionGroup}(${actionSubgroup})'`
+          : `actionGroup: '${actionGroup}'`
+      }`;
+      logAlertEvent(
+        id,
+        EVENT_LOG_ACTIONS.activeInstance,
+        message,
+        state,
+        actionGroup,
+        actionSubgroup
+      );
+    }
   }
 
   function logAlertEvent(
@@ -1195,26 +1240,26 @@ async function scheduleActionsForRecoveredAlerts<
     ruleLabel,
     alertExecutionStore,
   } = params;
-  const recoveredIds = Object.keys(recoveredAlerts);
-
   const alertsToRecoverWithActions = [];
-  for (const id of recoveredIds) {
-    await new Promise((resolve) => setImmediate(resolve));
-    if (mutedAlertIdsSet.has(id)) {
-      logger.debug(
-        `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: instance is muted`
-      );
-    } else {
-      const alert = recoveredAlerts[id];
-      alert.updateLastScheduledActions(recoveryActionGroup.id);
-      alert.unscheduleActions();
-      alertsToRecoverWithActions.push({
-        actionGroup: recoveryActionGroup.id,
-        context: alert.getContext(),
-        state: {},
-        alertId: id,
-      });
-      alert.scheduleActions(recoveryActionGroup.id);
+  for (const id in recoveredAlerts) {
+    if (recoveredAlerts.hasOwnProperty(id)) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if (mutedAlertIdsSet.has(id)) {
+        logger.debug(
+          `skipping scheduling of actions for '${id}' in rule ${ruleLabel}: instance is muted`
+        );
+      } else {
+        const alert = recoveredAlerts[id];
+        alert.updateLastScheduledActions(recoveryActionGroup.id);
+        alert.unscheduleActions();
+        alertsToRecoverWithActions.push({
+          actionGroup: recoveryActionGroup.id,
+          context: alert.getContext(),
+          state: {},
+          alertId: id,
+        });
+        alert.scheduleActions(recoveryActionGroup.id);
+      }
     }
   }
   await executionHandler(alertExecutionStore, alertsToRecoverWithActions);
@@ -1233,41 +1278,31 @@ async function logActiveAndRecoveredAlerts<
     RecoveryActionGroupId
   >
 ) {
-  const { logger, activeAlerts, recoveredAlerts, ruleLabel, canSetRecoveryContext } = params;
-  const activeAlertIds = Object.keys(activeAlerts);
-  const recoveredAlertIds = Object.keys(recoveredAlerts);
+  const { logger, newAlerts, ongoingAlerts, recoveredAlerts, ruleLabel, canSetRecoveryContext } =
+    params;
+  const generatedAlertsCount = Object.keys(newAlerts).length + Object.keys(ongoingAlerts).length;
+  const recoveredAlertsCount = Object.keys(recoveredAlerts).length;
 
   if (apm.currentTransaction) {
     apm.currentTransaction.addLabels({
-      alerting_active_alerts: activeAlertIds.length,
-      alerting_recovered_alerts: recoveredAlertIds.length,
+      alerting_active_alerts: generatedAlertsCount,
+      alerting_recovered_alerts: recoveredAlertsCount,
     });
   }
 
-  if (activeAlertIds.length > 0) {
-    logger.debug(
-      `rule ${ruleLabel} has ${activeAlertIds.length} active alerts: ${JSON.stringify(
-        activeAlertIds.map((alertId) => ({
-          instanceId: alertId,
-          actionGroup: activeAlerts[alertId].getScheduledActionOptions()?.actionGroup,
-        }))
-      )}`
-    );
-  }
-  if (recoveredAlertIds.length > 0) {
-    logger.debug(
-      `rule ${ruleLabel} has ${recoveredAlertIds.length} recovered alerts: ${JSON.stringify(
-        recoveredAlertIds
-      )}`
-    );
+  logger.debug(`rule ${ruleLabel} has ${generatedAlertsCount} active alerts`);
+  logger.debug(`rule ${ruleLabel} has ${recoveredAlertsCount} recovered alerts`);
 
+  if (recoveredAlertsCount > 0) {
     if (canSetRecoveryContext) {
-      for (const id of recoveredAlertIds) {
-        await new Promise((resolve) => setImmediate(resolve));
-        if (!recoveredAlerts[id].hasContext()) {
-          logger.debug(
-            `rule ${ruleLabel} has no recovery context specified for recovered alert ${id}`
-          );
+      for (const id in recoveredAlerts) {
+        if (recoveredAlerts.hasOwnProperty(id)) {
+          await new Promise((resolve) => setImmediate(resolve));
+          if (!recoveredAlerts[id].hasContext()) {
+            logger.debug(
+              `rule ${ruleLabel} has no recovery context specified for recovered alert ${id}`
+            );
+          }
         }
       }
     }

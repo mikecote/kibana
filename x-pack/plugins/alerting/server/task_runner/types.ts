@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import { Dictionary } from 'lodash';
 import { KibanaRequest, Logger } from 'kibana/server';
 import {
   ActionGroup,
@@ -46,22 +45,33 @@ export interface RuleTaskInstance extends ConcreteTaskInstance {
 
 export interface TrackAlertDurationsParams<
   InstanceState extends AlertInstanceState,
-  InstanceContext extends AlertInstanceContext
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string
 > {
-  originalAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
-  currentAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
-  recoveredAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
+  originalAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  generatedAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  newAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  recoveredAlerts: Record<
+    string,
+    CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
+  >;
 }
 
 export interface GenerateNewAndRecoveredAlertEventsParams<
   InstanceState extends AlertInstanceState,
-  InstanceContext extends AlertInstanceContext
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string
 > {
   eventLogger: IEventLogger;
   executionId: string;
-  originalAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
-  currentAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
-  recoveredAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext>>;
+  newAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  generatedAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  recoveredAlerts: Record<
+    string,
+    CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
+  >;
   ruleId: string;
   ruleLabel: string;
   namespace: string | undefined;
@@ -89,7 +99,10 @@ export interface ScheduleActionsForRecoveredAlertsParams<
 > {
   logger: Logger;
   recoveryActionGroup: ActionGroup<RecoveryActionGroupId>;
-  recoveredAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>>;
+  recoveredAlerts: Record<
+    string,
+    CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
+  >;
   executionHandler: ExecutionHandler<RecoveryActionGroupId | RecoveryActionGroupId>;
   mutedAlertIdsSet: Set<string>;
   ruleLabel: string;
@@ -103,8 +116,12 @@ export interface LogActiveAndRecoveredAlertsParams<
   RecoveryActionGroupId extends string
 > {
   logger: Logger;
-  activeAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
-  recoveredAlerts: Dictionary<CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>>;
+  newAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  ongoingAlerts: Record<string, CreatedAlert<InstanceState, InstanceContext, ActionGroupIds>>;
+  recoveredAlerts: Record<
+    string,
+    CreatedAlert<InstanceState, InstanceContext, RecoveryActionGroupId>
+  >;
   ruleLabel: string;
   canSetRecoveryContext: boolean;
 }

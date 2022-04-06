@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { Dictionary, pickBy } from 'lodash';
+import { pickBy } from 'lodash';
 import { Alert } from '../alert';
 import { AlertInstanceState, AlertInstanceContext } from '../types';
 
@@ -16,7 +16,7 @@ export function getRecoveredAlerts<
 >(
   alerts: Record<string, Alert<InstanceState, InstanceContext, RecoveryActionGroupId>>,
   originalAlertIds: Set<string>
-): Dictionary<Alert<InstanceState, InstanceContext, RecoveryActionGroupId>> {
+): Record<string, Alert<InstanceState, InstanceContext, RecoveryActionGroupId>> {
   return pickBy(
     alerts,
     (alert: Alert<InstanceState, InstanceContext, RecoveryActionGroupId>, id) =>
