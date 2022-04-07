@@ -5,9 +5,11 @@
  * 2.0.
  */
 
+import amqp from 'amqplib';
+import uuid from 'uuid';
 import Boom from '@hapi/boom';
 import { i18n } from '@kbn/i18n';
-import { RunContext, TaskManagerSetupContract } from '../../task_manager/server';
+import { RunContext, TaskManagerSetupContract, TaskStatus } from '../../task_manager/server';
 import { ActionType as CommonActionType } from '../common';
 import { ActionsConfigurationUtilities } from './actions_config';
 import { LicensingPluginSetup } from '../../licensing/server';
@@ -34,6 +36,13 @@ export interface ActionTypeRegistryOpts {
   preconfiguredActions: PreConfiguredAction[];
 }
 
+const queueName = 'actions';
+const channelPromise = (async () => {
+  const connection = await amqp.connect('amqp://guest:guest@localhost', {});
+  const channel = await connection.createChannel();
+  return channel;
+})();
+
 export class ActionTypeRegistry {
   private readonly taskManager: TaskManagerSetupContract;
   private readonly actionTypes: Map<string, ActionType> = new Map();
@@ -50,6 +59,49 @@ export class ActionTypeRegistry {
     this.licenseState = constructorParams.licenseState;
     this.preconfiguredActions = constructorParams.preconfiguredActions;
     this.licensing = constructorParams.licensing;
+    (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      const channel = await channelPromise;
+      // max workers
+      // channel.prefetch(10);
+      channel.consume(
+        queueName,
+        (msg) => {
+          if (!msg) {
+            return;
+          }
+          const options = JSON.parse(msg.content.toString());
+          const taskRunner = this.taskRunnerFactory.create(
+            {
+              // taskInstance: options.taskInstance,
+              taskInstance: {
+                taskType: options.taskInstance.taskType,
+                params: options.taskInstance.params,
+                id: uuid.v4(),
+                scheduledAt: new Date(),
+                attempts: 1,
+                status: TaskStatus.Running,
+                runAt: new Date(),
+                startedAt: new Date(),
+                retryAt: new Date(),
+                state: {},
+                ownerId: uuid.v4(),
+              },
+            },
+            1
+          );
+          (async () => {
+            try {
+              await taskRunner.run();
+            } catch (e) {
+              console.log('FAIL', e);
+            }
+            channel.ack(msg);
+          })();
+        },
+        { noAck: false }
+      );
+    })();
   }
 
   /**

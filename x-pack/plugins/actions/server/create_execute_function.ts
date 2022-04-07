@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import amqp from 'amqplib';
 import { chunk } from 'lodash';
 import { SavedObjectsClientContract, SavedObjectReference } from '../../../../src/core/server';
 import {
@@ -44,6 +45,14 @@ export type ExecutionEnqueuer<T> = (
   options: ExecuteOptions[]
 ) => Promise<T>;
 
+const queueName = 'actions';
+const channelPromise = (async () => {
+  const connection = await amqp.connect('amqp://guest:guest@localhost', {});
+  const channel = await connection.createConfirmChannel();
+  await channel.assertQueue(queueName, { durable: false });
+  return channel;
+})();
+
 export function createExecutionEnqueuerFunction({
   taskManager,
   actionTypeRegistry,
@@ -81,12 +90,14 @@ export function createExecutionEnqueuerFunction({
       }
     }
 
+    const start = Date.now();
     const chunks = chunk(items, BULK_SCHEDULE_SIZE);
+    const channel = await channelPromise;
     for (const part of chunks) {
-      const bulkScheduleOpts: Array<{
-        taskInstance: TaskInstanceWithDeprecatedFields;
-        references: SavedObjectReference[];
-      }> = [];
+      // const bulkScheduleOpts: Array<{
+      //   taskInstance: TaskInstanceWithDeprecatedFields;
+      //   references: SavedObjectReference[];
+      // }> = [];
       for (const item of part) {
         await new Promise((resolve) => setImmediate(resolve));
         const foundConnector = foundConnectors.find((row) => row.id === item.id)!;
@@ -106,7 +117,7 @@ export function createExecutionEnqueuerFunction({
           taskReferences.push(...references);
         }
 
-        bulkScheduleOpts.push({
+        const message = {
           references: taskReferences,
           taskInstance: {
             taskType: `actions:${foundConnector.connector.actionTypeId}`,
@@ -123,11 +134,14 @@ export function createExecutionEnqueuerFunction({
               },
             },
           },
-        });
+        };
+        channel.sendToQueue(queueName, Buffer.from(JSON.stringify(message)));
       }
 
-      await taskManager.bulkSchedule(bulkScheduleOpts);
+      // await taskManager.bulkSchedule(bulkScheduleOpts);
     }
+    await channel.waitForConfirms();
+    console.log(new Date(), `Enqueued ${items.length} items in ${Date.now() - start}`);
   };
 }
 
