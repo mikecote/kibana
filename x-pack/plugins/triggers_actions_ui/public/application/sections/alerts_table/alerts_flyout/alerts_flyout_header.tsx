@@ -14,7 +14,7 @@ type Props = AlertsTableFlyoutBaseProps;
 const AlertsFlyoutHeader = ({ alert }: Props) => {
   return (
     <EuiTitle size="m">
-      <h2>{get(alert, ALERT_RULE_NAME)}</h2>
+      <h2>{get(alert, ALERT_RULE_NAME) as string[]}</h2>
     </EuiTitle>
   );
 };
