@@ -1,7 +1,7 @@
 {
   "id": "stackAlerts",
   "owner": {
-    "name": "Response Ops",
+    "name": "Response Ops test",
     "githubTeam": "response-ops"
   },
   "server": true,
