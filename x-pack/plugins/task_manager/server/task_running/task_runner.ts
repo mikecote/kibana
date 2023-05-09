@@ -15,20 +15,10 @@ import apm from 'elastic-apm-node';
 import { v4 as uuidv4 } from 'uuid';
 import { withSpan } from '@kbn/apm-utils';
 import { identity, defaults, flow, omit } from 'lodash';
-import { Logger, SavedObjectsErrorHelpers, ExecutionContextStart } from '@kbn/core/server';
+import { Logger, ExecutionContextStart } from '@kbn/core/server';
 import { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import { Middleware } from '../lib/middleware';
-import {
-  asOk,
-  asErr,
-  mapErr,
-  eitherAsync,
-  unwrap,
-  isOk,
-  mapOk,
-  Result,
-  promiseResult,
-} from '../lib/result_type';
+import { asOk, asErr, mapErr, eitherAsync, unwrap, isOk, mapOk, Result } from '../lib/result_type';
 import {
   TaskRun,
   TaskMarkRunning,
@@ -38,7 +28,7 @@ import {
   TaskTiming,
   TaskPersistence,
 } from '../task_events';
-import { intervalFromDate, maxIntervalFromDate } from '../lib/intervals';
+import { intervalFromDate } from '../lib/intervals';
 import {
   CancelFunction,
   CancellableTask,
@@ -368,86 +358,13 @@ export class TaskManagerRunner implements TaskRunner {
       );
     }
 
-    const apmTrans = apm.startTransaction(
-      TASK_MANAGER_TRANSACTION_TYPE_MARK_AS_RUNNING,
-      TASK_MANAGER_TRANSACTION_TYPE
-    );
-    apmTrans?.addLabels({ entityId: this.taskType });
+    // const { taskInstance } = await this.beforeMarkRunning({
+    //   taskInstance: this.instance.task,
+    // });
 
-    const now = new Date();
-    try {
-      const { taskInstance } = await this.beforeMarkRunning({
-        taskInstance: this.instance.task,
-      });
-
-      const attempts = taskInstance.attempts + 1;
-      const ownershipClaimedUntil = taskInstance.retryAt;
-
-      const { id } = taskInstance;
-
-      const timeUntilClaimExpires = howManyMsUntilOwnershipClaimExpires(ownershipClaimedUntil);
-      if (timeUntilClaimExpires < 0) {
-        this.logger.debug(
-          `[Task Runner] Task ${id} started after ownership expired (${Math.abs(
-            timeUntilClaimExpires
-          )}ms after expiry)`
-        );
-      }
-
-      this.instance = asReadyToRun(
-        (await this.bufferedTaskStore.update({
-          ...taskWithoutEnabled(taskInstance),
-          status: TaskStatus.Running,
-          startedAt: now,
-          attempts,
-          retryAt:
-            (this.instance.task.schedule
-              ? maxIntervalFromDate(
-                  now,
-                  this.instance.task.schedule.interval,
-                  this.definition.timeout
-                )
-              : this.getRetryDelay({
-                  attempts,
-                  // Fake an error. This allows retry logic when tasks keep timing out
-                  // and lets us set a proper "retryAt" value each time.
-                  error: new Error('Task timeout'),
-                  addDuration: this.definition.timeout,
-                })) ?? null,
-          // This is a safe convertion as we're setting the startAt above
-        })) as ConcreteTaskInstanceWithStartedAt
-      );
-
-      const timeUntilClaimExpiresAfterUpdate =
-        howManyMsUntilOwnershipClaimExpires(ownershipClaimedUntil);
-      if (timeUntilClaimExpiresAfterUpdate < 0) {
-        this.logger.debug(
-          `[Task Runner] Task ${id} ran after ownership expired (${Math.abs(
-            timeUntilClaimExpiresAfterUpdate
-          )}ms after expiry)`
-        );
-      }
-
-      if (apmTrans) apmTrans.end('success');
-      this.onTaskEvent(asTaskMarkRunningEvent(this.id, asOk(this.instance.task)));
-      return true;
-    } catch (error) {
-      if (apmTrans) apmTrans.end('failure');
-      this.onTaskEvent(asTaskMarkRunningEvent(this.id, asErr(error)));
-      if (!SavedObjectsErrorHelpers.isConflictError(error)) {
-        if (!SavedObjectsErrorHelpers.isNotFoundError(error)) {
-          // try to release claim as an unknown failure prevented us from marking as running
-          mapErr((errReleaseClaim: Error) => {
-            this.logger.error(
-              `[Task Runner] Task ${this.id} failed to release claim after failure: ${errReleaseClaim}`
-            );
-          }, await this.releaseClaimAndIncrementAttempts());
-        }
-
-        throw error;
-      }
-    }
-    return false;
+    this.instance = asReadyToRun(this.instance.task as ConcreteTaskInstanceWithStartedAt);
+    this.onTaskEvent(asTaskMarkRunningEvent(this.id, asOk(this.instance.task)));
+    return true;
   }
 
   /**
@@ -472,19 +389,6 @@ export class TaskManagerRunner implements TaskRunner {
     return isFailedRunResult(result)
       ? asErr({ ...result, error: result.error })
       : asOk(result || EMPTY_RUN_RESULT);
-  }
-
-  private async releaseClaimAndIncrementAttempts(): Promise<Result<ConcreteTaskInstance, Error>> {
-    return promiseResult(
-      this.bufferedTaskStore.update({
-        ...taskWithoutEnabled(this.instance.task),
-        status: TaskStatus.Idle,
-        attempts: this.instance.task.attempts + 1,
-        startedAt: null,
-        retryAt: null,
-        ownerId: null,
-      })
-    );
   }
 
   private shouldTryToScheduleRetry(): boolean {
@@ -700,10 +604,6 @@ function sanitizeInstance(instance: ConcreteTaskInstance): ConcreteTaskInstance 
     params: instance.params || {},
     state: instance.state || {},
   };
-}
-
-function howManyMsUntilOwnershipClaimExpires(ownershipClaimedUntil: Date | null): number {
-  return ownershipClaimedUntil ? ownershipClaimedUntil.getTime() - Date.now() : 0;
 }
 
 // Omits "enabled" field from task updates so we don't overwrite any user

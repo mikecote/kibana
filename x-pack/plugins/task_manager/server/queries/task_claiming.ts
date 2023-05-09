@@ -20,6 +20,8 @@ import { asOk, asErr, Result, isOk, isErr } from '../lib/result_type';
 import { ConcreteTaskInstance, TaskStatus } from '../task';
 import { TaskClaim, asTaskClaimEvent, startTaskTimer, TaskTiming } from '../task_events';
 import { shouldBeOneOf, mustBeAllOf, filterDownBy, matchesClauses } from './query_clauses';
+import { intervalFromDate, maxIntervalFromDate } from '../lib/intervals';
+import { isRetryableError } from '../task_running/errors';
 
 import {
   IdleTaskWithExpiredRunAt,
@@ -174,13 +176,11 @@ export class TaskClaiming {
     events.forEach((event) => this.events$.next(event));
   };
 
-  public claimAvailableTasksIfCapacityIsAvailable(
-    claimingOptions: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>
-  ): Observable<Result<ClaimOwnershipResult, FillPoolResult>> {
+  public claimAvailableTasksIfCapacityIsAvailable(): Observable<
+    Result<ClaimOwnershipResult, FillPoolResult>
+  > {
     if (this.getCapacity() > 0) {
-      return from(this.claimAvailableTasks(claimingOptions)).pipe(
-        map((claimResult) => asOk(claimResult))
-      );
+      return from(this.claimAvailableTasks()).pipe(map((claimResult) => asOk(claimResult)));
     }
     this.logger.debug(
       `[Task Ownership]: Task Manager has skipped Claiming Ownership of available tasks at it has ran out Available Workers.`
@@ -188,9 +188,7 @@ export class TaskClaiming {
     return of(asErr(FillPoolResult.NoAvailableWorkers));
   }
 
-  public async claimAvailableTasks({
-    claimOwnershipUntil,
-  }: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>): Promise<ClaimOwnershipResult> {
+  public async claimAvailableTasks(): Promise<ClaimOwnershipResult> {
     const initialCapacity = this.getCapacity();
     const stopTaskTimer = startTaskTimer();
 
@@ -211,7 +209,7 @@ export class TaskClaiming {
           .filter((p): p is Promise<ConcreteTaskInstance[]> => !!p)
       );
 
-      const docsToUpdate = this.processResultFromSearches(results, claimOwnershipUntil);
+      const docsToUpdate = this.processResultFromSearches(results);
 
       if (docsToUpdate.length === 0) {
         return {
@@ -254,16 +252,14 @@ export class TaskClaiming {
     }
   }
 
-  private processResultFromSearches(
-    results: ConcreteTaskInstance[][],
-    claimOwnershipUntil: Date
-  ): ConcreteTaskInstance[] {
+  private processResultFromSearches(results: ConcreteTaskInstance[][]): ConcreteTaskInstance[] {
     // Calculate capacity again in case more capacity opened up since the search queries started
     let availableCapacity = this.getCapacity();
     const docsToUpdate: ConcreteTaskInstance[] = [];
     for (const result of results) {
       for (const doc of result) {
-        if (availableCapacity - this.definitions.get(doc.taskType).workerCost >= 0) {
+        const taskTypeDef = this.definitions.get(doc.taskType);
+        if (availableCapacity - taskTypeDef.workerCost >= 0) {
           const updates: Partial<ConcreteTaskInstance> = {};
 
           if (this.unusedTypes.includes(doc.taskType)) {
@@ -275,10 +271,19 @@ export class TaskClaiming {
               updates.scheduledAt = doc.runAt;
             }
 
-            // TODO: We should be able to set them directly to running at this point
-            updates.status = TaskStatus.Claiming;
+            updates.status = TaskStatus.Running;
             updates.ownerId = this.taskStore.taskManagerId;
-            updates.retryAt = claimOwnershipUntil;
+            updates.startedAt = new Date();
+            updates.attempts = doc.attempts + 1;
+            updates.retryAt = doc.schedule
+              ? maxIntervalFromDate(new Date(), doc.schedule.interval, taskTypeDef.timeout)
+              : this.getRetryDelay({
+                  attempts: doc.attempts + 1,
+                  // Fake an error. This allows retry logic when tasks keep timing out
+                  // and lets us set a proper "retryAt" value each time.
+                  error: new Error('Task timeout'),
+                  addDuration: taskTypeDef.timeout,
+                }) ?? null;
           }
 
           docsToUpdate.push({ ...doc, ...updates });
@@ -319,5 +324,40 @@ export class TaskClaiming {
     }
 
     return false;
+  }
+
+  private getRetryDelay({
+    error,
+    attempts,
+    addDuration,
+  }: {
+    error: Error;
+    attempts: number;
+    addDuration?: string;
+  }): Date | undefined {
+    const retry: boolean | Date = isRetryableError(error) ?? true;
+
+    let result;
+    if (retry instanceof Date) {
+      result = retry;
+    } else if (retry === true) {
+      result = new Date(Date.now() + calculateDelay(attempts));
+    }
+
+    // Add a duration to the result
+    if (addDuration && result) {
+      result = intervalFromDate(result, addDuration)!;
+    }
+    return result;
+  }
+}
+
+export function calculateDelay(attempts: number) {
+  if (attempts === 1) {
+    return 30 * 1000; // 30s
+  } else {
+    // get multiples of 5 min
+    const defaultBackoffPerFailure = 5 * 60 * 1000;
+    return defaultBackoffPerFailure * Math.pow(2, attempts - 2);
   }
 }
