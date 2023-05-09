@@ -62,5 +62,8 @@ export const taskMappings: SavedObjectsTypeMappingDefinition = {
     ownerId: {
       type: 'keyword',
     },
+    claimAt: {
+      type: 'date',
+    },
   },
 };

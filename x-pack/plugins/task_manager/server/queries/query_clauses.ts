@@ -40,7 +40,11 @@ export type PinnedQuery = Pick<estypes.QueryDslQueryContainer, 'pinned'>;
 type BoolClause = Pick<estypes.QueryDslQueryContainer, 'bool'>;
 export function matchesClauses(...clauses: BoolClause[]): BoolClause {
   return {
-    bool: Object.assign({}, ...clauses.map((clause) => clause.bool)),
+    bool: {
+      filter: {
+        bool: Object.assign({}, ...clauses.map((clause) => clause.bool)),
+      },
+    },
   };
 }
 

@@ -503,16 +503,18 @@ export function correctVersionConflictsForContinuation(
 }
 
 function taskInstanceToAttributes(doc: TaskInstance): SerializedConcreteTaskInstance {
+  const runAt = (doc.runAt || new Date()).toISOString();
   return {
     ...omit(doc, 'id', 'version'),
+    runAt,
     params: JSON.stringify(doc.params || {}),
     state: JSON.stringify(doc.state || {}),
     attempts: (doc as ConcreteTaskInstance).attempts || 0,
     scheduledAt: (doc.scheduledAt || new Date()).toISOString(),
     startedAt: (doc.startedAt && doc.startedAt.toISOString()) || null,
     retryAt: (doc.retryAt && doc.retryAt.toISOString()) || null,
-    runAt: (doc.runAt || new Date()).toISOString(),
     status: (doc as ConcreteTaskInstance).status || 'idle',
+    claimAt: doc.retryAt ? doc.retryAt.toISOString() : runAt,
   } as SerializedConcreteTaskInstance;
 }
 
@@ -529,6 +531,7 @@ export function savedObjectToConcreteTaskInstance(
     retryAt: savedObject.attributes.retryAt ? new Date(savedObject.attributes.retryAt) : null,
     state: parseJSONField(savedObject.attributes.state, 'state', savedObject.id),
     params: parseJSONField(savedObject.attributes.params, 'params', savedObject.id),
+    claimAt: new Date(savedObject.attributes.claimAt),
   };
 }
 

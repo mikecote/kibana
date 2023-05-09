@@ -368,6 +368,8 @@ export interface ConcreteTaskInstance extends TaskInstance {
    * The random uuid of the Kibana instance which claimed ownership of the task last
    */
   ownerId: string | null;
+
+  claimAt: Date;
 }
 
 /**
@@ -382,7 +384,7 @@ export type EphemeralTaskInstance = EphemeralTask &
 
 export type SerializedConcreteTaskInstance = Omit<
   ConcreteTaskInstance,
-  'state' | 'params' | 'scheduledAt' | 'startedAt' | 'retryAt' | 'runAt'
+  'state' | 'params' | 'scheduledAt' | 'startedAt' | 'retryAt' | 'runAt' | 'claimAt'
 > & {
   state: string;
   params: string;
@@ -391,4 +393,5 @@ export type SerializedConcreteTaskInstance = Omit<
   startedAt: string | null;
   retryAt: string | null;
   runAt: string;
+  claimAt: string;
 };

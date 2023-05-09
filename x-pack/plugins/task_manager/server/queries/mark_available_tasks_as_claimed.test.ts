@@ -12,7 +12,6 @@ import {
   updateFieldsAndMarkAsFailed,
   IdleTaskWithExpiredRunAt,
   RunningOrClaimingTaskWithExpiredRetryAt,
-  SortByRunAtAndRetryAt,
   EnabledTask,
 } from './mark_available_tasks_as_claimed';
 
@@ -68,7 +67,6 @@ describe('mark_available_tasks_as_claimed', () => {
           return { ...accumulator, [type]: maxAttempts || defaultMaxAttempts };
         }, {}),
       }),
-      sort: SortByRunAtAndRetryAt,
     }).toEqual({
       query: {
         bool: {
@@ -116,23 +114,6 @@ describe('mark_available_tasks_as_claimed', () => {
               },
             },
           ],
-        },
-      },
-      sort: {
-        _script: {
-          type: 'number',
-          order: 'asc',
-          script: {
-            lang: 'painless',
-            source: `
-if (doc['task.retryAt'].size()!=0) {
-  return doc['task.retryAt'].value.toInstant().toEpochMilli();
-}
-if (doc['task.runAt'].size()!=0) {
-  return doc['task.runAt'].value.toInstant().toEpochMilli();
-}
-    `,
-          },
         },
       },
       script: {

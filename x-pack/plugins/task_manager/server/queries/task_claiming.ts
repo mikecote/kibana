@@ -25,7 +25,6 @@ import {
   IdleTaskWithExpiredRunAt,
   InactiveTasks,
   RunningOrClaimingTaskWithExpiredRetryAt,
-  SortByRunAtAndRetryAt,
   EnabledTask,
   tasksOfType,
 } from './mark_available_tasks_as_claimed';
@@ -34,7 +33,6 @@ import {
   correctVersionConflictsForContinuation,
   TaskStore,
   UpdateByQueryResult,
-  SearchOpts,
 } from '../task_store';
 import { FillPoolResult } from '../lib/fill_pool';
 import { TASK_MANAGER_TRANSACTION_TYPE } from '../task_running';
@@ -301,12 +299,11 @@ export class TaskClaiming {
       tasksOfType(types)
     );
 
-    const sort: NonNullable<SearchOpts['sort']> = [SortByRunAtAndRetryAt];
     const query = matchesClauses(queryForScheduledTasks, filterDownBy(InactiveTasks));
 
     const searchResult = await this.taskStore.search({
       query,
-      sort,
+      sort: [{ 'task.claimAt': { order: 'asc' } }],
       size,
       seq_no_primary_term: true,
     });
