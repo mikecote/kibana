@@ -296,34 +296,30 @@ export function claimAvailableTasks(
   logger: Logger
 ): Observable<Result<ClaimOwnershipResult, FillPoolResult>> {
   return new Observable((observer) => {
-    taskClaiming
-      .claimAvailableTasksIfCapacityIsAvailable({
-        claimOwnershipUntil: intervalFromNow('30s')!,
-      })
-      .subscribe(
-        (claimResult) => {
-          observer.next(claimResult);
-        },
-        (ex) => {
-          // if the `taskClaiming` stream errors out we want to catch it and see if
-          // we can identify the reason
-          // if we can - we emit an FillPoolResult error rather than erroring out the wrapping Observable
-          // returned by `claimAvailableTasks`
-          if (isEsCannotExecuteScriptError(ex)) {
-            logger.warn(
-              `Task Manager cannot operate when inline scripts are disabled in Elasticsearch`
-            );
-            observer.next(asErr(FillPoolResult.Failed));
-            observer.complete();
-          } else {
-            const esError = identifyEsError(ex);
-            // as we could't identify the reason - we'll error out the wrapping Observable too
-            observer.error(esError.length > 0 ? esError : ex);
-          }
-        },
-        () => {
+    taskClaiming.claimAvailableTasksIfCapacityIsAvailable().subscribe(
+      (claimResult) => {
+        observer.next(claimResult);
+      },
+      (ex) => {
+        // if the `taskClaiming` stream errors out we want to catch it and see if
+        // we can identify the reason
+        // if we can - we emit an FillPoolResult error rather than erroring out the wrapping Observable
+        // returned by `claimAvailableTasks`
+        if (isEsCannotExecuteScriptError(ex)) {
+          logger.warn(
+            `Task Manager cannot operate when inline scripts are disabled in Elasticsearch`
+          );
+          observer.next(asErr(FillPoolResult.Failed));
           observer.complete();
+        } else {
+          const esError = identifyEsError(ex);
+          // as we could't identify the reason - we'll error out the wrapping Observable too
+          observer.error(esError.length > 0 ? esError : ex);
         }
-      );
+      },
+      () => {
+        observer.complete();
+      }
+    );
   });
 }

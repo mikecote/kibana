@@ -37,7 +37,9 @@ import {
   SearchOpts,
 } from '../task_store';
 import { FillPoolResult } from '../lib/fill_pool';
+import { maxIntervalFromDate, intervalFromDate } from '../lib/intervals';
 import { TASK_MANAGER_TRANSACTION_TYPE } from '../task_running';
+import { isRetryableError } from '../task_running';
 
 export interface TaskClaimingOpts {
   shareWorkers: boolean;
@@ -179,13 +181,11 @@ export class TaskClaiming {
     events.forEach((event) => this.events$.next(event));
   };
 
-  public claimAvailableTasksIfCapacityIsAvailable(
-    claimingOptions: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>
-  ): Observable<Result<ClaimOwnershipResult, FillPoolResult>> {
+  public claimAvailableTasksIfCapacityIsAvailable(): Observable<
+    Result<ClaimOwnershipResult, FillPoolResult>
+  > {
     if (this.getCapacity() > 0) {
-      return from(this.claimAvailableTasks(claimingOptions)).pipe(
-        map((claimResult) => asOk(claimResult))
-      );
+      return from(this.claimAvailableTasks()).pipe(map((claimResult) => asOk(claimResult)));
     }
     this.logger.debug(
       `[Task Ownership]: Task Manager has skipped Claiming Ownership of available tasks at it has ran out Available Workers.`
@@ -193,9 +193,7 @@ export class TaskClaiming {
     return of(asErr(FillPoolResult.NoAvailableWorkers));
   }
 
-  public async claimAvailableTasks({
-    claimOwnershipUntil,
-  }: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>): Promise<ClaimOwnershipResult> {
+  public async claimAvailableTasks(): Promise<ClaimOwnershipResult> {
     const initialCapacity = this.getCapacity();
     const stopTaskTimer = startTaskTimer();
 
@@ -229,9 +227,11 @@ export class TaskClaiming {
       // Calculate capacity again in case more capacity opened up since the search queries started
       let availableCapacity = this.getCapacity();
       const docsToUpdate: ConcreteTaskInstance[] = [];
+      const now = new Date();
       for (const result of results) {
         for (const doc of result) {
-          if (availableCapacity - this.definitions.get(doc.taskType).workerCost >= 0) {
+          const taskDef = this.definitions.get(doc.taskType);
+          if (availableCapacity - taskDef.workerCost >= 0) {
             const updates: Partial<ConcreteTaskInstance> = {};
 
             if (this.unusedTypes.includes(doc.taskType)) {
@@ -243,10 +243,19 @@ export class TaskClaiming {
                 updates.scheduledAt = doc.runAt;
               }
 
-              // TODO: We should be able to set them directly to running at this point
-              updates.status = TaskStatus.Claiming;
+              updates.startedAt = now;
+              updates.attempts = doc.attempts + 1;
+              updates.status = TaskStatus.Running;
               updates.ownerId = this.taskStore.taskManagerId;
-              updates.retryAt = claimOwnershipUntil;
+              updates.retryAt = doc.schedule
+                ? maxIntervalFromDate(now, doc.schedule.interval, taskDef.timeout)
+                : this.getRetryDelay({
+                    attempts: doc.attempts + 1,
+                    // Fake an error. This allows retry logic when tasks keep timing out
+                    // and lets us set a proper "retryAt" value each time.
+                    error: new Error('Task timeout'),
+                    addDuration: taskDef.timeout,
+                  }) ?? null;
             }
 
             docsToUpdate.push({ ...doc, ...updates });
@@ -330,5 +339,40 @@ export class TaskClaiming {
     }
 
     return false;
+  }
+
+  private getRetryDelay({
+    error,
+    attempts,
+    addDuration,
+  }: {
+    error: Error;
+    attempts: number;
+    addDuration?: string;
+  }): Date | undefined {
+    const retry: boolean | Date = isRetryableError(error) ?? true;
+
+    let result;
+    if (retry instanceof Date) {
+      result = retry;
+    } else if (retry === true) {
+      result = new Date(Date.now() + calculateDelay(attempts));
+    }
+
+    // Add a duration to the result
+    if (addDuration && result) {
+      result = intervalFromDate(result, addDuration)!;
+    }
+    return result;
+  }
+}
+
+export function calculateDelay(attempts: number) {
+  if (attempts === 1) {
+    return 30 * 1000; // 30s
+  } else {
+    // get multiples of 5 min
+    const defaultBackoffPerFailure = 5 * 60 * 1000;
+    return defaultBackoffPerFailure * Math.pow(2, attempts - 2);
   }
 }
