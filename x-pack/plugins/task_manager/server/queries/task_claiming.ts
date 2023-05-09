@@ -124,10 +124,7 @@ export class TaskClaiming {
 
   private partitionIntoClaimingBatches(definitions: TaskTypeDictionary): TaskClaimingBatches {
     const result: TaskClaimingBatches = [];
-    const typesByCost: Record<number, string[]> = {
-      // Add unrecognized tasks to the default cost (1)
-      1: this.unusedTypes,
-    };
+    const typesByCost: Record<number, string[]> = {};
     for (const taskTypeDef of definitions.getAllDefinitions()) {
       if (typeof taskTypeDef.maxConcurrency === 'number') {
         // A Kibana instance should only run a given task type X at a time
@@ -152,6 +149,9 @@ export class TaskClaiming {
         types: typesByCost[cost],
       });
     }
+
+    // Add unrecognized tasks to the default cost (1)
+    typesByCost[1] = (typesByCost[1] || []).concat(this.unusedTypes);
 
     return result;
   }
