@@ -113,10 +113,7 @@ export class TaskPollingLifecycle {
 
     const emitEvent = (event: TaskLifecycleEvent) => this.events$.next(event);
 
-    this.bufferedStore = new BufferedTaskStore(this.store, {
-      bufferMaxOperations: config.max_workers,
-      logger,
-    });
+    this.bufferedStore = new BufferedTaskStore(this.store);
 
     this.pool = new TaskPool({
       logger,
