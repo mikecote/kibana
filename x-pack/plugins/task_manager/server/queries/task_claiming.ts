@@ -8,6 +8,7 @@
 /*
  * This module contains helpers for managing the task manager storage layer.
  */
+import { Worker } from 'node:worker_threads';
 import apm from 'elastic-apm-node';
 import minimatch from 'minimatch';
 import { Subject, Observable, from, of } from 'rxjs';
@@ -201,59 +202,109 @@ export class TaskClaiming {
       TASK_MANAGER_TRANSACTION_TYPE
     );
 
-    try {
-      const results = await Promise.all(
-        this.getClaimingBatches()
-          .map((batch) => {
-            const size = batch.size();
-            if (size > 0) {
-              return this.searchForTasks(size, batch.types);
-            }
-          })
-          .filter((p): p is Promise<ConcreteTaskInstance[]> => !!p)
-      );
+    const claimedTaskIds = await new Promise((resolve, reject) => {
+      const worker = new Worker(`${__dirname}/task_claiming_worker`, {
+        workerData: {
+          ownerId: this.taskStore.taskManagerId,
+          unusedTypes: this.unusedTypes,
+          costMap: this.definitions.getAllDefinitions().reduce((acc, taskTypeDef) => {
+            acc[taskTypeDef.type] = taskTypeDef.workerCost;
+            return acc;
+          }, {}),
+          availableCapacity: this.getCapacity(),
+          claimBatches: this.getClaimingBatches().map((b) => ({ ...b, size: b.size() })),
+          claimOwnershipUntil,
+        },
+      });
+      worker.on('message', (message) => {
+        resolve(message.taskIdsClaimed);
+      });
+      worker.on('error', (e) => {
+        console.log('uh oh', e);
+        reject();
+      });
+    });
 
-      const docsToUpdate = this.processResultFromSearches(results, claimOwnershipUntil);
-
-      if (docsToUpdate.length === 0) {
-        return {
-          stats: {
-            tasksUpdated: 0,
-            tasksConflicted: 0,
-            tasksClaimed: 0,
-          },
-          docs: [],
-          timing: stopTaskTimer(),
-        };
-      }
-
-      const bulkUpdateResults = await this.taskStore.bulkUpdate(docsToUpdate);
-      apmTrans?.end('success');
-
-      const claimedDocs = bulkUpdateResults.filter(isOk).map((result) => result.value);
-      const numOfVersionConflicts = bulkUpdateResults
-        .filter(isErr)
-        .filter((result) => result.error.error.error === 'Conflict').length;
-
-      this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
-
+    if (claimedTaskIds.length === 0) {
       return {
         stats: {
-          tasksUpdated: claimedDocs.length,
-          tasksConflicted: correctVersionConflictsForContinuation(
-            claimedDocs.length,
-            numOfVersionConflicts,
-            initialCapacity
-          ),
-          tasksClaimed: claimedDocs.length,
+          tasksUpdated: 0,
+          tasksConflicted: 0,
+          tasksClaimed: 0,
         },
-        docs: claimedDocs,
+        docs: [],
         timing: stopTaskTimer(),
       };
-    } catch (e) {
-      apmTrans?.end('failure');
-      throw e;
     }
+
+    const claimedDocs = (await this.taskStore.bulkGet(claimedTaskIds))
+      .filter(isOk)
+      .map((d) => d.value);
+    console.log('claimed', claimedDocs.length, JSON.stringify(claimedDocs, null, 2));
+    this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
+    return {
+      stats: {
+        tasksUpdated: claimedDocs.length,
+        tasksConflicted: 0,
+        tasksClaimed: claimedDocs.length,
+      },
+      docs: claimedDocs,
+      timing: stopTaskTimer(),
+    };
+
+    // try {
+    //   const results = await Promise.all(
+    //     this.getClaimingBatches()
+    //       .map((batch) => {
+    //         const size = batch.size();
+    //         if (size > 0) {
+    //           return this.searchForTasks(size, batch.types);
+    //         }
+    //       })
+    //       .filter((p): p is Promise<ConcreteTaskInstance[]> => !!p)
+    //   );
+
+    //   const docsToUpdate = this.processResultFromSearches(results, claimOwnershipUntil);
+
+    //   if (docsToUpdate.length === 0) {
+    //     return {
+    //       stats: {
+    //         tasksUpdated: 0,
+    //         tasksConflicted: 0,
+    //         tasksClaimed: 0,
+    //       },
+    //       docs: [],
+    //       timing: stopTaskTimer(),
+    //     };
+    //   }
+
+    //   const bulkUpdateResults = await this.taskStore.bulkUpdate(docsToUpdate);
+    //   apmTrans?.end('success');
+
+    //   const claimedDocs = bulkUpdateResults.filter(isOk).map((result) => result.value);
+    //   const numOfVersionConflicts = bulkUpdateResults
+    //     .filter(isErr)
+    //     .filter((result) => result.error.error.error === 'Conflict').length;
+
+    //   this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
+
+    //   return {
+    //     stats: {
+    //       tasksUpdated: claimedDocs.length,
+    //       tasksConflicted: correctVersionConflictsForContinuation(
+    //         claimedDocs.length,
+    //         numOfVersionConflicts,
+    //         initialCapacity
+    //       ),
+    //       tasksClaimed: claimedDocs.length,
+    //     },
+    //     docs: claimedDocs,
+    //     timing: stopTaskTimer(),
+    //   };
+    // } catch (e) {
+    //   apmTrans?.end('failure');
+    //   throw e;
+    // }
   }
 
   private processResultFromSearches(
