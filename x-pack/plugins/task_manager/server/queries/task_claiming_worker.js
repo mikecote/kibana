@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-const { parentPort, workerData } = require('node:worker_threads');
+const { parentPort } = require('node:worker_threads');
 const { Client } = require('@elastic/elasticsearch');
 
 const esClient = new Client({
@@ -16,72 +16,79 @@ const esClient = new Client({
   },
 });
 
-const { availableCapacity, claimOwnershipUntil, costMap, claimBatches, unusedTypes, ownerId } =
-  workerData;
+parentPort.on(
+  'message',
+  ({ availableCapacity, claimOwnershipUntil, costMap, claimBatches, unusedTypes, ownerId }) => {
+    (async () => {
+      try {
+        const results = await Promise.all(
+          claimBatches
+            .map((batch) => {
+              if (batch.size > 0) {
+                return searchForTasks(batch.size, batch.types);
+              }
+            })
+            .filter((p) => !!p)
+        );
 
-(async () => {
-  const results = await Promise.all(
-    claimBatches
-      .map((batch) => {
-        if (batch.size > 0) {
-          return searchForTasks(batch.size, batch.types);
+        const bulkUpdateRows = [];
+        let remainingCapacity = availableCapacity;
+        for (const result of results) {
+          for (const hit of result) {
+            const task = hit._source.task;
+            if (remainingCapacity - costMap[task.taskType] >= 0) {
+              bulkUpdateRows.push({
+                update: {
+                  _id: hit._id,
+                  _index: hit._index,
+                  if_seq_no: hit._seq_no,
+                  if_primary_term: hit._primary_term,
+                },
+              });
+              if (unusedTypes.includes(task.taskType)) {
+                bulkUpdateRows.push({
+                  doc: {
+                    task: {
+                      status: 'unrecognized',
+                    },
+                  },
+                });
+              } else {
+                bulkUpdateRows.push({
+                  doc: {
+                    task: {
+                      scheduledAt: task.retryAt && task.retryAt < new Date() ? task.retryAt : task.runAt,
+                      status: 'claiming',
+                      ownerId: ownerId,
+                      retryAt: claimOwnershipUntil,
+                    },
+                  },
+                });
+                remainingCapacity -= costMap[task.taskType];
+              }
+            }
+          }
         }
-      })
-      .filter((p) => !!p)
-  );
 
-  const bulkUpdateRows = [];
-  let remainingCapacity = availableCapacity;
-  for (const result of results) {
-    for (const hit of result) {
-      const task = hit._source.task;
-      if (remainingCapacity - costMap[task.taskType] >= 0) {
-        bulkUpdateRows.push({
-          update: {
-            _id: hit._id,
-            _index: hit._index,
-            if_seq_no: hit._seq_no,
-            if_primary_term: hit._primary_term,
-          },
+        if (bulkUpdateRows.length === 0) {
+          parentPort?.postMessage({ success: true, taskIdsClaimed: [] });
+          return;
+        }
+
+        const result = await esClient.bulk({ body: bulkUpdateRows }, { refresh: false });
+        const taskIdsClaimed = result.items
+          .filter((item) => item.update.status === 200)
+          .map((item) => item.update._id.substring(5));
+        parentPort?.postMessage({
+          success: true,
+          taskIdsClaimed,
         });
-        if (unusedTypes.includes(task.taskType)) {
-          bulkUpdateRows.push({
-            doc: {
-              'task.status': 'unrecognized',
-            },
-          });
-        } else {
-          bulkUpdateRows.push({
-            doc: {
-              'task.scheduledAt':
-                task.retryAt && task.retryAt < new Date() ? task.retryAt : task.runAt,
-              'task.status': 'claiming',
-              'task.ownerId': ownerId,
-              'task.retryAt': claimOwnershipUntil,
-            },
-          });
-          remainingCapacity -= costMap[task.taskType];
-        }
+      } catch (e) {
+        parentPort.postMessage({ success: false, error: e });
       }
-    }
+    })();
   }
-
-  console.log('bulkUpdateRows', JSON.stringify(bulkUpdateRows, null, 2));
-
-  if (bulkUpdateRows.length === 0) {
-    parentPort?.postMessage({ taskIdsClaimed: [] });
-    process.exit(0);
-  }
-
-  const result = await esClient.bulk({ body: bulkUpdateRows });
-  console.log(JSON.stringify(result, null, 2));
-  parentPort?.postMessage({
-    taskIdsClaimed: result.items
-      .filter((item) => item.update.status === 200)
-      .map((item) => item.update._id.substring(5)),
-  });
-  process.exit();
-})();
+);
 
 async function searchForTasks(size, types) {
   const searchResult = await esClient.search({

@@ -102,6 +102,7 @@ export class TaskClaiming {
   private readonly excludedTaskTypes: string[];
   private readonly unusedTypes: string[];
   private readonly shareWorkers: boolean;
+  private readonly worker: Worker;
 
   /**
    * Constructs a new TaskStore.
@@ -118,6 +119,7 @@ export class TaskClaiming {
     this.shareWorkers = opts.shareWorkers;
     this.excludedTaskTypes = opts.excludedTaskTypes;
     this.unusedTypes = opts.unusedTypes;
+    this.worker = new Worker(`${__dirname}/task_claiming_worker`);
 
     this.taskClaimingBatches = this.partitionIntoClaimingBatches(this.definitions);
     this.events$ = new Subject<TaskClaim>();
@@ -203,25 +205,25 @@ export class TaskClaiming {
     );
 
     const claimedTaskIds = await new Promise((resolve, reject) => {
-      const worker = new Worker(`${__dirname}/task_claiming_worker`, {
-        workerData: {
-          ownerId: this.taskStore.taskManagerId,
-          unusedTypes: this.unusedTypes,
-          costMap: this.definitions.getAllDefinitions().reduce((acc, taskTypeDef) => {
-            acc[taskTypeDef.type] = taskTypeDef.workerCost;
-            return acc;
-          }, {}),
-          availableCapacity: this.getCapacity(),
-          claimBatches: this.getClaimingBatches().map((b) => ({ ...b, size: b.size() })),
-          claimOwnershipUntil,
-        },
-      });
-      worker.on('message', (message) => {
-        resolve(message.taskIdsClaimed);
-      });
-      worker.on('error', (e) => {
-        console.log('uh oh', e);
-        reject();
+      const onMessage = ({ success, taskIdsClaimed, error }) => {
+        this.worker.off('message', onMessage);
+        if (success) {
+          return resolve(taskIdsClaimed);
+        }
+        reject(error);
+      };
+      this.worker.on('message', onMessage);
+
+      this.worker.postMessage({
+        ownerId: this.taskStore.taskManagerId,
+        unusedTypes: this.unusedTypes,
+        costMap: this.definitions.getAllDefinitions().reduce((acc, taskTypeDef) => {
+          acc[taskTypeDef.type] = taskTypeDef.workerCost;
+          return acc;
+        }, {}),
+        availableCapacity: this.getCapacity(),
+        claimBatches: this.getClaimingBatches().map((b) => ({ ...b, size: b.size() })),
+        claimOwnershipUntil,
       });
     });
 
@@ -240,7 +242,6 @@ export class TaskClaiming {
     const claimedDocs = (await this.taskStore.bulkGet(claimedTaskIds))
       .filter(isOk)
       .map((d) => d.value);
-    console.log('claimed', claimedDocs.length, JSON.stringify(claimedDocs, null, 2));
     this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
     return {
       stats: {

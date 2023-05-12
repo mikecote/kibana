@@ -394,15 +394,6 @@ export class TaskStore {
   public async search(opts: SearchOpts = {}): Promise<FetchResult> {
     const { query } = ensureQueryOnlyReturnsTaskObjects(opts);
 
-    console.log('SEARCH', JSON.stringify({
-      index: this.index,
-      ignore_unavailable: true,
-      body: {
-        ...opts,
-        query,
-      },
-    }, null, 2));
-
     try {
       const {
         hits: { hits: tasks },
