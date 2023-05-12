@@ -9,7 +9,6 @@
  * This module contains helpers for managing the task manager storage layer.
  */
 import { Worker } from 'node:worker_threads';
-import apm from 'elastic-apm-node';
 import minimatch from 'minimatch';
 import { Subject, Observable, from, of } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -17,28 +16,13 @@ import { isPlainObject } from 'lodash';
 
 import { Logger } from '@kbn/core/server';
 
-import { asOk, asErr, Result, isOk, isErr } from '../lib/result_type';
-import { ConcreteTaskInstance, TaskStatus } from '../task';
+import { asOk, asErr, Result, isOk } from '../lib/result_type';
+import { ConcreteTaskInstance } from '../task';
 import { TaskClaim, asTaskClaimEvent, startTaskTimer, TaskTiming } from '../task_events';
-import { shouldBeOneOf, mustBeAllOf, filterDownBy, matchesClauses } from './query_clauses';
 
-import {
-  IdleTaskWithExpiredRunAt,
-  InactiveTasks,
-  RunningOrClaimingTaskWithExpiredRetryAt,
-  SortByRunAtAndRetryAt,
-  EnabledTask,
-  tasksOfType,
-} from './mark_available_tasks_as_claimed';
 import { TaskTypeDictionary } from '../task_type_dictionary';
-import {
-  correctVersionConflictsForContinuation,
-  TaskStore,
-  UpdateByQueryResult,
-  SearchOpts,
-} from '../task_store';
+import { TaskStore, UpdateByQueryResult } from '../task_store';
 import { FillPoolResult } from '../lib/fill_pool';
-import { TASK_MANAGER_TRANSACTION_TYPE } from '../task_running';
 
 export interface TaskClaimingOpts {
   shareWorkers: boolean;
@@ -196,13 +180,7 @@ export class TaskClaiming {
   public async claimAvailableTasks({
     claimOwnershipUntil,
   }: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>): Promise<ClaimOwnershipResult> {
-    const initialCapacity = this.getCapacity();
     const stopTaskTimer = startTaskTimer();
-
-    const apmTrans = apm.startTransaction(
-      TASK_MANAGER_MARK_AS_CLAIMED,
-      TASK_MANAGER_TRANSACTION_TYPE
-    );
 
     const claimedTaskIds = await new Promise((resolve, reject) => {
       const onMessage = ({ success, taskIdsClaimed, error }) => {
@@ -243,6 +221,7 @@ export class TaskClaiming {
       .filter(isOk)
       .map((d) => d.value);
     this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
+    // TODO: Provide proper numbers of conflicted tasks
     return {
       stats: {
         tasksUpdated: claimedDocs.length,
@@ -252,118 +231,6 @@ export class TaskClaiming {
       docs: claimedDocs,
       timing: stopTaskTimer(),
     };
-
-    // try {
-    //   const results = await Promise.all(
-    //     this.getClaimingBatches()
-    //       .map((batch) => {
-    //         const size = batch.size();
-    //         if (size > 0) {
-    //           return this.searchForTasks(size, batch.types);
-    //         }
-    //       })
-    //       .filter((p): p is Promise<ConcreteTaskInstance[]> => !!p)
-    //   );
-
-    //   const docsToUpdate = this.processResultFromSearches(results, claimOwnershipUntil);
-
-    //   if (docsToUpdate.length === 0) {
-    //     return {
-    //       stats: {
-    //         tasksUpdated: 0,
-    //         tasksConflicted: 0,
-    //         tasksClaimed: 0,
-    //       },
-    //       docs: [],
-    //       timing: stopTaskTimer(),
-    //     };
-    //   }
-
-    //   const bulkUpdateResults = await this.taskStore.bulkUpdate(docsToUpdate);
-    //   apmTrans?.end('success');
-
-    //   const claimedDocs = bulkUpdateResults.filter(isOk).map((result) => result.value);
-    //   const numOfVersionConflicts = bulkUpdateResults
-    //     .filter(isErr)
-    //     .filter((result) => result.error.error.error === 'Conflict').length;
-
-    //   this.emitEvents(claimedDocs.map((doc) => asTaskClaimEvent(doc.id, asOk(doc))));
-
-    //   return {
-    //     stats: {
-    //       tasksUpdated: claimedDocs.length,
-    //       tasksConflicted: correctVersionConflictsForContinuation(
-    //         claimedDocs.length,
-    //         numOfVersionConflicts,
-    //         initialCapacity
-    //       ),
-    //       tasksClaimed: claimedDocs.length,
-    //     },
-    //     docs: claimedDocs,
-    //     timing: stopTaskTimer(),
-    //   };
-    // } catch (e) {
-    //   apmTrans?.end('failure');
-    //   throw e;
-    // }
-  }
-
-  private processResultFromSearches(
-    results: ConcreteTaskInstance[][],
-    claimOwnershipUntil: Date
-  ): ConcreteTaskInstance[] {
-    // Calculate capacity again in case more capacity opened up since the search queries started
-    let availableCapacity = this.getCapacity();
-    const docsToUpdate: ConcreteTaskInstance[] = [];
-    for (const result of results) {
-      for (const doc of result) {
-        if (availableCapacity - this.definitions.get(doc.taskType).workerCost >= 0) {
-          const updates: Partial<ConcreteTaskInstance> = {};
-
-          if (this.unusedTypes.includes(doc.taskType)) {
-            updates.status = TaskStatus.Unrecognized;
-          } else {
-            if (doc.retryAt && doc.retryAt < new Date()) {
-              updates.scheduledAt = doc.retryAt || undefined;
-            } else {
-              updates.scheduledAt = doc.runAt;
-            }
-
-            // TODO: We should be able to set them directly to running at this point
-            updates.status = TaskStatus.Claiming;
-            updates.ownerId = this.taskStore.taskManagerId;
-            updates.retryAt = claimOwnershipUntil;
-          }
-
-          docsToUpdate.push({ ...doc, ...updates });
-          availableCapacity -= this.definitions.get(doc.taskType).workerCost;
-        }
-      }
-    }
-    return docsToUpdate;
-  }
-
-  private async searchForTasks(size: number, types: string[]): Promise<ConcreteTaskInstance[]> {
-    const queryForScheduledTasks = mustBeAllOf(
-      // Task must be enabled
-      EnabledTask,
-      // Either a task with idle status and runAt <= now or
-      // status running or claiming with a retryAt <= now.
-      shouldBeOneOf(IdleTaskWithExpiredRunAt, RunningOrClaimingTaskWithExpiredRetryAt),
-      tasksOfType(types)
-    );
-
-    const sort: NonNullable<SearchOpts['sort']> = [SortByRunAtAndRetryAt];
-    const query = matchesClauses(queryForScheduledTasks, filterDownBy(InactiveTasks));
-
-    const searchResult = await this.taskStore.search({
-      query,
-      sort,
-      size,
-      seq_no_primary_term: true,
-    });
-
-    return searchResult.docs;
   }
 
   private isTaskTypeExcluded(taskType: string) {
