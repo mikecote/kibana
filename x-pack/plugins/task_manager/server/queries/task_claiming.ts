@@ -103,7 +103,16 @@ export class TaskClaiming {
     this.shareWorkers = opts.shareWorkers;
     this.excludedTaskTypes = opts.excludedTaskTypes;
     this.unusedTypes = opts.unusedTypes;
-    this.worker = new Worker(`${__dirname}/task_claiming_worker`);
+    this.worker = new Worker(`${__dirname}/task_claiming_worker`, {
+      workerData: {
+        costMap: this.definitions.getAllDefinitions().reduce((acc, taskTypeDef) => {
+          acc[taskTypeDef.type] = taskTypeDef.workerCost;
+          return acc;
+        }, {}),
+        unusedTypes: opts.unusedTypes,
+        ownerId: this.taskStore.taskManagerId,
+      },
+    });
 
     this.taskClaimingBatches = this.partitionIntoClaimingBatches(this.definitions);
     this.events$ = new Subject<TaskClaim>();
@@ -193,12 +202,6 @@ export class TaskClaiming {
       this.worker.on('message', onMessage);
 
       this.worker.postMessage({
-        ownerId: this.taskStore.taskManagerId,
-        unusedTypes: this.unusedTypes,
-        costMap: this.definitions.getAllDefinitions().reduce((acc, taskTypeDef) => {
-          acc[taskTypeDef.type] = taskTypeDef.workerCost;
-          return acc;
-        }, {}),
         availableCapacity: this.getCapacity(),
         claimBatches: this.getClaimingBatches().map((b) => ({ ...b, size: b.size() })),
         claimOwnershipUntil,
