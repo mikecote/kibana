@@ -12,6 +12,7 @@ import { withSpan } from '@kbn/apm-utils';
 import { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { IEventLogger, SAVED_OBJECT_REL_PRIMARY } from '@kbn/event-log-plugin/server';
+import { SecurityPluginStart } from '@kbn/security-plugin/server';
 import {
   validateParams,
   validateConfig,
@@ -40,6 +41,7 @@ const Millis2Nanos = 1000 * 1000;
 export interface ActionExecutorContext {
   logger: Logger;
   spaces?: SpacesServiceStart;
+  security?: SecurityPluginStart;
   getServices: GetServicesFunction;
   encryptedSavedObjectsClient: EncryptedSavedObjectsClient;
   actionTypeRegistry: ActionTypeRegistryContract;
@@ -63,7 +65,6 @@ export interface ExecuteOptions<Source = unknown> {
   executionId?: string;
   consumer?: string;
   relatedSavedObjects?: RelatedSavedObjects;
-  username?: string;
 }
 
 export type ActionExecutorContract = PublicMethodsOf<ActionExecutor>;
@@ -98,7 +99,6 @@ export class ActionExecutor {
     consumer,
     relatedSavedObjects,
     actionExecutionId,
-    username,
   }: ExecuteOptions): Promise<ActionTypeExecutorResult<unknown>> {
     if (!this.isInitialized) {
       throw new Error('ActionExecutor not initialized');
@@ -119,6 +119,7 @@ export class ActionExecutor {
           actionTypeRegistry,
           eventLogger,
           preconfiguredActions,
+          security,
         } = this.actionExecutorContext!;
 
         const services = getServices(request);
@@ -266,7 +267,8 @@ export class ActionExecutor {
             },
           };
           event.user = event.user || {};
-          event.user.name = username;
+          const currentUser = security?.authc.getCurrentUser(request);
+          event.user.name = currentUser?.username;
         }
 
         if (result.status === 'ok') {
