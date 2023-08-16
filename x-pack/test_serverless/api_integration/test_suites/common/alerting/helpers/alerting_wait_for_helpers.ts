@@ -6,6 +6,7 @@
  */
 
 import pRetry from 'p-retry';
+import type { SuperTest, Test } from 'supertest';
 import type { Client } from '@elastic/elasticsearch';
 import type {
   AggregationsAggregate,
@@ -21,7 +22,7 @@ export async function waitForDocumentInIndex({
   indexName: string;
   num?: number;
 }): Promise<SearchResponse> {
-  return pRetry(
+  return await pRetry(
     async () => {
       const response = await esClient.search({ index: indexName });
       if (response.hits.hits.length < num) {
@@ -300,4 +301,40 @@ export async function waitForEventLog({
     },
     { retries: 10 }
   );
+}
+
+export async function waitForNumRuleRuns({
+  supertest,
+  numOfRuns,
+  ruleId,
+  esClient,
+  testStart,
+}: {
+  supertest: SuperTest<Test>;
+  numOfRuns: number;
+  ruleId: string;
+  esClient: Client;
+  testStart: Date;
+}) {
+  for (let i = 0; i < numOfRuns; i++) {
+    await pRetry(
+      async () => {
+        const runSoonResponse = await supertest
+          .post(`/internal/alerting/rule/${ruleId}/_run_soon`)
+          .set('kbn-xsrf', 'foo')
+          .set('x-elastic-internal-origin', 'foo');
+        if (runSoonResponse.status !== 204) {
+          throw new Error(`Expected ${runSoonResponse.status} to equal 204`);
+        }
+        await waitForEventLog({
+          esClient,
+          provider: 'alerting',
+          filter: testStart,
+          num: i + 1,
+        });
+        await waitForAllTasksIdle({ esClient, filter: testStart });
+      },
+      { retries: 10 }
+    );
+  }
 }

@@ -27,6 +27,7 @@ import {
   waitForDisabled,
   waitForDocumentInIndex,
   waitForEventLog,
+  waitForNumRuleRuns,
 } from './helpers/alerting_wait_for_helpers';
 
 export default function ({ getService }: FtrProviderContext) {
@@ -34,7 +35,7 @@ export default function ({ getService }: FtrProviderContext) {
   const esClient = getService('es');
   const esDeleteAllIndices = getService('esDeleteAllIndices');
 
-  describe.skip('Alerting rules', () => {
+  describe('Alerting rules', () => {
     const RULE_TYPE_ID = '.es-query';
     const ALERT_ACTION_INDEX = 'alert-action-es-query';
     let actionId: string;
@@ -336,7 +337,8 @@ export default function ({ getService }: FtrProviderContext) {
       expect(resp.hits.hits.length).to.be(1);
     });
 
-    it('should throttle alerts when appropriate', async () => {
+    // Needs fixing
+    it.only('should throttle alerts when appropriate', async () => {
       const testStart = new Date();
 
       actionId = await createIndexConnector({
@@ -351,7 +353,6 @@ export default function ({ getService }: FtrProviderContext) {
         consumer: 'alerts',
         name: 'always fire',
         ruleTypeId: RULE_TYPE_ID,
-        schedule: { interval: '5s' },
         notifyWhen: 'onThrottleInterval',
         params: {
           size: 100,
@@ -389,6 +390,8 @@ export default function ({ getService }: FtrProviderContext) {
       expect(ruleId).not.to.be(undefined);
 
       // Wait until alerts ran at least 3 times before disabling the alert and waiting for tasks to finish
+      await waitForNumRuleRuns({ supertest, numOfRuns: 3, ruleId, esClient, testStart });
+      console.log('done pt1');
       const eventLogResp = await waitForEventLog({
         esClient,
         provider: 'alerting',
@@ -397,10 +400,14 @@ export default function ({ getService }: FtrProviderContext) {
       });
       expect(eventLogResp.hits.hits.length >= 3).to.be(true);
 
+      console.log('Done');
+
       await disableRule({
         supertest,
         ruleId,
       });
+
+      console.log('1');
 
       await waitForDisabled({
         esClient,
@@ -408,14 +415,19 @@ export default function ({ getService }: FtrProviderContext) {
         filter: testStart,
       });
 
+      console.log('2');
+
       // Ensure actions only executed once
       const resp = await waitForDocumentInIndex({
         esClient,
         indexName: ALERT_ACTION_INDEX,
       });
       expect(resp.hits.hits.length).to.be(1);
+
+      console.log('3');
     });
 
+    // Needs fixing
     it('should throttle alerts with throttled action when appropriate', async () => {
       const testStart = new Date();
 
@@ -431,7 +443,7 @@ export default function ({ getService }: FtrProviderContext) {
         consumer: 'alerts',
         name: 'always fire',
         ruleTypeId: RULE_TYPE_ID,
-        schedule: { interval: '5s' },
+        schedule: { interval: '1m' },
         params: {
           size: 100,
           thresholdComparator: '>',
@@ -500,6 +512,7 @@ export default function ({ getService }: FtrProviderContext) {
       expect(resp.hits.hits.length).to.be(1);
     });
 
+    // Needs fixing
     it('should reset throttle window when not firing and should not throttle when changing groups', async () => {
       const testStart = new Date();
 
@@ -644,6 +657,7 @@ export default function ({ getService }: FtrProviderContext) {
       expect(resp2.hits.hits.length).to.be(2);
     });
 
+    // Needs fixing
     it(`shouldn't schedule actions when alert is muted`, async () => {
       const testStart = new Date();
       await createIndex({ esClient, indexName: ALERT_ACTION_INDEX });
@@ -661,7 +675,7 @@ export default function ({ getService }: FtrProviderContext) {
         consumer: 'alerts',
         name: 'always fire',
         ruleTypeId: RULE_TYPE_ID,
-        schedule: { interval: '5s' },
+        schedule: { interval: '1m' },
         params: {
           size: 100,
           thresholdComparator: '>',
@@ -741,6 +755,7 @@ export default function ({ getService }: FtrProviderContext) {
       expect(resp2.hits.hits.length).to.be(0);
     });
 
+    // Needs fixing
     it(`shouldn't schedule actions when alert instance is muted`, async () => {
       const testStart = new Date();
       await createIndex({ esClient, indexName: ALERT_ACTION_INDEX });
@@ -758,7 +773,7 @@ export default function ({ getService }: FtrProviderContext) {
         consumer: 'alerts',
         name: 'always fire',
         ruleTypeId: RULE_TYPE_ID,
-        schedule: { interval: '5s' },
+        schedule: { interval: '1m' },
         params: {
           size: 100,
           thresholdComparator: '>',
