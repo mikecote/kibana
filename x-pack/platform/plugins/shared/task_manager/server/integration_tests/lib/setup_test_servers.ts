@@ -14,7 +14,7 @@ function createRoot(settings = {}) {
       {
         logging: {
           root: {
-            level: 'warn',
+            level: 'info',
           },
           loggers: [
             {
