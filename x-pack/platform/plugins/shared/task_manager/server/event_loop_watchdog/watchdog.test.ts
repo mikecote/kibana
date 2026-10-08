@@ -51,6 +51,7 @@ const baseConfig: EventLoopWatchdogConfig = {
   heartbeat_interval_ms: 100,
   live_report_interval_ms: 3000,
   dedup_window_ms: 300000,
+  track_current_task: true,
 };
 
 describe('EventLoopWatchdog', () => {
@@ -98,38 +99,93 @@ describe('EventLoopWatchdog', () => {
     watchdog.stop();
   });
 
-  test('forwards run start/end notifications to the worker', () => {
+  test('beginRun posts run-start/run-end with a handle to the worker', async () => {
     const logger = mockLogger();
     const watchdog = new EventLoopWatchdog({ logger, config: baseConfig, dist: false });
     watchdog.start();
 
-    watchdog.notifyTaskRunStart('task-a', 'alerting:rule');
-    watchdog.notifyTaskRunEnd('task-a');
+    const scope = watchdog.beginRun('task-a', 'alerting:rule');
+    expect(scope.handle).toBeGreaterThan(0);
+    await scope.run(() => Promise.resolve());
+    scope.end();
 
     expect(lastCreatedWorker!.posted).toEqual([
       {
         type: 'run-start',
+        handle: scope.handle,
         taskId: 'task-a',
         taskType: 'alerting:rule',
         startedAt: expect.any(Number),
       },
-      { type: 'run-end', taskId: 'task-a' },
+      { type: 'run-end', handle: scope.handle },
     ]);
 
     watchdog.stop();
   });
 
-  test('notifications before start (or after stop) are safely ignored', () => {
+  test('beginRun assigns distinct handles to concurrent runs', () => {
+    const logger = mockLogger();
+    const watchdog = new EventLoopWatchdog({ logger, config: baseConfig, dist: false });
+    watchdog.start();
+
+    const scopeA = watchdog.beginRun('task-a', 'alerting:rule');
+    const scopeB = watchdog.beginRun('task-b', 'reporting:generate');
+
+    expect(scopeA.handle).not.toEqual(scopeB.handle);
+
+    scopeA.end();
+    scopeB.end();
+    watchdog.stop();
+  });
+
+  test('end() is idempotent and only posts run-end once', () => {
+    const logger = mockLogger();
+    const watchdog = new EventLoopWatchdog({ logger, config: baseConfig, dist: false });
+    watchdog.start();
+
+    const scope = watchdog.beginRun('task-a', 'alerting:rule');
+    scope.end();
+    scope.end();
+
+    const runEndMessages = lastCreatedWorker!.posted.filter(
+      (message) => (message as { type: string }).type === 'run-end'
+    );
+    expect(runEndMessages).toHaveLength(1);
+
+    watchdog.stop();
+  });
+
+  test('beginRun before start (or after stop) is safely a no-op scope', async () => {
     const logger = mockLogger();
     const watchdog = new EventLoopWatchdog({ logger, config: baseConfig, dist: false });
 
-    expect(() => watchdog.notifyTaskRunStart('task-a', 'alerting:rule')).not.toThrow();
-    expect(() => watchdog.notifyTaskRunEnd('task-a')).not.toThrow();
+    const scopeBeforeStart = watchdog.beginRun('task-a', 'alerting:rule');
+    expect(await scopeBeforeStart.run(() => Promise.resolve('ok'))).toBe('ok');
+    expect(() => scopeBeforeStart.end()).not.toThrow();
 
     watchdog.start();
     watchdog.stop();
-    expect(() => watchdog.notifyTaskRunStart('task-a', 'alerting:rule')).not.toThrow();
+
+    const scopeAfterStop = watchdog.beginRun('task-a', 'alerting:rule');
+    expect(() => scopeAfterStop.end()).not.toThrow();
     expect(lastCreatedWorker!.terminated).toBe(true);
+  });
+
+  test('does not spawn the current-task tracker when track_current_task is disabled', async () => {
+    const logger = mockLogger();
+    const watchdog = new EventLoopWatchdog({
+      logger,
+      config: { ...baseConfig, track_current_task: false },
+      dist: false,
+    });
+    watchdog.start();
+
+    const scope = watchdog.beginRun('task-a', 'alerting:rule');
+    // Still runs the callback (just without stamping the shared current-task slot).
+    expect(await scope.run(() => Promise.resolve('ran'))).toBe('ran');
+    scope.end();
+
+    watchdog.stop();
   });
 
   test('logs a warning when the worker reports a block', () => {
@@ -143,6 +199,8 @@ describe('EventLoopWatchdog', () => {
         blockedMs: 750,
         startedAt: 1,
         endedAt: 751,
+        blockingTask: { taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 700 },
+        attribution: 'exact',
         suspects: [{ taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 700 }],
         topFrames: [],
         gcDominant: false,

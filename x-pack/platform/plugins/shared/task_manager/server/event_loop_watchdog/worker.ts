@@ -9,28 +9,40 @@
  * Runs inside a dedicated worker thread. Detects blocks of the *main* thread's event loop
  * by watching a heartbeat timestamp the main thread writes to a `SharedArrayBuffer`, then
  * captures a CPU profile of the main thread (via `Session.connectToMainThread()`) covering
- * the block, and posts a report back naming the tasks that were in flight when it started.
+ * the block, and posts a report back naming the task that was running when it started.
  *
- * Deliberately has no knowledge of async_hooks or task internals: it only reads the
- * heartbeat and the run-start/run-end notifications the main thread sends it, so it cannot
- * miss a block regardless of what kind of work (JS, native, GC, syscall) caused it.
+ * Two independent attribution mechanisms feed the report:
+ *  - A best-effort *candidate* list (`suspects`): every task-run registered as in-flight
+ *    (via `run-start`/`run-end` messages) when the block started. This can only narrow
+ *    things down to "one of these", and is racy when a run ends right as the block does.
+ *  - *Exact* attribution (`blockingTask`): the main thread (see `current_task_tracker.ts`)
+ *    stamps a shared-memory slot with the handle of whichever task-run's async context it
+ *    is currently executing inside. Reading that slot the instant a stale heartbeat is
+ *    first observed - before the main thread resumes and could overwrite it - names the
+ *    task whose *synchronous* continuation actually froze the loop, independent of the
+ *    CPU profiler (so it still works for native/syscall blocks the profiler can't sample).
  */
 
 import { isMainThread, parentPort, workerData, threadId } from 'node:worker_threads';
 import { Session } from 'node:inspector';
 import { writeSync } from 'node:fs';
 import type {
+  BlockAttribution,
   MainToWorkerMessage,
   StillBlockedNotice,
+  TaskRunHandle,
   WorkerData,
   WorkerToMainMessage,
 } from './types';
+import { CURRENT_TASK_HANDLE_SLOT, HEARTBEAT_SLOT } from './types';
 import type { RunRegistryEntry } from './report';
 import {
-  dedupKeyForSuspects,
+  dedupKeyForBlock,
   formatStillBlockedNotice,
   isLikelyUnsampled,
+  MAX_RECENTLY_ENDED_RUNS,
   ReportDeduper,
+  resolveBlockingTask,
   snapshotSuspects,
   summarizeProfile,
 } from './report';
@@ -58,15 +70,21 @@ if (!isMainThread && parentPort) {
 
 function runWatchdogWorker(
   port: NonNullable<typeof parentPort>,
-  { sharedHeartbeatBuffer, opts }: WorkerData
+  { sharedBuffer, opts }: WorkerData
 ): void {
-  const heartbeat = new BigInt64Array(sharedHeartbeatBuffer);
-  const registry = new Map<string, RunRegistryEntry>();
+  const heartbeat = new BigInt64Array(sharedBuffer);
+  const currentTaskHandle = new Int32Array(sharedBuffer);
+  const registry = new Map<TaskRunHandle, RunRegistryEntry>();
+  // Bounded FIFO of recently-ended runs: a handle captured as the exact blocking task at
+  // detection time may finish (via `run-end`) before `Profiler.stop`'s callback resolves
+  // it to a taskId/taskType, so it must still be resolvable for a short while afterwards.
+  const recentlyEnded = new Map<TaskRunHandle, RunRegistryEntry>();
   const deduper = new ReportDeduper(opts.dedupWindowMs);
 
   const session = new Session();
 
   let blockStartedAt: number | undefined;
+  let blockingTaskHandle: TaskRunHandle = 0;
   let profiling = false;
   let lastLiveReportAt = 0;
 
@@ -83,17 +101,38 @@ function runWatchdogWorker(
     reportWorkerError('connectToMainThread failed', error);
   }
 
+  const rememberEnded = (entry: RunRegistryEntry): void => {
+    if (recentlyEnded.size >= MAX_RECENTLY_ENDED_RUNS) {
+      const oldestHandle = recentlyEnded.keys().next().value;
+      if (oldestHandle !== undefined) recentlyEnded.delete(oldestHandle);
+    }
+    recentlyEnded.set(entry.handle, entry);
+  };
+
   port.on('message', (message: MainToWorkerMessage) => {
     if (message.type === 'run-start') {
-      registry.set(message.taskId, {
+      registry.set(message.handle, {
+        handle: message.handle,
         taskId: message.taskId,
         taskType: message.taskType,
         startedAt: message.startedAt,
       });
     } else if (message.type === 'run-end') {
-      registry.delete(message.taskId);
+      const entry = registry.get(message.handle);
+      registry.delete(message.handle);
+      if (entry) rememberEnded(entry);
     }
   });
+
+  const resolveAttribution = (
+    startedAt: number
+  ): { attribution: BlockAttribution; blockingTask: ReturnType<typeof resolveBlockingTask> } => {
+    if (!opts.trackCurrentTask) return { attribution: 'untracked', blockingTask: undefined };
+    const blockingTask = blockingTaskHandle
+      ? resolveBlockingTask(blockingTaskHandle, startedAt, registry, recentlyEnded)
+      : undefined;
+    return { attribution: blockingTask ? 'exact' : 'none', blockingTask };
+  };
 
   const startProfiling = (): void => {
     profiling = true;
@@ -110,6 +149,11 @@ function runWatchdogWorker(
 
   const stopProfilingAndReport = (blockedMs: number, endedAt: number): void => {
     const startedAt = blockStartedAt ?? endedAt - blockedMs;
+    // Snapshot attribution and candidates synchronously, before asking the (also async)
+    // profiler to stop: `Profiler.stop`'s callback can land after further runs have
+    // started/ended, which would otherwise blame the wrong task (see the worker doc above).
+    const { attribution, blockingTask } = resolveAttribution(startedAt);
+    const suspects = snapshotSuspects(registry, startedAt);
     session.post('Profiler.stop', (stopErr, result) => {
       profiling = false;
       if (stopErr || !result) {
@@ -117,13 +161,12 @@ function runWatchdogWorker(
         return;
       }
 
-      const suspects = snapshotSuspects(registry, startedAt);
       const { topFrames, gcDominant, sampledCoverage } = summarizeProfile(
         result.profile as CpuProfile
       );
       const likelyUnsampled = isLikelyUnsampled(sampledCoverage);
 
-      const dedupKey = dedupKeyForSuspects(suspects);
+      const dedupKey = dedupKeyForBlock(blockingTask, suspects);
       const { action, suppressedCount } = deduper.check(dedupKey, endedAt);
       if (action === 'suppress') return;
 
@@ -133,6 +176,8 @@ function runWatchdogWorker(
           blockedMs,
           startedAt,
           endedAt,
+          blockingTask,
+          attribution,
           suspects,
           topFrames,
           gcDominant,
@@ -146,13 +191,15 @@ function runWatchdogWorker(
 
   const checkHeartbeat = (): void => {
     const now = Date.now();
-    const lastHeartbeatMs = Number(Atomics.load(heartbeat, 0));
+    const lastHeartbeatMs = Number(Atomics.load(heartbeat, HEARTBEAT_SLOT));
     const age = now - lastHeartbeatMs;
 
     if (age >= opts.thresholdMs) {
       if (blockStartedAt === undefined) {
-        // Block just started: `age` also covers our own poll latency, so anchor on the
-        // heartbeat's own timestamp for the most accurate start time.
+        // Block just started: capture the current-task slot *now*, before the main thread
+        // can resume and overwrite it. `age` also covers our own poll latency, so anchor
+        // the block's start time on the heartbeat's own timestamp for the most accuracy.
+        blockingTaskHandle = Atomics.load(currentTaskHandle, CURRENT_TASK_HANDLE_SLOT);
         blockStartedAt = lastHeartbeatMs;
         lastLiveReportAt = now;
         if (!profiling) startProfiling();
@@ -163,8 +210,11 @@ function runWatchdogWorker(
       // silently unreported, then keep waiting for the heartbeat to resume.
       if (now - lastLiveReportAt >= opts.liveReportIntervalMs) {
         lastLiveReportAt = now;
+        const { attribution, blockingTask } = resolveAttribution(blockStartedAt);
         const notice: StillBlockedNotice = {
           elapsedMs: now - blockStartedAt,
+          blockingTask,
+          attribution,
           suspects: snapshotSuspects(registry, blockStartedAt),
         };
         writeDirectToStderr(formatStillBlockedNotice(notice));
@@ -181,6 +231,7 @@ function runWatchdogWorker(
       if (profiling) {
         stopProfilingAndReport(blockedMs, endedAt);
       }
+      blockingTaskHandle = 0;
     }
   };
 
