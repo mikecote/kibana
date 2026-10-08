@@ -7,8 +7,10 @@
 
 export { EventLoopWatchdog } from './watchdog';
 export type { EventLoopWatchdogDeps } from './watchdog';
+export type { TaskRunScope } from './types';
 
 import type { EventLoopWatchdog } from './watchdog';
+import type { TaskRunScope } from './types';
 
 let activeWatchdog: EventLoopWatchdog | undefined;
 
@@ -17,9 +19,17 @@ export const setActiveEventLoopWatchdog = (watchdog: EventLoopWatchdog | undefin
   activeWatchdog = watchdog;
 };
 
-/** Announces a task run start to the watchdog. Safe to call unconditionally. */
-export const notifyTaskRunStart = (taskId: string, taskType: string): void =>
-  activeWatchdog?.notifyTaskRunStart(taskId, taskType);
+/** A scope that does nothing, used when no watchdog is active. */
+const noopRunScope: TaskRunScope = {
+  handle: 0,
+  run: (fn) => fn(),
+  end: () => {},
+};
 
-/** Announces a task run end to the watchdog. Safe to call unconditionally. */
-export const notifyTaskRunEnd = (taskId: string): void => activeWatchdog?.notifyTaskRunEnd(taskId);
+/**
+ * Announces a task run to the watchdog and returns a scope whose `run` must wrap the
+ * task's execution, so the watchdog can (when current-task tracking is enabled) attribute
+ * an event-loop block to this exact run. Safe to call unconditionally.
+ */
+export const beginTaskRun = (taskId: string, taskType: string): TaskRunScope =>
+  activeWatchdog?.beginRun(taskId, taskType) ?? noopRunScope;

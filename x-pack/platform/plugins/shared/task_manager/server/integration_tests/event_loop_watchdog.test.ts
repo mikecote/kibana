@@ -6,9 +6,10 @@
  */
 
 /*
- * Exercises the real worker thread, `SharedArrayBuffer` heartbeat, and inspector CPU
- * profile capture end to end: no part of the watchdog is mocked here. A synchronous
- * busy-loop stands in for a stuck task blocking the main thread's event loop.
+ * Exercises the real worker thread, `SharedArrayBuffer` heartbeat, `async_hooks`-based
+ * current-task tracking, and inspector CPU profile capture end to end: no part of the
+ * watchdog is mocked here. A synchronous busy-loop stands in for a stuck task blocking the
+ * main thread's event loop.
  */
 
 import { mockLogger } from '../test_utils';
@@ -43,6 +44,7 @@ describe('EventLoopWatchdog (end to end)', () => {
     heartbeat_interval_ms: 20,
     live_report_interval_ms: 500,
     dedup_window_ms: 60_000,
+    track_current_task: true,
   };
 
   let watchdog: EventLoopWatchdog;
@@ -51,28 +53,78 @@ describe('EventLoopWatchdog (end to end)', () => {
     watchdog?.stop();
   });
 
-  it('detects a real block of the main thread and attributes it to the in-flight task', async () => {
+  const latestReportLine = (logger: ReturnType<typeof mockLogger>): string => {
+    const [line] = logger.warn.mock.calls[logger.warn.mock.calls.length - 1] as [string];
+    return line;
+  };
+
+  it('attributes a block to the exact task whose code was running when it started', async () => {
     const logger = mockLogger();
     watchdog = new EventLoopWatchdog({ logger, config, dist: false });
     watchdog.start();
 
-    watchdog.notifyTaskRunStart('blocking-task-id', 'test:blocking-task');
+    // Two concurrent runs: only one of them will actually block the loop. Exact
+    // attribution (unlike the best-effort candidate list) must name only that one.
+    const idleScope = watchdog.beginRun('idle-task-id', 'test:idle-task');
+    const blockingScope = watchdog.beginRun('blocking-task-id', 'test:blocking-task');
 
     // Give the worker a moment to spin up and connect its inspector session before the
     // block happens, so the very first heartbeat gap is reliably observed.
     await sleep(200);
 
+    await blockingScope.run(async () => {
+      blockEventLoopFor(400);
+    });
+
+    await waitFor(() => logger.warn.mock.calls.length > 0);
+    idleScope.end();
+    blockingScope.end();
+
+    const reportLine = latestReportLine(logger);
+    expect(reportLine).toContain('Event loop blocked for');
+    expect(reportLine).toContain('blocking task');
+    expect(reportLine).toContain('test:blocking-task "blocking-task-id"');
+    expect(reportLine).not.toContain('idle-task-id');
+  }, 20_000);
+
+  it('reports no exact attribution for a block that happens outside any task run', async () => {
+    const logger = mockLogger();
+    watchdog = new EventLoopWatchdog({ logger, config, dist: false });
+    watchdog.start();
+
+    await sleep(200);
+
     blockEventLoopFor(400);
 
-    // A real task run has several `await`s between its blocking work resolving and the
-    // `finally` block that calls `notifyTaskRunEnd` (see `task_runner.ts`), giving the
-    // watchdog room to observe the resumed heartbeat and finalize its report first. Mirror
-    // that gap here rather than racing the end notification against report finalization.
     await waitFor(() => logger.warn.mock.calls.length > 0);
-    watchdog.notifyTaskRunEnd('blocking-task-id');
 
-    const [reportLine] = logger.warn.mock.calls[logger.warn.mock.calls.length - 1] as [string];
+    const reportLine = latestReportLine(logger);
     expect(reportLine).toContain('Event loop blocked for');
+    expect(reportLine).toContain('no task in scope when the block started');
+  }, 20_000);
+
+  it('falls back to the best-effort candidate list when current-task tracking is disabled', async () => {
+    const logger = mockLogger();
+    watchdog = new EventLoopWatchdog({
+      logger,
+      config: { ...config, track_current_task: false },
+      dist: false,
+    });
+    watchdog.start();
+
+    const scope = watchdog.beginRun('blocking-task-id', 'test:blocking-task');
+
+    await sleep(200);
+
+    await scope.run(async () => {
+      blockEventLoopFor(400);
+    });
+
+    await waitFor(() => logger.warn.mock.calls.length > 0);
+    scope.end();
+
+    const reportLine = latestReportLine(logger);
+    expect(reportLine).toContain('current-task tracking disabled');
     expect(reportLine).toContain('test:blocking-task "blocking-task-id"');
   }, 20_000);
 

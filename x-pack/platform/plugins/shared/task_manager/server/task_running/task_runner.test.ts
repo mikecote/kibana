@@ -3786,6 +3786,7 @@ describe('TaskManagerRunner', () => {
           heartbeat_interval_ms: 100,
           live_report_interval_ms: 3000,
           dedup_window_ms: 300000,
+          track_current_task: true,
         },
       }),
       allowReadingInvalidState: opts.allowReadingInvalidState || false,

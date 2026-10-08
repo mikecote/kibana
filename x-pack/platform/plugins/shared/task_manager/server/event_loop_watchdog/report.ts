@@ -5,14 +5,31 @@
  * 2.0.
  */
 
-import type { BlockReport, ProfileFrame, StillBlockedNotice, TaskSuspect } from './types';
+import type {
+  BlockAttribution,
+  BlockReport,
+  ProfileFrame,
+  StillBlockedNotice,
+  TaskRunHandle,
+  TaskSuspect,
+} from './types';
 
-/** In-flight task runs tracked by the worker, keyed by task id. */
+/** In-flight task runs tracked by the worker, keyed by run handle. */
 export interface RunRegistryEntry {
+  handle: TaskRunHandle;
   taskId: string;
   taskType: string;
   startedAt: number;
 }
+
+/**
+ * Bounds the `recentlyEnded` map (see `worker.ts`): a run captured as the exact blocking
+ * task at detection time may finish before the worker resolves its handle back to a
+ * taskId/taskType (e.g. while the CPU profile is still stopping), so ended runs are kept
+ * around briefly rather than deleted outright. This is a hard cap on how many, regardless
+ * of how long ago they ended.
+ */
+export const MAX_RECENTLY_ENDED_RUNS = 64;
 
 const GC_FUNCTION_NAME = '(garbage collector)';
 const TOP_FRAME_COUNT = 5;
@@ -21,7 +38,7 @@ const UNSAMPLED_COVERAGE_THRESHOLD = 0.5;
 
 /** Snapshots the currently in-flight runs as suspects for a block that started at `blockStartedAt`. */
 export const snapshotSuspects = (
-  registry: ReadonlyMap<string, RunRegistryEntry>,
+  registry: ReadonlyMap<TaskRunHandle, RunRegistryEntry>,
   blockStartedAt: number
 ): TaskSuspect[] =>
   [...registry.values()]
@@ -33,6 +50,27 @@ export const snapshotSuspects = (
       })
     )
     .sort((a, b) => b.inFlightMs - a.inFlightMs);
+
+/**
+ * Resolves the handle captured from the shared current-task slot at block-detection time
+ * into the task it names, looking first at still-in-flight runs and falling back to
+ * recently-ended ones (see `MAX_RECENTLY_ENDED_RUNS`) since the real run may have finished
+ * by the time this is called.
+ */
+export const resolveBlockingTask = (
+  handle: TaskRunHandle,
+  blockStartedAt: number,
+  registry: ReadonlyMap<TaskRunHandle, RunRegistryEntry>,
+  recentlyEnded: ReadonlyMap<TaskRunHandle, RunRegistryEntry>
+): TaskSuspect | undefined => {
+  const entry = registry.get(handle) ?? recentlyEnded.get(handle);
+  if (!entry) return undefined;
+  return {
+    taskId: entry.taskId,
+    taskType: entry.taskType,
+    inFlightMs: Math.max(0, blockStartedAt - entry.startedAt),
+  };
+};
 
 /** A minimal shape of a V8 `Profiler.stop` result, enough to compute self time per frame. */
 export interface CpuProfile {
@@ -128,21 +166,47 @@ export class ReportDeduper {
   }
 }
 
-/** Groups suspects into a dedup key so a group of concurrent tasks shares one window. */
-export const dedupKeyForSuspects = (suspects: TaskSuspect[]): string =>
-  suspects.length > 0
+/**
+ * Groups a block into a dedup key: the exact blocking task's type when attribution is
+ * `exact`, otherwise falls back to the candidate list (as before exact attribution existed).
+ */
+export const dedupKeyForBlock = (
+  blockingTask: TaskSuspect | undefined,
+  suspects: TaskSuspect[]
+): string => {
+  if (blockingTask) return `task:${blockingTask.taskType}`;
+  return suspects.length > 0
     ? [...new Set(suspects.map((suspect) => suspect.taskType))].sort().join(',')
     : 'unattributed';
+};
+
+const formatTaskSuspect = (suspect: TaskSuspect): string =>
+  `${suspect.taskType} "${suspect.taskId}" (in flight ${Math.round(suspect.inFlightMs)}ms)`;
 
 const formatSuspects = (suspects: TaskSuspect[]): string => {
   if (suspects.length === 0) return 'none in-flight (block may be framework/HTTP code)';
   const label = suspects.length === 1 ? 'sole suspect' : `${suspects.length} candidates`;
-  return `${label}: ${suspects
-    .map(
-      (suspect) =>
-        `${suspect.taskType} "${suspect.taskId}" (in flight ${Math.round(suspect.inFlightMs)}ms)`
-    )
-    .join(', ')}`;
+  return `${label}: ${suspects.map(formatTaskSuspect).join(', ')}`;
+};
+
+/**
+ * Leads with the exact blocking task when attribution allowed one to be resolved; falls
+ * back to the best-effort candidate list otherwise, noting why (tracking disabled, or no
+ * task was in scope when the block was first observed).
+ */
+const formatAttribution = (
+  attribution: BlockAttribution,
+  blockingTask: TaskSuspect | undefined,
+  suspects: TaskSuspect[]
+): string => {
+  if (attribution === 'exact' && blockingTask) {
+    return `blocking task: ${formatTaskSuspect(blockingTask)}`;
+  }
+  const reason =
+    attribution === 'untracked'
+      ? 'current-task tracking disabled'
+      : 'no task in scope when the block started';
+  return `${formatSuspects(suspects)} (${reason}, exact attribution unavailable)`;
 };
 
 const formatFrames = (frames: ProfileFrame[]): string =>
@@ -171,7 +235,9 @@ export const formatReport = (report: BlockReport): string => {
   ].filter((note): note is string => Boolean(note));
 
   return (
-    `Event loop blocked for ${Math.round(report.blockedMs)}ms. ${formatSuspects(
+    `Event loop blocked for ${Math.round(report.blockedMs)}ms. ${formatAttribution(
+      report.attribution,
+      report.blockingTask,
       report.suspects
     )}. ` +
     `Top frames: ${formatFrames(report.topFrames)}.${suppressedNote}` +
@@ -181,6 +247,10 @@ export const formatReport = (report: BlockReport): string => {
 
 /** Formats a still-ongoing block notice, used for wedged/infinite-loop tasks. */
 export const formatStillBlockedNotice = (notice: StillBlockedNotice): string =>
-  `Event loop still blocked after ${Math.round(notice.elapsedMs)}ms and counting. ${formatSuspects(
+  `Event loop still blocked after ${Math.round(
+    notice.elapsedMs
+  )}ms and counting. ${formatAttribution(
+    notice.attribution,
+    notice.blockingTask,
     notice.suspects
   )}.`;

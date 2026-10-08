@@ -30,6 +30,7 @@ describe('config validation', () => {
           "heartbeat_interval_ms": 100,
           "live_report_interval_ms": 3000,
           "threshold_ms": 500,
+          "track_current_task": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,
@@ -104,6 +105,7 @@ describe('config validation', () => {
           "heartbeat_interval_ms": 100,
           "live_report_interval_ms": 3000,
           "threshold_ms": 500,
+          "track_current_task": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,
@@ -176,6 +178,7 @@ describe('config validation', () => {
           "heartbeat_interval_ms": 100,
           "live_report_interval_ms": 3000,
           "threshold_ms": 500,
+          "track_current_task": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,

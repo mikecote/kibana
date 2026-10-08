@@ -71,6 +71,7 @@ describe('Configuration Statistics Aggregator', () => {
       heartbeat_interval_ms: 100,
       live_report_interval_ms: 3000,
       dedup_window_ms: 300000,
+      track_current_task: true,
     },
     worker_utilization_running_average_window: 5,
     metrics_reset_interval: 3000,

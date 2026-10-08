@@ -7,11 +7,12 @@
 
 import type { CpuProfile, RunRegistryEntry } from './report';
 import {
-  dedupKeyForSuspects,
+  dedupKeyForBlock,
   formatReport,
   formatStillBlockedNotice,
   isLikelyUnsampled,
   ReportDeduper,
+  resolveBlockingTask,
   snapshotSuspects,
   summarizeProfile,
 } from './report';
@@ -19,9 +20,9 @@ import type { BlockReport, StillBlockedNotice } from './types';
 
 describe('snapshotSuspects', () => {
   test('computes in-flight duration relative to the block start and sorts by longest first', () => {
-    const registry = new Map<string, RunRegistryEntry>([
-      ['task-a', { taskId: 'task-a', taskType: 'alerting:rule', startedAt: 1_000 }],
-      ['task-b', { taskId: 'task-b', taskType: 'reporting:generate', startedAt: 1_800 }],
+    const registry = new Map<number, RunRegistryEntry>([
+      [1, { handle: 1, taskId: 'task-a', taskType: 'alerting:rule', startedAt: 1_000 }],
+      [2, { handle: 2, taskId: 'task-b', taskType: 'reporting:generate', startedAt: 1_800 }],
     ]);
 
     const suspects = snapshotSuspects(registry, 2_000);
@@ -37,13 +38,58 @@ describe('snapshotSuspects', () => {
   });
 
   test('clamps negative in-flight durations to zero', () => {
-    const registry = new Map<string, RunRegistryEntry>([
-      ['task-a', { taskId: 'task-a', taskType: 'alerting:rule', startedAt: 5_000 }],
+    const registry = new Map<number, RunRegistryEntry>([
+      [1, { handle: 1, taskId: 'task-a', taskType: 'alerting:rule', startedAt: 5_000 }],
     ]);
 
     expect(snapshotSuspects(registry, 1_000)).toEqual([
       { taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 0 },
     ]);
+  });
+});
+
+describe('resolveBlockingTask', () => {
+  test('resolves a handle still in the live registry', () => {
+    const registry = new Map<number, RunRegistryEntry>([
+      [1, { handle: 1, taskId: 'task-a', taskType: 'alerting:rule', startedAt: 1_000 }],
+    ]);
+
+    expect(resolveBlockingTask(1, 2_000, registry, new Map())).toEqual({
+      taskId: 'task-a',
+      taskType: 'alerting:rule',
+      inFlightMs: 1_000,
+    });
+  });
+
+  test('falls back to a recently-ended run when the handle already left the live registry', () => {
+    const recentlyEnded = new Map<number, RunRegistryEntry>([
+      [1, { handle: 1, taskId: 'task-a', taskType: 'alerting:rule', startedAt: 1_000 }],
+    ]);
+
+    expect(resolveBlockingTask(1, 2_000, new Map(), recentlyEnded)).toEqual({
+      taskId: 'task-a',
+      taskType: 'alerting:rule',
+      inFlightMs: 1_000,
+    });
+  });
+
+  test('returns undefined for an unknown handle', () => {
+    expect(resolveBlockingTask(99, 2_000, new Map(), new Map())).toBeUndefined();
+  });
+
+  test('does not special-case handle 0 itself; callers must guard against it', () => {
+    // Handle 0 should never actually be registered by `beginRun`/`registerRun`, but the
+    // lookup itself has no special knowledge of that convention - it's the worker's job
+    // (see `resolveAttribution` in `worker.ts`) to skip calling this when the captured
+    // handle is 0.
+    const registry = new Map<number, RunRegistryEntry>([
+      [0, { handle: 0, taskId: 'task-a', taskType: 'alerting:rule', startedAt: 1_000 }],
+    ]);
+    expect(resolveBlockingTask(0, 2_000, registry, new Map())).toEqual({
+      taskId: 'task-a',
+      taskType: 'alerting:rule',
+      inFlightMs: 1_000,
+    });
   });
 });
 
@@ -143,21 +189,28 @@ describe('ReportDeduper', () => {
   });
 });
 
-describe('dedupKeyForSuspects', () => {
-  test('returns a stable, sorted key for the same set of task types regardless of order', () => {
-    const keyA = dedupKeyForSuspects([
+describe('dedupKeyForBlock', () => {
+  test('prefers the exact blocking task type when attribution is exact', () => {
+    const key = dedupKeyForBlock({ taskId: '1', taskType: 'alerting:rule', inFlightMs: 100 }, [
+      { taskId: '2', taskType: 'reporting:generate', inFlightMs: 50 },
+    ]);
+    expect(key).toBe('task:alerting:rule');
+  });
+
+  test('returns a stable, sorted key for the same set of candidates regardless of order', () => {
+    const keyA = dedupKeyForBlock(undefined, [
       { taskId: '1', taskType: 'reporting:generate', inFlightMs: 100 },
       { taskId: '2', taskType: 'alerting:rule', inFlightMs: 50 },
     ]);
-    const keyB = dedupKeyForSuspects([
+    const keyB = dedupKeyForBlock(undefined, [
       { taskId: '3', taskType: 'alerting:rule', inFlightMs: 10 },
       { taskId: '4', taskType: 'reporting:generate', inFlightMs: 5 },
     ]);
     expect(keyA).toBe(keyB);
   });
 
-  test('returns a sentinel key when there are no suspects', () => {
-    expect(dedupKeyForSuspects([])).toBe('unattributed');
+  test('returns a sentinel key when there is no blocking task and no candidates', () => {
+    expect(dedupKeyForBlock(undefined, [])).toBe('unattributed');
   });
 });
 
@@ -166,6 +219,8 @@ describe('formatReport', () => {
     blockedMs: 812,
     startedAt: 1_000,
     endedAt: 1_812,
+    blockingTask: { taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 400 },
+    attribution: 'exact',
     suspects: [{ taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 400 }],
     topFrames: [
       { functionName: 'JSON.parse', url: 'node:internal', selfTimeMs: 600, selfTimePercent: 80 },
@@ -176,22 +231,48 @@ describe('formatReport', () => {
     suppressedCount: 0,
   };
 
-  test('names the sole suspect task and the top frame', () => {
+  test('names the exact blocking task and the top frame', () => {
     const line = formatReport(baseReport);
     expect(line).toContain('blocked for 812ms');
-    expect(line).toContain('sole suspect');
+    expect(line).toContain('blocking task');
     expect(line).toContain('alerting:rule "task-a"');
     expect(line).toContain('JSON.parse');
   });
 
+  test('falls back to candidates when attribution is "none"', () => {
+    const line = formatReport({
+      ...baseReport,
+      attribution: 'none',
+      blockingTask: undefined,
+    });
+    expect(line).toContain('sole suspect');
+    expect(line).toContain('no task in scope when the block started');
+  });
+
+  test('reports when current-task tracking is disabled', () => {
+    const line = formatReport({
+      ...baseReport,
+      attribution: 'untracked',
+      blockingTask: undefined,
+    });
+    expect(line).toContain('current-task tracking disabled');
+  });
+
   test('reports when no task was in flight', () => {
-    const line = formatReport({ ...baseReport, suspects: [] });
+    const line = formatReport({
+      ...baseReport,
+      attribution: 'none',
+      blockingTask: undefined,
+      suspects: [],
+    });
     expect(line).toContain('none in-flight');
   });
 
   test('lists multiple candidates without claiming certainty', () => {
     const line = formatReport({
       ...baseReport,
+      attribution: 'none',
+      blockingTask: undefined,
       suspects: [
         { taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 400 },
         { taskId: 'task-b', taskType: 'reporting:generate', inFlightMs: 100 },
@@ -218,13 +299,26 @@ describe('formatReport', () => {
 });
 
 describe('formatStillBlockedNotice', () => {
-  test('reports elapsed time and suspects for an ongoing block', () => {
+  test('names the exact blocking task for an ongoing block', () => {
     const notice: StillBlockedNotice = {
       elapsedMs: 5_432,
+      blockingTask: { taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 5_400 },
+      attribution: 'exact',
       suspects: [{ taskId: 'task-a', taskType: 'alerting:rule', inFlightMs: 5_400 }],
     };
     const line = formatStillBlockedNotice(notice);
     expect(line).toContain('still blocked after 5432ms and counting');
+    expect(line).toContain('blocking task');
     expect(line).toContain('alerting:rule "task-a"');
+  });
+
+  test('falls back to candidates when no exact attribution is available', () => {
+    const notice: StillBlockedNotice = {
+      elapsedMs: 5_432,
+      attribution: 'none',
+      suspects: [],
+    };
+    const line = formatStillBlockedNotice(notice);
+    expect(line).toContain('none in-flight');
   });
 });

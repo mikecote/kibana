@@ -96,6 +96,14 @@ const eventLoopWatchdogSchema = schema.object({
   live_report_interval_ms: schema.number({ defaultValue: 3000, min: 100 }),
   /* Suppresses repeat reports for the same suspect task type(s) within this window (ms). */
   dedup_window_ms: schema.number({ defaultValue: 5 * 60 * 1000, min: 0 }),
+  /*
+   * Uses `async_hooks` on the main thread to stamp a shared-memory slot with the task
+   * whose code is currently executing, so a block can be attributed to the exact task
+   * in flight when it started rather than only a best-effort candidate list. Only takes
+   * effect when `enabled` is also true; re-enables V8 promise hooks, so leave this off if
+   * the extra per-await overhead is a concern before it's been measured in your environment.
+   */
+  track_current_task: schema.boolean({ defaultValue: true }),
 });
 
 const requestTimeoutsConfig = schema.object({

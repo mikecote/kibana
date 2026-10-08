@@ -64,6 +64,7 @@ const config: TaskManagerConfig = {
     heartbeat_interval_ms: 100,
     live_report_interval_ms: 3000,
     dedup_window_ms: 300000,
+    track_current_task: true,
   },
   max_attempts: 9,
   metrics_reset_interval: 30000,
