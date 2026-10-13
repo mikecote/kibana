@@ -137,6 +137,15 @@ groups:
           self: preview
           ech: preview
 
+      - setting: xpack.task_manager.event_loop_watchdog.terminate_blocking_tasks
+        description: |
+          Terminates a task that blocks the event loop as soon as the block reaches `flag_threshold_ms` and the watchdog is confident the task is responsible, instead of letting it run to completion. The run fails and is retried according to the task's schedule. Other work that was waiting in the same step of the event loop can be lost and recovers only through its own timeout. Only blocks that the watchdog can interrupt safely are terminated, and the reason a block was not is logged. Requires the watchdog to be enabled.
+        datatype: bool
+        default: true
+        applies_to:
+          self: preview
+          ech: preview
+
       - setting: xpack.task_manager.version_conflict_threshold
         description: |
           The percentage threshold of workers experiencing version conflicts above which Task Manager shifts its polling interval to avoid overloading Elasticsearch. Accepts values between 50 and 100.

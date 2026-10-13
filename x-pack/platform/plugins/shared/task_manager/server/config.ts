@@ -88,6 +88,13 @@ const eventLoopWatchdogSchema = schema.object({
   min_cpu_ratio: schema.number({ defaultValue: 0.5, min: 0, max: 1 }),
   /** How often (ms) a still ongoing block is written to stderr. */
   live_report_interval_ms: schema.number({ defaultValue: 3000, min: 100 }),
+  /**
+   * Terminates the blocking run as soon as the block reaches `flag_threshold_ms` and the evidence
+   * clearly names one run, instead of waiting for it to finish. The run fails; scheduling is
+   * unchanged. PoC only: defaults to true to exercise it on real environments, revert to false
+   * before merging (and in the docs entry).
+   */
+  terminate_blocking_tasks: schema.boolean({ defaultValue: true }),
 });
 
 const eventLoopDelaySchema = schema.object({

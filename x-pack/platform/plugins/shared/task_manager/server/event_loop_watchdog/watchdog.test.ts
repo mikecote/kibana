@@ -23,6 +23,7 @@ const config = {
   flag_threshold_ms: 5000,
   min_cpu_ratio: 0.5,
   live_report_interval_ms: 3000,
+  terminate_blocking_tasks: true,
 };
 const accessorInstalled = () => CURRENT_TASK_ACCESSOR in globalThis;
 
@@ -331,6 +332,99 @@ describe('EventLoopWatchdog', () => {
       const pending = observation.end();
       watchdog.stop();
       await expect(pending).resolves.toEqual([]);
+    });
+
+    describe('termination', () => {
+      const notice = (executionUuid: string) => ({
+        taskId: 'abc',
+        taskType: 'sampleTask',
+        executionUuid,
+        blockedMs: 5100,
+        stack: '    at spin (/kibana/plugin.ts:4:56)\n    at other (/kibana/plugin.ts:9:1)',
+        atUs: 5_000_000,
+      });
+
+      it('tells the worker whether terminating is enabled', () => {
+        create();
+        expect((Worker as unknown as jest.Mock).mock.calls[0][1].workerData.terminateEnabled).toBe(
+          true
+        );
+        watchdog.stop();
+        (Worker as unknown as jest.Mock).mockReturnValue(new FakeWorker());
+        watchdog = new EventLoopWatchdog({
+          logger,
+          config: { ...config, terminate_blocking_tasks: false },
+        });
+        watchdog.start();
+        expect((Worker as unknown as jest.Mock).mock.calls[1][1].workerData.terminateEnabled).toBe(
+          false
+        );
+      });
+
+      it('resolves the terminated promise of the run that was terminated, and only that run', async () => {
+        create();
+        const target = watchdog.beginRun('uuid-a');
+        const other = watchdog.beginRun('uuid-b');
+        const settled: string[] = [];
+        target.terminated!.then(() => settled.push('a'));
+        other.terminated!.then(() => settled.push('b'));
+
+        worker.emit('message', { type: 'terminated', notice: notice('uuid-a') });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(settled).toEqual(['a']);
+        await expect(target.terminated).resolves.toEqual(notice('uuid-a'));
+      });
+
+      it('warns with the task and the blocked stack', () => {
+        create();
+        worker.emit('message', { type: 'terminated', notice: notice('uuid-a') });
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Terminating sampleTask "abc"'),
+          { tags: ['event-loop-watchdog', 'event-loop-terminated', 'sampleTask', 'abc'] }
+        );
+        expect(logger.warn.mock.calls[0][0]).toContain('at spin (/kibana/plugin.ts:4:56)');
+      });
+
+      it('ignores a notice for a run that already ended', async () => {
+        create();
+        const observation = watchdog.beginRun('uuid-a');
+        await observation.end();
+        expect(() =>
+          worker.emit('message', { type: 'terminated', notice: notice('uuid-a') })
+        ).not.toThrow();
+      });
+
+      it('offers no terminated promise when terminating is disabled', () => {
+        watchdog = new EventLoopWatchdog({
+          logger,
+          config: { ...config, terminate_blocking_tasks: false },
+          now: () => clock,
+        });
+        watchdog.start();
+        expect(watchdog.beginRun('uuid-a').terminated).toBeUndefined();
+      });
+
+      it('does not make runs that end after the timers died wait for a report', async () => {
+        const observation = create().beginRun('uuid');
+        worker.emit('message', { type: 'termination-disabled', message: 'timers are broken' });
+        clock += 6_000_000;
+        // a block the report timeout (a timer) could never be waited out for
+        await expect(observation.end()).resolves.toEqual([]);
+      });
+
+      it('logs an error and stops making runs wait for reports when terminations get disabled', async () => {
+        const observation = create().beginRun('uuid');
+        clock += 6_000_000;
+        const pending = observation.end();
+        worker.emit('message', {
+          type: 'termination-disabled',
+          message: 'timers are broken',
+        });
+        await expect(pending).resolves.toEqual([]);
+        expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('timers are broken'));
+      });
     });
   });
 });

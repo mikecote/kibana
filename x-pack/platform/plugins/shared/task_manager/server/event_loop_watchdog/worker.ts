@@ -21,18 +21,26 @@ import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { BlockDetector, type DetectedBlock } from './block_detector';
 import { partitionBlock } from './context_sampler';
 import { decideFlag } from './flag_rule';
-import { formatStillBlockedNotice } from './report';
+import { formatStillBlockedNotice, formatTerminationNotice } from './report';
+import { decideTermination } from './termination_rule';
 import {
   CURRENT_TASK_ACCESSOR,
   DETECT_THRESHOLD_MS,
+  IDLE_PROBE,
   MAX_SAMPLES_PER_BLOCK,
   POLL_INTERVAL_MS,
+  POST_TERMINATION_CHECK_MS,
   SAMPLE_AFTER_MS,
   SAMPLE_INTERVAL_MS,
+  STACK_CAPTURE_LIMIT,
+  STACK_KEEP_BOTTOM,
+  STACK_KEEP_TOP,
   monotonicUs,
   type ContextSample,
   type CurrentTaskContext,
   type EventLoopBlockReport,
+  type TerminationNotice,
+  type TerminationReason,
   type WatchdogWorkerData,
   type WorkerToMainMessage,
 } from './types';
@@ -80,10 +88,39 @@ export interface WorkerDeps {
  */
 export const SAMPLE_EXPRESSION = `(() => {
   const f = globalThis[Symbol.for('${String(CURRENT_TASK_ACCESSOR.description)}')];
+  const probe = Symbol.for('${String(IDLE_PROBE.description)}');
+  const idleSinceLastSample = globalThis[probe] === true;
+  globalThis[probe] = false;
+  setImmediate(() => { globalThis[probe] = true; });
+  const limit = Error.stackTraceLimit;
+  let stack;
+  let stackTruncated = false;
+  try {
+    Error.stackTraceLimit = ${STACK_CAPTURE_LIMIT} + 3;
+    const raw = new Error().stack;
+    if (typeof raw === 'string') {
+      // The first lines are the error header and this expression's own two frames.
+      const frames = raw.split('\\n').slice(3);
+      stackTruncated = frames.length >= ${STACK_CAPTURE_LIMIT};
+      // The innermost frames name the code, the outermost ones the Node dispatcher it runs under.
+      stack = (frames.length > ${STACK_KEEP_TOP + STACK_KEEP_BOTTOM}
+        ? [...frames.slice(0, ${STACK_KEEP_TOP}), '    ... ' + (frames.length - ${
+  STACK_KEEP_TOP + STACK_KEEP_BOTTOM
+}) + ' more frames', ...frames.slice(-${STACK_KEEP_BOTTOM})]
+        : frames).join('\\n');
+    }
+  } catch (e) {
+    // A library replaced Error.prepareStackTrace: no stack, which only refuses a termination.
+  } finally {
+    Error.stackTraceLimit = limit;
+  }
   return {
     at: Number(process.hrtime.bigint() / 1000n),
     task: typeof f === 'function' ? f() : null,
     missing: typeof f !== 'function',
+    stack,
+    stackTruncated,
+    idleSinceLastSample,
   };
 })()`;
 
@@ -109,6 +146,8 @@ interface BlockState {
   inFlight: boolean;
   lastLandedUs: number;
   lastLiveReportUs: number;
+  terminated?: TerminationNotice;
+  terminationRefused?: TerminationReason;
 }
 
 export const runWatchdogWorker = (
@@ -134,6 +173,14 @@ export const runWatchdogWorker = (
     });
 
   let state: BlockState | undefined;
+  /** Set once a termination left the heartbeat dead while JavaScript ran: never terminate again. */
+  let terminationsDisabled = false;
+  /**
+   * When the last termination happened, until its aftermath has been judged. Worker level, not per
+   * block: the runner stamps the heartbeat itself when the terminated run ends, which ends the
+   * block even if the main thread's timers are dead.
+   */
+  let terminationWatchAtUs: number | undefined;
 
   const latestTask = (current: BlockState): CurrentTaskContext | null => {
     for (let i = current.samples.length - 1; i >= 0; i--) {
@@ -167,6 +214,9 @@ export const runWatchdogWorker = (
             sample.landedAtUs = value.at;
             sample.task = (value.task as CurrentTaskContext | null) ?? null;
             sample.missing = value.missing === true;
+            if (typeof value.stack === 'string') sample.stack = value.stack;
+            sample.stackTruncated = value.stackTruncated === true;
+            sample.idleSinceLastSample = value.idleSinceLastSample === true;
           }
           current.lastLandedUs = sample.landedAtUs;
           current.inFlight = false;
@@ -197,16 +247,105 @@ export const runWatchdogWorker = (
     }
   };
 
+  /** Process-wide CPU over the wall time since detection: can exceed 1 with other threads busy. */
+  const cpuRatioSince = (current: BlockState, nowUs: number): number => {
+    const wallUs = Math.max(1, nowUs - current.detectedAtUs);
+    const cpu = cpuUsage(current.cpuAtDetect);
+    return Math.round(((cpu.user + cpu.system) / wallUs) * 100) / 100;
+  };
+
+  const maybeTerminate = (current: BlockState, nowUs: number) => {
+    if (!data.terminateEnabled || current.terminated || !current.session) return;
+    if (terminationsDisabled) {
+      current.terminationRefused ??= 'terminations-disabled';
+      return;
+    }
+    const decision = decideTermination(current.samples, {
+      nowUs,
+      blockStartUs: current.startUs,
+      flagThresholdMs: data.flagThresholdMs,
+      cpuRatio: cpuRatioSince(current, nowUs),
+      minCpuRatio: data.minCpuRatio,
+      sampleIntervalMs: cadence.sampleIntervalMs,
+    });
+    if (!decision.terminate) {
+      if (decision.reason !== 'below-threshold' && decision.reason !== 'too-few-samples') {
+        if (!current.terminationRefused) {
+          writeLine(`Not terminating the blocked run (${decision.reason})`);
+          current.terminationRefused = decision.reason;
+        }
+      }
+      return;
+    }
+    // The block may have ended since the poll started: only terminate while it is still going.
+    const stalledMs = (nowUs - Number(Atomics.load(shared, 0))) / 1000;
+    if (stalledMs < cadence.detectThresholdMs) return;
+    current.terminationRefused = undefined;
+    const notice: TerminationNotice = {
+      ...decision.task,
+      blockedMs: (nowUs - current.startUs) / 1000,
+      stack: decision.stack,
+      atUs: nowUs,
+    };
+    try {
+      // The reply only arrives once the outermost script on the main thread ends: never wait on it.
+      current.session.post('Runtime.terminateExecution', {}, () => {});
+    } catch (error) {
+      current.sessionFailed = true;
+      reportError('Runtime.terminateExecution failed', error);
+      return;
+    }
+    current.terminated = notice;
+    // The earliest termination still being judged: later ones must not postpone the verdict.
+    terminationWatchAtUs ??= nowUs;
+    writeLine(formatTerminationNotice(notice));
+    post({ type: 'terminated', notice });
+  };
+
+  /**
+   * Judges the aftermath of a termination, once, a couple of seconds later. If the main thread is
+   * running timers again there is no block: all is well. If a block is going on, the samples tell
+   * why. An immediate armed by them only runs when the main thread is idle, and an idle main
+   * thread whose heartbeat is stale has dead timers, which the stack gate is meant to make
+   * impossible: fail safe, never terminate again in this process. A main thread that is busy is a
+   * new, unrelated block: keep watching, for a while.
+   */
+  const checkTerminationAftermath = (nowUs: number) => {
+    if (terminationWatchAtUs === undefined) return;
+    const sinceUs = nowUs - terminationWatchAtUs;
+    if (sinceUs < POST_TERMINATION_CHECK_MS * 1000) return;
+    const current = state;
+    if (!current) {
+      terminationWatchAtUs = undefined;
+      return;
+    }
+    const watchedFromUs = terminationWatchAtUs;
+    const idleAfterTermination = current.samples.some(
+      (sample) =>
+        sample.landedAtUs !== undefined &&
+        sample.landedAtUs > watchedFromUs &&
+        sample.idleSinceLastSample === true
+    );
+    if (!idleAfterTermination) {
+      if (sinceUs > 10 * POST_TERMINATION_CHECK_MS * 1000) terminationWatchAtUs = undefined;
+      return;
+    }
+    terminationWatchAtUs = undefined;
+    terminationsDisabled = true;
+    const message =
+      'The main thread runs again but its timers are not firing after a termination; ' +
+      'terminations are disabled until Kibana restarts. Restart this node.';
+    writeLine(`CRITICAL: ${message}`);
+    post({ type: 'termination-disabled', message });
+  };
+
   const onBlockEnded = (block: DetectedBlock, nowUs: number) => {
     const current = state;
     state = undefined;
     // `monotonicUs()` is an integer: rounding undoes the millisecond float round trip.
     const startUs = Math.round(block.startedAt * 1000);
     const endUs = Math.round(block.endedAt * 1000);
-    const wallUs = Math.max(1, nowUs - (current?.detectedAtUs ?? nowUs));
-    const cpu = current ? cpuUsage(current.cpuAtDetect) : { user: 0, system: 0 };
-    // Process-wide CPU over the wall time since detection: can exceed 1 with other threads busy.
-    const cpuRatio = current ? Math.round(((cpu.user + cpu.system) / wallUs) * 100) / 100 : 0;
+    const cpuRatio = current ? cpuRatioSince(current, nowUs) : 0;
 
     const attribution = partitionBlock(startUs, endUs, current?.samples ?? [], {
       sampleIntervalMs: cadence.sampleIntervalMs,
@@ -230,6 +369,8 @@ export const runWatchdogWorker = (
       flag,
       reportable: block.report,
       suppressedBlocks: block.suppressedBlocks,
+      ...(current?.terminated ? { terminated: current.terminated } : {}),
+      ...(current?.terminationRefused ? { terminationRefused: current.terminationRefused } : {}),
     };
     post({ type: 'block', report });
 
@@ -250,6 +391,8 @@ export const runWatchdogWorker = (
     const nowMs = nowUs / 1000;
     const block = detector.poll(nowMs, Number(Atomics.load(shared, 0)) / 1000);
     if (block) onBlockEnded(block, nowUs);
+
+    checkTerminationAftermath(nowUs);
 
     const { blockedSince } = detector;
     if (blockedSince === undefined) return;
@@ -284,6 +427,8 @@ export const runWatchdogWorker = (
     ) {
       postSample(current);
     }
+
+    maybeTerminate(current, nowUs);
 
     if (nowUs - current.lastLiveReportUs >= data.liveReportIntervalMs * 1000) {
       current.lastLiveReportUs = nowUs;
