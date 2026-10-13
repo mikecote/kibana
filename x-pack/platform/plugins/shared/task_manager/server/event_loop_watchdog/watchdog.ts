@@ -12,7 +12,7 @@ import { Subject, type Observable } from 'rxjs';
 import type { Logger } from '@kbn/core/server';
 import type { EventLoopWatchdogConfig } from '../config';
 import { installCurrentTaskAccessor, uninstallCurrentTaskAccessor } from './current_task_context';
-import { formatBlockReport } from './report';
+import { formatBlockReport, formatTerminationLog } from './report';
 import {
   DETECT_THRESHOLD_MS,
   HEARTBEAT_INTERVAL_MS,
@@ -21,6 +21,7 @@ import {
   type EventLoopBlockReport,
   type EventLoopRunObservation,
   type EventLoopRunObserver,
+  type TerminationNotice,
   type WatchdogWorkerData,
   type WorkerToMainMessage,
 } from './types';
@@ -36,6 +37,8 @@ export interface EventLoopWatchdogDeps {
 const REPORT_WAIT_MS = 1000;
 const LEDGER_MAX_AGE_US = 60_000_000;
 const LEDGER_MAX_ENTRIES = 100;
+/** Runs awaiting a possible termination notice: far above any pool's size. */
+const MAX_TERMINATION_WAITERS = 1000;
 const NO_OBSERVATION: EventLoopRunObservation = { end: () => Promise.resolve([]) };
 
 /** A block the main thread noticed itself, waiting for the worker's report of the same block. */
@@ -65,6 +68,10 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
   /** When the worker started polling; blocks before it were never seen by the worker. */
   private workerReadyAtUs?: number;
   private readyWaiters: Array<() => void> = [];
+  /** Runs whose `terminated` promise is waiting for the worker's notice, by execution uuid. */
+  private readonly terminationWaiters = new Map<string, (notice: TerminationNotice) => void>();
+  /** The worker found the main thread's timers dead: no report timeout can fire, never wait. */
+  private timersDead = false;
 
   public readonly blocks$: Observable<EventLoopBlockReport> = this.blocksSubject.asObservable();
 
@@ -98,6 +105,7 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
       flagThresholdMs: this.config.flag_threshold_ms,
       minCpuRatio: this.config.min_cpu_ratio,
       liveReportIntervalMs: this.config.live_report_interval_ms,
+      terminateEnabled: this.config.terminate_blocking_tasks,
     };
     // `worker_entry.js` is transpiled to the same name in dist and bootstraps TypeScript from source.
     const worker = new Worker(path.resolve(__dirname, 'worker_entry.js'), {
@@ -135,6 +143,8 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
     this.heartbeat = undefined;
     this.workerReadyAtUs = undefined;
     this.readyWaiters = [];
+    this.terminationWaiters.clear();
+    this.timersDead = false;
     this.ledger.splice(0).forEach((block) => block.waiters.forEach((resolve) => resolve()));
     const { worker } = this;
     this.worker = undefined;
@@ -190,17 +200,33 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
   /**
    * Observes a task run. When the run completes, `end()` resolves the reports of the blocks that
    * overlapped it, so that the run's completion path can record that it blocked the event loop
-   * before it writes its results. The watchdog keeps no per-run state: a missed `end()` leaks nothing.
+   * before it writes its results. With termination on, a run registers a resolver that `end()`
+   * removes: the map is bounded, so a missed `end()` cannot grow it without limit.
    */
-  public beginRun(_executionUuid: string): EventLoopRunObservation {
+  public beginRun(executionUuid: string): EventLoopRunObservation {
     if (!this.enabled) return NO_OBSERVATION;
     this.beat();
     const startedAtUs = this.lastStampUs;
-    return { end: () => this.endRun(startedAtUs) };
+    // Only runs that may be terminated need the promise: without it nothing is registered.
+    const terminated = this.config.terminate_blocking_tasks
+      ? new Promise<TerminationNotice>((resolve) => {
+          if (this.terminationWaiters.size >= MAX_TERMINATION_WAITERS) {
+            this.terminationWaiters.delete(this.terminationWaiters.keys().next().value!);
+          }
+          this.terminationWaiters.set(executionUuid, resolve);
+        })
+      : undefined;
+    return {
+      end: () => {
+        this.terminationWaiters.delete(executionUuid);
+        return this.endRun(startedAtUs);
+      },
+      terminated,
+    };
   }
 
   private endRun(startedAtUs: number): Promise<EventLoopBlockReport[]> {
-    if (!this.enabled) return Promise.resolve([]);
+    if (!this.enabled || this.timersDead) return Promise.resolve([]);
     this.beat();
     const endedAtUs = this.lastStampUs;
     // Blocks that cannot flag (too short), that the worker cannot see (barely above its detection
@@ -231,6 +257,22 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
     }
     if (message.type === 'worker-error') {
       this.logger.warn(`Event loop watchdog worker error: ${message.message}`);
+      return;
+    }
+    if (message.type === 'terminated') {
+      const { notice } = message;
+      this.logger.warn(formatTerminationLog(notice), {
+        tags: ['event-loop-watchdog', 'event-loop-terminated', notice.taskType, notice.taskId],
+      });
+      this.terminationWaiters.get(notice.executionUuid)?.(notice);
+      return;
+    }
+    if (message.type === 'termination-disabled') {
+      this.logger.error(`Event loop watchdog: ${message.message}`);
+      // With the main thread's timers broken, no report timeout would ever fire: do not make
+      // finished runs wait for one, now or later.
+      this.timersDead = true;
+      this.ledger.forEach((block) => block.waiters.splice(0).forEach((resolve) => resolve()));
       return;
     }
     const { report } = message;

@@ -8,6 +8,7 @@
 import { isUnauthorizedError } from '@kbn/es-errors';
 
 import { TaskErrorSource } from '../../common';
+import type { TerminationNotice } from '../event_loop_watchdog/types';
 
 export { TaskErrorSource };
 
@@ -76,6 +77,25 @@ export function getErrorSource(error: Error | DecoratedError): TaskErrorSource |
     return TaskErrorSource.USER;
   }
 }
+
+/**
+ * The watchdog terminated this run's blocking JavaScript. The run's own promise never settles, so
+ * the runner raises this error itself to take the normal failure path. Not unrecoverable: a task
+ * that blocks every time is retried like any failing task, and cut short each time.
+ */
+export class EventLoopTerminatedError extends Error {
+  constructor(public readonly notice: TerminationNotice) {
+    super(
+      `Task ${notice.taskType} "${notice.taskId}" was terminated after blocking the event loop ` +
+        `for ~${Math.round(notice.blockedMs)}ms`
+    );
+    this.name = 'EventLoopTerminatedError';
+    createTaskRunError(this, TaskErrorSource.FRAMEWORK);
+  }
+}
+
+export const isEventLoopTerminatedError = (error: unknown): error is EventLoopTerminatedError =>
+  error instanceof EventLoopTerminatedError;
 
 export function isUserError(error: Error | DecoratedError) {
   return getErrorSource(error) === TaskErrorSource.USER;

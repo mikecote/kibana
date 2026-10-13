@@ -63,6 +63,7 @@ const config: TaskManagerConfig = {
     flag_threshold_ms: 5000,
     min_cpu_ratio: 0.5,
     live_report_interval_ms: 3000,
+    terminate_blocking_tasks: true,
   },
   max_attempts: 9,
   metrics_reset_interval: 30000,

@@ -6,10 +6,12 @@
  */
 
 import { pbkdf2Sync } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { runInThisContext } from 'node:vm';
 import { performance } from 'node:perf_hooks';
+import { withSpan } from '@kbn/apm-utils';
 import { mockLogger } from '../test_utils';
-import { EventLoopWatchdog, runWithCurrentTask } from '../event_loop_watchdog';
+import { EventLoopWatchdog, nextNativeTurn, runWithCurrentTask } from '../event_loop_watchdog';
 import type { CurrentTaskContext, EventLoopBlockReport } from '../event_loop_watchdog';
 import { CURRENT_TASK_ACCESSOR } from '../event_loop_watchdog/types';
 
@@ -54,6 +56,7 @@ const config = {
   flag_threshold_ms: 1000,
   min_cpu_ratio: 0.5,
   live_report_interval_ms: 500,
+  terminate_blocking_tasks: false,
 };
 
 describe('event loop watchdog (real worker and inspector)', () => {
@@ -179,6 +182,211 @@ describe('event loop watchdog (real worker and inspector)', () => {
       });
 
       expect(await observation.end()).toEqual([]);
+    }, 60_000);
+  });
+
+  describe('terminating the blocking run', () => {
+    const terminating = { terminate_blocking_tasks: true };
+    const uuidCtx = (taskId: string) => ({ ...ctx(taskId), executionUuid: `uuid-${taskId}` });
+
+    it('terminates a run that blocks after resuming from I/O, and leaves the loop healthy', async () => {
+      await start(terminating);
+      const observation = watchdog.beginRun('uuid-spinner');
+      let finished = false;
+      runWithCurrentTask(uuidCtx('spinner'), async () => {
+        await readFile(__filename);
+        spin(10_000);
+        finished = true;
+      });
+
+      const startedAt = Date.now();
+      const notice = await Promise.race([
+        observation.terminated!,
+        sleep(8000).then(() => undefined),
+      ]);
+
+      expect(notice).toMatchObject({
+        taskId: 'spinner',
+        executionUuid: 'uuid-spinner',
+        taskType: 'test:task',
+      });
+      // far sooner than the 10s the run would have taken
+      expect(Date.now() - startedAt).toBeLessThan(5000);
+      expect(notice!.stack).toContain('spin');
+
+      // the loop is responsive again, and timers and the AsyncLocalStorage still work
+      let ticked = false;
+      setTimeout(() => {
+        ticked = true;
+      }, 20);
+      await sleep(300);
+      expect(ticked).toBe(true);
+      // the terminated run never resumes
+      expect(finished).toBe(false);
+
+      const report = await waitForReport();
+      expect(report.terminated).toMatchObject({ executionUuid: 'uuid-spinner' });
+      expect(report.blockedMs).toBeLessThan(5000);
+      expect(await idleUtilization(500)).toBeLessThan(0.2);
+    }, 60_000);
+
+    it('terminates a run that blocks on entry, under the wrappers a task run goes through', async () => {
+      await start(terminating);
+      const observation = watchdog.beginRun('uuid-wrapped');
+      let finished = false;
+      // The task runner starts the run in its own microtask, with the race already listening.
+      const racing = Promise.race([
+        Promise.resolve().then(() =>
+          withSpan({ name: 'run', type: 'task manager' }, () =>
+            runWithCurrentTask(uuidCtx('wrapped'), async () => {
+              spin(10_000);
+              finished = true;
+            })
+          )
+        ),
+        observation.terminated!,
+      ]);
+
+      const outcome = await Promise.race([racing, sleep(8000).then(() => 'timed out')]);
+
+      expect(outcome).toMatchObject({ taskId: 'wrapped', executionUuid: 'uuid-wrapped' });
+      expect(finished).toBe(false);
+      let ticked = false;
+      setTimeout(() => {
+        ticked = true;
+      }, 20);
+      await sleep(300);
+      expect(ticked).toBe(true);
+    }, 60_000);
+
+    // Real rule executors are deep: the Node dispatcher that matters is far below the blocked code.
+    const deeply = (depth: number, fn: () => void): void =>
+      depth === 0 ? fn() : deeply(depth - 1, fn);
+
+    it('terminates a deeply nested safe run, keeping the top and bottom of its stack', async () => {
+      await start(terminating);
+      const observation = watchdog.beginRun('uuid-deep');
+      runWithCurrentTask(uuidCtx('deep'), async () => {
+        await readFile(__filename);
+        deeply(80, () => spin(10_000));
+      });
+
+      const notice = await Promise.race([
+        observation.terminated!,
+        sleep(8000).then(() => undefined),
+      ]);
+
+      expect(notice).toMatchObject({ executionUuid: 'uuid-deep' });
+      expect(notice!.stack).toContain('spin');
+      expect(notice!.stack).toMatch(/\.\.\. \d+ more frames/);
+    }, 60_000);
+
+    it('refuses a deeply nested run inside a timer callback: the dispatcher is below the stack limit of old', async () => {
+      await start(terminating);
+      await new Promise<void>((resolve) =>
+        setTimeout(() => {
+          runWithCurrentTask(uuidCtx('deep-in-timer'), () => deeply(80, () => spin(2500)));
+          resolve();
+        }, 0)
+      );
+
+      const report = await waitForReport();
+
+      expect(report.terminated).toBeUndefined();
+      expect(report.terminationRefused).toBe('unsafe-stack');
+      expect(report.blockedMs).toBeGreaterThan(2000);
+      let ticked = false;
+      setTimeout(() => {
+        ticked = true;
+      }, 20);
+      await sleep(300);
+      expect(ticked).toBe(true);
+    }, 60_000);
+
+    it('lets work queued beside the run survive, as the task poller needs', async () => {
+      // A termination drops every continuation queued in the same microtask checkpoint. The task
+      // poller's own continuation used to share the run's, and Task Manager never polled again.
+      // The runner starts the run in its own native turn: nothing queued beside it is lost.
+      await start(terminating);
+      const observation = watchdog.beginRun('uuid-sibling');
+      const survived: string[] = [];
+
+      const racing = Promise.race([
+        nextNativeTurn().then(() =>
+          runWithCurrentTask(uuidCtx('sibling'), async () => {
+            spin(10_000);
+          })
+        ),
+        observation.terminated!,
+      ]);
+      // queued right after the run was started, in the same tick
+      Promise.resolve().then(() => survived.push('microtask'));
+      (async () => {
+        for (let poll = 1; poll <= 3; poll++) {
+          await sleep(20);
+          survived.push(`poll ${poll}`);
+        }
+      })();
+
+      const outcome = await Promise.race([racing, sleep(8000).then(() => 'timed out')]);
+
+      expect(outcome).toMatchObject({ executionUuid: 'uuid-sibling' });
+      await sleep(300);
+      expect(survived).toEqual(['microtask', 'poll 1', 'poll 2', 'poll 3']);
+    }, 60_000);
+
+    it('refuses to terminate a run that blocks inside a timer callback, and survives it', async () => {
+      await start(terminating);
+      await new Promise<void>((resolve) =>
+        setTimeout(() => {
+          runWithCurrentTask(uuidCtx('in-timer'), () => spin(2500));
+          resolve();
+        }, 0)
+      );
+
+      const report = await waitForReport();
+
+      expect(report.terminated).toBeUndefined();
+      expect(report.terminationRefused).toBe('unsafe-stack');
+      expect(report.blockedMs).toBeGreaterThan(2000);
+      // timers still fire: terminating here would have broken them
+      let ticked = false;
+      setTimeout(() => {
+        ticked = true;
+      }, 20);
+      await sleep(300);
+      expect(ticked).toBe(true);
+    }, 60_000);
+
+    it('does not terminate a block that is one long native call', async () => {
+      await start(terminating);
+      await new Promise<void>((resolve) =>
+        setTimeout(() => {
+          runWithCurrentTask(uuidCtx('native'), () => {
+            pbkdf2Sync('password', 'salt', 12_000_000, 64, 'sha512');
+          });
+          resolve();
+        }, 0)
+      );
+
+      const report = await waitForReport();
+
+      expect(report.terminated).toBeUndefined();
+    }, 90_000);
+
+    it('does not terminate when it is not enabled', async () => {
+      await start({ terminate_blocking_tasks: false });
+      const observation = watchdog.beginRun('uuid-spinner');
+      expect(observation.terminated).toBeUndefined();
+      await runWithCurrentTask(uuidCtx('spinner'), async () => {
+        await readFile(__filename);
+        spin(1500);
+      });
+
+      const report = await waitForReport();
+
+      expect(report.terminated).toBeUndefined();
+      expect(report.flag).toMatchObject({ flagged: true, taskId: 'spinner' });
     }, 60_000);
   });
 });

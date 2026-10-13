@@ -24,11 +24,12 @@ import type { Middleware } from '../lib/middleware';
 import type { Result } from '../lib/result_type';
 import { asErr, asOk, eitherAsync, isErr, isOk, mapErr, mapOk, unwrap } from '../lib/result_type';
 import { getExecutionContextRunner } from '../lib/execution_context';
-import { runWithCurrentTask } from '../event_loop_watchdog';
+import { nextNativeTurn, runWithCurrentTask } from '../event_loop_watchdog';
 import type {
   EventLoopRunObservation,
   EventLoopRunObserver,
   FlagEvidence,
+  TerminationNotice,
 } from '../event_loop_watchdog';
 import type { TaskMarkRunning, TaskRun, TaskTiming, TaskManagerStat } from '../task_events';
 import {
@@ -61,6 +62,8 @@ import {
   createTaskRunError,
   isUnrecoverableError,
   isUserError,
+  EventLoopTerminatedError,
+  isEventLoopTerminatedError,
   type DecoratedError,
 } from './errors';
 import {
@@ -212,6 +215,7 @@ export class TaskManagerRunner implements TaskRunner {
   private apiKeyStrategy: ApiKeyStrategy;
   private eventLogger: TaskEventLogger;
   private isCancelled = false;
+  private isTerminatedByWatchdog = false;
   private scheduleAtRunStart?: IntervalSchedule | RruleSchedule;
   private readonly enrichFakeRequest?: FakeRequestEnricher;
   private readonly eventLoopWatchdog?: EventLoopRunObserver;
@@ -422,11 +426,15 @@ export class TaskManagerRunner implements TaskRunner {
           childOf: this.instance.task.traceparent,
         });
         const stopEventLoopMonitoring = startEventLoopMonitoring(this.config.event_loop_delay);
-        const makeTaskTiming = (eventLoopBlock?: FlagEvidence): TaskTiming => ({
+        const makeTaskTiming = (
+          eventLoopBlock?: FlagEvidence,
+          eventLoopTerminated?: TerminationNotice
+        ): TaskTiming => ({
           start: startedAt.getTime(),
           stop: Date.now(),
           eventLoopBlockMs: stopEventLoopMonitoring(),
           ...(eventLoopBlock ? { eventLoopBlock } : {}),
+          ...(eventLoopTerminated ? { eventLoopTerminated } : {}),
         });
         this.logTaskRunStartEvent(this.instance.task, startedAt);
 
@@ -467,6 +475,8 @@ export class TaskManagerRunner implements TaskRunner {
           this.updateRetryAtOnIntervalForLongRunningTasks(startedAt);
 
         let observation: EventLoopRunObservation | undefined;
+        // Cancels the task without recording it as a user cancellation, see the catch block.
+        let abortAndCancelTask: (() => Promise<void>) | undefined;
 
         try {
           const { credential } = this.instance.task;
@@ -556,6 +566,12 @@ export class TaskManagerRunner implements TaskRunner {
           });
 
           const originalTaskCancel = this.task.cancel;
+          const runningTask = this.task;
+          abortAndCancelTask = async () => {
+            abortController.abort();
+            // The pool may have cancelled this run already (it expired): its hook has run.
+            if (!this.isCancelled) await originalTaskCancel?.call(runningTask);
+          };
 
           const logCancelEvent = () => {
             this.isCancelled = true;
@@ -581,14 +597,28 @@ export class TaskManagerRunner implements TaskRunner {
           });
 
           observation = this.eventLoopWatchdog?.beginRun(this.uuid);
-          const result = await runner.run(() =>
-            withSpan({ name: 'run', type: 'task manager' }, () =>
-              runWithCurrentTask(
-                { taskId: this.id, taskType: this.taskType, executionUuid: this.uuid },
-                () => this.task!.run()
+          const runTask = () =>
+            runner.run(() =>
+              withSpan({ name: 'run', type: 'task manager' }, () =>
+                runWithCurrentTask(
+                  { taskId: this.id, taskType: this.taskType, executionUuid: this.uuid },
+                  () => this.task!.run()
+                )
               )
-            )
-          );
+            );
+          // A terminated run's promise never settles, so it is raced against the watchdog's notice,
+          // registered before the task starts. The task starts in its own native turn so no other
+          // continuation shares its microtask checkpoint, see `nextNativeTurn`. Without
+          // termination the run is untouched.
+          const terminatedByWatchdog = observation?.terminated;
+          const result = terminatedByWatchdog
+            ? await Promise.race([
+                nextNativeTurn().then(runTask),
+                terminatedByWatchdog.then((notice) => {
+                  throw new EventLoopTerminatedError(notice);
+                }),
+              ])
+            : await runTask();
 
           stopUpdatingLongRunningTasks();
           const eventLoopBlock = await this.endEventLoopObservation(observation);
@@ -602,6 +632,12 @@ export class TaskManagerRunner implements TaskRunner {
           return processedResult;
         } catch (err) {
           stopUpdatingLongRunningTasks();
+          const terminatedNotice = isEventLoopTerminatedError(err) ? err.notice : undefined;
+          if (terminatedNotice) {
+            // Before waiting for the report: a pool cancelling this run meanwhile must find it done.
+            this.isTerminatedByWatchdog = true;
+            await this.cleanUpTerminatedRun(abortAndCancelTask);
+          }
           const eventLoopBlock = await this.endEventLoopObservation(observation);
 
           const errorSource = isUserError(err) ? TaskErrorSource.USER : TaskErrorSource.FRAMEWORK;
@@ -612,7 +648,13 @@ export class TaskManagerRunner implements TaskRunner {
               ? JSON.stringify(err)
               : String(err);
           this.logger.error(`Task ${this} failed: ${errorMessage}`, {
-            tags: [this.taskType, this.instance.task.id, 'task-run-failed', `${errorSource}-error`],
+            tags: [
+              this.taskType,
+              this.instance.task.id,
+              'task-run-failed',
+              `${errorSource}-error`,
+              ...(terminatedNotice ? ['event-loop-terminated'] : []),
+            ],
             error: { stack_trace: err instanceof Error ? err.stack : undefined },
           });
           // in error scenario, we can not get the RunResult
@@ -622,7 +664,7 @@ export class TaskManagerRunner implements TaskRunner {
             () =>
               this.processResult(
                 asErr({ error: err, state: modifiedContext.taskInstance.state }),
-                makeTaskTiming(eventLoopBlock)
+                makeTaskTiming(eventLoopBlock, terminatedNotice)
               )
           );
           if (apmTrans) apmTrans.end('failure');
@@ -632,6 +674,20 @@ export class TaskManagerRunner implements TaskRunner {
         }
       }
     );
+  }
+
+  /**
+   * The only cleanup a terminated run can get: its `finally` blocks never ran. Aborts the task's
+   * signal and calls its own `cancel`, if it has one. Not `this.cancel()`, which would also record
+   * the run as cancelled by a user. Best effort: a failing hook must not hide the failure.
+   */
+  private async cleanUpTerminatedRun(abortAndCancelTask?: () => Promise<void>) {
+    // `this.task` is kept, not cleared: removing a terminated ad-hoc task still runs its `cleanup`.
+    try {
+      await abortAndCancelTask?.();
+    } catch (error) {
+      this.logger.debug(`Task ${this} cancel after termination failed: ${error}`);
+    }
   }
 
   /**
@@ -833,6 +889,8 @@ export class TaskManagerRunner implements TaskRunner {
    * @returns {Promise<void>}
    */
   public async cancel() {
+    // A terminated run was already aborted and cancelled: do not record it as cancelled again.
+    if (this.isTerminatedByWatchdog) return;
     const { task } = this;
     if (task?.cancel) {
       // it will cause the task state of "running" to be cleared

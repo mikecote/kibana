@@ -17,6 +17,7 @@ import {
   TaskRunResult,
 } from '.';
 import type { TaskEvent, TaskRun } from '../task_events';
+import { nextNativeTurn } from '../event_loop_watchdog';
 import type { EventLoopBlockReport, EventLoopRunObserver } from '../event_loop_watchdog';
 import { asTaskRunEvent, TaskPersistence, asTaskManagerStatEvent } from '../task_events';
 import type { ConcreteTaskInstance, TaskEventLogger } from '../task';
@@ -923,6 +924,196 @@ describe('TaskManagerRunner', () => {
 
         await expect(runner.run()).resolves.toBeDefined();
         expect(lastTiming(onTaskEvent).eventLoopBlock).toBeUndefined();
+      });
+
+      describe('when the watchdog terminates the run', () => {
+        const notice = {
+          taskId: 'foo',
+          taskType: 'bar',
+          executionUuid: TASK_EXECUTION_UUID,
+          blockedMs: 5100,
+          stack: '    at spin (/kibana/plugin.ts:4:56)',
+          atUs: 5_000_000,
+        };
+
+        /** A run whose promise never settles, as a terminated run's does. */
+        const setupTerminated = (
+          opts: { cancel?: jest.Mock; cleanup?: jest.Mock; runSpy?: jest.Mock } = {}
+        ) => {
+          let terminate!: () => void;
+          const terminated = new Promise<typeof notice>((resolve) => {
+            terminate = () => resolve(notice);
+          });
+          // Counts the runner's own `.then` on the termination promise: `Promise.race` itself does
+          // not call it, so a call by the time the task runs proves the runner was listening.
+          const thenSpy = jest.spyOn(terminated, 'then');
+          const end = jest.fn().mockResolvedValue([blockReport(TASK_EXECUTION_UUID)]);
+          const eventLoopWatchdog = { beginRun: jest.fn(() => ({ end, terminated })) };
+          const onTaskEvent = jest.fn();
+          let signal: AbortSignal | undefined;
+          const ready = readyToRunStageSetup({
+            instance: { ...mockInstance(), schedule: { interval: '10m' } },
+            definitions: {
+              bar: {
+                title: 'Bar!',
+                createTaskRunner: (context) => {
+                  signal = context.signal;
+                  return {
+                    run: () => {
+                      opts.runSpy?.(thenSpy.mock.calls.length);
+                      return new Promise<undefined>(() => {});
+                    },
+                    cancel: opts.cancel,
+                    cleanup: opts.cleanup,
+                  };
+                },
+              },
+            },
+            onTaskEvent,
+            eventLoopWatchdog,
+          });
+          return { terminate, onTaskEvent, ready, getSignal: () => signal };
+        };
+
+        test('fails the run, with the termination on its timing, even though the task never settles', async () => {
+          const { terminate, onTaskEvent, ready } = setupTerminated();
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await Promise.resolve();
+          terminate();
+          await running;
+
+          const [event] = onTaskEvent.mock.calls[onTaskEvent.mock.calls.length - 1];
+          expect(event.timing.eventLoopTerminated).toEqual(notice);
+          expect(event.timing.eventLoopBlock).toEqual(evidence);
+          expect(event.event.error.error.name).toBe('EventLoopTerminatedError');
+        });
+
+        test('aborts the task and calls its own cancel, without recording a user cancellation', async () => {
+          const cancel = jest.fn().mockResolvedValue(undefined);
+          const { terminate, ready, getSignal } = setupTerminated({ cancel });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await Promise.resolve();
+          terminate();
+          await running;
+
+          expect(cancel).toHaveBeenCalledTimes(1);
+          expect(getSignal()!.aborted).toBe(true);
+          const actions = (eventLoggerMock.logEvent as jest.Mock).mock.calls.map(
+            ([logged]) => logged.event.action
+          );
+          expect(actions).toContain('task-run');
+          expect(actions).not.toContain('task-cancel');
+        });
+
+        test('still fails the run when the task cancel hook throws', async () => {
+          const cancel = jest.fn().mockRejectedValue(new Error('cancel failed'));
+          const { terminate, onTaskEvent, ready } = setupTerminated({ cancel });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await Promise.resolve();
+          terminate();
+          await expect(running).resolves.toBeDefined();
+
+          expect(onTaskEvent.mock.calls[onTaskEvent.mock.calls.length - 1][0].timing).toEqual(
+            expect.objectContaining({ eventLoopTerminated: notice })
+          );
+        });
+
+        test('tags the failure so it can be told apart', async () => {
+          const { terminate, ready } = setupTerminated();
+          const { runner, logger } = await ready;
+
+          const running = runner.run();
+          await Promise.resolve();
+          terminate();
+          await running;
+
+          expect(logger.error).toHaveBeenCalledWith(
+            expect.stringContaining('was terminated after blocking the event loop'),
+            expect.objectContaining({ tags: expect.arrayContaining(['event-loop-terminated']) })
+          );
+        });
+
+        test('keeps the task so removing a terminated ad-hoc task still runs its cleanup hook', async () => {
+          const cleanup = jest.fn().mockResolvedValue(undefined);
+          const { terminate, ready } = setupTerminated({ cleanup });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await nextNativeTurn();
+          terminate();
+          await running;
+          await runner.removeTask();
+
+          expect(cleanup).toHaveBeenCalledTimes(1);
+        });
+
+        test('does not record a cancellation, or cancel the task again, when the pool cancels it afterwards', async () => {
+          const cancel = jest.fn().mockResolvedValue(undefined);
+          const { terminate, ready } = setupTerminated({ cancel });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await nextNativeTurn();
+          terminate();
+          await running;
+          expect(cancel).toHaveBeenCalledTimes(1);
+
+          await runner.cancel();
+
+          expect(cancel).toHaveBeenCalledTimes(1);
+          const actions = (eventLoggerMock.logEvent as jest.Mock).mock.calls.map(
+            ([logged]) => logged.event.action
+          );
+          expect(actions).not.toContain('task-cancel');
+        });
+
+        test('does not call the task cancel hook twice when the pool cancelled the run first', async () => {
+          const cancel = jest.fn().mockResolvedValue(undefined);
+          const { terminate, ready } = setupTerminated({ cancel });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          await nextNativeTurn();
+          await runner.cancel(); // the pool: the run expired
+          expect(cancel).toHaveBeenCalledTimes(1);
+          terminate();
+          await running;
+
+          expect(cancel).toHaveBeenCalledTimes(1);
+        });
+
+        test('listens for the termination before the task starts running', async () => {
+          // A task that blocks before its first `await` is terminated inside its first synchronous
+          // segment: the race has to be listening by then, or the run never settles.
+          const runSpy = jest.fn();
+          const { terminate, ready } = setupTerminated({ runSpy });
+          const { runner } = await ready;
+
+          const running = runner.run();
+          // the task starts in its own native turn
+          for (let i = 0; i < 50 && runSpy.mock.calls.length === 0; i++) await nextNativeTurn();
+          expect(runSpy).toHaveBeenCalledTimes(1);
+          terminate();
+          await running;
+
+          // `then` had been called on the termination promise by the time the task started
+          expect(runSpy.mock.calls[0][0]).toBeGreaterThan(0);
+        });
+
+        test('leaves a run that finishes on its own alone', async () => {
+          const { onTaskEvent, ready } = setup(jest.fn().mockResolvedValue([]));
+          const { runner } = await ready;
+
+          await runner.run();
+
+          expect(lastTiming(onTaskEvent).eventLoopTerminated).toBeUndefined();
+        });
       });
     });
 

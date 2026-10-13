@@ -6,6 +6,7 @@
  */
 
 export { EventLoopWatchdog } from './watchdog';
+export { nextNativeTurn } from './fresh_turn';
 export { runWithCurrentTask, getCurrentTask } from './current_task_context';
 export type {
   CurrentTaskContext,
@@ -15,4 +16,6 @@ export type {
   FlagDecision,
   FlagEvidence,
   FlagReason,
+  TerminationNotice,
+  TerminationReason,
 } from './types';

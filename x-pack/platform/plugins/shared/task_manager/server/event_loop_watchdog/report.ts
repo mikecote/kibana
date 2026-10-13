@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CurrentTaskContext, EventLoopBlockReport } from './types';
+import type { CurrentTaskContext, EventLoopBlockReport, TerminationNotice } from './types';
 
 const task = (t: CurrentTaskContext) => `${t.taskType} "${t.taskId}"`;
 
@@ -14,8 +14,13 @@ export const formatBlockReport = ({
   flag,
   attribution,
   cpuRatio,
+  terminated,
+  terminationRefused,
 }: EventLoopBlockReport) => {
-  const base = `Event loop blocked for ~${Math.round(blockedMs)}ms`;
+  const base =
+    `Event loop blocked for ~${Math.round(blockedMs)}ms` +
+    (terminated ? ' (terminated the blocking run)' : '') +
+    (terminationRefused ? ` (termination refused: ${terminationRefused})` : '');
   if (flag.flagged) {
     const { evidence } = flag;
     return (
@@ -33,3 +38,12 @@ export const formatBlockReport = ({
 export const formatStillBlockedNotice = (elapsedMs: number, latest: CurrentTaskContext | null) =>
   `Event loop still blocked after ~${Math.round(elapsedMs)}ms` +
   (latest ? `; latest sampled task ${task(latest)}` : '; no task sampled yet');
+
+/** Written straight to stderr when the blocking run is terminated: the main thread cannot log. */
+export const formatTerminationNotice = ({ blockedMs, ...notice }: TerminationNotice) =>
+  `Terminating ${task(notice)} (execution ${notice.executionUuid}) after the event loop was ` +
+  `blocked for ~${Math.round(blockedMs)}ms`;
+
+/** The warning logged on the main thread once the termination is known: carries the blocked stack. */
+export const formatTerminationLog = (notice: TerminationNotice) =>
+  `${formatTerminationNotice(notice)}. Blocked at:\n${notice.stack}`;

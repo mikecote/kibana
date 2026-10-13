@@ -14,7 +14,11 @@ import type { ClaimAndFillPoolResult } from './lib/fill_pool';
 import type { PollingError } from './polling';
 import type { DecoratedError, TaskRunResult } from './task_running';
 import type { EventLoopDelayConfig } from './config';
-import type { EventLoopBlockReport, FlagEvidence } from './event_loop_watchdog/types';
+import type {
+  EventLoopBlockReport,
+  FlagEvidence,
+  TerminationNotice,
+} from './event_loop_watchdog/types';
 import type { TaskManagerMetrics } from './metrics/task_metrics_collector';
 import type { BackpressureReason } from './lib/backpressure_reason';
 
@@ -41,6 +45,8 @@ export interface TaskTiming {
   eventLoopBlockMs?: number;
   /** Watchdog flag naming this run as the cause of an event loop block. */
   eventLoopBlock?: FlagEvidence;
+  /** Set when the watchdog terminated this run's blocking JavaScript. */
+  eventLoopTerminated?: TerminationNotice;
 }
 export type WithTaskTiming<T> = T & { timing: TaskTiming };
 
