@@ -361,7 +361,7 @@ export class TaskManagerPlugin
         title: 'Dev: block the event loop',
         createTaskRunner: () => ({
           async run() {
-            const blockUntil = Date.now() + 6000;
+            const blockUntil = Date.now() + 30000;
             while (Date.now() < blockUntil) {
               // intentionally block the event loop
             }
