@@ -141,6 +141,7 @@ describe('TaskPollingLifecycle', () => {
         flag_threshold_ms: 5000,
         min_cpu_ratio: 0.5,
         live_report_interval_ms: 3000,
+        quarantine_blocking_tasks: false,
       },
       worker_utilization_running_average_window: 5,
       metrics_reset_interval: 3000,

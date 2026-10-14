@@ -123,6 +123,29 @@ export const taskMappings: SavedObjectsTypeMappingDefinition = {
         },
       },
     },
+    // PoC only: set by the event loop watchdog. Indexed so quarantined tasks can be found for
+    // the startup warning and for `_health`/monitoring.
+    quarantine: {
+      properties: {
+        at: {
+          type: 'date',
+        },
+        reason: {
+          type: 'keyword',
+          ignore_above: 100,
+        },
+        // NO NEED TO BE INDEXED
+        // blockedMs: {
+        //   type: 'integer',
+        // },
+        executionUuid: {
+          type: 'keyword',
+        },
+        persistedBy: {
+          type: 'keyword',
+        },
+      },
+    },
   },
 };
 

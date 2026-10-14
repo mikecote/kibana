@@ -6,7 +6,7 @@
  */
 
 import type { Observable } from 'rxjs';
-import { combineLatest, Subject, BehaviorSubject } from 'rxjs';
+import { combineLatest, Subject, BehaviorSubject, firstValueFrom } from 'rxjs';
 import { map, distinctUntilChanged } from 'rxjs';
 import type { estypes } from '@elastic/elasticsearch';
 import type {
@@ -22,6 +22,7 @@ import type {
   CoreStart,
 } from '@kbn/core/server';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-shared';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
@@ -67,6 +68,8 @@ import {
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX, TASK_MANAGER_INDEX } from './constants';
 import { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
 import { EventLoopWatchdog } from './event_loop_watchdog';
+import { buildWorkerEsConnection } from './event_loop_watchdog/es_connection';
+import { warnAboutQuarantinedTasks } from './event_loop_watchdog/warn_about_quarantined_tasks';
 import { AdHocTaskCounter } from './lib/adhoc_task_counter';
 import { setupIntervalLogging } from './lib/log_health_metrics';
 import type { Metrics } from './metrics';
@@ -181,6 +184,8 @@ export class TaskManagerPlugin
   private enrichFakeRequest?: FakeRequestEnricher;
   private claimNudgeService?: TaskManagerClaimNudgeService;
   private eventLoopWatchdog?: EventLoopWatchdog;
+  /** PoC only: lets `start()` build the watchdog worker's own Elasticsearch connection. */
+  private elasticsearchConfig$?: Observable<IElasticsearchConfig>;
 
   constructor(private readonly initContext: PluginInitializerContext) {
     this.initContext = initContext;
@@ -217,6 +222,9 @@ export class TaskManagerPlugin
     const clusterClientPromise = core
       .getStartServices()
       .then(([coreServices]) => coreServices.elasticsearch.client);
+    // PoC only: the watchdog worker opens its own connection to Elasticsearch (to persist a
+    // quarantine while the main thread may still be blocked), so it needs the config, not a client.
+    this.elasticsearchConfig$ = core.elasticsearch.legacy.config$;
     this.elasticsearchAndSOAvailability$ = getElasticsearchAndSOAvailability({
       core$: core.status.core$,
       isServerless,
@@ -487,6 +495,7 @@ export class TaskManagerPlugin
     // Only poll for tasks if configured to run tasks
     if (this.shouldRunBackgroundTasks) {
       this.claimNudgeService?.start();
+      warnAboutQuarantinedTasks(taskStore, this.logger).catch(() => {});
 
       this.taskManagerMetricsCollector = new TaskManagerMetricsCollector({
         logger: this.logger,
@@ -526,7 +535,19 @@ export class TaskManagerPlugin
         eventLoopBlocks$: this.eventLoopWatchdog.blocks$,
         eventLoopWatchdog: this.eventLoopWatchdog,
       });
-      this.eventLoopWatchdog.start();
+      // PoC only: the quarantine writer needs the Elasticsearch connection, resolved
+      // asynchronously, before the worker spins up; `blocks$` above does not depend on it.
+      firstValueFrom(this.elasticsearchConfig$!)
+        .then((esConfig) =>
+          this.eventLoopWatchdog?.setEsConnection(buildWorkerEsConnection(esConfig))
+        )
+        .catch((error) =>
+          this.logger.warn(
+            `Event loop watchdog: could not resolve the Elasticsearch connection for the ` +
+              `quarantine writer, quarantining is disabled on this node: ${error.message}`
+          )
+        )
+        .finally(() => this.eventLoopWatchdog?.start());
     }
 
     createMonitoringStats({

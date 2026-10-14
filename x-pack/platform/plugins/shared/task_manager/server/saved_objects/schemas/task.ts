@@ -145,6 +145,17 @@ export const taskSchemaV13 = taskSchemaV12.extends({
   ),
 });
 
+/** PoC only: set by the event loop watchdog when a run is believed to have blocked the loop. */
+export const eventLoopQuarantineSchema = schema.object({
+  at: schema.string(),
+  reason: schema.string({ maxLength: 100 }),
+  blockedMs: schema.number(),
+  executionUuid: schema.string(),
+  /** Which side persisted the quarantine: the worker thread while still blocked, or the runner
+   * as a fallback once the block ended and the worker's write had not landed. */
+  persistedBy: schema.oneOf([schema.literal('worker'), schema.literal('main')]),
+});
+
 export const taskSchemaV14 = taskSchemaV13.extends({
   // Only `type` is required and it is a plain string rather than literals, so this version can still
   // read credential types added later. credential is part of the AAD of the encrypted attributes, so
@@ -163,4 +174,17 @@ export const taskSchemaV14 = taskSchemaV13.extends({
     )
   ),
   encryptedCredential: schema.maybe(schema.string()),
+});
+
+export const taskSchemaV15 = taskSchemaV14.extends({
+  status: schema.oneOf([
+    schema.literal('idle'),
+    schema.literal('claiming'),
+    schema.literal('running'),
+    schema.literal('failed'),
+    schema.literal('unrecognized'),
+    schema.literal('dead_letter'),
+    schema.literal('quarantined'),
+  ]),
+  quarantine: schema.maybe(eventLoopQuarantineSchema),
 });

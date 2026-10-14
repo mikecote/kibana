@@ -21,6 +21,7 @@ import {
   taskSchemaV12,
   taskSchemaV13,
   taskSchemaV14,
+  taskSchemaV15,
 } from '../schemas/task';
 
 import { InstanceTaskCost } from '../../task';
@@ -206,6 +207,30 @@ export const taskModelVersions: SavedObjectsModelVersionMap = {
     schemas: {
       forwardCompatibility: taskSchemaV14.extends({}, { unknowns: 'ignore' }),
       create: taskSchemaV14,
+    },
+  },
+  // PoC only: adds the `quarantined` status and the `quarantine` details set by the event loop
+  // watchdog. An older Kibana reading a quarantined doc during a rolling downgrade fails this
+  // version's `status` literal set; acceptable for a PoC, to be resolved before merging.
+  '15': {
+    changes: [
+      {
+        type: 'mappings_addition',
+        addedMappings: {
+          quarantine: {
+            properties: {
+              at: { type: 'date' },
+              reason: { type: 'keyword', ignore_above: 100 },
+              executionUuid: { type: 'keyword' },
+              persistedBy: { type: 'keyword' },
+            },
+          },
+        },
+      },
+    ],
+    schemas: {
+      forwardCompatibility: taskSchemaV15.extends({}, { unknowns: 'ignore' }),
+      create: taskSchemaV15,
     },
   },
 };

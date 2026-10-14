@@ -15,4 +15,5 @@ export type {
   FlagDecision,
   FlagEvidence,
   FlagReason,
+  QuarantineNotice,
 } from './types';

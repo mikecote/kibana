@@ -137,6 +137,15 @@ groups:
           self: preview
           ech: preview
 
+      - setting: xpack.task_manager.event_loop_watchdog.quarantine_blocking_tasks
+        description: |
+          PoC only. When enabled, the watchdog's worker thread quarantines the task it has attributed a long event loop block to directly in Elasticsearch, independent of the main thread, so the quarantine survives even if the process is killed shortly after (for example, by a liveness probe). A quarantined task is not claimed again until it is released, for example with `runSoon`.
+        datatype: bool
+        default: true
+        applies_to:
+          self: preview
+          ech: preview
+
       - setting: xpack.task_manager.version_conflict_threshold
         description: |
           The percentage threshold of workers experiencing version conflicts above which Task Manager shifts its polling interval to avoid overloading Elasticsearch. Accepts values between 50 and 100.

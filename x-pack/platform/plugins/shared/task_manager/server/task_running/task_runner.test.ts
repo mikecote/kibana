@@ -17,7 +17,11 @@ import {
   TaskRunResult,
 } from '.';
 import type { TaskEvent, TaskRun } from '../task_events';
-import type { EventLoopBlockReport, EventLoopRunObserver } from '../event_loop_watchdog';
+import type {
+  EventLoopBlockReport,
+  EventLoopRunObserver,
+  QuarantineNotice,
+} from '../event_loop_watchdog';
 import { asTaskRunEvent, TaskPersistence, asTaskManagerStatEvent } from '../task_events';
 import type { ConcreteTaskInstance, TaskEventLogger } from '../task';
 import {
@@ -923,6 +927,98 @@ describe('TaskManagerRunner', () => {
 
         await expect(runner.run()).resolves.toBeDefined();
         expect(lastTiming(onTaskEvent).eventLoopBlock).toBeUndefined();
+      });
+    });
+
+    describe('event loop quarantine (PoC)', () => {
+      const notice = (overrides: Partial<QuarantineNotice> = {}): QuarantineNotice => ({
+        taskId: 'foo',
+        taskType: 'bar',
+        executionUuid: TASK_EXECUTION_UUID,
+        blockedMs: 7000,
+        atUs: 1,
+        persisted: true,
+        ...overrides,
+      });
+      const setup = (getQuarantineNotice: jest.Mock) => {
+        const onTaskEvent = jest.fn();
+        const eventLoopWatchdog = {
+          beginRun: jest.fn(() => ({ end: jest.fn().mockResolvedValue([]) })),
+          getQuarantineNotice,
+        };
+        return {
+          onTaskEvent,
+          ready: readyToRunStageSetup({
+            instance: { ...mockInstance(), schedule: { interval: '10m' } },
+            definitions: {
+              bar: { title: 'Bar!', createTaskRunner: () => ({ run: async () => undefined }) },
+            },
+            onTaskEvent,
+            eventLoopWatchdog,
+          }),
+        };
+      };
+      const lastTiming = (onTaskEvent: jest.Mock) =>
+        onTaskEvent.mock.calls[onTaskEvent.mock.calls.length - 1][0].timing;
+
+      test('does not write the task doc when the worker already persisted the quarantine', async () => {
+        const { onTaskEvent, ready } = setup(
+          jest.fn().mockResolvedValue(notice({ persisted: true }))
+        );
+        const { runner, store, logger } = await ready;
+
+        await runner.run();
+
+        expect(lastTiming(onTaskEvent).eventLoopQuarantine).toEqual(notice({ persisted: true }));
+        expect(store.partialUpdate).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('was quarantined by the event loop watchdog'),
+          { tags: ['bar', 'bar foo', 'event-loop-blocked', 'event-loop-quarantined'] }
+        );
+      });
+
+      test('writes the quarantine itself when the worker failed to persist it', async () => {
+        const { ready } = setup(
+          jest.fn().mockResolvedValue(notice({ persisted: false, error: 'es unreachable' }))
+        );
+        const { runner, store } = await ready;
+
+        await runner.run();
+
+        expect(store.partialUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'foo',
+            status: TaskStatus.Quarantined,
+            quarantine: expect.objectContaining({
+              reason: 'event-loop-block',
+              blockedMs: 7000,
+              executionUuid: TASK_EXECUTION_UUID,
+              persistedBy: 'main',
+            }),
+          }),
+          expect.anything()
+        );
+      });
+
+      test('does nothing extra when the run was not quarantined', async () => {
+        const { onTaskEvent, ready } = setup(jest.fn().mockResolvedValue(undefined));
+        const { runner, store } = await ready;
+
+        await runner.run();
+
+        expect(lastTiming(onTaskEvent).eventLoopQuarantine).toBeUndefined();
+        expect(store.partialUpdate).toHaveBeenCalledWith(
+          expect.objectContaining({ status: TaskStatus.Idle }),
+          expect.anything()
+        );
+      });
+
+      test('never fails the run when the lookup fails', async () => {
+        const { onTaskEvent, ready } = setup(jest.fn().mockRejectedValue(new Error('nope')));
+        const { runner } = await ready;
+
+        await expect(runner.run()).resolves.toBeDefined();
+        expect(lastTiming(onTaskEvent).eventLoopQuarantine).toBeUndefined();
       });
     });
 
@@ -2029,6 +2125,58 @@ describe('TaskManagerRunner', () => {
         }
       );
       expect(wasCancelled).toBeTruthy();
+    });
+
+    test('swallows (does not cancel on) a retryAt conflict caused by the task being quarantined mid-run (PoC)', async () => {
+      let wasCancelled = false;
+      const { runner, store, logger, instance } = await readyToRunStageSetup({
+        instance: {
+          status: TaskStatus.Running,
+          startedAt: new Date(),
+          enabled: true,
+        },
+        definitions: {
+          bar: {
+            title: 'Bar!',
+            timeout: `365d`,
+            createTaskRunner: () => ({
+              async run() {
+                const promise = new Promise((r) => setTimeout(r, 60000));
+                jest.advanceTimersByTime(60000);
+                await promise;
+                return { state: {} };
+              },
+              async cancel() {
+                wasCancelled = true;
+              },
+            }),
+          },
+        },
+      });
+      store.partialUpdate.mockRejectedValueOnce(
+        SavedObjectsErrorHelpers.decorateConflictError(new Error('Saved object [type/id] conflict'))
+      );
+      // The watchdog (worker or main-thread fallback) quarantined the task mid-run, bumping its
+      // version; ownerId and attempts are unchanged, so this is not a reclaim.
+      store.get.mockResolvedValue({
+        ...instance,
+        version: 'WzIsMV0=',
+        status: TaskStatus.Quarantined,
+      });
+      await runner.run();
+
+      expect(store.get).toHaveBeenCalledWith('foo');
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'updated to the current task document, will retry on the next interval'
+        ),
+        { tags: ['foo', 'bar'] }
+      );
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        'Conflict error trying to update retryAt for a long-running task. Cancelling task: foo',
+        expect.anything()
+      );
+      expect(wasCancelled).toBe(false);
     });
 
     test('does not revert a schedule that was updated while the task was running', async () => {

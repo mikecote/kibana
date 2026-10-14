@@ -107,6 +107,46 @@ describe('credential fields', () => {
   });
 });
 
+describe('quarantine fields (PoC)', () => {
+  const quarantine = {
+    at: new Date().toISOString(),
+    reason: 'multiple-contexts',
+    blockedMs: 5234,
+    executionUuid: 'execution-1',
+    persistedBy: 'worker',
+  };
+
+  test('allows a task without quarantine fields', () => {
+    const taskSchema = getLatestModelVersion()?.schemas?.create;
+    const task = getTask();
+    expect(taskSchema?.validate(task)).toEqual(task);
+  });
+
+  test('allows a quarantined task with quarantine details', () => {
+    const taskSchema = getLatestModelVersion()?.schemas?.create;
+    const task = getTask({ status: 'quarantined', quarantine });
+    expect(taskSchema?.validate(task)).toEqual(task);
+  });
+
+  test('throws when persistedBy is not worker or main', () => {
+    const taskSchema = getLatestModelVersion()?.schemas?.create;
+    const task = getTask({
+      status: 'quarantined',
+      quarantine: { ...quarantine, persistedBy: 'other' },
+    });
+    expect(() => taskSchema?.validate(task)).toThrow('quarantine.persistedBy');
+  });
+
+  test('throws when quarantine.reason is longer than 100 characters', () => {
+    const taskSchema = getLatestModelVersion()?.schemas?.create;
+    const task = getTask({
+      status: 'quarantined',
+      quarantine: { ...quarantine, reason: 'a'.repeat(101) },
+    });
+    expect(() => taskSchema?.validate(task)).toThrow('quarantine.reason');
+  });
+});
+
 function getTask(overrides = {}) {
   return {
     taskType: 'task-type',

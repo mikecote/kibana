@@ -23,6 +23,7 @@ const config = {
   flag_threshold_ms: 5000,
   min_cpu_ratio: 0.5,
   live_report_interval_ms: 3000,
+  quarantine_blocking_tasks: false,
 };
 const accessorInstalled = () => CURRENT_TASK_ACCESSOR in globalThis;
 
@@ -195,6 +196,102 @@ describe('EventLoopWatchdog', () => {
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('crashed'));
     expect(watchdog.isEnabled).toBe(false);
     expect(accessorInstalled()).toBe(false);
+  });
+
+  it('passes the quarantine config and connection to the worker (PoC)', () => {
+    const es = { nodes: ['http://localhost:9200'] } as never;
+    watchdog = new EventLoopWatchdog({
+      logger,
+      config: { ...config, quarantine_blocking_tasks: true },
+      es,
+    });
+    watchdog.start();
+    const [, options] = (Worker as unknown as jest.Mock).mock.calls[0];
+    expect(options.workerData).toMatchObject({ quarantineEnabled: true, es });
+  });
+
+  it('warns and logs the task when the worker quarantines it (PoC)', () => {
+    watchdog = new EventLoopWatchdog({ logger, config });
+    watchdog.start();
+    worker.emit('message', {
+      type: 'quarantined',
+      notice: {
+        taskId: 'abc',
+        taskType: 'sampleTask',
+        executionUuid: 'uuid',
+        blockedMs: 5234,
+        atUs: 1,
+        persisted: true,
+      },
+    });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('was quarantined'), {
+      tags: ['event-loop-watchdog', 'event-loop-quarantined', 'sampleTask', 'abc'],
+    });
+  });
+
+  describe('getQuarantineNotice (PoC)', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    const quarantineNotice = (overrides = {}) => ({
+      taskId: 'abc',
+      taskType: 'sampleTask',
+      executionUuid: 'uuid',
+      blockedMs: 5234,
+      atUs: 1,
+      persisted: true,
+      ...overrides,
+    });
+
+    it('resolves to undefined when disabled', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config: { ...config, enabled: false } });
+      await expect(watchdog.getQuarantineNotice('uuid')).resolves.toBeUndefined();
+    });
+
+    it('resolves immediately when the notice already arrived', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config });
+      watchdog.start();
+      const notice = quarantineNotice();
+      worker.emit('message', { type: 'quarantined', notice });
+      await expect(watchdog.getQuarantineNotice('uuid')).resolves.toEqual(notice);
+    });
+
+    it('resolves once the notice arrives, for a pending call', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config });
+      watchdog.start();
+      const pending = watchdog.getQuarantineNotice('uuid');
+      const notice = quarantineNotice();
+      worker.emit('message', { type: 'quarantined', notice });
+      await expect(pending).resolves.toEqual(notice);
+    });
+
+    it('ignores a notice for another execution', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config });
+      watchdog.start();
+      const pending = watchdog.getQuarantineNotice('uuid');
+      worker.emit('message', {
+        type: 'quarantined',
+        notice: quarantineNotice({ executionUuid: 'other' }),
+      });
+      jest.advanceTimersByTime(1000);
+      await expect(pending).resolves.toBeUndefined();
+    });
+
+    it('times out when no notice ever arrives', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config });
+      watchdog.start();
+      const pending = watchdog.getQuarantineNotice('uuid');
+      jest.advanceTimersByTime(1000);
+      await expect(pending).resolves.toBeUndefined();
+    });
+
+    it('resolves to undefined for any pending call when the watchdog stops', async () => {
+      watchdog = new EventLoopWatchdog({ logger, config });
+      watchdog.start();
+      const pending = watchdog.getQuarantineNotice('uuid');
+      watchdog.stop();
+      await expect(pending).resolves.toBeUndefined();
+    });
   });
 
   describe('beginRun / end', () => {

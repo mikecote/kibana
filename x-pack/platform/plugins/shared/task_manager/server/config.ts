@@ -88,6 +88,15 @@ const eventLoopWatchdogSchema = schema.object({
   min_cpu_ratio: schema.number({ defaultValue: 0.5, min: 0, max: 1 }),
   /** How often (ms) a still ongoing block is written to stderr. */
   live_report_interval_ms: schema.number({ defaultValue: 3000, min: 100 }),
+  /**
+   * PoC only: quarantines the task that blocked the event loop (sets its status to `quarantined`,
+   * so it is not claimed again) as soon as the block reaches `flag_threshold_ms` and the evidence
+   * clearly names one run. Unlike termination, this never touches the main thread: the worker
+   * persists the quarantine to Elasticsearch directly, so it survives a liveness probe killing
+   * Kibana while still blocked. PoC only: defaults to true to exercise it on real environments,
+   * revert to false before merging (and in the docs entry).
+   */
+  quarantine_blocking_tasks: schema.boolean({ defaultValue: true }),
 });
 
 const eventLoopDelaySchema = schema.object({

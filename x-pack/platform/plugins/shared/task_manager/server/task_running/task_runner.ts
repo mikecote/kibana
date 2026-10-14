@@ -29,6 +29,7 @@ import type {
   EventLoopRunObservation,
   EventLoopRunObserver,
   FlagEvidence,
+  QuarantineNotice,
 } from '../event_loop_watchdog';
 import type { TaskMarkRunning, TaskRun, TaskTiming, TaskManagerStat } from '../task_events';
 import {
@@ -422,11 +423,15 @@ export class TaskManagerRunner implements TaskRunner {
           childOf: this.instance.task.traceparent,
         });
         const stopEventLoopMonitoring = startEventLoopMonitoring(this.config.event_loop_delay);
-        const makeTaskTiming = (eventLoopBlock?: FlagEvidence): TaskTiming => ({
+        const makeTaskTiming = (
+          eventLoopBlock?: FlagEvidence,
+          eventLoopQuarantine?: QuarantineNotice
+        ): TaskTiming => ({
           start: startedAt.getTime(),
           stop: Date.now(),
           eventLoopBlockMs: stopEventLoopMonitoring(),
           ...(eventLoopBlock ? { eventLoopBlock } : {}),
+          ...(eventLoopQuarantine ? { eventLoopQuarantine } : {}),
         });
         this.logTaskRunStartEvent(this.instance.task, startedAt);
 
@@ -592,17 +597,23 @@ export class TaskManagerRunner implements TaskRunner {
 
           stopUpdatingLongRunningTasks();
           const eventLoopBlock = await this.endEventLoopObservation(observation);
+          const eventLoopQuarantine = await this.getEventLoopQuarantineNotice();
 
           const validatedResult = this.validateResult(result);
           const processedResult = await withSpan(
             { name: 'process result', type: 'task manager' },
-            () => this.processResult(validatedResult, makeTaskTiming(eventLoopBlock))
+            () =>
+              this.processResult(
+                validatedResult,
+                makeTaskTiming(eventLoopBlock, eventLoopQuarantine)
+              )
           );
           if (apmTrans) apmTrans.end('success');
           return processedResult;
         } catch (err) {
           stopUpdatingLongRunningTasks();
           const eventLoopBlock = await this.endEventLoopObservation(observation);
+          const eventLoopQuarantine = await this.getEventLoopQuarantineNotice();
 
           const errorSource = isUserError(err) ? TaskErrorSource.USER : TaskErrorSource.FRAMEWORK;
           const errorMessage =
@@ -622,7 +633,7 @@ export class TaskManagerRunner implements TaskRunner {
             () =>
               this.processResult(
                 asErr({ error: err, state: modifiedContext.taskInstance.state }),
-                makeTaskTiming(eventLoopBlock)
+                makeTaskTiming(eventLoopBlock, eventLoopQuarantine)
               )
           );
           if (apmTrans) apmTrans.end('failure');
@@ -648,6 +659,20 @@ export class TaskManagerRunner implements TaskRunner {
       }
     } catch (error) {
       this.logger.debug(`Task ${this} event loop block lookup failed: ${error}`);
+    }
+  }
+
+  /**
+   * PoC only: the watchdog's quarantine decision for this run, if the worker flagged it mid-block.
+   * Resolves once the worker's write settles (or a short timeout elapses); never rejects.
+   */
+  private async getEventLoopQuarantineNotice(): Promise<QuarantineNotice | undefined> {
+    if (!this.eventLoopWatchdog?.getQuarantineNotice) return undefined;
+    try {
+      return await this.eventLoopWatchdog.getQuarantineNotice(this.uuid);
+    } catch (error) {
+      this.logger.debug(`Task ${this} quarantine notice lookup failed: ${error}`);
+      return undefined;
     }
   }
 
@@ -916,7 +941,8 @@ export class TaskManagerRunner implements TaskRunner {
   };
 
   private async processResultForRecurringTask(
-    result: Result<SuccessfulRunResult, FailedRunResult>
+    result: Result<SuccessfulRunResult, FailedRunResult>,
+    quarantine?: QuarantineNotice
   ): Promise<TaskRunResult> {
     const hasTaskRunFailed = isOk(result);
     let shouldTaskBeDisabled = false;
@@ -1048,6 +1074,30 @@ export class TaskManagerRunner implements TaskRunner {
         };
       }
 
+      // PoC only: a run the watchdog quarantined mid-block must not have that undone by
+      // rescheduling the task back to a runnable status. The worker almost always persists the
+      // quarantine itself (in which case there's nothing left to write here); this is only a
+      // fallback for when that write failed, e.g. the worker had no Elasticsearch connection.
+      if (shouldUpdateTask && quarantine) {
+        if (quarantine.persisted) {
+          shouldUpdateTask = false;
+          this.instance = asRan(this.instance.task);
+        } else {
+          partialTask = {
+            id: partialTask.id,
+            version: partialTask.version,
+            status: TaskStatus.Quarantined,
+            quarantine: {
+              at: new Date().toISOString(),
+              reason: 'event-loop-block',
+              blockedMs: Math.round(quarantine.blockedMs),
+              executionUuid: quarantine.executionUuid,
+              persistedBy: 'main',
+            },
+          };
+        }
+      }
+
       if (shouldUpdateTask) {
         try {
           this.instance = asRan(
@@ -1121,7 +1171,7 @@ export class TaskManagerRunner implements TaskRunner {
             task,
             persistence: taskPersistence,
             result: await (runAt || schedule || task.schedule
-              ? this.processResultForRecurringTask(result)
+              ? this.processResultForRecurringTask(result, taskTiming.eventLoopQuarantine)
               : this.processResultWhenDone()),
           };
 
@@ -1198,7 +1248,10 @@ export class TaskManagerRunner implements TaskRunner {
             asErr({
               task,
               persistence: task.schedule ? TaskPersistence.Recurring : TaskPersistence.NonRecurring,
-              result: await this.processResultForRecurringTask(result),
+              result: await this.processResultForRecurringTask(
+                result,
+                taskTiming.eventLoopQuarantine
+              ),
               isExpired: taskHasExpired,
               error,
               taskTypeGroup,
@@ -1216,7 +1269,7 @@ export class TaskManagerRunner implements TaskRunner {
       }
     );
 
-    const { eventLoopBlockMs = 0, eventLoopBlock } = taskTiming;
+    const { eventLoopBlockMs = 0, eventLoopBlock, eventLoopQuarantine } = taskTiming;
     const taskLabel = `${this.taskType} ${this.instance.task.id}`;
     if (eventLoopBlockMs > this.config.event_loop_delay.warn_threshold) {
       this.logger.warn(
@@ -1231,6 +1284,14 @@ export class TaskManagerRunner implements TaskRunner {
       this.logger.warn(
         `Task ${taskLabel} blocked the event loop for ~${eventLoopBlock.blockedMs}ms (observed ~${eventLoopBlock.observedMs}ms of ~${sampledMs}ms sampled, cpu ${eventLoopBlock.cpuRatio})`,
         { tags: [this.taskType, taskLabel, 'event-loop-blocked', 'event-loop-watchdog'] }
+      );
+    }
+    if (eventLoopQuarantine) {
+      this.logger.warn(
+        `Task ${taskLabel} was quarantined by the event loop watchdog (blocked ~${Math.round(
+          eventLoopQuarantine.blockedMs
+        )}ms, persisted by ${eventLoopQuarantine.persisted ? 'worker' : 'main (fallback)'})`,
+        { tags: [this.taskType, taskLabel, 'event-loop-blocked', 'event-loop-quarantined'] }
       );
     }
     return result;

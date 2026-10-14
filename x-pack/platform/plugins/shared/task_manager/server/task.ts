@@ -452,6 +452,12 @@ export enum TaskStatus {
   ShouldDelete = 'should_delete',
   Unrecognized = 'unrecognized',
   DeadLetter = 'dead_letter',
+  /**
+   * PoC only: set by the event loop watchdog (worker thread or, as a fallback, the task runner)
+   * when a run is believed to have blocked the main thread's event loop past the configured
+   * threshold. A quarantined task is not claimed again until released, e.g. via `runSoon`.
+   */
+  Quarantined = 'quarantined',
 }
 
 export enum TaskLifecycleResult {
@@ -496,6 +502,21 @@ export interface TaskCredential {
   workloadId?: string;
   spaceId?: string;
   expectedServiceAccountId?: string | null;
+}
+
+/**
+ * PoC only: details of why a task was quarantined, set by the event loop watchdog when a run is
+ * believed to have blocked the main thread's event loop past the configured threshold.
+ */
+export interface TaskEventLoopQuarantine {
+  /** ISO timestamp of the decision. */
+  at: string;
+  reason: string;
+  blockedMs: number;
+  executionUuid: string;
+  /** Which side persisted the quarantine: the worker thread while still blocked, or the runner
+   * as a fallback once the block ended and the worker's write had not landed. */
+  persistedBy: 'worker' | 'main';
 }
 
 /**
@@ -763,6 +784,9 @@ export interface ConcreteTaskInstance extends Omit<TaskInstance, 'runAs'> {
    * value whose decryption fails if `credential` was changed. Only written when the task is created.
    */
   encryptedCredential?: string;
+
+  /** PoC only: set when the event loop watchdog quarantined this task. */
+  quarantine?: TaskEventLoopQuarantine;
 }
 
 export type PartialConcreteTaskInstance = Partial<ConcreteTaskInstance> & {
