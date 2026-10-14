@@ -21,7 +21,13 @@ import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { BlockDetector, type DetectedBlock } from './block_detector';
 import { partitionBlock } from './context_sampler';
 import { decideFlag } from './flag_rule';
-import { formatStillBlockedNotice } from './report';
+import { decideQuarantine } from './quarantine_rule';
+import {
+  formatQuarantineNotice,
+  formatQuarantiningNotice,
+  formatStillBlockedNotice,
+} from './report';
+import { createQuarantineWriter, type QuarantineWriter } from './quarantine_writer';
 import {
   CURRENT_TASK_ACCESSOR,
   DETECT_THRESHOLD_MS,
@@ -33,6 +39,8 @@ import {
   type ContextSample,
   type CurrentTaskContext,
   type EventLoopBlockReport,
+  type QuarantineNotice,
+  type QuarantineReason,
   type WatchdogWorkerData,
   type WorkerToMainMessage,
 } from './types';
@@ -71,6 +79,9 @@ export interface WorkerDeps {
   now?: () => number;
   /** Writes a line that must be visible while the main thread is blocked. */
   writeLine?: (line: string) => void;
+  /** PoC only: persists a quarantine to Elasticsearch. Built from `data.es` when omitted; tests
+   * inject a fake. */
+  quarantineWriter?: QuarantineWriter;
 }
 
 /**
@@ -109,6 +120,11 @@ interface BlockState {
   inFlight: boolean;
   lastLandedUs: number;
   lastLiveReportUs: number;
+  /** PoC only. Set as soon as the Elasticsearch write is issued, before it settles, so the block
+   * is only ever quarantined once. */
+  quarantining: boolean;
+  quarantine?: QuarantineNotice;
+  quarantineRefused?: QuarantineReason;
 }
 
 export const runWatchdogWorker = (
@@ -120,6 +136,7 @@ export const runWatchdogWorker = (
     cpuUsage = (previous) => process.cpuUsage(previous),
     now = monotonicUs,
     writeLine = writeDirectToStderr,
+    quarantineWriter = data.es ? createQuarantineWriter(data.es) : undefined,
   }: WorkerDeps = {}
 ): void => {
   const shared = new BigInt64Array(data.shared);
@@ -197,16 +214,84 @@ export const runWatchdogWorker = (
     }
   };
 
+  /** Process-wide CPU over the wall time since detection: can exceed 1 with other threads busy. */
+  const cpuRatioSince = (current: BlockState, nowUs: number): number => {
+    const wallUs = Math.max(1, nowUs - current.detectedAtUs);
+    const cpu = cpuUsage(current.cpuAtDetect);
+    return Math.round(((cpu.user + cpu.system) / wallUs) * 100) / 100;
+  };
+
+  /**
+   * PoC only: decides whether to quarantine the blocking run right now, and if so writes it to
+   * Elasticsearch directly from the worker, independent of the main thread. The decision and the
+   * write both happen while the block is still going, so a liveness probe killing the process
+   * moments later does not lose it: by the time `flag_threshold_ms` is reached (several seconds
+   * into a block), the write has long since landed or failed.
+   */
+  const maybeQuarantine = (current: BlockState, nowUs: number) => {
+    if (!data.quarantineEnabled || current.quarantine || current.quarantining) return;
+    if (!quarantineWriter) {
+      current.quarantineRefused ??= 'no-connection';
+      return;
+    }
+    const decision = decideQuarantine(current.samples, {
+      nowUs,
+      blockStartUs: current.startUs,
+      flagThresholdMs: data.flagThresholdMs,
+      cpuRatio: cpuRatioSince(current, nowUs),
+      minCpuRatio: data.minCpuRatio,
+      sampleIntervalMs: cadence.sampleIntervalMs,
+    });
+    if (!decision.quarantine) {
+      if (decision.reason !== 'below-threshold' && decision.reason !== 'too-few-samples') {
+        if (!current.quarantineRefused) {
+          writeLine(`Not quarantining the blocked run (${decision.reason})`);
+          current.quarantineRefused = decision.reason;
+        }
+      }
+      return;
+    }
+    current.quarantineRefused = undefined;
+    current.quarantining = true;
+    const blockedMs = (nowUs - current.startUs) / 1000;
+    writeLine(formatQuarantiningNotice(decision.task, blockedMs));
+    quarantineWriter
+      .write(decision.task.taskId, {
+        at: iso(nowUs),
+        reason: 'event-loop-block',
+        blockedMs,
+        executionUuid: decision.task.executionUuid,
+        persistedBy: 'worker',
+      })
+      .then(
+        (result) => {
+          current.quarantining = false;
+          const notice: QuarantineNotice = {
+            ...decision.task,
+            blockedMs,
+            atUs: nowUs,
+            persisted: result.persisted,
+            error: result.error,
+          };
+          current.quarantine = notice;
+          writeLine(formatQuarantineNotice(notice));
+          post({ type: 'quarantined', notice });
+        },
+        // The writer's own `write()` never rejects: this only guards against a thrown test double.
+        (error) => {
+          current.quarantining = false;
+          reportError('Quarantine write failed', error);
+        }
+      );
+  };
+
   const onBlockEnded = (block: DetectedBlock, nowUs: number) => {
     const current = state;
     state = undefined;
     // `monotonicUs()` is an integer: rounding undoes the millisecond float round trip.
     const startUs = Math.round(block.startedAt * 1000);
     const endUs = Math.round(block.endedAt * 1000);
-    const wallUs = Math.max(1, nowUs - (current?.detectedAtUs ?? nowUs));
-    const cpu = current ? cpuUsage(current.cpuAtDetect) : { user: 0, system: 0 };
-    // Process-wide CPU over the wall time since detection: can exceed 1 with other threads busy.
-    const cpuRatio = current ? Math.round(((cpu.user + cpu.system) / wallUs) * 100) / 100 : 0;
+    const cpuRatio = current ? cpuRatioSince(current, nowUs) : 0;
 
     const attribution = partitionBlock(startUs, endUs, current?.samples ?? [], {
       sampleIntervalMs: cadence.sampleIntervalMs,
@@ -230,6 +315,8 @@ export const runWatchdogWorker = (
       flag,
       reportable: block.report,
       suppressedBlocks: block.suppressedBlocks,
+      ...(current?.quarantine ? { quarantine: current.quarantine } : {}),
+      ...(current?.quarantineRefused ? { quarantineRefused: current.quarantineRefused } : {}),
     };
     post({ type: 'block', report });
 
@@ -264,6 +351,7 @@ export const runWatchdogWorker = (
         inFlight: false,
         lastLandedUs: 0,
         lastLiveReportUs: nowUs,
+        quarantining: false,
       };
     }
     const current = state;
@@ -284,6 +372,8 @@ export const runWatchdogWorker = (
     ) {
       postSample(current);
     }
+
+    maybeQuarantine(current, nowUs);
 
     if (nowUs - current.lastLiveReportUs >= data.liveReportIntervalMs * 1000) {
       current.lastLiveReportUs = nowUs;

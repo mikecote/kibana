@@ -317,6 +317,21 @@ describe('resolveTaskDocumentConflicts', () => {
     );
   });
 
+  test('does not retry when the task has been quarantined by the event loop watchdog (PoC)', async () => {
+    store.get.mockResolvedValue(
+      createTask({ status: TaskStatus.Quarantined, startedAt: originalTask.startedAt })
+    );
+
+    await resolve();
+
+    expect(store.get).toHaveBeenCalledTimes(1);
+    expect(store.partialUpdate).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      'Skipping resolving task document version conflict after task run: Unable to resolve task document conflicts for task "bar:task-1": task has been quarantined by the event loop watchdog',
+      LOG_META
+    );
+  });
+
   test('releases the task when only startedAt changed while the task was running', async () => {
     const currentTask = createTask({
       version: 'WzIsMV0=',

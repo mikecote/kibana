@@ -18,6 +18,8 @@ const forwardCompatibilityV13 = taskModelVersions['13']!.schemas!
   .forwardCompatibility as ObjectType;
 const forwardCompatibilityV14 = taskModelVersions['14']!.schemas!
   .forwardCompatibility as ObjectType;
+const forwardCompatibilityV15 = taskModelVersions['15']!.schemas!
+  .forwardCompatibility as ObjectType;
 
 const getTaskAttributes = (overrides: Attributes = {}): Attributes => ({
   taskType: 'task-type',
@@ -79,6 +81,31 @@ describe('taskModelVersions v14 forwardCompatibility', () => {
 
   it('drops top-level fields added in a later version', () => {
     const result = forwardCompatibilityV14.validate(getTaskAttributes({ futureField: 'value' }));
+    expect(result).not.toHaveProperty('futureField');
+  });
+
+  it('PoC: a v14 node cannot read a quarantined (v15) doc, by design (rolling downgrade gap)', () => {
+    const attributes = getTaskAttributes({ status: 'quarantined' });
+    expect(() => forwardCompatibilityV14.validate(attributes)).toThrow('status');
+  });
+});
+
+const quarantine = {
+  at: '2026-09-29T00:00:00.000Z',
+  reason: 'multiple-contexts',
+  blockedMs: 5234,
+  executionUuid: 'execution-1',
+  persistedBy: 'worker' as const,
+};
+
+describe('taskModelVersions v15 forwardCompatibility (PoC)', () => {
+  it('keeps the fields added in v15', () => {
+    const attributes = getTaskAttributes({ status: 'quarantined', quarantine });
+    expect(forwardCompatibilityV15.validate(attributes)).toEqual(attributes);
+  });
+
+  it('drops top-level fields added in a later version', () => {
+    const result = forwardCompatibilityV15.validate(getTaskAttributes({ futureField: 'value' }));
     expect(result).not.toHaveProperty('futureField');
   });
 });

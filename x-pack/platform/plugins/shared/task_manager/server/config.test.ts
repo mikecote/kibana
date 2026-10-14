@@ -32,6 +32,7 @@ describe('config validation', () => {
           "flag_threshold_ms": 5000,
           "live_report_interval_ms": 3000,
           "min_cpu_ratio": 0.5,
+          "quarantine_blocking_tasks": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,
@@ -108,6 +109,7 @@ describe('config validation', () => {
           "flag_threshold_ms": 5000,
           "live_report_interval_ms": 3000,
           "min_cpu_ratio": 0.5,
+          "quarantine_blocking_tasks": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,
@@ -182,6 +184,7 @@ describe('config validation', () => {
           "flag_threshold_ms": 5000,
           "live_report_interval_ms": 3000,
           "min_cpu_ratio": 0.5,
+          "quarantine_blocking_tasks": true,
         },
         "execution_control": Object {
           "poll_interval": 5000,

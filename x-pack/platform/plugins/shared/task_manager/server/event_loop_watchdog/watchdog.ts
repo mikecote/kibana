@@ -12,15 +12,18 @@ import { Subject, type Observable } from 'rxjs';
 import type { Logger } from '@kbn/core/server';
 import type { EventLoopWatchdogConfig } from '../config';
 import { installCurrentTaskAccessor, uninstallCurrentTaskAccessor } from './current_task_context';
-import { formatBlockReport } from './report';
+import { formatBlockReport, formatQuarantineLog } from './report';
+import type { WorkerEsConnection } from './quarantine_writer';
 import {
   DETECT_THRESHOLD_MS,
   HEARTBEAT_INTERVAL_MS,
+  MAX_QUARANTINE_NOTICES,
   POLL_INTERVAL_MS,
   monotonicUs,
   type EventLoopBlockReport,
   type EventLoopRunObservation,
   type EventLoopRunObserver,
+  type QuarantineNotice,
   type WatchdogWorkerData,
   type WorkerToMainMessage,
 } from './types';
@@ -28,6 +31,9 @@ import {
 export interface EventLoopWatchdogDeps {
   logger: Logger;
   config: EventLoopWatchdogConfig;
+  /** PoC only: how the worker reaches Elasticsearch to persist a quarantine. Undefined disables
+   * quarantining even if `config.quarantine_blocking_tasks` is on. */
+  es?: WorkerEsConnection;
   /** Monotonic microseconds. For tests. */
   now?: () => number;
 }
@@ -54,6 +60,9 @@ interface MainBlock {
 export class EventLoopWatchdog implements EventLoopRunObserver {
   private readonly logger: Logger;
   private readonly config: EventLoopWatchdogConfig;
+  /** PoC only: not readonly. Resolving the connection (`core.elasticsearch.legacy.config$`) is
+   * asynchronous, so the caller sets it, if at all, before calling `start()`. */
+  private es?: WorkerEsConnection;
   private readonly blocksSubject = new Subject<EventLoopBlockReport>();
   private readonly now: () => number;
   private heartbeat?: BigInt64Array;
@@ -65,17 +74,31 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
   /** When the worker started polling; blocks before it were never seen by the worker. */
   private workerReadyAtUs?: number;
   private readyWaiters: Array<() => void> = [];
+  /** PoC only: quarantine notices by execution uuid, and resolvers waiting on one that has not
+   * arrived yet. Bounded: `onWorkerMessage` evicts the oldest entry past `MAX_QUARANTINE_NOTICES`. */
+  private readonly quarantineNotices = new Map<string, QuarantineNotice>();
+  private readonly quarantineWaiters = new Map<
+    string,
+    Array<(notice?: QuarantineNotice) => void>
+  >();
 
   public readonly blocks$: Observable<EventLoopBlockReport> = this.blocksSubject.asObservable();
 
-  constructor({ logger, config, now = monotonicUs }: EventLoopWatchdogDeps) {
+  constructor({ logger, config, es, now = monotonicUs }: EventLoopWatchdogDeps) {
     this.logger = logger;
     this.now = now;
     this.config = config;
+    this.es = es;
   }
 
   public get isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /** PoC only: sets the connection the worker uses to persist a quarantine. Only takes effect if
+   * called before `start()`; the worker is handed a copy of it once, at construction. */
+  public setEsConnection(es: WorkerEsConnection): void {
+    this.es = es;
   }
 
   /** Starts the heartbeat and the worker. No-op when disabled in config. */
@@ -98,6 +121,8 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
       flagThresholdMs: this.config.flag_threshold_ms,
       minCpuRatio: this.config.min_cpu_ratio,
       liveReportIntervalMs: this.config.live_report_interval_ms,
+      quarantineEnabled: this.config.quarantine_blocking_tasks,
+      es: this.es,
     };
     // `worker_entry.js` is transpiled to the same name in dist and bootstraps TypeScript from source.
     const worker = new Worker(path.resolve(__dirname, 'worker_entry.js'), {
@@ -136,6 +161,11 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
     this.workerReadyAtUs = undefined;
     this.readyWaiters = [];
     this.ledger.splice(0).forEach((block) => block.waiters.forEach((resolve) => resolve()));
+    this.quarantineNotices.clear();
+    for (const waiters of this.quarantineWaiters.values()) {
+      waiters.forEach((resolve) => resolve(undefined));
+    }
+    this.quarantineWaiters.clear();
     const { worker } = this;
     this.worker = undefined;
     worker?.terminate().catch(() => {});
@@ -199,6 +229,38 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
     return { end: () => this.endRun(startedAtUs) };
   }
 
+  /**
+   * PoC only: the quarantine notice for one run's execution, if the worker quarantined it. Called
+   * once the run has finished: with no termination, the blocking run always runs to completion, by
+   * which point the worker's decision (made mid-block, at the flag threshold) has long since been
+   * made and, usually, already delivered. The short wait only covers the message still being in
+   * flight when this is called.
+   */
+  public async getQuarantineNotice(executionUuid: string): Promise<QuarantineNotice | undefined> {
+    if (!this.enabled) return undefined;
+    const existing = this.quarantineNotices.get(executionUuid);
+    if (existing) return existing;
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        const waiters = this.quarantineWaiters.get(executionUuid);
+        if (waiters) {
+          const index = waiters.indexOf(settle);
+          if (index >= 0) waiters.splice(index, 1);
+          if (waiters.length === 0) this.quarantineWaiters.delete(executionUuid);
+        }
+        resolve(undefined);
+      }, REPORT_WAIT_MS);
+      timeout.unref?.();
+      const settle = (notice?: QuarantineNotice) => {
+        clearTimeout(timeout);
+        resolve(notice);
+      };
+      const waiters = this.quarantineWaiters.get(executionUuid) ?? [];
+      waiters.push(settle);
+      this.quarantineWaiters.set(executionUuid, waiters);
+    });
+  }
+
   private endRun(startedAtUs: number): Promise<EventLoopBlockReport[]> {
     if (!this.enabled) return Promise.resolve([]);
     this.beat();
@@ -231,6 +293,23 @@ export class EventLoopWatchdog implements EventLoopRunObserver {
     }
     if (message.type === 'worker-error') {
       this.logger.warn(`Event loop watchdog worker error: ${message.message}`);
+      return;
+    }
+    if (message.type === 'quarantined') {
+      const { notice } = message;
+      this.logger.warn(formatQuarantineLog(notice), {
+        tags: ['event-loop-watchdog', 'event-loop-quarantined', notice.taskType, notice.taskId],
+      });
+      this.quarantineNotices.set(notice.executionUuid, notice);
+      if (this.quarantineNotices.size > MAX_QUARANTINE_NOTICES) {
+        const oldestKey = this.quarantineNotices.keys().next().value;
+        if (oldestKey !== undefined) this.quarantineNotices.delete(oldestKey);
+      }
+      const waiters = this.quarantineWaiters.get(notice.executionUuid);
+      if (waiters) {
+        waiters.forEach((resolve) => resolve(notice));
+        this.quarantineWaiters.delete(notice.executionUuid);
+      }
       return;
     }
     const { report } = message;

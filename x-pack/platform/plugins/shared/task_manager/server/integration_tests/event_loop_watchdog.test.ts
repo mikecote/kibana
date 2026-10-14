@@ -54,6 +54,7 @@ const config = {
   flag_threshold_ms: 1000,
   min_cpu_ratio: 0.5,
   live_report_interval_ms: 500,
+  quarantine_blocking_tasks: false,
 };
 
 describe('event loop watchdog (real worker and inspector)', () => {

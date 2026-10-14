@@ -12,10 +12,12 @@ import {
   type Cadence,
   type InspectorSession,
 } from './worker';
+import type { QuarantineWriteResult, QuarantineWriter } from './quarantine_writer';
 import {
   monotonicUs,
   type CurrentTaskContext,
   type EventLoopBlockReport,
+  type QuarantineNotice,
   type WorkerToMainMessage,
 } from './types';
 
@@ -41,9 +43,18 @@ interface HarnessOpts {
   landDelayMs?: number;
   /** CPU time reported over the block, in microseconds. */
   cpuUs?: number;
+  /** PoC only. */
+  quarantineEnabled?: boolean;
+  quarantineWriter?: QuarantineWriter;
 }
 
-const setup = ({ landDelayMs = 0, cpuUs = 10_000_000, realCadence = false }: HarnessOpts = {}) => {
+const setup = ({
+  landDelayMs = 0,
+  cpuUs = 10_000_000,
+  realCadence = false,
+  quarantineEnabled = false,
+  quarantineWriter,
+}: HarnessOpts = {}) => {
   const shared = new BigInt64Array(new SharedArrayBuffer(8));
   let blocked = false;
   const beat = setInterval(() => {
@@ -89,12 +100,14 @@ const setup = ({ landDelayMs = 0, cpuUs = 10_000_000, realCadence = false }: Har
       flagThresholdMs: realCadence ? 800 : 200,
       minCpuRatio: 0.5,
       liveReportIntervalMs: realCadence ? 500 : 150,
+      quarantineEnabled,
     },
     {
       cadence: realCadence ? undefined : FAST,
       createSession,
       cpuUsage: (previous) => (previous ? { user: cpuUs, system: 0 } : { user: 0, system: 0 }),
       writeLine: (line) => lines.push(line),
+      quarantineWriter,
     }
   );
 
@@ -109,6 +122,12 @@ const setup = ({ landDelayMs = 0, cpuUs = 10_000_000, realCadence = false }: Har
     for (let i = 0; i < 100 && reports().length === 0; i++) await sleep(25);
     return reports()[0];
   };
+  const quarantineNotices = (): QuarantineNotice[] =>
+    messages.flatMap((m) => (m.type === 'quarantined' ? [m.notice] : []));
+  const waitForQuarantineNotice = async () => {
+    for (let i = 0; i < 100 && quarantineNotices().length === 0; i++) await sleep(25);
+    return quarantineNotices()[0];
+  };
   const stop = () => {
     clearInterval(beat);
     channel.port1.close();
@@ -118,11 +137,26 @@ const setup = ({ landDelayMs = 0, cpuUs = 10_000_000, realCadence = false }: Har
     state,
     block,
     waitForReport,
+    waitForQuarantineNotice,
     stop,
     lines,
     evaluates,
     messages,
     counts: () => ({ sessions, disconnects, maxInFlight }),
+  };
+};
+
+/** PoC only: a fake `QuarantineWriter` for tests, recording every call. */
+const fakeQuarantineWriter = (
+  result: QuarantineWriteResult = { persisted: true }
+): QuarantineWriter & { calls: Array<{ taskId: string }> } => {
+  const calls: Array<{ taskId: string }> = [];
+  return {
+    calls,
+    write: async (taskId) => {
+      calls.push({ taskId });
+      return result;
+    },
   };
 };
 
@@ -222,5 +256,75 @@ describe('runWatchdogWorker', () => {
     expect(h.lines.some((line) => line.includes('still blocked') && line.includes('"a"'))).toBe(
       true
     );
+  });
+});
+
+describe('runWatchdogWorker quarantine (PoC)', () => {
+  let h: ReturnType<typeof setup>;
+  afterEach(() => h.stop());
+
+  it('does not quarantine when disabled', async () => {
+    const writer = fakeQuarantineWriter();
+    h = setup({ quarantineEnabled: false, quarantineWriter: writer });
+    h.state.current = owner('a');
+    await h.block(450);
+    await h.waitForReport();
+    expect(writer.calls).toHaveLength(0);
+    expect(h.messages.some((m) => m.type === 'quarantined')).toBe(false);
+  });
+
+  it('quarantines the task that was current for the whole block, while it is still blocked', async () => {
+    const writer = fakeQuarantineWriter({ persisted: true });
+    h = setup({ quarantineEnabled: true, quarantineWriter: writer });
+    h.state.current = owner('a');
+    const blockPromise = h.block(450);
+    const notice = await h.waitForQuarantineNotice();
+    // The write landed while the block was still going, not after it ended.
+    await blockPromise;
+    expect(writer.calls).toEqual([{ taskId: 'a' }]);
+    expect(notice).toMatchObject({
+      taskId: 'a',
+      executionUuid: 'uuid-a',
+      persisted: true,
+    });
+    const report = await h.waitForReport();
+    expect(report.quarantine).toMatchObject({ taskId: 'a', persisted: true });
+  });
+
+  it('only issues one write per block', async () => {
+    const writer = fakeQuarantineWriter({ persisted: true });
+    h = setup({ quarantineEnabled: true, quarantineWriter: writer });
+    h.state.current = owner('a');
+    await h.block(450);
+    await h.waitForReport();
+    expect(writer.calls).toHaveLength(1);
+  });
+
+  it('reports a failed write without blocking the block report', async () => {
+    const writer = fakeQuarantineWriter({ persisted: false, error: 'timeout' });
+    h = setup({ quarantineEnabled: true, quarantineWriter: writer });
+    h.state.current = owner('a');
+    await h.block(450);
+    const notice = await h.waitForQuarantineNotice();
+    expect(notice).toMatchObject({ persisted: false, error: 'timeout' });
+    const report = await h.waitForReport();
+    expect(report.quarantine).toMatchObject({ persisted: false, error: 'timeout' });
+  });
+
+  it('does not quarantine a block with no single task context', async () => {
+    const writer = fakeQuarantineWriter();
+    h = setup({ quarantineEnabled: true, quarantineWriter: writer });
+    h.state.current = null;
+    await h.block(450);
+    await h.waitForReport();
+    expect(writer.calls).toHaveLength(0);
+  });
+
+  it('flags terminationRefused: no-connection when quarantining is enabled without a writer', async () => {
+    h = setup({ quarantineEnabled: true, quarantineWriter: undefined });
+    h.state.current = owner('a');
+    await h.block(450);
+    const report = await h.waitForReport();
+    expect(report.quarantineRefused).toBe('no-connection');
   });
 });

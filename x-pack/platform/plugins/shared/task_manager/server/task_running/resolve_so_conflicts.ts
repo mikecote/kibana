@@ -15,6 +15,7 @@ import type {
   PartialConcreteTaskInstance,
   RruleSchedule,
 } from '../task';
+import { TaskStatus } from '../task';
 import type { Updatable } from './task_runner';
 
 /** Total attempts = 1 initial + (MAX_ATTEMPTS - 1) retries */
@@ -129,6 +130,15 @@ async function resolveTaskDocumentConflictsOnce({
   if (reclaimReason) {
     throwNotRetryableError(
       `Unable to resolve task document conflicts for task "${label}": ${reclaimReason}`
+    );
+  }
+
+  // PoC only: the event loop watchdog quarantined this task (directly, or via the runner's own
+  // fallback write) while this run's completion was being written. Resolving the conflict in the
+  // normal way would reschedule the task, undoing the quarantine the moment it was persisted.
+  if (currentTask.status === TaskStatus.Quarantined) {
+    throwNotRetryableError(
+      `Unable to resolve task document conflicts for task "${label}": task has been quarantined by the event loop watchdog`
     );
   }
 
