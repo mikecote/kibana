@@ -7,14 +7,18 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import Crypto from 'node:crypto';
 import Fs from 'node:fs';
 import Os from 'node:os';
 import Path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { BehaviorSubject } from 'rxjs';
 import { REPO_ROOT } from '@kbn/repo-info';
 import { ThreadsService } from '@kbn/core-threads-server-internal';
 import { loggerMock, type MockedLogger } from '@kbn/logging-mocks';
+import { mockCoreContext } from '@kbn/core-base-server-mocks';
+import { ExecutionContextService } from '@kbn/core-execution-context-server-internal';
 import { EventLoopWatchdog } from '@kbn/core-metrics-server-internal/src/event_loop_watchdog/event_loop_watchdog';
 import type { CpuProfile } from '@kbn/core-metrics-server-internal/src/event_loop_watchdog/profile_summary';
 
@@ -55,6 +59,8 @@ describe('EventLoopWatchdog (real worker, real inspector profiler)', () => {
     logger[level].mock.calls.find(([message]) =>
       String(message).startsWith('Event loop block profile')
     );
+  const blockLog = () =>
+    logger.warn.mock.calls.find(([message]) => String(message).startsWith('Event loop blocked'));
   const metaOf = (meta: unknown) =>
     (meta as { kibana: { event_loop_watchdog: { profile: any } } }).kibana.event_loop_watchdog
       .profile;
@@ -128,5 +134,56 @@ describe('EventLoopWatchdog (real worker, real inspector profiler)', () => {
     await watchdog.stop(); // ...and the worker is terminated before it took the profile
     expect(await idleUtilization(500)).toBeLessThan(0.2);
     expect(messages('info')).toContain('Event loop watchdog stopped');
+  });
+
+  describe('naming the execution context current during a block', () => {
+    let executionContext: ReturnType<ExecutionContextService['setup']>;
+    let executionContextService: ExecutionContextService;
+
+    /**
+     * Runs `Crypto.pbkdf2Sync` for approximately `ms`, calibrating iterations first (a throwaway
+     * warmup call absorbs the one-off cost of the crypto engine's own first-use initialization,
+     * which would otherwise make the calibration call look slower than the real one that follows).
+     */
+    const pbkdf2For = (ms: number) => {
+      Crypto.pbkdf2Sync('secret', 'salt', 1_000, 64, 'sha512'); // warmup, not measured
+      const calibrationIterations = 200_000;
+      const calibrationStart = performance.now();
+      Crypto.pbkdf2Sync('secret', 'salt', calibrationIterations, 64, 'sha512');
+      const perIteration = (performance.now() - calibrationStart) / calibrationIterations;
+      // A generous margin: undershooting fails the test outright, overshooting just slows it down.
+      const iterations = Math.max(calibrationIterations, Math.round((ms * 1.5) / perIteration));
+      Crypto.pbkdf2Sync('secret', 'salt', iterations, 64, 'sha512');
+    };
+
+    beforeEach(() => {
+      const core = mockCoreContext.create();
+      core.configService.atPath.mockReturnValue(new BehaviorSubject({ enabled: true }));
+      executionContextService = new ExecutionContextService(core);
+      executionContext = executionContextService.setup();
+      executionContext.installInspectorAccessor();
+    });
+
+    afterEach(() => {
+      executionContextService.stop();
+    });
+
+    it('names a task-manager-shaped execution context current when the block ended', async () => {
+      executionContext.withContext(
+        { type: 'task manager', name: 'run my-task', id: 'task-1' },
+        () => spinTheEventLoop(800)
+      );
+      const [message] = await waitFor(() => blockLog());
+      expect(message).toMatch(/task manager "run my-task" id=task-1 held ~\d+ms of ~\d+ms sampled/);
+    });
+
+    it('attributes a long synchronous native call (no interrupt checks) as opaque', async () => {
+      executionContext.withContext(
+        { type: 'task manager', name: 'run my-task', id: 'task-2' },
+        () => pbkdf2For(1_200)
+      );
+      const [message] = await waitFor(() => blockLog());
+      expect(message).toContain('ms opaque');
+    });
   });
 });

@@ -15,6 +15,7 @@ import type { Subscription } from 'rxjs';
 import type { Logger } from '@kbn/logging';
 import type { CoreContext, CoreService } from '@kbn/core-base-server-internal';
 import type { KibanaExecutionContext } from '@kbn/core-execution-context-common';
+import { EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY } from '@kbn/core-execution-context-common';
 import type { IExecutionContextContainer } from '@kbn/core-execution-context-server';
 import type { ExecutionContextConfigType } from './execution_context_config';
 import { ExecutionContextContainer, getParentContextFrom } from './execution_context_container';
@@ -51,6 +52,19 @@ export interface IExecutionContext {
    * returns apm labels
    **/
   getAsLabels(): apm.Labels;
+
+  /**
+   * Exposes the current execution context as a non-enumerable global accessor, so an inspector
+   * session (e.g. the event loop watchdog worker) can read it through `Runtime.evaluate` while
+   * the main thread is blocked. Only `AsyncLocalStorage.getStore()` is read; nothing is written.
+   * Idempotent; call `uninstallInspectorAccessor` when it is no longer needed.
+   */
+  installInspectorAccessor(): void;
+
+  /**
+   * Removes the global accessor installed by `installInspectorAccessor`. Idempotent.
+   */
+  uninstallInspectorAccessor(): void;
 }
 
 /**
@@ -93,6 +107,8 @@ export class ExecutionContextService
       get: this.get.bind(this),
       getAsHeader: this.getAsHeader.bind(this),
       getAsLabels: this.getAsLabels.bind(this),
+      installInspectorAccessor: this.installInspectorAccessor.bind(this),
+      uninstallInspectorAccessor: this.uninstallInspectorAccessor.bind(this),
     };
   }
 
@@ -105,15 +121,33 @@ export class ExecutionContextService
       get: this.get.bind(this),
       getAsHeader: this.getAsHeader.bind(this),
       getAsLabels: this.getAsLabels.bind(this),
+      installInspectorAccessor: this.installInspectorAccessor.bind(this),
+      uninstallInspectorAccessor: this.uninstallInspectorAccessor.bind(this),
     };
   }
 
   stop() {
     this.enabled = false;
+    this.uninstallInspectorAccessor();
     if (this.configSubscription) {
       this.configSubscription.unsubscribe();
       this.configSubscription = undefined;
     }
+  }
+
+  private installInspectorAccessor(): void {
+    Object.defineProperty(globalThis, Symbol.for(EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY), {
+      value: () => this.contextStore.getStore()?.toJSON() ?? null,
+      configurable: true,
+      enumerable: false,
+      writable: false,
+    });
+  }
+
+  private uninstallInspectorAccessor(): void {
+    delete (globalThis as Record<symbol, unknown>)[
+      Symbol.for(EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY)
+    ];
   }
 
   private set(context: KibanaExecutionContext) {

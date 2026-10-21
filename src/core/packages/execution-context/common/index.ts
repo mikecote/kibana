@@ -8,3 +8,4 @@
  */
 
 export type { KibanaExecutionContext } from './src/types';
+export { EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY } from './src/inspector_accessor';

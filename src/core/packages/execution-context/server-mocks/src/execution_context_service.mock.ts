@@ -28,6 +28,8 @@ const createExecutionContextMock = () => {
     getParentContextFrom: jest.fn(),
     getAsHeader: jest.fn(),
     getAsLabels: jest.fn(),
+    installInspectorAccessor: jest.fn(),
+    uninstallInspectorAccessor: jest.fn(),
   };
   mock.withContext.mockImplementation(withContextMock);
   return mock;

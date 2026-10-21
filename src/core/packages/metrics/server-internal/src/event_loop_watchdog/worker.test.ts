@@ -47,6 +47,9 @@ describe('runWatchdogWorker', () => {
   let blocked: boolean;
   let heartbeat: NodeJS.Timeout;
 
+  /** Context named by the next `Runtime.evaluate` reply; `undefined` replies with no value at all. */
+  let currentContext: unknown;
+
   const start = (profiling = { afterMs: 300, maxMs: 2_000, cooldownMs: 60_000 }) => {
     const shared = new SharedArrayBuffer(SLOT_COUNT * BigInt64Array.BYTES_PER_ELEMENT);
     const slots = new BigInt64Array(shared);
@@ -72,9 +75,19 @@ describe('runWatchdogWorker', () => {
             callback: (e: Error | null, r?: object) => void
           ) => {
             session.posted.push(method);
-            setImmediate(() =>
-              callback(null, method === 'Profiler.stop' ? { profile: PROFILE } : {})
-            );
+            setImmediate(() => {
+              if (method === 'Profiler.stop') {
+                callback(null, { profile: PROFILE });
+              } else if (method === 'Runtime.evaluate') {
+                callback(null, {
+                  result: {
+                    value: { at: monotonicUs(), context: currentContext ?? null, missing: false },
+                  },
+                });
+              } else {
+                callback(null, {});
+              }
+            });
           },
           disconnect: () => {
             session.disconnected = true;
@@ -101,6 +114,7 @@ describe('runWatchdogWorker', () => {
     diagnosticDir = Fs.mkdtempSync(Path.join(Os.tmpdir(), 'elw-worker-'));
     logs = [];
     sessions = [];
+    currentContext = null;
   });
 
   afterEach(() => {
@@ -113,8 +127,11 @@ describe('runWatchdogWorker', () => {
     start();
     await block(700);
     const [profileLog] = await waitForProfileLogs(1);
-    expect(sessions).toHaveLength(1);
-    const [session] = sessions;
+    // A separate inspector session also samples the current execution context past 500ms; only
+    // the profiling session is asserted on here.
+    const profilingSessions = sessions.filter((s) => s.posted[0] === 'Profiler.enable');
+    expect(profilingSessions).toHaveLength(1);
+    const [session] = profilingSessions;
     expect(session.connectToMainThread).toHaveBeenCalled();
     expect(session.posted).toEqual([
       'Profiler.enable',
@@ -146,7 +163,7 @@ describe('runWatchdogWorker', () => {
     await waitForProfileLogs(1);
     await block(500);
     await sleep(200);
-    expect(sessions).toHaveLength(1);
+    expect(sessions.filter((s) => s.posted[0] === 'Profiler.enable')).toHaveLength(1);
   });
 
   it('stops profiling a block that lasts too long, keeping what was sampled', async () => {
@@ -156,5 +173,60 @@ describe('runWatchdogWorker', () => {
     expect(blocked).toBe(true); // still blocked when the profile was taken
     expect(profileLog.message).toContain('3 samples');
     await ended;
+  });
+
+  describe('context attribution', () => {
+    const blockLogs = () =>
+      logs.filter(({ message }) => message.startsWith('Event loop blocked for ~'));
+    const waitForBlockLogs = async (count: number) => {
+      for (let i = 0; i < 200 && blockLogs().length < count; i++) await sleep(10);
+      return blockLogs();
+    };
+
+    it('does not open a sampling session for a block shorter than the sampling threshold', async () => {
+      start();
+      await block(250);
+      const [blockLog] = await waitForBlockLogs(1);
+      expect(sessions).toHaveLength(0);
+      expect(blockLog.message).toMatch(/^Event loop blocked for ~\d+ms$/);
+    });
+
+    it('names the execution context sampled during the block', async () => {
+      currentContext = { type: 'task manager', name: 'run my-task', id: 'abc' };
+      start();
+      await block(700);
+      const [blockLog] = await waitForBlockLogs(1);
+      expect(blockLog.message).toMatch(
+        /^Event loop blocked for ~\d+ms; task manager "run my-task" id=abc held ~\d+ms of ~\d+ms sampled(?: \(.*\))?$/
+      );
+      expect(blockLog.meta?.kibana.event_loop_watchdog.attribution).toMatchObject({
+        perContext: [expect.objectContaining({ context: currentContext })],
+      });
+      const samplingSessions = sessions.filter((s) => s.posted.includes('Runtime.evaluate'));
+      expect(samplingSessions).toHaveLength(1);
+      expect(samplingSessions[0].disconnected).toBe(true);
+    });
+
+    it('reports no execution context when none is current', async () => {
+      currentContext = null;
+      start();
+      await block(700);
+      const [blockLog] = await waitForBlockLogs(1);
+      expect(blockLog.message).toMatch(
+        /^Event loop blocked for ~\d+ms; no execution context was current while sampled$/
+      );
+    });
+
+    it('handles two blocks in a row without mixing up their sampling sessions', async () => {
+      currentContext = { type: 'task manager', name: 'run task-a', id: 'a' };
+      start();
+      await block(550);
+      await waitForBlockLogs(1);
+      currentContext = { type: 'task manager', name: 'run task-b', id: 'b' };
+      await block(550);
+      const logsSoFar = await waitForBlockLogs(2);
+      expect(logsSoFar[0].message).toContain('id=a');
+      expect(logsSoFar[1].message).toContain('id=b');
+    });
   });
 });

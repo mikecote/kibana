@@ -11,8 +11,13 @@ import { setTimeout as timer } from 'timers/promises';
 import { BehaviorSubject } from 'rxjs';
 import { mockCoreContext } from '@kbn/core-base-server-mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
+import { EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY } from '@kbn/core-execution-context-common';
 import type { InternalExecutionContextSetup } from './execution_context_service';
 import { ExecutionContextService } from './execution_context_service';
+
+const inspectorAccessorSymbol = Symbol.for(EXECUTION_CONTEXT_INSPECTOR_ACCESSOR_KEY);
+const readInspectorAccessor = () =>
+  (globalThis as Record<symbol, unknown>)[inspectorAccessorSymbol] as (() => unknown) | undefined;
 
 describe('ExecutionContextService', () => {
   describe('setup', () => {
@@ -23,6 +28,10 @@ describe('ExecutionContextService', () => {
       core = mockCoreContext.create();
       core.configService.atPath.mockReturnValue(new BehaviorSubject({ enabled: true }));
       service = new ExecutionContextService(core).setup();
+    });
+
+    afterEach(() => {
+      service.uninstallInspectorAccessor();
     });
 
     describe('set', () => {
@@ -561,6 +570,85 @@ describe('ExecutionContextService', () => {
         });
 
         expect(disabledService.getAsHeader()).toBeUndefined();
+      });
+    });
+
+    describe('inspector accessor', () => {
+      it('is not installed by default', () => {
+        expect(readInspectorAccessor()).toBeUndefined();
+      });
+
+      it('returns null outside any context', () => {
+        service.installInspectorAccessor();
+        expect(readInspectorAccessor()!()).toBeNull();
+      });
+
+      it('returns the full context chain while one is current', () => {
+        service.installInspectorAccessor();
+        service.withContext(
+          { type: 'task manager', name: 'run my-task', id: 'abc', description: 'run task' },
+          () =>
+            service.withContext(
+              { type: 'alerting_v2', name: 'dispatcher step', id: 'step-1' },
+              () =>
+                expect(readInspectorAccessor()!()).toEqual({
+                  type: 'task manager',
+                  name: 'run my-task',
+                  id: 'abc',
+                  description: 'run task',
+                  child: {
+                    type: 'alerting_v2',
+                    name: 'dispatcher step',
+                    id: 'step-1',
+                    child: undefined,
+                  },
+                })
+            )
+        );
+      });
+
+      it('returns null again once the context ends', () => {
+        service.installInspectorAccessor();
+        service.withContext(
+          { type: 'task manager', name: 'run my-task', id: 'abc', description: 'run task' },
+          () => undefined
+        );
+        expect(readInspectorAccessor()!()).toBeNull();
+      });
+
+      it('can be installed twice and is removed by one uninstall', () => {
+        service.installInspectorAccessor();
+        service.installInspectorAccessor();
+        expect(Object.getOwnPropertySymbols(globalThis)).toContain(inspectorAccessorSymbol);
+        expect(
+          Object.getOwnPropertyDescriptor(globalThis, inspectorAccessorSymbol)?.enumerable
+        ).toBe(false);
+
+        service.uninstallInspectorAccessor();
+        expect(readInspectorAccessor()).toBeUndefined();
+      });
+
+      it('uninstall is a no-op when never installed', () => {
+        expect(() => service.uninstallInspectorAccessor()).not.toThrow();
+      });
+
+      it('returns null while the service is disabled, even inside withContext', async () => {
+        const coreWithDisabledService = mockCoreContext.create();
+        coreWithDisabledService.configService.atPath.mockReturnValue(
+          new BehaviorSubject({ enabled: false })
+        );
+        const disabledService = new ExecutionContextService(coreWithDisabledService).setup();
+        disabledService.installInspectorAccessor();
+        try {
+          await disabledService.withContext(
+            { type: 'type-a', name: 'name-a', id: 'id-a', description: 'description-a' },
+            async () => {
+              expect(readInspectorAccessor()!()).toBeNull();
+            }
+          );
+        } finally {
+          disabledService.uninstallInspectorAccessor();
+        }
       });
     });
   });

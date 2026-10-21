@@ -12,6 +12,7 @@
   ],
   "kbn_references": [
     "@kbn/core-threads-server-internal",
+    "@kbn/core-execution-context-common",
     "@kbn/repo-info",
     "@kbn/core-feature-flags-server",
     "@kbn/core-feature-flags-server-mocks",

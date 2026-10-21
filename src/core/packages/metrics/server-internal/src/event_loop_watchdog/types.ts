@@ -8,6 +8,7 @@
  */
 
 import type { LogMeta } from '@kbn/logging';
+import type { KibanaExecutionContext } from '@kbn/core-execution-context-common';
 import type { AdmissionLimits } from './admission';
 
 export const WATCHDOG_WORKER_NAME = 'event-loop-watchdog';
@@ -38,6 +39,19 @@ export const MAX_STARTUP_FILES = 10;
 export const RUNNING_GRACE_MS = 30_000;
 /** ...or this long after the watchdog service starts, whichever comes first. */
 export const RUNNING_FALLBACK_MS = 5 * 60_000;
+/** Sampling of the current execution context starts once a block has lasted this long. */
+export const SAMPLE_AFTER_MS = 500;
+/** Cadence of `Runtime.evaluate` samples, once a block is being sampled. */
+export const SAMPLE_INTERVAL_MS = 250;
+/** Safety cap on samples kept per block; only bounds memory for a pathologically long block. */
+export const MAX_SAMPLES_PER_BLOCK = 2_400;
+/**
+ * Bounded wait, once a block ends, for the most recently posted `Runtime.evaluate` reply to
+ * arrive before reporting attribution: it was posted while blocked, and its reply is delivered
+ * over the worker's own message port, which only gets a chance to run once the block itself is
+ * detected as over, typically a tick or two behind the reply actually landing on the main thread.
+ */
+export const SAMPLE_LANDING_GRACE_MS = 100;
 
 /** Startup blocks are expected (and seen before serving traffic); they get their own budget. */
 export type Phase = 'startup' | 'running';
@@ -78,3 +92,50 @@ export interface LogMessage {
 export type WorkerToMainMessage = LogMessage;
 /** The main thread sends nothing: the worker profiles it through an inspector session. */
 export type MainToWorkerMessage = never;
+
+/**
+ * One `Runtime.evaluate` of the main thread's current execution context, dispatched while it was
+ * blocked. `landedAtUs` is undefined while the sample is still in flight (e.g. a long native call
+ * delays it): such a sample's time is opaque and never credited to the context it eventually
+ * names, since that context may only have started after the block did.
+ */
+export interface ContextSample {
+  postedAtUs: number;
+  /** Main thread clock (the same one the heartbeat uses) when the evaluate landed. */
+  landedAtUs?: number;
+  context: KibanaExecutionContext | null;
+  /** The accessor was not installed, or the evaluate failed. */
+  missing: boolean;
+}
+
+export interface ContextObservation {
+  /** Stable key for the full context chain (`type/name/id`, through `child`); see `contextKey`. */
+  key: string;
+  context: KibanaExecutionContext;
+  observedMs: number;
+  samples: number;
+}
+
+/**
+ * Partition of a block's timeline. `unsampledMs + opaqueMs + noContextMs +
+ * sum(perContext.observedMs)` equals `blockedMs`. Only `perContext` time is ever credited to a
+ * context: see `partitionBlock` in `context_sampler.ts`.
+ */
+export interface BlockAttribution {
+  blockedMs: number;
+  /** `unsampledPrefixMs + unsampledTailMs`. */
+  unsampledMs: number;
+  /** From the start of the block to the first evaluate being posted. */
+  unsampledPrefixMs: number;
+  /** After the last landing, beyond the one interval credited to it (only when sampling stopped). */
+  unsampledTailMs: number;
+  /** Between posting an evaluate and it landing: uninterruptible native work, owner unknown. */
+  opaqueMs: number;
+  /** Part of `opaqueMs` bounded on both sides by the same context. Reported, never credited. */
+  inferredMs: number;
+  /** Sampled intervals where no execution context was current. */
+  noContextMs: number;
+  samples: number;
+  missingAccessor: boolean;
+  perContext: ContextObservation[];
+}
