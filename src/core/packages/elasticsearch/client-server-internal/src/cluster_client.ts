@@ -12,10 +12,10 @@ import type { Logger } from '@kbn/logging';
 import type { Headers, IAuthHeadersStorage } from '@kbn/core-http-server';
 import {
   ensureRawRequest,
-  filterHeaders,
   isKibanaRequest,
   isRealRequest,
-} from '@kbn/core-http-router-server-internal';
+} from '@kbn/core-http-router-server-internal/src/request_guards';
+import { filterHeaders } from '@kbn/core-http-router-server-internal/src/headers';
 import type {
   ScopeableRequest,
   UnauthorizedErrorHandler,

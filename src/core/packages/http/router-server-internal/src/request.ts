@@ -43,6 +43,16 @@ import {
 } from '@kbn/core-http-common';
 import { RouteValidator } from './validator';
 import {
+  ensureRawRequest,
+  isKibanaRequest,
+  isRealRawRequest,
+  isRealRequest,
+  kibanaRequestBrand,
+  requestSymbol,
+} from './request_guards';
+
+export { ensureRawRequest, isKibanaRequest, isRealRequest };
+import {
   RequestValidationFailure,
   type RequestValidationSource,
 } from './request_validation_failure';
@@ -53,8 +63,6 @@ import { RequestTimingImpl } from './timing';
 
 // patching at module load
 patchRequest();
-
-const requestSymbol = Symbol('request');
 
 const isRouteSecurityGetter = (
   security?: RouteSecurityGetter | RecursiveReadonly<RouteSecurity>
@@ -435,6 +443,9 @@ export class CoreKibanaRequest<
   }
 }
 
+// Lets `isKibanaRequest` recognise requests without importing this module (see `request_guards.ts`).
+Object.defineProperty(CoreKibanaRequest.prototype, kibanaRequestBrand, { value: true });
+
 function validateRequestPart<T>(validate: () => T, source: RequestValidationSource): T {
   try {
     return validate();
@@ -459,44 +470,8 @@ function getRawValidationError(error: unknown): unknown {
   return error;
 }
 
-/**
- * Returns underlying Hapi Request
- * @internal
- */
-export const ensureRawRequest = (request: KibanaRequest | Request) =>
-  isKibanaRequest(request) ? request[requestSymbol] : (request as Request);
-
-/**
- * Checks if an incoming request is a {@link KibanaRequest}
- * @internal
- */
-export function isKibanaRequest(request: unknown): request is CoreKibanaRequest {
-  return request instanceof CoreKibanaRequest;
-}
-
-function isRealRawRequest(request: any): request is Request {
-  try {
-    return (
-      request.raw.req &&
-      typeof request.raw.req === 'object' &&
-      request.raw.res &&
-      typeof request.raw.res === 'object'
-    );
-  } catch {
-    return false;
-  }
-}
-
 function isFakeRawRequest(request: RawRequest): request is FakeRawRequest {
   return !isRealRawRequest(request);
-}
-
-/**
- * Checks if an incoming request either KibanaRequest or Hapi.Request
- * @internal
- */
-export function isRealRequest(request: unknown): request is KibanaRequest | Request {
-  return (isKibanaRequest(request) && !request.isFakeRequest) || isRealRawRequest(request);
 }
 
 function isCompleted(request: Request) {

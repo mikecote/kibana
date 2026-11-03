@@ -9,7 +9,7 @@
 
 import { getSpaceNPRE, PROJECT_ROUTING_ORIGIN } from '@kbn/cps-server-utils';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
-import { isKibanaRequest } from '@kbn/core-http-router-server-internal';
+import { isKibanaRequest } from '@kbn/core-http-router-server-internal/src/request_guards';
 import type {
   OnRequestHandlerFactory,
   OnRequestHandler,

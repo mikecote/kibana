@@ -10,7 +10,10 @@
 import type { MaybePromise } from '@kbn/utility-types';
 import type { UnauthorizedError } from '@kbn/es-errors';
 import type { SetAuthHeaders } from '@kbn/core-http-server';
-import { isKibanaRequest, isRealRequest } from '@kbn/core-http-router-server-internal';
+import {
+  isKibanaRequest,
+  isRealRequest,
+} from '@kbn/core-http-router-server-internal/src/request_guards';
 import type {
   ScopeableRequest,
   UnauthorizedErrorHandler,
