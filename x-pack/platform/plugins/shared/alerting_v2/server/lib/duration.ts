@@ -5,13 +5,20 @@
  * 2.0.
  */
 
-import { validateDuration } from '@kbn/alerting-v2-schemas';
-
 const DURATION_RE = /^(\d+)(ms|s|m|h|d|w)$/;
 
 const MS_PER_MINUTE = 60 * 1000;
 
-export { validateDuration };
+/**
+ * Validates a duration string such as "5m". Same rule and message as `validateDuration` in
+ * `@kbn/alerting-v2-schemas`, kept here so task runtimes do not load that package (it pulls in the
+ * ES|QL grammar and zod).
+ */
+export function validateDuration(value: string): string | void {
+  if (!DURATION_RE.test(value)) {
+    return 'Invalid duration. Expected format like "5m", "1h", "30s", "250ms"';
+  }
+}
 
 /**
  * Converts a `schedule.every` duration into the number of rule runs it

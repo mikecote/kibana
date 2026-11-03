@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { CoreKibanaRequest } from '@kbn/core-http-router-server-internal';
+import { CoreKibanaRequest } from '@kbn/core-http-router-server-internal/src/request';
 import type {
   KibanaRequest,
   RawRequest,

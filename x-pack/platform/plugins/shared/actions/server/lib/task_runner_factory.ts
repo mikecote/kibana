@@ -6,16 +6,17 @@
  */
 
 import { pick } from 'lodash';
-import type { RunContext } from '@kbn/task-manager-plugin/server';
+import type { RunContext } from '@kbn/task-manager-plugin/server/task';
 import { brandSpaceId, type SpaceId } from '@kbn/core-spaces-common';
 import {
+  createRetryableError,
   createTaskRunError,
+  getErrorSource,
   TaskErrorSource,
   throwRetryableError,
   throwUnrecoverableError,
-} from '@kbn/task-manager-plugin/server';
+} from '@kbn/task-manager-plugin/server/task_helpers';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
-import { createRetryableError, getErrorSource } from '@kbn/task-manager-plugin/server/task_running';
 import { type Headers, type FakeRawRequest } from '@kbn/core-http-server';
 import { markExternalUiamCredential } from '@kbn/core-security-server';
 import { kibanaRequestFactory } from '@kbn/core-http-server-utils';

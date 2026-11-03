@@ -20,8 +20,11 @@ import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import type { SpaceId } from '@kbn/core-spaces-common';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { SAVED_OBJECT_REL_PRIMARY } from '@kbn/event-log-plugin/server';
-import { createTaskRunError, TaskErrorSource } from '@kbn/task-manager-plugin/server';
-import { getErrorSource as getTaskManagerErrorSource } from '@kbn/task-manager-plugin/server/task_running';
+import {
+  createTaskRunError,
+  getErrorSource as getTaskManagerErrorSource,
+  TaskErrorSource,
+} from '@kbn/task-manager-plugin/server/task_helpers';
 import { EARS_AUTH_ID, isConnectorAuthorizationError } from '@kbn/connector-specs';
 import { IN_MEMORY_CONNECTOR_REVISION } from './single_file_connectors/build_client_lease_key';
 import { GEN_AI_TOKEN_COUNT_EVENT } from './event_based_telemetry';
