@@ -59,6 +59,7 @@ import {
   EsServiceScopedToken,
   EsServiceScopedSpaceRoutingToken,
 } from '../lib/services/es_service/tokens';
+import { alertingV2EsModule } from '../task_runtime/modules';
 import { EventLogService } from '../lib/services/event_log_service/event_log_service';
 import { EventLogServiceToken } from '../lib/services/event_log_service/tokens';
 import { LoggerService, LoggerServiceToken } from '../lib/services/logger_service/logger_service';
@@ -127,7 +128,8 @@ import { PrivilegeChecker } from '../lib/services/privilege_checker/privilege_ch
 import type { AlertingServerSetupDependencies, AlertingServerStartDependencies } from '../types';
 import { SpaceUiSettingsClientToken } from '../settings/tokens';
 
-export function bindServices({ bind }: ContainerModuleLoadOptions) {
+export function bindServices(options: ContainerModuleLoadOptions) {
+  const { bind } = options;
   bind(AlertActionsClient).toSelf().inRequestScope();
   bind(AlertEventsClient).toSelf().inRequestScope();
   bind(EpisodesClient).toSelf().inRequestScope();
@@ -207,12 +209,7 @@ export function bindServices({ bind }: ContainerModuleLoadOptions) {
   bind(EbtServiceToken).toService(EbtService);
   bind(ResourceManager).toSelf().inSingletonScope();
 
-  bind(EsServiceInternalToken)
-    .toDynamicValue(({ get }) => {
-      const elasticsearch = get(CoreStart('elasticsearch'));
-      return elasticsearch.client.asInternalUser;
-    })
-    .inSingletonScope();
+  alertingV2EsModule.load(options);
 
   bind(EsServiceScopedToken)
     .toDynamicValue(({ get }) => {

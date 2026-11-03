@@ -7,7 +7,10 @@
 
 import { schema } from '@kbn/config-schema';
 import type { TypeOf } from '@kbn/config-schema';
-import { DEFAULT_MINIMUM_SCHEDULE_INTERVAL, MIN_SCHEDULE_INTERVAL } from '@kbn/alerting-v2-schemas';
+import {
+  DEFAULT_MINIMUM_SCHEDULE_INTERVAL,
+  MIN_SCHEDULE_INTERVAL,
+} from '@kbn/alerting-v2-constants';
 import { parseDurationToMs, validateDuration } from './lib/duration';
 import type { EsqlResponseFormat } from './lib/services/query_service/formats';
 

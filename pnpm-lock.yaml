@@ -1633,6 +1633,9 @@ importers:
       '@kbn/core-status-server-internal':
         specifier: workspace:*
         version: link:src/core/packages/status/server-internal
+      '@kbn/core-task-host-server-internal':
+        specifier: workspace:*
+        version: link:src/core/packages/task_host/server-internal
       '@kbn/core-test-helpers-deprecations-getters':
         specifier: workspace:*
         version: link:src/core/packages/test-helpers/deprecations-getters
@@ -3841,6 +3844,9 @@ importers:
       '@kbn/task-manager-service-accounts-test-plugin':
         specifier: workspace:*
         version: link:x-pack/platform/test/task_manager/plugins/service_accounts
+      '@kbn/task-runtime':
+        specifier: workspace:*
+        version: link:x-pack/platform/packages/shared/task-runtime
       '@kbn/telemetry':
         specifier: workspace:*
         version: link:src/platform/packages/shared/kbn-telemetry
@@ -6557,6 +6563,9 @@ importers:
       enzyme-to-json:
         specifier: 3.6.2
         version: 3.6.2(enzyme@3.11.0)
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       eslint:
         specifier: 8.57.0
         version: 8.57.0(supports-color@10.2.2)
@@ -7549,6 +7558,8 @@ importers:
   src/core/packages/status/server-internal: {}
 
   src/core/packages/status/server-mocks: {}
+
+  src/core/packages/task_host/server-internal: {}
 
   src/core/packages/test-helpers/deprecations-getters: {}
 
@@ -9299,6 +9310,8 @@ importers:
   x-pack/platform/packages/shared/security/plugin_types_public: {}
 
   x-pack/platform/packages/shared/security/plugin_types_server: {}
+
+  x-pack/platform/packages/shared/task-runtime: {}
 
   x-pack/platform/plugins/private/ai_anonymization_settings: {}
 

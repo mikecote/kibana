@@ -27,6 +27,8 @@ import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-s
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server';
+import { createPodDispatch } from './task_pod/pod_dispatch';
+import type { PodDispatch } from './task_pod/pod_dispatch';
 import {
   registerDeleteInactiveNodesTaskDefinition,
   scheduleDeleteInactiveNodesTaskDefinition,
@@ -169,6 +171,7 @@ export class TaskManagerPlugin
   private kibanaDiscoveryService?: KibanaDiscoveryService;
   private executionControlService?: TaskExecutionControlService;
   private heapSizeLimit: number = 0;
+  private podDispatch?: PodDispatch;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
   private canEncryptSavedObjects: boolean;
   private licenseSubscriber?: PublicMethodsOf<LicenseSubscriber>;
@@ -288,6 +291,14 @@ export class TaskManagerPlugin
         core.getStartServices().then(() => this.executionControlService!),
       getDefinitions: () => this.definitions,
     });
+
+    if (this.config.pods?.length) {
+      this.podDispatch = createPodDispatch({
+        pods: this.config.pods,
+        kibanaVersion: this.kibanaVersion,
+      });
+      this.logger.info(`Task pods configured for ${this.config.pods.length} pod(s)`);
+    }
 
     core.status.derivedStatus$.subscribe((status) =>
       this.logger.debug(`status core.status.derivedStatus now set to ${status.level}`)
@@ -498,6 +509,7 @@ export class TaskManagerPlugin
         apiKeyStrategy,
         eventLogger: this.taskEventLogger!,
         enrichFakeRequest,
+        podDispatch: this.podDispatch,
         claimNudgeService: this.claimNudgeService,
       });
     }

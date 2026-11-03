@@ -11,3 +11,4 @@ export * from './artifacts';
 export * from './esql_params';
 export * from './labels';
 export * from './rule_kind';
+export * from './schedule';
