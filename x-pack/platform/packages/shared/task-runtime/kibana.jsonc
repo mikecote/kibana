@@ -1,7 +1,0 @@
-{
-  "type": "shared-server",
-  "id": "@kbn/task-runtime",
-  "owner": "@elastic/response-ops",
-  "group": "platform",
-  "visibility": "shared"
-}

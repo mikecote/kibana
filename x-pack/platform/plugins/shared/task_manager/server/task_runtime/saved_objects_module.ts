@@ -27,7 +27,10 @@ export const savedObjectsModule = defineServiceModule({
       .toResolvedValue(
         async (elasticsearch, logger) => {
           await savedObjects.load();
-          return savedObjects.start(elasticsearch.client.asInternalUser as never, logger as never);
+          return savedObjects.start(
+            elasticsearch.client.asInternalUser as never,
+            logger as never
+          ) as never;
         },
         [CoreStart('elasticsearch'), Logger]
       )

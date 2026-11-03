@@ -14,7 +14,6 @@ import { alertingV2ConfigModule, alertingV2EsModule } from '../task_runtime/modu
 export const taskType = defineTaskType({
   type: definition.taskType,
   definition: {
-    type: definition.taskType,
     title: definition.title,
     description: definition.description,
     timeout: definition.timeout,
@@ -26,10 +25,7 @@ export const taskType = defineTaskType({
   requiresFakeRequest: definition.requiresFakeRequest,
   modules: [alertingV2ConfigModule, alertingV2EsModule],
   needs: { runner: AlertActionsCleanupTaskRunner },
-  createRunner: (
-    { runner },
-    { taskInstance, signal, executionUuid, setCustomTaskRunEventFields }
-  ) => ({
-    run: () => runner.run({ taskInstance, signal, executionUuid, setCustomTaskRunEventFields }),
+  createRunner: ({ runner }, { signal }) => ({
+    run: () => runner.run({ signal }),
   }),
 });

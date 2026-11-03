@@ -57,6 +57,9 @@
     "@kbn/scout",
     "@kbn/std",
     "@kbn/mock-idp-utils",
+    "@kbn/core-di",
+    "@kbn/core-di-server",
+    "@kbn/core-task-host-server-internal",
   ],
   "exclude": ["target/**/*"]
 }

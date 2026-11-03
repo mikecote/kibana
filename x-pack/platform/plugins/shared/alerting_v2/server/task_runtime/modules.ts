@@ -31,7 +31,7 @@ export const alertingV2ConfigModule = defineServiceModule({
   config: { path: ['xpack', 'alerting_v2'], schema: configSchema, token: AlertingConfigToken },
   load: ({ bind }) => {
     bind(PluginInitializer('config'))
-      .toResolvedValue((config) => ({ get: () => config }), [AlertingConfigToken])
+      .toResolvedValue((config) => ({ get: () => config } as never), [AlertingConfigToken])
       .inSingletonScope();
   },
 });

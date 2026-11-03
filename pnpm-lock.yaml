@@ -3844,9 +3844,6 @@ importers:
       '@kbn/task-manager-service-accounts-test-plugin':
         specifier: workspace:*
         version: link:x-pack/platform/test/task_manager/plugins/service_accounts
-      '@kbn/task-runtime':
-        specifier: workspace:*
-        version: link:x-pack/platform/packages/shared/task-runtime
       '@kbn/telemetry':
         specifier: workspace:*
         version: link:src/platform/packages/shared/kbn-telemetry
@@ -9310,8 +9307,6 @@ importers:
   x-pack/platform/packages/shared/security/plugin_types_public: {}
 
   x-pack/platform/packages/shared/security/plugin_types_server: {}
-
-  x-pack/platform/packages/shared/task-runtime: {}
 
   x-pack/platform/plugins/private/ai_anonymization_settings: {}
 

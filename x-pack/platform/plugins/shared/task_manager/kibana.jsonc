@@ -10,6 +10,7 @@
     "id": "taskManager",
     "browser": false,
     "server": true,
+    "taskTypes": ["server/task_types/delete_inactive_nodes.task.ts"],
     "configPath": [
       "xpack",
       "task_manager"

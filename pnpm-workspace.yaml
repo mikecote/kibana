@@ -1406,7 +1406,6 @@ packages:
   - 'x-pack/platform/packages/shared/security/plugin_types_common'
   - 'x-pack/platform/packages/shared/security/plugin_types_public'
   - 'x-pack/platform/packages/shared/security/plugin_types_server'
-  - 'x-pack/platform/packages/shared/task-runtime'
   - 'x-pack/platform/plugins/private/ai_anonymization_settings'
   - 'x-pack/platform/plugins/private/banners'
   - 'x-pack/platform/plugins/private/canvas'

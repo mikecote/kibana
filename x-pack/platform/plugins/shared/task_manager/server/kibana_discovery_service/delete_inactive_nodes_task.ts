@@ -7,18 +7,19 @@
 
 import type { Logger } from '@kbn/logging';
 import type { CoreStart } from '@kbn/core-lifecycle-server';
+import { registerTaskType } from '../task_runtime';
+import type { TaskManagerPluginsStart } from '../plugin';
 import type { TaskScheduling } from '../task_scheduling';
 import type { TaskTypeDictionary } from '../task_type_dictionary';
-import type { BackgroundTaskNode } from '../saved_objects/schemas/background_task_node';
-import { BACKGROUND_TASK_NODE_SO_NAME } from '../saved_objects';
 import type { TaskManagerStartContract } from '..';
-import type { TaskManagerPluginsStart } from '../plugin';
+import {
+  CLEANUP_INTERVAL,
+  DELETE_INACTIVE_NODES_TASK_ID as TASK_ID,
+  DELETE_INACTIVE_NODES_TASK_TYPE as TASK_TYPE,
+  taskType,
+} from '../task_types/delete_inactive_nodes.task';
 
-export const TASK_ID = 'delete_inactive_background_task_nodes';
-const TASK_TYPE = `task_manager:${TASK_ID}`;
-
-export const CLEANUP_INTERVAL = '1m';
-export const CLEANUP_LOOKBACK = '5m';
+export { CLEANUP_INTERVAL, CLEANUP_LOOKBACK } from '../task_types/delete_inactive_nodes.task';
 
 export async function scheduleDeleteInactiveNodesTaskDefinition(
   logger: Logger,
@@ -44,65 +45,23 @@ export function registerDeleteInactiveNodesTaskDefinition(
   coreStartServices: () => Promise<[CoreStart, TaskManagerPluginsStart, TaskManagerStartContract]>,
   taskTypeDictionary: TaskTypeDictionary
 ) {
-  taskTypeDictionary.registerTaskDefinitions({
-    [TASK_TYPE]: {
-      title: 'Remove inactive background task nodes',
-      createTaskRunner: taskRunner(logger, coreStartServices),
+  registerTaskType(taskTypeDictionary, taskType, {
+    resolve: async () => {
+      const [{ savedObjects }] = await coreStartServices();
+      return { savedObjects, logger };
     },
   });
 }
 
+/** The task's runner factory with Kibana's services, for callers that run it directly. */
 export function taskRunner(
   logger: Logger,
   coreStartServices: () => Promise<[CoreStart, TaskManagerPluginsStart, TaskManagerStartContract]>
 ) {
-  return () => {
-    return {
-      async run() {
-        try {
-          const [{ savedObjects }] = await coreStartServices();
-          const savedObjectsRepository = savedObjects.createInternalRepository([
-            BACKGROUND_TASK_NODE_SO_NAME,
-          ]);
-
-          const { saved_objects: inactiveNodes } =
-            await savedObjectsRepository.find<BackgroundTaskNode>({
-              type: BACKGROUND_TASK_NODE_SO_NAME,
-              perPage: 100,
-              page: 1,
-              filter: `${BACKGROUND_TASK_NODE_SO_NAME}.attributes.last_seen < now-${CLEANUP_LOOKBACK}`,
-            });
-
-          if (inactiveNodes.length > 0) {
-            const nodesToDelete = inactiveNodes.map((node) => ({
-              type: BACKGROUND_TASK_NODE_SO_NAME,
-              id: node.attributes.id,
-            }));
-            await savedObjectsRepository.bulkDelete(nodesToDelete, {
-              force: true,
-              refresh: false,
-            });
-
-            const deletedNodes = nodesToDelete.map((node) => node.id);
-            logger.debug(`Inactive Kibana nodes: ${deletedNodes}, have been successfully deleted`);
-          }
-
-          return {
-            state: {},
-            schedule: {
-              interval: CLEANUP_INTERVAL,
-            },
-          };
-        } catch (e) {
-          logger.error(`Deleting inactive nodes failed. Error: ${e.message} `);
-          return {
-            state: {},
-            schedule: {
-              interval: CLEANUP_INTERVAL,
-            },
-          };
-        }
-      },
-    };
-  };
+  return () => ({
+    async run() {
+      const [{ savedObjects }] = await coreStartServices();
+      return taskType.createRunner({ savedObjects, logger }, {} as never).run();
+    },
+  });
 }

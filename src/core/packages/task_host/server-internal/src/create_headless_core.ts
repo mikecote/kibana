@@ -8,7 +8,14 @@
  */
 
 import { Container, ContainerModule } from 'inversify';
-import { CoreStart } from '@kbn/core-di-server';
+import {
+  CoreStart,
+  ElasticsearchClient,
+  InternalElasticsearchClient,
+  Request,
+  ScopedClusterClient,
+  ScopedClusterClientFactory,
+} from '@kbn/core-di-server';
 import type { Logger, LogLevelId } from '@kbn/logging';
 import { createElasticsearchCore } from './es_cluster';
 import { enrichPodFakeRequest } from './request_users';
@@ -46,17 +53,39 @@ export const createHeadlessCore = async ({
   const kibanaVersion = POD_KIBANA_VERSION;
   const elasticsearch = createElasticsearchCore({ logger, kibanaVersion, podConfig: config });
 
-  const container = new Container({ autoBind: false, defaultScope: 'Singleton' });
-  const { loadElasticsearch } = await import(
-    '@kbn/core-di-server-internal/src/modules/elasticsearch'
-  );
+  const container = new Container({ defaultScope: 'Singleton' });
   const { Logger: LoggerToken, LoggerFactory } = await import('@kbn/core-di');
   container.bind(CoreStart('elasticsearch')).toConstantValue(elasticsearch.start as never);
   container
     .bind(LoggerFactory)
     .toConstantValue({ get: (...parts: string[]) => logger.get(...parts) } as never);
   container.bind(LoggerToken).toConstantValue(logger as never);
-  container.load(new ContainerModule((options) => loadElasticsearch(options)));
+
+  // Core's request-scoped Elasticsearch bindings (`@kbn/core-di-server-internal`), without the
+  // rest of its modules: a task's fake request selects the user, the internal client needs none.
+  container.load(
+    new ContainerModule(({ bind }) => {
+      bind(ScopedClusterClientFactory)
+        .toResolvedValue(
+          (elasticsearchStart, request) => (options) =>
+            elasticsearchStart.client.asScoped(request, options),
+          [CoreStart('elasticsearch'), Request]
+        )
+        .inRequestScope();
+      bind(ScopedClusterClient)
+        .toResolvedValue((factory) => factory(), [ScopedClusterClientFactory])
+        .inRequestScope();
+      bind(ElasticsearchClient)
+        .toResolvedValue((scoped) => scoped.asCurrentUser, [ScopedClusterClient])
+        .inRequestScope();
+      bind(InternalElasticsearchClient)
+        .toResolvedValue(
+          (elasticsearchStart) => elasticsearchStart.client.asInternalUser,
+          [CoreStart('elasticsearch')]
+        )
+        .inSingletonScope();
+    })
+  );
 
   return {
     config,

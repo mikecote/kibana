@@ -26,7 +26,7 @@ export const createRunnerInScope = async <N extends NeedsSpec>(
       `Cannot execute ${unit.type} task without Task Manager fakeRequest. Ensure the task is scheduled with an API key (task id: ${context.taskInstance.id})`
     );
   }
-  const scope = new Container({ parent, autoBind: true, defaultScope: 'Singleton' });
+  const scope = new Container({ parent, defaultScope: 'Singleton' });
   if (context.fakeRequest) {
     scope.bind(Request).toConstantValue(context.fakeRequest as KibanaRequest);
   }
