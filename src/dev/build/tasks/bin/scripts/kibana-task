@@ -1,0 +1,56 @@
+#!/bin/sh
+# Runs the task bundle that serves a task type (or a bundle name from task_bundles/manifest.json):
+#   bin/kibana-task alerting_v2:alert_actions_cleanup
+# Configure it with ES_URL, ES_USERNAME/ES_PASSWORD or ES_API_KEY, PORT, POD_CONFIG, POD_AUTH_TOKEN.
+SCRIPT=$0
+
+# SCRIPT may be an arbitrarily deep series of symlinks. Loop until we have the concrete path.
+while [ -h "$SCRIPT" ] ; do
+  ls=$(ls -ld "$SCRIPT")
+  # Drop everything prior to ->
+  link=$(expr "$ls" : '.*-> \(.*\)$')
+  if expr "$link" : '/.*' > /dev/null; then
+    SCRIPT="$link"
+  else
+    SCRIPT=$(dirname "$SCRIPT")/"$link"
+  fi
+done
+
+DIR="$(cd "$(dirname "${SCRIPT}")/.." && pwd)"
+. "$DIR/bin/kibana_env"
+NODE="${DIR}/node/default/bin/node"
+{{#linux}}
+if ! "$NODE" --version >/dev/null 2>&1; then
+  NODE="${DIR}/node/glibc-217/bin/node"
+fi
+{{/linux}}
+if [ ! -x "$NODE" ]; then
+  echo "unable to find usable node.js executable."
+  exit 1
+fi
+
+if [ -z "$1" ]; then
+  echo "usage: kibana-task <task_type|bundle> (see $DIR/task_bundles/manifest.json)"
+  exit 64
+fi
+
+BUNDLE=$("$NODE" -e '
+const [dir, wanted] = process.argv.slice(1);
+const { bundles } = require(dir + "/task_bundles/manifest.json");
+const name = Object.keys(bundles).find((n) => n === wanted || bundles[n].taskTypes.includes(wanted));
+if (name) process.stdout.write(dir + "/task_bundles/" + bundles[name].file);
+' "$DIR" "$1")
+if [ -z "$BUNDLE" ]; then
+  echo "no task bundle serves '$1' (see $DIR/task_bundles/manifest.json)"
+  exit 66
+fi
+shift
+
+# The semi-space cap keeps a process about 100 MB lower than V8's default sizing.
+KBN_TASK_NODE_OPTS="--max-semi-space-size=8 --max-old-space-size=${KBN_TASK_HEAP_MB:-512}"
+if [ -n "$KBN_TASK_DEBUG" ]; then
+  KBN_TASK_NODE_OPTS="$KBN_TASK_NODE_OPTS --enable-source-maps"
+fi
+export NODE_COMPILE_CACHE="${NODE_COMPILE_CACHE:-$DIR/data/task_compile_cache}"
+
+NODE_OPTIONS="$KBN_TASK_NODE_OPTS $KBN_NODE_OPTS $NODE_OPTIONS" NODE_ENV=production exec "${NODE}" "${BUNDLE}" "$@"

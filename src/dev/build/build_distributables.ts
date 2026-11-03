@@ -95,6 +95,7 @@ export async function buildDistributables(log: ToolingLog, options: BuildOptions
     await globalRun(Tasks.BuildBundles);
     await globalRun(Tasks.CreatePackageJson);
     await globalRun(Tasks.InstallDependencies);
+    await globalRun(Tasks.BuildTaskBundles);
     await globalRun(Tasks.GeneratePackagesOptimizedAssets);
 
     // Run on all source files

@@ -9,8 +9,11 @@
 
 const path = require('path');
 const { OUT_DIR, getTaskBundleEntries, buildTaskBundle, writeManifest } = require('./build');
+const { validateBundleLimits, updateBundleLimits } = require('./limits');
+const { measureBundleMedian } = require('./measure');
 
-// node scripts/task_bundle [--name <bundle>] [--all] [--size] [--out <dir>]
+// node scripts/task_bundle [--name <bundle>] [--size] [--why <needle>] [--out <dir>]
+//   [--validate-limits | --update-limits [--force]] [--measure]
 // Builds task bundles into target/task_bundles and reports their size and any forbidden input.
 const args = process.argv.slice(2);
 const getArg = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
@@ -81,6 +84,22 @@ const main = async () => {
     }
   }
   if (!name) writeManifest(results, getArg('--out') ?? OUT_DIR);
+  if (args.includes('--measure')) {
+    for (const result of results) {
+      const { readyMs, rssMb } = await measureBundleMedian(result.outfile);
+      console.log(`${result.name}: ready in ${readyMs} ms, ${rssMb} MB RSS (median of 3)`);
+    }
+  }
+  if (args.includes('--update-limits')) {
+    const errors = updateBundleLimits(results, { force: args.includes('--force') });
+    errors.forEach((e) => console.error(e));
+    if (errors.length) failed = true;
+  }
+  if (args.includes('--validate-limits')) {
+    const errors = validateBundleLimits(results);
+    errors.forEach((e) => console.error(`  LIMIT ${e}`));
+    if (errors.length) failed = true;
+  }
   if (failed) process.exit(1);
 };
 

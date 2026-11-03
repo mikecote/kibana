@@ -8,6 +8,7 @@
  */
 
 export * from './bin';
+export * from './build_task_bundles_task';
 export * from './build_bundles_task';
 export * from './build_packages_task';
 export * from './clean_tasks';
