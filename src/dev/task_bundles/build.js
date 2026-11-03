@@ -8,6 +8,7 @@
  */
 
 const fs = require('fs');
+const { createRequire } = require('module');
 const path = require('path');
 const { build } = require('esbuild');
 const { REPO_ROOT } = require('@kbn/repo-info');
@@ -117,9 +118,34 @@ const buildTaskBundle = async ({ entry, outDir = OUT_DIR, kibanaVersion, write =
     bytes: write ? fs.statSync(outfile).size : output.bytes,
     inputs: inputs.length,
     forbidden,
+    entry,
     entries,
     metafile: result.metafile,
   };
 };
 
-module.exports = { OUT_DIR, getTaskBundleEntries, buildTaskBundle };
+/**
+ * The task types a unit file declares (`taskType` or `taskTypes`). Loads the file, which needs the
+ * source transpiler or a built tree, so it runs where the bundles are built.
+ */
+const readTaskTypes = (file) => {
+  const unit = createRequire(__filename)(file);
+  return (unit.taskTypes ?? [unit.taskType]).map((t) => t.type);
+};
+
+/** Writes `manifest.json`: which task types each bundle serves, read by Kibana's supervisor. */
+const writeManifest = (results, outDir = OUT_DIR) => {
+  const manifest = {
+    kibanaVersion: require('@kbn/repo-info').kibanaPackageJson.version,
+    bundles: Object.fromEntries(
+      results.map(({ entry, name, bytes }) => [
+        name,
+        { file: `${name}.js`, taskTypes: readTaskTypes(entry.file), bytes },
+      ])
+    ),
+  };
+  fs.writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifest;
+};
+
+module.exports = { OUT_DIR, getTaskBundleEntries, buildTaskBundle, writeManifest };

@@ -8,7 +8,7 @@
  */
 
 const path = require('path');
-const { OUT_DIR, getTaskBundleEntries, buildTaskBundle } = require('./build');
+const { OUT_DIR, getTaskBundleEntries, buildTaskBundle, writeManifest } = require('./build');
 
 // node scripts/task_bundle [--name <bundle>] [--all] [--size] [--out <dir>]
 // Builds task bundles into target/task_bundles and reports their size and any forbidden input.
@@ -30,9 +30,11 @@ const main = async () => {
     process.exit(1);
   }
   let failed = false;
+  const results = [];
   for (const entry of selected) {
     const started = Date.now();
     const result = await buildTaskBundle({ entry, outDir: getArg('--out') ?? OUT_DIR });
+    results.push(result);
     console.log(
       `${result.name}: ${(result.bytes / 1024).toFixed(0)} KB, ${result.inputs} inputs, ${
         Date.now() - started
@@ -78,6 +80,7 @@ const main = async () => {
       );
     }
   }
+  if (!name) writeManifest(results, getArg('--out') ?? OUT_DIR);
   if (failed) process.exit(1);
 };
 

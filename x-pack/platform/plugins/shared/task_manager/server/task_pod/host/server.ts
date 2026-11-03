@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { KibanaRequest } from '@kbn/core-http-server';
@@ -63,6 +64,12 @@ class RefusedRun extends Error {
   }
 }
 
+const isSameSecret = (received: string | undefined, expected: string) => {
+  const a = Buffer.from(received ?? '');
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
 const matchesAny = (patterns: RegExp[], value: string) => patterns.some((p) => p.test(value));
 const globToRegExp = (glob: string) =>
   new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
@@ -75,9 +82,12 @@ export const startPodServer = ({
     .map((t) => t.trim())
     .filter(Boolean),
   kibanaVersion = POD_KIBANA_VERSION,
+  authToken = process.env.POD_AUTH_TOKEN,
   enrichFakeRequest = () => undefined,
 }: {
   taskDefinitions: Map<string, PodTaskDefinition>;
+  /** Bearer token required on `/run` and `/cancel`; `/health` stays open. */
+  authToken?: string;
   port: number;
   /** Runs accepted at once; more get a 503 so Kibana retries them. Default: unlimited. */
   maxConcurrency?: number;
@@ -180,6 +190,15 @@ export const startPodServer = ({
         return;
       }
 
+      const isAuthorized =
+        !authToken || isSameSecret(req.headers.authorization, `Bearer ${authToken}`);
+      if (req.method === 'POST' && (req.url === '/run' || req.url?.startsWith('/cancel/'))) {
+        if (!isAuthorized) {
+          sendJson(res, 401, { error: 'unauthorized' });
+          return;
+        }
+      }
+
       if (req.method === 'POST' && req.url === '/run') {
         const body = JSON.parse(await readBody(req)) as PodRunRequest;
         // Kibana hung up (it timed out or was cancelled): don't keep running for nobody.
@@ -238,7 +257,9 @@ export const startPodServer = ({
   process.once('SIGINT', shutdown);
 
   server.listen(port, () => {
-    process.stdout.write('READY\n');
+    const address = server.address();
+    // The port matters when it was left to the OS, as a supervising Kibana does.
+    process.stdout.write(`READY ${typeof address === 'object' && address ? address.port : port}\n`);
   });
   return server;
 };

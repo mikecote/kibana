@@ -13,7 +13,12 @@ import type { PodRunRequest, PodRunResponse } from './wire';
 
 export interface PodRoute {
   url: string;
+  /** Bearer token the pod requires. */
+  token?: string;
 }
+
+const authHeaders = (pod: PodRoute): Record<string, string> =>
+  pod.token ? { authorization: `Bearer ${pod.token}` } : {};
 
 /** How long Kibana waits past a task's timeout for the pod to answer before giving up. */
 const DEADLINE_GRACE_MS = 5000;
@@ -81,7 +86,7 @@ export class RemoteTaskRunner implements CancellableTask {
       try {
         response = await fetchFn(`${pod.url}/run`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', ...authHeaders(pod) },
           body: JSON.stringify({
             ...request,
             deadline: deadline.toISOString(),
@@ -130,7 +135,11 @@ export class RemoteTaskRunner implements CancellableTask {
     try {
       const { signal, dispose } = abortAfter(DEADLINE_GRACE_MS);
       try {
-        await fetchFn(`${pod.url}/cancel/${request.executionUuid}`, { method: 'POST', signal });
+        await fetchFn(`${pod.url}/cancel/${request.executionUuid}`, {
+          method: 'POST',
+          headers: authHeaders(pod),
+          signal,
+        });
       } finally {
         dispose();
       }

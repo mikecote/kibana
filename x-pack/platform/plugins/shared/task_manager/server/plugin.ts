@@ -27,8 +27,11 @@ import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-s
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server';
+import { join } from 'path';
+import { REPO_ROOT } from '@kbn/repo-info';
 import { createPodDispatch } from './task_pod/pod_dispatch';
 import type { PodDispatch } from './task_pod/pod_dispatch';
+import { TaskProcessSupervisor } from './task_pod/supervisor';
 import {
   registerDeleteInactiveNodesTaskDefinition,
   scheduleDeleteInactiveNodesTaskDefinition,
@@ -172,6 +175,7 @@ export class TaskManagerPlugin
   private executionControlService?: TaskExecutionControlService;
   private heapSizeLimit: number = 0;
   private podDispatch?: PodDispatch;
+  private taskProcessSupervisor?: TaskProcessSupervisor;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
   private canEncryptSavedObjects: boolean;
   private licenseSubscriber?: PublicMethodsOf<LicenseSubscriber>;
@@ -292,12 +296,14 @@ export class TaskManagerPlugin
       getDefinitions: () => this.definitions,
     });
 
-    if (this.config.pods?.length) {
+    if (this.config.pods?.length || this.config.task_processes) {
       this.podDispatch = createPodDispatch({
         pods: this.config.pods,
         kibanaVersion: this.kibanaVersion,
       });
-      this.logger.info(`Task pods configured for ${this.config.pods.length} pod(s)`);
+      if (this.config.pods?.length) {
+        this.logger.info(`Task pods configured for ${this.config.pods.length} pod(s)`);
+      }
     }
 
     core.status.derivedStatus$.subscribe((status) =>
@@ -494,6 +500,7 @@ export class TaskManagerPlugin
         kibanasPerPartition: this.config.kibanas_per_partition,
       });
 
+      this.startTaskProcesses();
       this.taskPollingLifecycle = new TaskPollingLifecycle({
         config: this.config!,
         definitions: this.definitions,
@@ -589,7 +596,34 @@ export class TaskManagerPlugin
     return this.startContract;
   }
 
+  /** Starts the task bundles configured in `task_processes` as child processes of this node. */
+  private startTaskProcesses() {
+    const settings = this.config.task_processes;
+    if (!settings || !this.podDispatch) return;
+    try {
+      const root = REPO_ROOT;
+      this.taskProcessSupervisor = new TaskProcessSupervisor({
+        settings: {
+          ...settings,
+          bundle_dir:
+            settings.bundle_dir ??
+            join(
+              root,
+              this.initContext.env.packageInfo.dist ? 'task_bundles' : 'target/task_bundles'
+            ),
+        },
+        dispatch: this.podDispatch,
+        logger: this.logger,
+      });
+      this.taskProcessSupervisor.start();
+    } catch (error) {
+      // Without its processes Kibana runs every task itself, which is always correct.
+      this.logger.error(`Task processes could not start: ${error.message}`);
+    }
+  }
+
   public async stop() {
+    await this.taskProcessSupervisor?.stop();
     this.licenseSubscriber?.cleanup();
     this.claimNudgeService?.stop();
 

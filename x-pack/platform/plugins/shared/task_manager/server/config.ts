@@ -225,6 +225,27 @@ export const configSchema = schema.object(
         })
       )
     ),
+    /*
+     * Task types that run in processes Kibana starts itself, one per task type bundle: Kibana forks
+     * the bundle, hands it these Elasticsearch settings, and routes the task types to it. A process
+     * that stops is restarted; until it is back its task types run in this process.
+     */
+    task_processes: schema.maybe(
+      schema.object({
+        task_types: schema.arrayOf(schema.string(), { minSize: 1 }),
+        /* Where the bundles are; defaults to the distributable's `task_bundles` or `target/task_bundles`. */
+        bundle_dir: schema.maybe(schema.string()),
+        /* A yml file with kibana.yml keys the bundles read, such as the encryption key. */
+        config_file: schema.maybe(schema.string()),
+        elasticsearch: schema.object({
+          url: schema.string(),
+          username: schema.maybe(schema.string()),
+          password: schema.maybe(schema.string()),
+          api_key: schema.maybe(schema.string()),
+        }),
+        max_concurrency: schema.maybe(schema.number({ min: 1 })),
+      })
+    ),
     /* The threshold percenatge for workers experiencing version conflicts for shifting the polling interval. */
     version_conflict_threshold: schema.number({
       defaultValue: DEFAULT_VERSION_CONFLICT_THRESHOLD,
