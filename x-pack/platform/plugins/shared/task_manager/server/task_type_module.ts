@@ -125,7 +125,11 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
  */
 export interface TaskTypeHostExtensions {
   encryptedSavedObjects?: () => Promise<NonNullable<TaskHost['encryptedSavedObjects']>>;
-  /** The keys a task process needs to decrypt; sent to it over the fork channel. */
+  /**
+   * The keys the task process of this task type may decrypt with; sent to it over the fork channel
+   * whether or not the module registered here declares encrypted saved objects, because the module
+   * a process runs is another instance of it.
+   */
   getEncryptionKeys?: () => { encryptionKey?: string; decryptionOnlyKeys: string[] };
   eventLog?: TaskHost['eventLog'];
 }
@@ -134,7 +138,10 @@ export interface TaskTypeRegistrationOptions {
   /** The logger the runner gets; defaults to Task Manager's. */
   logger?: Logger;
   hostExtensions?: TaskTypeHostExtensions;
-  /** Validated plugin configs the module lists in `settings`, read when a run or a process starts. */
+  /**
+   * Validated plugin configs by plugin id, read when a run or a process starts. Every one is sent to
+   * the task process of this task type; the module it runs reads the ones it lists in `settings`.
+   */
   settings?: Record<string, () => unknown>;
 }
 

@@ -10,7 +10,7 @@ import { set } from '@kbn/safer-lodash-set';
 import type { IEvent, IEventLogger, InternalFields } from '@kbn/event-log-plugin/server';
 import { millisToNanos, SAVED_OBJECT_REL_PRIMARY } from '@kbn/event-log-plugin/server';
 import type { BulkResponse } from '@elastic/elasticsearch/lib/api/types';
-import { EVENT_LOG_ACTIONS } from '../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../constants/event_log';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';
 import type { TaskRunnerTimings } from '../../task_runner/task_runner_timer';

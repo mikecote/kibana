@@ -10,7 +10,7 @@ import type { SearchResponse } from '@elastic/elasticsearch/lib/api/types';
 import type { IValidatedEvent } from '@kbn/event-log-plugin/server';
 import { TIMESTAMP } from '@kbn/rule-data-utils';
 import type { AlertDeletionContext } from '../alert_deletion_client';
-import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../../plugin';
+import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../../constants/event_log';
 
 export const getLastRun = async (context: AlertDeletionContext, req: KibanaRequest) => {
   const esClient = await context.elasticsearchClientPromise;

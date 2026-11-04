@@ -20,7 +20,7 @@ import type {
   RuleTaskRunResult,
   RunRuleResult,
   RunRuleParams,
-  TaskRunnerContext,
+  RuleRunRuntime,
 } from './types';
 import { getDeleteRuleTaskRunResult } from './types';
 import { getExecutorServices } from './get_executor_services';
@@ -32,7 +32,6 @@ import type {
   RawRuleLastRun,
   RawRuleMonitoring,
   RuleExecutionStatus,
-  RuleTypeRegistry,
 } from '../types';
 import type { RawRuleSnoozedInstance } from '../saved_objects/schemas/raw_rule';
 import { RuleExecutionStatusErrorReasons } from '../types';
@@ -101,7 +100,7 @@ interface TaskRunnerConstructorParams<
   RecoveryActionGroupId extends string,
   AlertData extends RuleAlertData
 > {
-  context: TaskRunnerContext;
+  context: RuleRunRuntime;
   inMemoryMetrics: InMemoryMetrics;
   internalSavedObjectsRepository: ISavedObjectsRepository;
   ruleType: NormalizedRuleType<
@@ -128,7 +127,7 @@ export class TaskRunner<
   RecoveryActionGroupId extends string,
   AlertData extends RuleAlertData
 > {
-  private context: TaskRunnerContext;
+  private context: RuleRunRuntime;
   private logger: Logger;
   private taskInstance: RuleTaskInstance;
   private ruleConsumer: string | null;
@@ -143,7 +142,7 @@ export class TaskRunner<
     AlertData
   >;
   private readonly executionId: string;
-  private readonly ruleTypeRegistry: RuleTypeRegistry;
+  private readonly ruleTypeRegistry: RuleRunRuntime['ruleTypeRegistry'];
   private readonly inMemoryMetrics: InMemoryMetrics;
   private readonly internalSavedObjectsRepository: ISavedObjectsRepository;
   private timer: TaskRunnerTimer;

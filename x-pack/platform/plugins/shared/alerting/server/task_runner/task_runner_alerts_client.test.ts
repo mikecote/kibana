@@ -217,6 +217,7 @@ describe('Task Runner', () => {
     const taskRunnerFactoryInitializerParams: TaskRunnerFactoryInitializerParamsType = {
       actionsConfigMap: { default: { max: 1000 } },
       actionsPlugin: actionsMock.createStart(),
+      inMemoryMetrics,
       alertsService: mockAlertsService,
       backfillClient,
       cancelAlertsOnRuleTimeout: true,

@@ -7,18 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { has } from 'lodash';
-import type {
-  PluginInitializerContext,
-  CoreSetup,
-  CoreStart,
-  Plugin,
-  IUiSettingsClient,
-} from '@kbn/core/server';
+import type { PluginInitializerContext, CoreSetup, CoreStart, Plugin } from '@kbn/core/server';
 import type { FieldFormatsStart, FieldFormatsSetup } from './types';
 import { DateFormat, DateNanosFormat } from './lib/converters';
 import type { FieldFormatInstanceType } from '../common';
-import { baseFormatters, FieldFormatsRegistry } from '../common';
+import { baseFormatters } from '../common';
+import { createFieldFormatServiceFactory } from './field_format_service_factory';
 import { getUiSettings } from './ui_settings';
 
 export class FieldFormatsPlugin implements Plugin<FieldFormatsSetup, FieldFormatsStart> {
@@ -41,22 +35,7 @@ export class FieldFormatsPlugin implements Plugin<FieldFormatsSetup, FieldFormat
 
   public start(core: CoreStart) {
     return {
-      fieldFormatServiceFactory: async (uiSettings: IUiSettingsClient) => {
-        const fieldFormatsRegistry = new FieldFormatsRegistry();
-        const coreUiConfigs = await uiSettings.getAll();
-        const registeredUiSettings = uiSettings.getRegistered();
-        const uiConfigs = { ...coreUiConfigs };
-
-        Object.keys(registeredUiSettings).forEach((key) => {
-          if (has(uiConfigs, key) && registeredUiSettings[key].type === 'json') {
-            uiConfigs[key] = JSON.parse(uiConfigs[key]);
-          }
-        });
-
-        fieldFormatsRegistry.init((key: string) => uiConfigs[key], {}, this.fieldFormats);
-
-        return fieldFormatsRegistry;
-      },
+      fieldFormatServiceFactory: createFieldFormatServiceFactory(this.fieldFormats),
     };
   }
 

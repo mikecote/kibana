@@ -29,7 +29,7 @@ import {
   RuleExecutionStatusWarningReasons,
 } from '../../types';
 import type { RuleRunMetrics } from '../rule_run_metrics_store';
-import { EVENT_LOG_ACTIONS } from '../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../constants/event_log';
 import { TaskRunnerTimerSpan } from '../../task_runner/task_runner_timer';
 import { schema } from '@kbn/config-schema';
 import { RULE_SAVED_OBJECT_TYPE } from '../..';

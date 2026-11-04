@@ -54,6 +54,8 @@
     "@kbn/serverless",
     "@kbn/core-http-router-server-mocks",
     "@kbn/core-elasticsearch-server",
+    "@kbn/core-ui-settings-common",
+    "@kbn/field-formats-plugin",
     "@kbn/core-saved-objects-api-server",
     "@kbn/core-saved-objects-api-server-mocks",
     "@kbn/core-ui-settings-server-mocks",

@@ -106,16 +106,12 @@ import { ACTIONS_FEATURE } from './feature';
 import { ActionsAuthorization } from './authorization/actions_authorization';
 import { ensureSufficientLicense } from './lib/ensure_sufficient_license';
 import { getCurrentUserProfileIdFromRequest } from './lib/get_current_user_profile_id';
-import { renderMustacheObject } from './lib/mustache_renderer';
-import { getAlertHistoryEsIndex } from './preconfigured_connectors/alert_history_es_index/alert_history_es_index';
 import { createAlertHistoryIndexTemplate } from './preconfigured_connectors/alert_history_es_index/create_alert_history_index_template';
-import { ACTIONS_FEATURE_ID, AlertHistoryEsIndexConnectorId } from '../common';
+import { ACTIONS_FEATURE_ID } from '../common';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from './constants/event_log';
 import { ConnectorTokenClient } from './lib/connector_token_client';
 import { UserConnectorTokenClient } from './lib/user_connector_token_client';
 import { InMemoryMetrics, registerClusterCollector, registerNodeCollector } from './monitoring';
-import type { ConnectorWithOptionalDeprecation } from './application/connector/lib';
-import { isConnectorDeprecated } from './application/connector/lib';
 import { createSubActionConnectorFramework } from './sub_action_framework';
 import type {
   ICaseServiceAbstract,
@@ -128,6 +124,8 @@ import type { IUnsecuredActionsClient } from './unsecured_actions_client/unsecur
 import { UnsecuredActionsClient } from './unsecured_actions_client/unsecured_actions_client';
 import { createBulkUnsecuredExecutionEnqueuerFunction } from './create_unsecured_execute_function';
 import { createSystemConnectors } from './create_system_actions';
+import { renderActionParameterTemplates } from './lib/render_action_parameter_templates';
+import { getInMemoryConnectorsFromConfig } from './lib/get_in_memory_connectors_from_config';
 import { ConnectorUsageReportingTask } from './usage/connector_usage_reporting_task';
 import { ConnectorRateLimiter } from './lib/connector_rate_limiter';
 import { OAuthRateLimiter } from './lib/oauth_rate_limiter';
@@ -179,6 +177,11 @@ export interface PluginSetupContract {
   >;
   getActionsHealth: () => { hasPermanentEncryptionKey: boolean };
   getActionsConfigurationUtilities: () => ActionsConfigurationUtilities;
+  /**
+   * The validated actions config. Only for Task Manager's task type modules, whose task process is
+   * sent it; it holds the secrets of preconfigured connectors, so never log it.
+   */
+  getConfig: () => ActionsConfig;
   getRelayClient: () => RelayClientContract | undefined;
   setEnabledConnectorTypes: (connectorTypes: EnabledConnectorTypes) => void;
 
@@ -379,31 +382,9 @@ export class ActionsPlugin
         })
       : undefined;
 
-    if (this.actionsConfig.preconfiguredAlertHistoryEsIndex) {
-      this.inMemoryConnectors.push(getAlertHistoryEsIndex());
-    }
-
-    for (const preconfiguredId of Object.keys(this.actionsConfig.preconfigured)) {
-      if (preconfiguredId !== AlertHistoryEsIndexConnectorId) {
-        const rawPreconfiguredConnector: ConnectorWithOptionalDeprecation = {
-          ...this.actionsConfig.preconfigured[preconfiguredId],
-          id: preconfiguredId,
-          isPreconfigured: true,
-          isSystemAction: false,
-          isConnectorTypeDeprecated: false,
-        };
-
-        this.inMemoryConnectors.push({
-          ...rawPreconfiguredConnector,
-          isDeprecated: isConnectorDeprecated(rawPreconfiguredConnector),
-          isConnectorTypeDeprecated: false,
-        });
-      } else {
-        this.logger.warn(
-          `Preconfigured connectors cannot have the id "${AlertHistoryEsIndexConnectorId}" because this is a reserved id.`
-        );
-      }
-    }
+    this.inMemoryConnectors.push(
+      ...getInMemoryConnectorsFromConfig(this.actionsConfig, this.logger)
+    );
 
     const actionTypeRegistry = new ActionTypeRegistry({
       licensing: plugins.licensing,
@@ -590,6 +571,7 @@ export class ActionsPlugin
         };
       },
       getActionsConfigurationUtilities: () => actionsConfigUtils,
+      getConfig: () => this.actionsConfig,
       getRelayClient: () => this.relayClient,
       setEnabledConnectorTypes: (connectorTypes) => {
         if (
@@ -1265,18 +1247,4 @@ export class ActionsPlugin
   }
 }
 
-export function renderActionParameterTemplates<Params extends ActionTypeParams = ActionTypeParams>(
-  logger: Logger,
-  actionTypeRegistry: ActionTypeRegistry | undefined,
-  actionTypeId: string,
-  actionId: string,
-  params: Params,
-  variables: Record<string, unknown>
-): Params {
-  const actionType = actionTypeRegistry?.get(actionTypeId);
-  if (actionType?.renderParameterTemplates) {
-    return actionType.renderParameterTemplates(logger, params, variables, actionId) as Params;
-  } else {
-    return renderMustacheObject(logger, params, variables);
-  }
-}
+export { renderActionParameterTemplates };

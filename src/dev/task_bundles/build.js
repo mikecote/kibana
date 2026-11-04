@@ -64,6 +64,35 @@ const repoInfoPlugin = (version) => ({
   },
 });
 
+/**
+ * Treats every workspace source file (not `node_modules`) as free of import-time side effects, as
+ * Kibana's modules are. Then a barrel such as `@kbn/task-manager-plugin/server` costs only what is
+ * used from it: without this, importing one constant from it pulls in the plugin class and
+ * everything the plugin imports.
+ */
+const pureWorkspacePlugin = {
+  name: 'pure-workspace',
+  setup(b) {
+    b.onResolve({ filter: /.*/ }, async (args) => {
+      if (args.pluginData?.skipPure || args.kind === 'entry-point') return undefined;
+      const resolved = await b.resolve(args.path, {
+        kind: args.kind,
+        importer: args.importer,
+        namespace: args.namespace,
+        resolveDir: args.resolveDir,
+        with: args.with,
+        pluginData: { skipPure: true },
+      });
+      if (resolved.errors.length || resolved.external || resolved.namespace !== 'file') {
+        return resolved.errors.length ? undefined : resolved;
+      }
+      return resolved.path.includes(`${path.sep}node_modules${path.sep}`)
+        ? resolved
+        : { ...resolved, sideEffects: false };
+    });
+  },
+};
+
 const peggyPlugin = {
   name: 'peggy',
   setup(b) {
@@ -82,10 +111,16 @@ const peggyPlugin = {
  * Bundles the task type file together with the task process entry into one file:
  * `node <name>.js` serves `/health`, `/run` and `/cancel` for Task Manager.
  */
-const buildTaskBundle = async ({ entry, outDir = OUT_DIR, kibanaVersion, sourcemap = true }) => {
+const buildTaskBundle = async ({
+  entry,
+  outDir = OUT_DIR,
+  kibanaVersion,
+  sourcemap = true,
+  metafile = false,
+}) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.js`);
-  await build({
+  const result = await build({
     stdin: {
       contents: [
         `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
@@ -105,6 +140,7 @@ const buildTaskBundle = async ({ entry, outDir = OUT_DIR, kibanaVersion, sourcem
     tsconfig: path.join(REPO_ROOT, 'tsconfig.base.json'),
     logLevel: 'silent',
     logLimit: 0,
+    metafile,
     minifyWhitespace: true,
     minifySyntax: true,
     keepNames: true,
@@ -128,9 +164,15 @@ const buildTaskBundle = async ({ entry, outDir = OUT_DIR, kibanaVersion, sourcem
       '.png': 'empty',
       '.node': 'empty',
     },
-    plugins: [peggyPlugin, repoInfoPlugin(version)],
+    plugins: [pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
   });
-  return { name: entry.name, outfile, bytes: fs.statSync(outfile).size, entry };
+  return {
+    name: entry.name,
+    outfile,
+    bytes: fs.statSync(outfile).size,
+    entry,
+    ...(metafile ? { metafile: result.metafile } : {}),
+  };
 };
 
 /** The task type a file exports as `taskType`; loads it, so it needs the transpiler. */

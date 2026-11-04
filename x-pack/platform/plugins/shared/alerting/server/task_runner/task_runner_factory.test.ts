@@ -20,7 +20,6 @@ import {
 } from '@kbn/core/server/mocks';
 import { actionsMock } from '@kbn/actions-plugin/server/mocks';
 import { eventLoggerMock } from '@kbn/event-log-plugin/server/event_logger.mock';
-import type { UntypedNormalizedRuleType } from '../rule_type_registry';
 import { ruleTypeRegistryMock } from '../rule_type_registry.mock';
 import { executionContextServiceMock } from '@kbn/core/server/mocks';
 import { dataPluginMock } from '@kbn/data-plugin/server/mocks';
@@ -29,7 +28,6 @@ import type { SharePluginStart } from '@kbn/share-plugin/server';
 import type { DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
 import { dataViewPluginMocks } from '@kbn/data-views-plugin/public/mocks';
 import { alertsServiceMock } from '../alerts_service/alerts_service.mock';
-import { schema } from '@kbn/config-schema';
 import { ConnectorAdapterRegistry } from '../connector_adapters/connector_adapter_registry';
 import type { TaskRunnerContext } from './types';
 import { ApiKeyType } from './types';
@@ -54,26 +52,6 @@ const dataViewsMock = {
   dataViewsServiceFactory: jest.fn().mockResolvedValue(dataViewPluginMocks.createStartContract()),
   getScriptedFieldsEnabled: jest.fn().mockReturnValue(true),
 } as DataViewsServerPluginStart;
-const ruleType: UntypedNormalizedRuleType = {
-  id: 'test',
-  name: 'My test alert',
-  actionGroups: [{ id: 'default', name: 'Default' }],
-  defaultActionGroupId: 'default',
-  minimumLicenseRequired: 'basic',
-  isExportable: true,
-  recoveryActionGroup: {
-    id: 'recovered',
-    name: 'Recovered',
-  },
-  executor: jest.fn(),
-  category: 'test',
-  producer: 'alerts',
-  solution: 'stack',
-  validate: {
-    params: schema.any(),
-  },
-  validLegacyConsumers: [],
-};
 let fakeTimer: sinon.SinonFakeTimers;
 
 describe('Task Runner Factory', () => {
@@ -109,6 +87,7 @@ describe('Task Runner Factory', () => {
   const taskRunnerFactoryInitializerParams: jest.Mocked<TaskRunnerContext> = {
     actionsConfigMap: { default: { max: 1000 } },
     actionsPlugin: actionsMock.createStart(),
+    inMemoryMetrics,
     alertsService: mockAlertService,
     backfillClient,
     cancelAlertsOnRuleTimeout: true,
@@ -147,15 +126,17 @@ describe('Task Runner Factory', () => {
     ).toThrowErrorMatchingInlineSnapshot(`"TaskRunnerFactory already initialized"`);
   });
 
-  test(`throws an error if create is called when factory isn't initialized`, () => {
+  test(`gives the runtime to whoever waits for it once the factory is initialized`, async () => {
     const factory = new TaskRunnerFactory();
-    expect(() =>
-      factory.create(
-        ruleType,
-        taskManagerMock.createRunContext({ taskInstance: mockedTaskInstance }),
-        inMemoryMetrics
-      )
-    ).toThrowErrorMatchingInlineSnapshot(`"TaskRunnerFactory not initialized"`);
+    const runtime = factory.getRuntime();
+    const settled = jest.fn();
+    runtime.then(settled);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    factory.initialize(taskRunnerFactoryInitializerParams);
+    await expect(runtime).resolves.toBe(taskRunnerFactoryInitializerParams);
+    await expect(factory.getRuntime()).resolves.toBe(taskRunnerFactoryInitializerParams);
   });
 
   test(`throws an error if createAdHoc is called when factory isn't initialized`, () => {

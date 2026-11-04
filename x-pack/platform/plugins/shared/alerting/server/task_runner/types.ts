@@ -10,9 +10,9 @@ import type {
   KibanaRequest,
   ExecutionContextStart,
   SavedObjectsServiceStart,
-  ElasticsearchServiceStart,
   UiSettingsServiceStart,
 } from '@kbn/core/server';
+import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { ConcreteTaskInstance, DecoratedError } from '@kbn/task-manager-plugin/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
@@ -27,6 +27,7 @@ import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type { IKibanaSearchRequest, IKibanaSearchResponse } from '@kbn/search-types';
 import type { IAsyncSearchOptions } from '@kbn/data-plugin/common';
 import type { SpaceId } from '@kbn/core-spaces-common';
+import type { InMemoryMetrics } from '../monitoring';
 import type { EventBus } from '../lib/events/event_bus';
 import type {
   AlertingDomainEvent,
@@ -176,7 +177,7 @@ export interface ActionSchedulerOptions<
   logger: Logger;
   alertingEventLogger: PublicMethodsOf<AlertingEventLogger>;
   rule: SanitizedRule<Params>;
-  taskRunnerContext: TaskRunnerContext;
+  taskRunnerContext: RuleRunRuntime;
   taskInstance: RuleTaskInstance;
   ruleRunMetricsStore: RuleRunMetricsStore;
   apiKey: RawRule['apiKey'];
@@ -232,33 +233,47 @@ export enum ApiKeyType {
   UIAM = 'uiam',
 }
 
-export interface TaskRunnerContext {
+/**
+ * What a rule run needs, and nothing that only the ad hoc (backfill) runner uses. Kibana builds it
+ * from the alerting plugin's start services; a task process builds it from the task host. Members
+ * that are `Pick`s name the part of a plugin contract a rule run calls, which is all a task process
+ * has to provide.
+ */
+export interface RuleRunRuntime {
   actionsConfigMap: ActionsConfigMap;
-  actionsPlugin: ActionsPluginStartContract;
+  actionsPlugin: Pick<
+    ActionsPluginStartContract,
+    | 'getActionsClientWithRequest'
+    | 'isActionExecutable'
+    | 'renderActionParameterTemplates'
+    | 'isSystemActionConnector'
+  >;
   alertsService: AlertsService | null;
   auditService?: AuditServiceSetup;
-  backfillClient: BackfillClient;
   cancelAlertsOnRuleTimeout: boolean;
   connectorAdapterRegistry: ConnectorAdapterRegistry;
-  data: DataPluginStart;
-  dataViews: DataViewsPluginStart;
-  elasticsearch: ElasticsearchServiceStart;
+  data: { search: Pick<DataPluginStart['search'], 'asScoped' | 'searchSource'> };
+  dataViews: Pick<DataViewsPluginStart, 'dataViewsServiceFactory'>;
+  elasticsearch: { client: Pick<IClusterClient, 'asInternalUser' | 'asScoped'> };
   encryptedSavedObjectsClient: EncryptedSavedObjectsClient;
   eventLogger: IEventLogger;
-  executionContext: ExecutionContextStart;
+  executionContext: Pick<ExecutionContextStart, 'withContext'>;
+  inMemoryMetrics: InMemoryMetrics;
   kibanaBaseUrl: string | undefined;
   logger: Logger;
   maintenanceWindowsService: MaintenanceWindowsService;
   maxAlerts: number;
-  ruleTypeRegistry: RuleTypeRegistry;
+  ruleTypeRegistry: Pick<RuleTypeRegistry, 'get' | 'has' | 'ensureRuleTypeEnabled'>;
   rulesSettingsService: RulesSettingsService;
   apiKeyType: ApiKeyType;
-  savedObjects: SavedObjectsServiceStart;
+  savedObjects: Pick<
+    SavedObjectsServiceStart,
+    'getScopedClient' | 'createInternalRepository' | 'getUnsafeInternalClient'
+  >;
   share: SharePluginStart;
   spaceIdToNamespace: SpaceIdToNamespaceFunction;
-  uiSettings: UiSettingsServiceStart;
+  uiSettings: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   usageCounter?: UsageCounter;
-  getEventLogClient: (request: KibanaRequest) => IEventLogClient;
   isServerless: boolean;
   shouldGrantUiam?: boolean;
   /**
@@ -273,6 +288,12 @@ export interface TaskRunnerContext {
    * registered after the context is created still apply.
    */
   alertStatusChangedOptIns?: readonly AlertStatusChangedOptIn[];
+}
+
+/** The ad hoc (backfill) runner also needs two things that only exist in Kibana. */
+export interface TaskRunnerContext extends RuleRunRuntime {
+  backfillClient: BackfillClient;
+  getEventLogClient: (request: KibanaRequest) => IEventLogClient;
 }
 
 export interface AsyncSearchClient<T extends AsyncSearchParams> {

@@ -9,12 +9,13 @@ import Boom from '@hapi/boom';
 import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import typeDetect from 'type-detect';
-import { intersection } from 'lodash';
 import type { Logger } from '@kbn/core/server';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
-import type { RunContext, TaskManagerSetupContract } from '@kbn/task-manager-plugin/server';
-import { stateSchemaByVersion } from '@kbn/alerting-state-types';
-import { TaskCost, TaskPriority, TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
+import type {
+  TaskManagerSetupContract,
+  TaskTypeRegistrationOptions,
+} from '@kbn/task-manager-plugin/server';
+import { TaskPriority } from '@kbn/task-manager-plugin/server/task';
 import type { TaskRunnerFactory } from './task_runner';
 import type {
   RuleType,
@@ -24,24 +25,19 @@ import type {
   AlertInstanceContext,
   IRuleTypeAlerts,
 } from './types';
-import type { RecoveredActionGroupId, ActionGroup, RuleAlertData } from '../common';
-import {
-  RecoveredActionGroup,
-  getBuiltinActionGroups,
-  validateDurationSchema,
-  parseDuration,
-} from '../common';
+import type { ActionGroup, RuleAlertData } from '../common';
+import { validateDurationSchema, parseDuration } from '../common';
 import type { ILicenseState } from './lib/license_state';
 import { getRuleTypeFeatureUsageName } from './lib/get_rule_type_feature_usage_name';
-import type { InMemoryMetrics } from './monitoring';
 import type { AlertingRulesConfig } from '.';
 import type { AlertsService } from './alerts_service/alerts_service';
-import { getRuleTypeIdValidLegacyConsumers } from './rule_type_registry_deprecated_consumers';
+import {
+  augmentActionGroupsWithReserved,
+  normalizedActionVariables,
+} from './lib/normalize_rule_type';
+import { createRuleTaskType } from './task_types/rule_task_type';
 import type { AlertingConfig } from './config';
 
-const RULE_TYPES_WITH_CUSTOM_COST: Record<string, TaskCost> = {
-  'siem.indicatorRule': TaskCost.ExtraLarge,
-};
 export interface ConstructorOptions {
   config: AlertingConfig;
   logger: Logger;
@@ -50,8 +46,9 @@ export interface ConstructorOptions {
   licenseState: ILicenseState;
   licensing: LicensingPluginSetup;
   minimumScheduleInterval: AlertingRulesConfig['minimumScheduleInterval'];
-  inMemoryMetrics: InMemoryMetrics;
   alertsService: AlertsService | null;
+  /** What Task Manager is told about the task processes of the rule task types. */
+  taskTypeOptions?: Omit<TaskTypeRegistrationOptions, 'logger'>;
 }
 
 export interface RegistryRuleType
@@ -162,8 +159,8 @@ export class RuleTypeRegistry {
   private readonly licenseState: ILicenseState;
   private readonly minimumScheduleInterval: AlertingRulesConfig['minimumScheduleInterval'];
   private readonly licensing: LicensingPluginSetup;
-  private readonly inMemoryMetrics: InMemoryMetrics;
   private readonly alertsService: AlertsService | null;
+  private readonly taskTypeOptions?: ConstructorOptions['taskTypeOptions'];
 
   constructor({
     config,
@@ -173,8 +170,8 @@ export class RuleTypeRegistry {
     licenseState,
     licensing,
     minimumScheduleInterval,
-    inMemoryMetrics,
     alertsService,
+    taskTypeOptions,
   }: ConstructorOptions) {
     this.config = config;
     this.logger = logger;
@@ -183,7 +180,7 @@ export class RuleTypeRegistry {
     this.licenseState = licenseState;
     this.licensing = licensing;
     this.minimumScheduleInterval = minimumScheduleInterval;
-    this.inMemoryMetrics = inMemoryMetrics;
+    this.taskTypeOptions = taskTypeOptions;
     this.alertsService = alertsService;
   }
 
@@ -308,34 +305,15 @@ export class RuleTypeRegistry {
       normalizedRuleType as unknown as UntypedNormalizedRuleType
     );
 
-    const taskCost: TaskCost | undefined = RULE_TYPES_WITH_CUSTOM_COST[ruleType.id];
-
-    this.taskManager.registerTaskDefinitions({
-      [`alerting:${ruleType.id}`]: {
-        title: ruleType.name,
-        priority: ruleType.priority,
-        timeout: ruleType.ruleTaskTimeout,
-        stateSchemaByVersion,
-        taskTypeGroup: TaskTypeGroup.Alerting,
-        createTaskRunner: (context: RunContext) =>
-          this.taskRunnerFactory.create<
-            Params,
-            ExtractedParams,
-            State,
-            InstanceState,
-            InstanceContext,
-            ActionGroupIds,
-            RecoveryActionGroupId | RecoveredActionGroupId,
-            AlertData
-          >(normalizedRuleType, context, this.inMemoryMetrics),
-        paramsSchema: schema.object({
-          alertId: schema.string(),
-          spaceId: schema.string(),
-          consumer: schema.maybe(schema.string()),
-        }),
-        ...(taskCost ? { cost: taskCost } : {}),
-      },
-    });
+    // Every rule type is a task type module, so the same code runs in Kibana and, when a bundle of it
+    // exists and task processes are on, in a task process.
+    this.taskManager.registerTaskType(
+      createRuleTaskType(
+        { ruleType: normalizedRuleType as unknown as UntypedNormalizedRuleType },
+        { getRuntime: () => this.taskRunnerFactory.getRuntime() }
+      ),
+      { logger: this.logger, ...this.taskTypeOptions }
+    );
 
     if (this.alertsService && ruleType.alerts) {
       this.alertsService.register(ruleType.alerts as IRuleTypeAlerts);
@@ -458,108 +436,4 @@ export class RuleTypeRegistry {
       return true;
     });
   }
-}
-
-function normalizedActionVariables(actionVariables: RuleType['actionVariables']) {
-  return {
-    context: actionVariables?.context ?? [],
-    state: actionVariables?.state ?? [],
-    params: actionVariables?.params ?? [],
-  };
-}
-
-function augmentActionGroupsWithReserved<
-  Params extends RuleTypeParams,
-  ExtractedParams extends RuleTypeParams,
-  State extends RuleTypeState,
-  InstanceState extends AlertInstanceState,
-  InstanceContext extends AlertInstanceContext,
-  ActionGroupIds extends string,
-  RecoveryActionGroupId extends string,
-  AlertData extends RuleAlertData
->(
-  ruleType: RuleType<
-    Params,
-    ExtractedParams,
-    State,
-    InstanceState,
-    InstanceContext,
-    ActionGroupIds,
-    RecoveryActionGroupId,
-    AlertData
-  >,
-  config: AlertingConfig
-): NormalizedRuleType<
-  Params,
-  ExtractedParams,
-  State,
-  InstanceState,
-  InstanceContext,
-  ActionGroupIds,
-  RecoveredActionGroupId | RecoveryActionGroupId,
-  AlertData
-> {
-  const reservedActionGroups = getBuiltinActionGroups(ruleType.recoveryActionGroup);
-  const { id, actionGroups, recoveryActionGroup } = ruleType;
-
-  const activeActionGroups = new Set<string>(actionGroups.map((item) => item.id));
-  const intersectingReservedActionGroups = intersection<string>(
-    [...activeActionGroups.values()],
-    reservedActionGroups.map((item) => item.id)
-  );
-  if (recoveryActionGroup && activeActionGroups.has(recoveryActionGroup.id)) {
-    throw new Error(
-      i18n.translate(
-        'xpack.alerting.ruleTypeRegistry.register.customRecoveryActionGroupUsageError',
-        {
-          defaultMessage:
-            'Rule type [id="{id}"] cannot be registered. Action group [{actionGroup}] cannot be used as both a recovery and an active action group.',
-          values: {
-            actionGroup: recoveryActionGroup.id,
-            id,
-          },
-        }
-      )
-    );
-  } else if (intersectingReservedActionGroups.length > 0) {
-    throw new Error(
-      i18n.translate('xpack.alerting.ruleTypeRegistry.register.reservedActionGroupUsageError', {
-        defaultMessage:
-          'Rule type [id="{id}"] cannot be registered. Action groups [{actionGroups}] are reserved by the framework.',
-        values: {
-          actionGroups: intersectingReservedActionGroups.join(', '),
-          id,
-        },
-      })
-    );
-  }
-
-  const activeActionGroupSeverities = new Set<number>();
-  actionGroups.forEach((actionGroup) => {
-    if (actionGroup.severity) {
-      if (activeActionGroupSeverities.has(actionGroup.severity.level)) {
-        throw new Error(
-          i18n.translate(
-            'xpack.alerting.ruleTypeRegistry.register.duplicateActionGroupSeverityError',
-            {
-              defaultMessage:
-                'Rule type [id="{id}"] cannot be registered. Action group definitions cannot contain duplicate severity levels.',
-              values: {
-                id,
-              },
-            }
-          )
-        );
-      }
-      activeActionGroupSeverities.add(actionGroup.severity.level);
-    }
-  });
-
-  return {
-    ...ruleType,
-    ...(config?.rules?.overwriteProducer ? { producer: config.rules.overwriteProducer } : {}),
-    actionGroups: [...actionGroups, ...reservedActionGroups],
-    recoveryActionGroup: recoveryActionGroup ?? RecoveredActionGroup,
-    validLegacyConsumers: getRuleTypeIdValidLegacyConsumers(id),
-  };
 }

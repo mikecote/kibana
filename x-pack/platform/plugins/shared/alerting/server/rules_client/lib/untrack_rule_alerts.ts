@@ -11,7 +11,7 @@ import { withSpan } from '@kbn/apm-utils';
 import type { SanitizedRule, RawAlertInstance as RawAlert, RawRule } from '../../types';
 import { taskInstanceToAlertTaskInstance } from '../../task_runner/alert_task_instance';
 import { Alert } from '../../alert';
-import { EVENT_LOG_ACTIONS } from '../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../constants/event_log';
 import { createAlertEventLogRecordObject } from '../../lib/create_alert_event_log_record_object';
 import type { RulesClientContext } from '../types';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';

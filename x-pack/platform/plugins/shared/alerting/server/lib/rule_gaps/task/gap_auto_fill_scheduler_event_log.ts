@@ -6,7 +6,7 @@
  */
 
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import { EVENT_LOG_ACTIONS } from '../../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../../constants/event_log';
 import type { SchedulerSoAttributes } from '../../../application/gaps/types/scheduler';
 import type { GapAutoFillStatus } from '../../../../common/constants';
 

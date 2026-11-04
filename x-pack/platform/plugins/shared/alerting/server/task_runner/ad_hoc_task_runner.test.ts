@@ -105,6 +105,7 @@ import { updateGaps } from '../lib/rule_gaps/update/update_gaps';
 import { alertsClientMock } from '../alerts_client/alerts_client.mock';
 import { alertsServiceMock } from '../alerts_service/alerts_service.mock';
 import { backfillInitiator } from '../../common/constants';
+import { inMemoryMetricsMock } from '../monitoring/in_memory_metrics.mock';
 
 jest.mock('../lib/rule_gaps/update/update_gaps');
 const UUID = '5f6aa57d-3e22-484e-bae8-cbed868f4d28';
@@ -169,6 +170,7 @@ const eventLogClient = eventLogClientMock.create();
 const taskRunnerFactoryInitializerParams: TaskRunnerFactoryInitializerParamsType = {
   actionsConfigMap: { default: { max: 1000 } },
   actionsPlugin: actionsMock.createStart(),
+  inMemoryMetrics: inMemoryMetricsMock.create(),
   alertsService,
   backfillClient,
   cancelAlertsOnRuleTimeout: true,

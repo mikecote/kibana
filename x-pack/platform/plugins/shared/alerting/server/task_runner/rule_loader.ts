@@ -18,9 +18,9 @@ import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import type { SavedObject, SavedObjectReference } from '@kbn/core-saved-objects-api-server';
 import type { Logger } from '@kbn/logging';
 import { SavedObjectsErrorHelpers } from '@kbn/core-saved-objects-server';
-import { ApiKeyType, type RunRuleParams, type TaskRunnerContext } from './types';
+import { ApiKeyType, type RunRuleParams, type RuleRunRuntime } from './types';
 import { ErrorWithReason, validateRuleTypeParams } from '../lib';
-import type { RawRule, RuleTypeRegistry, RuleTypeParamsValidator } from '../types';
+import type { RawRule, RuleTypeParamsValidator } from '../types';
 import { RuleExecutionStatusErrorReasons } from '../types';
 import type { RuleTypeParams } from '../../common';
 import { MONITORING_HISTORY_LIMIT } from '../../common';
@@ -40,12 +40,12 @@ export interface RuleData {
 }
 
 interface ValidateRuleAndCreateFakeRequestParams<Params extends RuleTypeParams> {
-  context: TaskRunnerContext;
+  context: RuleRunRuntime;
   logger: Logger;
   paramValidator?: RuleTypeParamsValidator<Params>;
   ruleData: RuleData;
   ruleId: string;
-  ruleTypeRegistry: RuleTypeRegistry;
+  ruleTypeRegistry: RuleRunRuntime['ruleTypeRegistry'];
   spaceId: string;
 }
 
@@ -155,7 +155,7 @@ export function validateRuleAndCreateFakeRequest<Params extends RuleTypeParams>(
  * Loads the decrypted rule saved object
  */
 export async function getDecryptedRule(
-  context: TaskRunnerContext,
+  context: RuleRunRuntime,
   ruleId: string,
   spaceId: string
 ): Promise<RuleData> {
@@ -203,7 +203,7 @@ export interface GetFakeKibanaRequestOptions {
 }
 
 export function getFakeKibanaRequest(
-  context: TaskRunnerContext,
+  context: RuleRunRuntime,
   spaceId: string,
   apiKey: RawRule['apiKey'],
   options: GetFakeKibanaRequestOptions = {}

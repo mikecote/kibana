@@ -6,23 +6,17 @@
  */
 
 import type { RunContext } from '@kbn/task-manager-plugin/server';
-import type {
-  RuleAlertData,
-  RuleTypeParams,
-  RuleTypeState,
-  AlertInstanceState,
-  AlertInstanceContext,
-} from '../types';
-import { TaskRunner } from './task_runner';
-import type { NormalizedRuleType } from '../rule_type_registry';
-import type { InMemoryMetrics } from '../monitoring';
-import type { TaskRunnerContext } from './types';
+import type { RuleRunRuntime, TaskRunnerContext } from './types';
 import { AD_HOC_RUN_SAVED_OBJECT_TYPE, RULE_SAVED_OBJECT_TYPE } from '../saved_objects';
 import { AdHocTaskRunner } from './ad_hoc_task_runner';
 
 export class TaskRunnerFactory {
   private isInitialized = false;
   private taskRunnerContext?: TaskRunnerContext;
+  private resolveRuntime!: (runtime: RuleRunRuntime) => void;
+  private readonly runtime = new Promise<RuleRunRuntime>((resolve) => {
+    this.resolveRuntime = resolve;
+  });
 
   public initialize(taskRunnerContext: TaskRunnerContext) {
     if (this.isInitialized) {
@@ -30,54 +24,15 @@ export class TaskRunnerFactory {
     }
     this.isInitialized = true;
     this.taskRunnerContext = taskRunnerContext;
+    this.resolveRuntime(taskRunnerContext);
   }
 
-  public create<
-    Params extends RuleTypeParams,
-    ExtractedParams extends RuleTypeParams,
-    State extends RuleTypeState,
-    InstanceState extends AlertInstanceState,
-    InstanceContext extends AlertInstanceContext,
-    ActionGroupIds extends string,
-    RecoveryActionGroupId extends string,
-    AlertData extends RuleAlertData
-  >(
-    ruleType: NormalizedRuleType<
-      Params,
-      ExtractedParams,
-      State,
-      InstanceState,
-      InstanceContext,
-      ActionGroupIds,
-      RecoveryActionGroupId,
-      AlertData
-    >,
-    { taskInstance, executionUuid }: RunContext,
-    inMemoryMetrics: InMemoryMetrics
-  ) {
-    if (!this.isInitialized) {
-      throw new Error('TaskRunnerFactory not initialized');
-    }
-
-    return new TaskRunner<
-      Params,
-      ExtractedParams,
-      State,
-      InstanceState,
-      InstanceContext,
-      ActionGroupIds,
-      RecoveryActionGroupId,
-      AlertData
-    >({
-      context: this.taskRunnerContext!,
-      inMemoryMetrics,
-      internalSavedObjectsRepository: this.taskRunnerContext!.savedObjects.createInternalRepository(
-        [RULE_SAVED_OBJECT_TYPE]
-      ),
-      ruleType,
-      taskInstance,
-      executionUuid,
-    });
+  /**
+   * What a rule run needs, once the plugin has started. The task type of every rule type awaits it
+   * when a run is created, so no run starts before the services it uses exist.
+   */
+  public getRuntime(): Promise<RuleRunRuntime> {
+    return this.runtime;
   }
 
   public createAdHoc({ taskInstance, executionUuid }: RunContext) {

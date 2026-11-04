@@ -30,7 +30,7 @@ import type {
   ActionOpts,
   AlertingEventLogger,
 } from '../../lib/alerting_event_logger/alerting_event_logger';
-import type { RuleTaskInstance, TaskRunnerContext } from '../types';
+import type { RuleTaskInstance, RuleRunRuntime } from '../types';
 
 export type ActionSchedulerRule<Params extends RuleTypeParams> = Omit<
   SanitizedRule<Params>,
@@ -59,7 +59,7 @@ export interface ActionSchedulerOptions<
   logger: Logger;
   alertingEventLogger: PublicMethodsOf<AlertingEventLogger>;
   rule: ActionSchedulerRule<Params>;
-  taskRunnerContext: TaskRunnerContext;
+  taskRunnerContext: RuleRunRuntime;
   taskInstance: RuleTaskInstance;
   ruleRunMetricsStore: RuleRunMetricsStore;
   apiKeyId?: string;

@@ -7,7 +7,7 @@
 
 import { millisToNanos } from '@kbn/event-log-plugin/server';
 import type { AlertDeletionContext } from '../alert_deletion_client';
-import { EVENT_LOG_ACTIONS } from '../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../constants/event_log';
 
 export const logSuccessfulDeletion = (
   context: AlertDeletionContext,

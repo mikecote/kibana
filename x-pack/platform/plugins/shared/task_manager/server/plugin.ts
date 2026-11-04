@@ -303,19 +303,24 @@ export class TaskManagerPlugin
         }),
       });
     };
+    // What a task type's process may be told is up to the plugin that registered the task type: the
+    // module a process runs is a separate instance, which uses what it declared of it.
     this.getTaskProcessInit = (taskType) => {
       const registration = this.moduleRegistrations.get(taskType);
       if (!registration) return undefined;
-      const { module, options } = registration;
+      const { options } = registration;
       const init: Pick<TaskProcessInit, 'server' | 'encryptedSavedObjects' | 'settings'> = {
         server: getServerInfo(this.publicBaseUrl),
       };
-      if (module.encryptedSavedObjectTypes?.length) {
-        init.encryptedSavedObjects = options!.hostExtensions!.getEncryptionKeys!();
+      if (options?.hostExtensions?.getEncryptionKeys) {
+        init.encryptedSavedObjects = options.hostExtensions.getEncryptionKeys();
       }
-      if (module.settings?.length) {
+      if (options?.settings) {
         init.settings = Object.fromEntries(
-          module.settings.map((id) => [id, serializeSettings(options!.settings![id]())])
+          Object.entries(options.settings).map(([id, getSettings]) => [
+            id,
+            serializeSettings(getSettings()),
+          ])
         ) as TaskProcessInit['settings'];
       }
       return init;

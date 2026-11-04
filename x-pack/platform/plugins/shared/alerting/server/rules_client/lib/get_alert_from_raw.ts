@@ -44,7 +44,7 @@ interface GetAlertFromRawOpts {
   rawRule: RawRule;
   references: SavedObjectReference[] | undefined;
   ruleTypeId: string;
-  ruleTypeRegistry: RuleTypeRegistry;
+  ruleTypeRegistry: Pick<RuleTypeRegistry, 'get'>;
 }
 
 type GetPartialRuleFromRawOpts = Omit<GetAlertFromRawOpts, 'ruleTypeRegistry'> & {

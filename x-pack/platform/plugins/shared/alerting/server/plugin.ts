@@ -111,7 +111,7 @@ import type { AlertingAuthorization } from './authorization';
 import type { SecurityHealth } from './lib/get_security_health';
 import { getSecurityHealth } from './lib/get_security_health';
 import { registerNodeCollector, registerClusterCollector, InMemoryMetrics } from './monitoring';
-import { getRuleTaskTimeout } from './lib/get_rule_task_timeout';
+import { applyRuleTypeDefaults } from './lib/normalize_rule_type';
 import { getActionsConfigMap } from './lib/get_actions_config_map';
 import {
   AlertsService,
@@ -132,24 +132,12 @@ import { registerGapAutoFillSchedulerTask } from './lib/rule_gaps/task/gap_auto_
 import { ChangeTrackingService } from './rules_client/lib/change_tracking';
 import { ruleCreateTelemetryEvents } from './application/rule/methods/common_utils/event_based_telemetry';
 
-export const EVENT_LOG_PROVIDER = 'alerting';
-export const EVENT_LOG_ACTIONS = {
-  execute: 'execute',
-  executeStart: 'execute-start',
-  executeAction: 'execute-action',
-  executeBackfill: 'execute-backfill',
-  newInstance: 'new-instance',
-  recoveredInstance: 'recovered-instance',
-  activeInstance: 'active-instance',
-  executeTimeout: 'execute-timeout',
-  untrackedInstance: 'untracked-instance',
-  gap: 'gap',
-  deleteAlerts: 'delete-alerts',
-  gapAutoFillSchedule: 'gap-auto-fill-schedule',
-};
-export const LEGACY_EVENT_LOG_ACTIONS = {
-  resolvedInstance: 'resolved-instance',
-};
+export {
+  EVENT_LOG_PROVIDER,
+  EVENT_LOG_ACTIONS,
+  LEGACY_EVENT_LOG_ACTIONS,
+} from './constants/event_log';
+import { EVENT_LOG_PROVIDER, EVENT_LOG_ACTIONS } from './constants/event_log';
 
 export interface AlertingServerSetup {
   registerConnectorAdapter<
@@ -410,7 +398,17 @@ export class AlertingPlugin {
       licensing: plugins.licensing,
       alertsService: this.alertsService,
       minimumScheduleInterval: this.config.rules.minimumScheduleInterval,
-      inMemoryMetrics: this.inMemoryMetrics,
+      // What the task process of a rule task type is allowed to be told: the keys to decrypt the
+      // rules with, and the configs of alerting and actions.
+      taskTypeOptions: {
+        hostExtensions: {
+          getEncryptionKeys: () => plugins.encryptedSavedObjects.getKeysForTaskProcesses(),
+        },
+        settings: {
+          alerting: () => this.config,
+          actions: () => plugins.actions.getConfig(),
+        },
+      },
     });
     this.ruleTypeRegistry = ruleTypeRegistry;
 
@@ -597,26 +595,7 @@ export class AlertingPlugin {
             );
           }
 
-          ruleType.ruleTaskTimeout = getRuleTaskTimeout({
-            config: this.config.rules,
-            ruleTaskTimeout: ruleType.ruleTaskTimeout,
-            ruleTypeId: ruleType.id,
-          });
-          ruleType.doesSetRecoveryContext = ruleType.doesSetRecoveryContext ?? false;
-          ruleType.autoRecoverAlerts = ruleType.autoRecoverAlerts ?? true;
-
-          if (
-            ruleType.autoRecoverAlerts === true &&
-            this.config.cancelAlertsOnRuleTimeout === false
-          ) {
-            this.logger.debug(
-              `Setting xpack.alerting.cancelAlertsOnRuleTimeout=false is incompatible with rule type "${ruleType.id}" and will be ignored.`
-            );
-            ruleType.cancelAlertsOnRuleTimeout = true;
-          } else {
-            ruleType.cancelAlertsOnRuleTimeout =
-              ruleType.cancelAlertsOnRuleTimeout ?? this.config.cancelAlertsOnRuleTimeout;
-          }
+          applyRuleTypeDefaults(ruleType, { config: this.config, logger: this.logger });
 
           // Rule Change Tracking
           // There are many alerting rule types but they all belong to a specific solution
@@ -843,6 +822,7 @@ export class AlertingPlugin {
       shouldGrantUiam,
       alertingEventBus: this.alertingEventBus,
       alertStatusChangedOptIns: this.alertStatusChangedOptIns,
+      inMemoryMetrics: this.inMemoryMetrics,
     });
 
     if (this.alertingEventBus && plugins.workflowsExtensions) {

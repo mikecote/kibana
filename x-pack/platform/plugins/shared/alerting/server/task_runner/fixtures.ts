@@ -21,7 +21,7 @@ import type {
 import { RecoveredActionGroup, RuleLastRunOutcomeOrderMap } from '../../common';
 import { getDefaultMonitoring } from '../lib/monitoring';
 import type { UntypedNormalizedRuleType } from '../rule_type_registry';
-import { EVENT_LOG_ACTIONS } from '../plugin';
+import { EVENT_LOG_ACTIONS } from '../constants/event_log';
 import type { AlertHit, RawRule } from '../types';
 import { RULE_SAVED_OBJECT_TYPE } from '../saved_objects';
 

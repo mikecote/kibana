@@ -6,7 +6,7 @@
  */
 
 import type { IEvent, IEventLogger } from '@kbn/event-log-plugin/server';
-import { EVENT_LOG_ACTIONS } from '../../../plugin';
+import { EVENT_LOG_ACTIONS } from '../../../constants/event_log';
 import { eventLoggerMock } from '@kbn/event-log-plugin/server/event_logger.mock';
 import { createGapAutoFillSchedulerEventLogger } from './gap_auto_fill_scheduler_event_log';
 
