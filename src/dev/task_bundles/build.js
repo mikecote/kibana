@@ -20,6 +20,21 @@ const RUNTIME_ENTRY = path.join(
   'x-pack/platform/plugins/shared/task_manager/server/task_process/main'
 );
 
+/** The entry of a task type that always declines: no host, so no Core in the bundle. */
+const DECLINE_ENTRY = path.join(
+  REPO_ROOT,
+  'x-pack/platform/plugins/shared/task_manager/server/task_process/decline_main'
+);
+
+/** Loads a task type file, which needs the transpiler; undefined when it cannot be loaded here. */
+const loadTaskType = (file) => {
+  try {
+    return createRequire(__filename)(file).taskType;
+  } catch (error) {
+    return undefined;
+  }
+};
+
 /** Native modules stay out of the bundle and resolve from node_modules at run time. */
 const EXTERNALS = ['re2'];
 
@@ -120,13 +135,23 @@ const buildTaskBundle = async ({
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.js`);
+  const declines = loadTaskType(entry.file)?.declinesAll;
   const result = await build({
     stdin: {
-      contents: [
-        `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
-        `import { taskType } from ${JSON.stringify(entry.file)};`,
-        `runTaskProcess(taskType);`,
-      ].join('\n'),
+      contents: (declines
+        ? [
+            `import { runDecliningTaskProcess } from ${JSON.stringify(DECLINE_ENTRY)};`,
+            `runDecliningTaskProcess(${JSON.stringify({
+              taskType: loadTaskType(entry.file).type,
+              reason: declines,
+            })});`,
+          ]
+        : [
+            `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
+            `import { taskType } from ${JSON.stringify(entry.file)};`,
+            `runTaskProcess(taskType);`,
+          ]
+      ).join('\n'),
       resolveDir: REPO_ROOT,
       sourcefile: `${entry.name}.entry.ts`,
       loader: 'ts',
@@ -171,6 +196,7 @@ const buildTaskBundle = async ({
     outfile,
     bytes: fs.statSync(outfile).size,
     entry,
+    ...(declines ? { declines } : {}),
     ...(metafile ? { metafile: result.metafile } : {}),
   };
 };
@@ -183,9 +209,14 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   const manifest = {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
     bundles: Object.fromEntries(
-      results.map(({ entry, name, bytes }) => [
+      results.map(({ entry, name, bytes, declines }) => [
         name,
-        { file: `${name}.js`, taskType: readTaskType(entry.file), bytes },
+        {
+          file: `${name}.js`,
+          taskType: readTaskType(entry.file),
+          bytes,
+          ...(declines ? { declines } : {}),
+        },
       ])
     ),
   };

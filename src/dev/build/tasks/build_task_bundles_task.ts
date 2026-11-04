@@ -25,11 +25,17 @@ export const BuildTaskBundles: Task = {
 
     await mkdir(outDir, { recursive: true });
 
-    const results = await Promise.all(
-      getTaskBundleEntries().map((entry: unknown) =>
-        buildTaskBundle({ entry, outDir, kibanaVersion: version, sourcemap: false })
-      )
-    );
+    // A bundle takes a gigabyte of memory to build, so a few at a time.
+    const entries: unknown[] = getTaskBundleEntries();
+    const results: unknown[] = [];
+    const worker = async () => {
+      for (let entry = entries.shift(); entry; entry = entries.shift()) {
+        results.push(
+          await buildTaskBundle({ entry, outDir, kibanaVersion: version, sourcemap: false })
+        );
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
     writeManifest(results, outDir, version);
     log.info(`Bundled ${results.length} task types into ${outDir}`);
   },

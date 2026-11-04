@@ -162,9 +162,11 @@ A factory takes what the host has (`logger`, `isServerless`, `publicBaseUrl`, `s
 and a plugin whose rule types read its config calls `alerting.registerTaskProcessSettings(id, getConfig)`.
 Add a test with `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
-Rule types that need other plugins' runtimes use `createUnsupportedRuleTaskType(id, reason)`: a tiny
-bundle that declines every run, so Kibana runs the rule exactly as before, until the executor can be
-built from the host. Today that is the machine learning based rule types, the infra, synthetics and
+Rule types that need other plugins' runtimes use `createUnsupportedRuleTaskType(id, reason)`: a module
+with `declinesAll`. Its bundle is built from a minimal entry (no Core, about 3 MB), the manifest marks
+it, and in `child_process` mode Kibana does not start a process for it, because it knows the answer:
+the rule runs in Kibana exactly as before, until the executor can be built from the host. A remote
+process serves it by answering every run with `422`. Today that is the machine learning based rule types, the infra, synthetics and
 security detection rule types, and attack discovery.
 
 Not the same in a process: no `alert.status.changed` workflow events, usage counters or in-memory

@@ -21,6 +21,7 @@ const createBundleDir = () => {
       bundles: {
         a: { file: 'a.js', taskType: 'alerting_v2:cleanup' },
         b: { file: 'b.js', taskType: 'task_manager:nodes' },
+        c: { file: 'c.js', taskType: 'alerting:declined', declines: 'needs a plugin' },
       },
     })
   );
@@ -80,6 +81,8 @@ describe('TaskProcessSupervisor', () => {
     expect(supervisor.getRoute('alerting_v2:cleanup')).toEqual({ acquire: expect.any(Function) });
     expect(supervisor.getRoute('task_manager:nodes')).toEqual({ acquire: expect.any(Function) });
     expect(supervisor.getRoute('other:type')).toBeUndefined();
+    // Always declines: Kibana runs it without starting a process to say so.
+    expect(supervisor.getRoute('alerting:declined')).toBeUndefined();
     expect(forkFn).not.toHaveBeenCalled();
   });
 

@@ -19,6 +19,7 @@ import { ruleTaskParamsSchema } from './rule_task_params_schema';
 export const createUnsupportedRuleTaskType = (ruleTypeId: string, reason: string) =>
   defineTaskType({
     type: `alerting:${ruleTypeId}`,
+    declinesAll: `alerting:${ruleTypeId} cannot run in a task process: ${reason}`,
     stateSchemaByVersion,
     taskTypeGroup: TaskTypeGroup.Alerting,
     paramsSchema: ruleTaskParamsSchema,
