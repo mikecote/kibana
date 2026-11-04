@@ -60,7 +60,10 @@ export interface RuleTaskTypeOptions {
   /** A task process only: the connector adapters rules of this rule type may use. */
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: registers the connector types rules of this rule type may enqueue. */
-  registerConnectorTypes?: (actions: RuleRunActionsSetup) => void;
+  registerConnectorTypes?: (
+    actions: RuleRunActionsSetup,
+    context: { publicBaseUrl?: string }
+  ) => void;
 }
 
 export type RuleTypeSource =

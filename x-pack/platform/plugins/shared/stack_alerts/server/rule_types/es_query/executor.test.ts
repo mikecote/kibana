@@ -6,7 +6,6 @@
  */
 
 import { of } from 'rxjs';
-import type { CoreSetup } from '@kbn/core/server';
 import { executor, getValidTimefieldSort, tryToParseAsDate } from './executor';
 import type { ExecutorOptions } from './types';
 import type { Comparator } from '../../../common/comparator_types';
@@ -109,9 +108,6 @@ describe('es_query executor', () => {
       shouldWriteAlerts: () => true,
       getDataViews: jest.fn(),
     };
-    const coreMock = {
-      http: { basePath: { publicBaseUrl: 'https://localhost:5601' } },
-    } as CoreSetup;
     const defaultExecutorOptions = {
       params: defaultProps,
       services,
@@ -128,7 +124,6 @@ describe('es_query executor', () => {
     it('should throw error for invalid comparator', async () => {
       await expect(() =>
         executor(
-          coreMock,
           {
             ...defaultExecutorOptions,
             // @ts-expect-error
@@ -152,7 +147,7 @@ describe('es_query executor', () => {
           truncated: false,
         },
       });
-      await executor(coreMock, defaultExecutorOptions, []);
+      await executor(defaultExecutorOptions, []);
       expect(mockFetchEsQuery).toHaveBeenCalledWith({
         ruleId: 'test-rule-id',
         name: 'test-rule-name',
@@ -185,7 +180,6 @@ describe('es_query executor', () => {
         },
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           params: { ...defaultProps, searchType: 'searchSource' },
@@ -225,7 +219,6 @@ describe('es_query executor', () => {
         },
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           params: { ...defaultProps, searchType: 'esqlQuery' },
@@ -264,7 +257,6 @@ describe('es_query executor', () => {
         },
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -293,7 +285,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -351,7 +342,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -435,7 +425,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -585,7 +574,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           params: {
@@ -655,7 +643,6 @@ describe('es_query executor', () => {
         },
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -701,7 +688,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -772,7 +758,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -870,7 +855,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           params: {
@@ -937,7 +921,6 @@ describe('es_query executor', () => {
       ];
 
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error
@@ -994,7 +977,6 @@ describe('es_query executor', () => {
         link: 'https://localhost:5601/app/management/insightsAndAlerting/triggersActions/rule/test-rule-id',
       });
       await executor(
-        coreMock,
         {
           ...defaultExecutorOptions,
           // @ts-expect-error

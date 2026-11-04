@@ -53,7 +53,10 @@ export interface StandaloneRuleRunOptions {
   /** The connector adapters that rules of this rule type may use through system actions. */
   connectorAdapters?: ConnectorAdapter[];
   /** Registers the connector types a rule of this rule type may enqueue; see stack_connectors. */
-  registerConnectorTypes?: (actions: RuleRunActionsSetup) => void;
+  registerConnectorTypes?: (
+    actions: RuleRunActionsSetup,
+    context: { publicBaseUrl?: string }
+  ) => void;
 }
 
 const spaceIdToNamespace = (spaceId?: string) =>
@@ -186,9 +189,18 @@ export const createStandaloneRuleRunRuntime = ({
     getUrl: async () => {
       throw new Error('Locator .getUrl() is not supported in a task process.');
     },
-    shortUrls: () => {
-      throw new Error('Short URLs are not supported in a task process.');
-    },
+    // Built when the service is, but only failing when a short URL is used.
+    shortUrls: () => ({
+      get: () =>
+        new Proxy(
+          {},
+          {
+            get: () => () => {
+              throw new Error('Short URLs are not supported in a task process.');
+            },
+          }
+        ),
+    }),
   } as never);
   locators.forEach((locator) => urlService.locators.create(locator));
 

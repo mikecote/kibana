@@ -77,7 +77,10 @@ export interface RuleRunActionsDeps {
   taskManager: Pick<TaskManagerStartContract, 'bulkSchedule' | 'aggregate'>;
   publicBaseUrl?: string;
   /** Registers the connector types a rule run may enqueue, such as stack_connectors'. */
-  registerConnectorTypes: (actions: RuleRunActionsSetup) => void;
+  registerConnectorTypes: (
+    actions: RuleRunActionsSetup,
+    context: { publicBaseUrl?: string }
+  ) => void;
 }
 
 const unavailable = (what: string) => () => {
@@ -133,7 +136,7 @@ export const createRuleRunActions = (
       ),
     getClientLeasePool: () => clientLeasePool,
   };
-  deps.registerConnectorTypes(setup);
+  deps.registerConnectorTypes(setup, { publicBaseUrl: deps.publicBaseUrl });
   inMemoryConnectors.push(...createSystemConnectors(actionTypeRegistry.list()));
 
   const authTypeRegistry = new AuthTypeRegistry();

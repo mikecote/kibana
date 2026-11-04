@@ -70,9 +70,10 @@ export const createStandaloneEncryptedSavedObjects = ({
           getTypeRegistry: standalone.savedObjects
             .getTypeRegistry as () => ISavedObjectTypeRegistry,
         },
+        // Decrypting only records who did it; a process has no user.
+        security: { authc: { getCurrentUser: () => null } },
       },
-      // Decrypting only records who did it; a process has no user.
-      { security: { authc: { getCurrentUser: () => null } } },
+      {},
     ]) as never,
     logger,
   });
