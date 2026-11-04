@@ -41,6 +41,12 @@ export interface EncryptedSavedObjectsPluginSetup {
   createMigration: CreateEncryptedSavedObjectsMigrationFn;
   createModelVersion: CreateEsoModelVersionFn;
   /**
+   * The keys a task process needs to decrypt what Kibana encrypts, which Kibana sends it over the
+   * fork channel. Only for Task Manager's task type modules: whoever has the keys can decrypt any
+   * encrypted saved object, so never log or persist the result.
+   */
+  getKeysForTaskProcesses: () => { encryptionKey?: string; decryptionOnlyKeys: string[] };
+  /**
    * This function is exposed for Core migration testing purposes only.
    */
   __testCreateDangerousExtension: (
@@ -165,6 +171,10 @@ export class EncryptedSavedObjectsPlugin
           return serviceForMigration;
         }
       ),
+      getKeysForTaskProcesses: () => ({
+        encryptionKey: config.encryptionKey,
+        decryptionOnlyKeys: [...(readOnlyKeys ?? [])],
+      }),
       __testCreateDangerousExtension: (
         typeRegistry: ISavedObjectTypeRegistry,
         typeRegistrationOverrides?: EncryptedSavedObjectTypeRegistration[]

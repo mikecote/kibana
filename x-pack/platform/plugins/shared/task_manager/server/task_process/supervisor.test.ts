@@ -52,6 +52,13 @@ describe('TaskProcessSupervisor', () => {
         bundle_dir: createBundleDir(),
         kibanaVersion: '9.9.9',
         getElasticsearchConfig: () => ({ hosts: ['http://es:9200'] } as never),
+        getInitFor: (taskType) =>
+          taskType === 'alerting_v2:cleanup'
+            ? {
+                server: { uuid: 'uuid', buildNum: 1, isServerless: false },
+                encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
+              }
+            : {},
       },
       logger: loggingSystemMock.createLogger(),
       forkFn: forkFn as never,
@@ -88,7 +95,15 @@ describe('TaskProcessSupervisor', () => {
       elasticsearch: { hosts: ['http://es:9200'] },
       kibanaVersion: '9.9.9',
       authToken: expect.stringMatching(/^[0-9a-f]{64}$/),
+      server: { uuid: 'uuid', buildNum: 1, isServerless: false },
+      encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
     });
+
+    // What another task type declared is not sent to this one.
+    const other = acquire('task_manager:nodes');
+    expect(children[1].child.send.mock.calls[0][0]).not.toHaveProperty('encryptedSavedObjects');
+    ready(1);
+    await other;
 
     ready(0);
     const { url, token } = await lease;

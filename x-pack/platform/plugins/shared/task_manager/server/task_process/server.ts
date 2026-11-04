@@ -9,9 +9,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
-import { serializeTaskRunError } from '../task_running/errors';
+import { isDeclinedRunError, serializeTaskRunError } from '../task_running/errors';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
-import { MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
+import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
 import type { RunContext, CancellableTask } from '../task';
 
@@ -116,6 +116,8 @@ export const startTaskProcessServer = ({
       apiKey: body.apiKey,
       spaceId: body.spaceId,
       uiamApiKeyExternal: body.uiamApiKeyExternal,
+      userProfileId: body.userProfileId,
+      userName: body.userName,
     });
 
     const task = definition.createTaskRunner({
@@ -134,6 +136,9 @@ export const startTaskProcessServer = ({
         customTaskRunEventFields: customFields.at(-1),
       } as TaskProcessRunResponse;
     } catch (error) {
+      if (isDeclinedRunError(error)) {
+        throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
+      }
       return {
         kind: 'thrown',
         error: serializeTaskRunError(error),
@@ -200,7 +205,13 @@ export const startTaskProcessServer = ({
       sendJson(res, 404, { error: 'not found' });
     } catch (error) {
       if (error instanceof RefusedRun) {
-        sendJson(res, error.status, { error: error.message });
+        sendJson(
+          res,
+          error.status,
+          error.status === DECLINED_STATUS
+            ? { kind: 'declined', reason: error.message }
+            : { error: error.message }
+        );
         return;
       }
       sendJson(res, 500, { error: (error as Error).message });

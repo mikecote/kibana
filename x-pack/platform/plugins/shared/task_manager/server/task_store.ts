@@ -8,7 +8,6 @@
 /*
  * This module contains helpers for managing the task manager storage layer.
  */
-import murmurhash from 'murmurhash';
 import { v4 } from 'uuid';
 import { Subject } from 'rxjs';
 import { omit, defaults, get } from 'lodash';
@@ -70,12 +69,15 @@ import type { TaskTypeDictionary } from './task_type_dictionary';
 import type { AdHocTaskCounter } from './lib/adhoc_task_counter';
 import { TaskValidator } from './task_validator';
 import { claimSort } from './queries/mark_available_tasks_as_claimed';
-import { MAX_PARTITIONS } from './lib/task_partitioner';
 import type { ErrorOutput } from './lib/bulk_operation_buffer';
 import { BulkUpdateError, MsearchError } from './lib/errors';
 import { TASK_SO_NAME, INVALIDATE_API_KEY_SO_NAME } from './saved_objects';
 import type { ApiKeyStrategy, ApiKeySOFields, InvalidationTarget } from './api_key_strategy';
 import { getFirstRunAt } from './lib/get_first_run_at';
+import {
+  taskInstanceToAttributes,
+  savedObjectToConcreteTaskInstance,
+} from './lib/task_instance_serialization';
 import { isInterval } from './lib/intervals';
 import {
   getServiceAccountCredentialAttributes,
@@ -1817,38 +1819,12 @@ export class TaskStore {
  * field registered for ESO encryption on the `task` saved object type, except
  * `encryptedCredential`, which is never decrypted or re-encrypted on update.
  */
+export { taskInstanceToAttributes, savedObjectToConcreteTaskInstance };
+
 export function docHasEncryptedApiKey(
   doc: Pick<ConcreteTaskInstance, 'apiKey' | 'uiamApiKey' | 'userScope'>
 ): boolean {
   return Boolean((doc.apiKey || doc.uiamApiKey) && doc.userScope);
-}
-
-export function taskInstanceToAttributes(
-  doc: TaskInstance,
-  id: string
-): SerializedConcreteTaskInstance {
-  return {
-    ...omit(
-      doc,
-      'id',
-      'version',
-      'userScope',
-      'apiKey',
-      'uiamApiKey',
-      'credential',
-      'encryptedCredential',
-      'runAs'
-    ),
-    params: JSON.stringify(doc.params || {}),
-    state: JSON.stringify(doc.state || {}),
-    attempts: (doc as ConcreteTaskInstance).attempts || 0,
-    scheduledAt: (doc.scheduledAt || new Date()).toISOString(),
-    startedAt: (doc.startedAt && doc.startedAt.toISOString()) || null,
-    retryAt: (doc.retryAt && doc.retryAt.toISOString()) || null,
-    runAt: (doc.runAt || new Date()).toISOString(),
-    status: (doc as ConcreteTaskInstance).status || 'idle',
-    partition: doc.partition || murmurhash.v3(id) % MAX_PARTITIONS,
-  } as SerializedConcreteTaskInstance;
 }
 
 export function partialTaskInstanceToAttributes(
@@ -1872,31 +1848,6 @@ export function partialTaskInstanceToAttributes(
     ...(doc.retryAt ? { retryAt: doc.retryAt.toISOString() } : {}),
     ...(doc.runAt ? { runAt: doc.runAt.toISOString() } : {}),
   } as PartialSerializedConcreteTaskInstance;
-}
-
-export function savedObjectToConcreteTaskInstance(
-  savedObject: Omit<SavedObject<SerializedConcreteTaskInstance>, 'references'>
-): ConcreteTaskInstance {
-  const { userScope, ...attributes } = savedObject.attributes;
-  return {
-    ...attributes,
-    ...(userScope
-      ? {
-          userScope: {
-            ...userScope,
-            ...(userScope.spaceId ? { spaceId: brandSpaceId(userScope.spaceId) } : {}),
-          },
-        }
-      : {}),
-    id: savedObject.id,
-    version: savedObject.version,
-    scheduledAt: new Date(savedObject.attributes.scheduledAt),
-    runAt: new Date(savedObject.attributes.runAt),
-    startedAt: savedObject.attributes.startedAt ? new Date(savedObject.attributes.startedAt) : null,
-    retryAt: savedObject.attributes.retryAt ? new Date(savedObject.attributes.retryAt) : null,
-    state: parseJSONField(savedObject.attributes.state, 'state', savedObject.id),
-    params: parseJSONField(savedObject.attributes.params, 'params', savedObject.id),
-  };
 }
 
 /**
@@ -1924,14 +1875,6 @@ export function savedObjectToTaskClaimCandidate(
     startedAt: savedObject.attributes.startedAt ? new Date(savedObject.attributes.startedAt) : null,
     retryAt: savedObject.attributes.retryAt ? new Date(savedObject.attributes.retryAt) : null,
   };
-}
-
-function parseJSONField(json: string, fieldName: string, id: string) {
-  try {
-    return json ? JSON.parse(json) : {};
-  } catch (error) {
-    throw new Error(`Task "${id}"'s ${fieldName} field has invalid JSON: ${json}`);
-  }
 }
 
 function ensureQueryOnlyReturnsTaskObjects(opts: SearchOpts): SearchOpts {

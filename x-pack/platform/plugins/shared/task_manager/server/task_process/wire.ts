@@ -14,6 +14,7 @@ import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
 import type { ConcreteTaskInstance, RunResult } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
+import type { SerializedValue } from './settings';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -31,6 +32,21 @@ export interface TaskProcessInit {
   elasticsearch: SerializedElasticsearchConfig;
   kibanaVersion: string;
   authToken: string;
+  /** Kibana's identity and public address. */
+  server?: TaskProcessServerInfo;
+  /** Only when the module declares encrypted saved object types. */
+  encryptedSavedObjects?: { encryptionKey?: string; decryptionOnlyKeys: string[] };
+  /** Core's `uiSettings.overrides`, only when the module declares ui settings. */
+  uiSettingsOverrides?: Record<string, unknown>;
+  /** Plugin configs by plugin id in `serializeSettings` format; only the ids the module declares. */
+  settings?: Record<string, SerializedValue>;
+}
+
+export interface TaskProcessServerInfo {
+  uuid: string;
+  buildNum: number;
+  publicBaseUrl?: string;
+  isServerless: boolean;
 }
 
 /** The process's answer once it listens, so Kibana can route task types to its port. */
@@ -47,6 +63,8 @@ export interface TaskProcessRunRequest {
   apiKey?: string;
   spaceId?: string;
   uiamApiKeyExternal?: boolean;
+  userProfileId?: string;
+  userName?: string;
   /** ISO time after which Kibana gives up on this run; the process aborts it too. */
   deadline?: string;
   /** The Kibana version dispatching the run; a process built from another version refuses it. */
@@ -104,3 +122,11 @@ export const deserializeRunResult = (serialized?: SerializedRunResult): RunResul
     ...(taskRunError ? { taskRunError: deserializeTaskRunError(taskRunError) } : {}),
   } as unknown as RunResult;
 };
+
+/** Body of the response (status 422) to a run the process declines; Kibana runs it itself. */
+export interface TaskProcessDeclinedResponse {
+  kind: 'declined';
+  reason: string;
+}
+
+export const DECLINED_STATUS = 422;

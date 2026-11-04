@@ -23,9 +23,36 @@ describe('EncryptedSavedObjects Plugin', () => {
           "canEncrypt": false,
           "createMigration": [Function],
           "createModelVersion": [Function],
+          "getKeysForTaskProcesses": [Function],
           "registerType": [Function],
         }
       `);
+    });
+
+    it('hands task processes the keys, and nothing when there are none', () => {
+      const none = new EncryptedSavedObjectsPlugin(
+        coreMock.createPluginInitializerContext(ConfigSchema.validate({}, { dist: true }))
+      ).setup(coreMock.createSetup());
+      expect(none.getKeysForTaskProcesses()).toEqual({
+        encryptionKey: undefined,
+        decryptionOnlyKeys: [],
+      });
+
+      const keys = new EncryptedSavedObjectsPlugin(
+        coreMock.createPluginInitializerContext(
+          ConfigSchema.validate(
+            {
+              encryptionKey: 'z'.repeat(32),
+              keyRotation: { decryptionOnlyKeys: ['y'.repeat(32)] },
+            },
+            { dist: true }
+          )
+        )
+      ).setup(coreMock.createSetup());
+      expect(keys.getKeysForTaskProcesses()).toEqual({
+        encryptionKey: 'z'.repeat(32),
+        decryptionOnlyKeys: ['y'.repeat(32)],
+      });
     });
 
     it('exposes proper contract when encryption key is set', () => {
@@ -41,6 +68,7 @@ describe('EncryptedSavedObjects Plugin', () => {
           "canEncrypt": true,
           "createMigration": [Function],
           "createModelVersion": [Function],
+          "getKeysForTaskProcesses": [Function],
           "registerType": [Function],
         }
       `);

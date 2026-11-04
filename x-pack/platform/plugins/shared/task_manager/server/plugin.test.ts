@@ -215,11 +215,69 @@ describe('TaskManagerPlugin', () => {
       const context = {} as RunContext;
       await definitions.get('test:module')!.createTaskRunner(context).run();
 
-      expect(createTaskRunner).toHaveBeenCalledWith(context, {
-        logger,
-        elasticsearch: startServices.elasticsearch.client,
-        savedObjects: startServices.savedObjects,
-      });
+      expect(createTaskRunner).toHaveBeenCalledWith(
+        context,
+        expect.objectContaining({
+          logger,
+          elasticsearch: startServices.elasticsearch.client,
+          savedObjects: startServices.savedObjects,
+          executionContext: startServices.executionContext,
+          security: startServices.security,
+          server: expect.objectContaining({ version: expect.any(String), isServerless: false }),
+        })
+      );
+    });
+
+    test('hands a module the capabilities it declares and no others', async () => {
+      const { plugin, setup } = setupPlugin();
+      const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
+      const eventLog = { registerProviderActions: jest.fn(), getLogger: jest.fn() };
+      setup.registerTaskType(
+        defineTaskType({
+          type: 'test:capabilities',
+          eventLog: { providers: [], create: jest.fn() },
+          uiSettings: {},
+          settings: ['alerting'],
+          createTaskRunner,
+        }),
+        { hostExtensions: { eventLog }, settings: { alerting: () => ({ max: 1 }) } }
+      );
+      const definitions = (
+        plugin as unknown as {
+          definitions: {
+            get(type: string): { createTaskRunner(c: RunContext): { run(): Promise<unknown> } };
+          };
+        }
+      ).definitions;
+      await definitions
+        .get('test:capabilities')!
+        .createTaskRunner({} as RunContext)
+        .run();
+
+      const host = createTaskRunner.mock.calls[0][1];
+      expect(host.eventLog).toBe(eventLog);
+      expect(host.settings).toEqual({ alerting: { max: 1 } });
+      expect(host.uiSettings).toBeDefined();
+      expect(host.encryptedSavedObjects).toBeUndefined();
+      expect(host.taskManager).toBeUndefined();
+    });
+
+    test('throws when a declared capability has nothing to back it in Kibana', () => {
+      const { setup } = setupPlugin();
+      const createTaskRunner = jest.fn();
+      expect(() =>
+        setup.registerTaskType(
+          defineTaskType({
+            type: 'test:missing',
+            eventLog: { providers: [], create: jest.fn() },
+            encryptedSavedObjectTypes: [{ type: 'a', attributesToEncrypt: new Set(['b']) }],
+            settings: ['alerting'],
+            createTaskRunner,
+          })
+        )
+      ).toThrow(
+        /hostExtensions.encryptedSavedObjects, hostExtensions.getEncryptionKeys, hostExtensions.eventLog, settings.alerting/
+      );
     });
   });
 

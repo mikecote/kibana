@@ -8,7 +8,7 @@
 import { Agent } from 'undici';
 import type { CancellableTask, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
-import { deserializeRunResult, MAX_TIMER_MS } from './wire';
+import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 
 /** Where a run goes: its address, and the bearer token the process requires. */
@@ -144,9 +144,15 @@ export class RemoteTaskRunner implements CancellableTask {
         await response.body?.cancel().catch(() => undefined);
         const message = `Task process ${address.url} responded ${response.status} to /run`;
         // The process does not serve this task type: run it here when we can.
-        if (response.status === 404 && this.params.fallback) {
+        if (
+          (response.status === 404 || response.status === DECLINED_STATUS) &&
+          this.params.fallback
+        ) {
           this.local = this.params.fallback();
           return await this.local.run();
+        }
+        if (response.status === DECLINED_STATUS) {
+          throw processUnavailable(message);
         }
         // The process is busy, draining, or does not serve this task type (yet): try again shortly.
         if (response.status === 503 || response.status === 404 || response.status === 409) {

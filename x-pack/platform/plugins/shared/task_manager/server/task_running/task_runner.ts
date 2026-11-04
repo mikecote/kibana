@@ -561,6 +561,8 @@ export class TaskManagerRunner implements TaskRunner {
                 apiKey: apiKeyForRequest,
                 spaceId: modifiedContext.taskInstance.userScope?.spaceId,
                 uiamApiKeyExternal: modifiedContext.taskInstance.userScope?.uiamApiKeyExternal,
+                userProfileId,
+                userName,
                 kibanaVersion: this.taskProcessDispatch.kibanaVersion,
               },
               timeoutMs: parseIntervalAsMillisecond(this.timeout),

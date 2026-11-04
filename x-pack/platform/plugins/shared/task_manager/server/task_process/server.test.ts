@@ -13,7 +13,7 @@
 import type { Server } from 'http';
 import { fetch as undiciFetch } from 'undici';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createRetryableError } from '../task_running/errors';
+import { createRetryableError, DeclinedRunError } from '../task_running/errors';
 import type { CancellableTask } from '../task';
 import { startTaskProcessServer } from './server';
 import { RemoteTaskRunner } from './remote_task_runner';
@@ -89,5 +89,33 @@ describe('task process server', () => {
 
   it('answers 404 for a task type it does not serve', async () => {
     await expect(runner({ taskType: 'other:type' }).run()).rejects.toThrow(/404/);
+  });
+
+  it('answers 422 for a run the task declines, and Kibana runs it itself', async () => {
+    createTask = () => ({
+      run: async () => {
+        throw new DeclinedRunError('uses a connector the process does not know');
+      },
+      cleanup,
+    });
+    await expect(runner().run()).rejects.toThrow(/422/);
+
+    const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
+    const withFallback = new RemoteTaskRunner({
+      route: { url, token: TOKEN },
+      request: {
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-2',
+        kibanaVersion: '9.9.9',
+      },
+      timeoutMs: 5000,
+      setCustomTaskRunEventFields: jest.fn(),
+      fetchFn: undiciFetch as unknown as typeof fetch,
+      fallback,
+    });
+    await expect(withFallback.run()).resolves.toEqual({ state: { local: true } });
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(cleanup).toHaveBeenCalled();
   });
 });

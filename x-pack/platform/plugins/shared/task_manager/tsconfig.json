@@ -66,6 +66,12 @@
     "@kbn/core-logging-server-internal",
     "@kbn/core-elasticsearch-server-internal",
     "@kbn/core-elasticsearch-client-server-internal",
+    "@kbn/core-execution-context-server",
+    "@kbn/core-security-server-internal",
+    "@kbn/core-ui-settings-common",
+    "@kbn/core-ui-settings-server",
+    "@kbn/core-ui-settings-server-internal",
+    "@kbn/encrypted-saved-objects-plugin",
   ],
   "exclude": ["target/**/*"]
 }

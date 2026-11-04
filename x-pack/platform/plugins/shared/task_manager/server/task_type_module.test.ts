@@ -5,18 +5,12 @@
  * 2.0.
  */
 
-import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
-import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import type { RunContext } from './task';
 import type { TaskHost } from './task_type_module';
 import { defineTaskType, toTaskDefinition } from './task_type_module';
+import { createTaskHostMock } from './task_type_module.mocks';
 
-const host = (): TaskHost => ({
-  logger: loggingSystemMock.createLogger(),
-  elasticsearch: elasticsearchServiceMock.createStart().client,
-  savedObjects: savedObjectsServiceMock.createStartContract(),
-});
+const host = (): TaskHost => createTaskHostMock();
 
 const context = {} as RunContext;
 

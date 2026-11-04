@@ -149,3 +149,21 @@ export function deserializeTaskRunError(serialized: SerializedTaskRunError): Dec
   }
   return error;
 }
+
+const CODE_DECLINED = 'TaskManager/declined';
+
+/**
+ * Thrown by a runner in a task process that cannot serve this run, such as a rule that uses a
+ * connector type the process does not know. Task Manager then runs the task in Kibana.
+ */
+export class DeclinedRunError extends Error {
+  public readonly code = CODE_DECLINED;
+  constructor(public readonly reason: string) {
+    super(reason);
+    this.name = 'DeclinedRunError';
+  }
+}
+
+export const isDeclinedRunError = (error: unknown): error is DeclinedRunError =>
+  error instanceof DeclinedRunError ||
+  (error as { code?: string } | undefined)?.code === CODE_DECLINED;

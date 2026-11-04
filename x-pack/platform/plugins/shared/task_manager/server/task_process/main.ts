@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { readFileSync } from 'fs';
 import { reviveElasticsearchConfig, elasticsearchConfigFromEnv } from './es_config';
 import { createStandaloneHost } from './host';
 import { startTaskProcessServer } from './server';
@@ -12,6 +13,45 @@ import type { TaskProcessInit, TaskProcessReady } from './wire';
 import type { TaskTypeModule } from '../task_type_module';
 
 declare const __KBN_VERSION__: string | undefined;
+
+/**
+ * What a remote process takes from its environment besides the Elasticsearch connection:
+ * ESO_ENCRYPTION_KEY and ESO_DECRYPTION_ONLY_KEYS (comma separated), KIBANA_SERVER_UUID,
+ * KIBANA_BUILD_NUM, KIBANA_PUBLIC_BASE_URL, KIBANA_SERVERLESS, and TASK_PROCESS_SETTINGS, the path
+ * of a JSON file `{ "settings": { "<pluginId>": <config> }, "uiSettingsOverrides": {} }` whose
+ * configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`).
+ */
+export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessInit => {
+  const file = env.TASK_PROCESS_SETTINGS
+    ? (JSON.parse(readFileSync(env.TASK_PROCESS_SETTINGS, 'utf8')) as Pick<
+        TaskProcessInit,
+        'settings' | 'uiSettingsOverrides'
+      >)
+    : {};
+  return {
+    kind: 'init',
+    elasticsearch: elasticsearchConfigFromEnv(env),
+    kibanaVersion: env.KIBANA_VERSION ?? __KBN_VERSION__ ?? 'unknown',
+    authToken: env.TASK_PROCESS_TOKEN ?? '',
+    server: {
+      uuid: env.KIBANA_SERVER_UUID ?? '',
+      buildNum: env.KIBANA_BUILD_NUM ? Number(env.KIBANA_BUILD_NUM) : Number.MAX_SAFE_INTEGER,
+      publicBaseUrl: env.KIBANA_PUBLIC_BASE_URL,
+      isServerless: env.KIBANA_SERVERLESS === 'true',
+    },
+    encryptedSavedObjects: env.ESO_ENCRYPTION_KEY
+      ? {
+          encryptionKey: env.ESO_ENCRYPTION_KEY,
+          decryptionOnlyKeys: (env.ESO_DECRYPTION_ONLY_KEYS ?? '')
+            .split(',')
+            .map((key) => key.trim())
+            .filter(Boolean),
+        }
+      : undefined,
+    settings: file.settings,
+    uiSettingsOverrides: file.uiSettingsOverrides,
+  };
+};
 
 /** Kibana, when it forked this process, sends `init` first; a remote process uses its environment. */
 const readInit = (): Promise<TaskProcessInit> => {
@@ -22,12 +62,7 @@ const readInit = (): Promise<TaskProcessInit> => {
       });
     });
   }
-  return Promise.resolve({
-    kind: 'init',
-    elasticsearch: elasticsearchConfigFromEnv(),
-    kibanaVersion: process.env.KIBANA_VERSION ?? __KBN_VERSION__ ?? 'unknown',
-    authToken: process.env.TASK_PROCESS_TOKEN ?? '',
-  });
+  return Promise.resolve(initFromEnv());
 };
 
 /**
@@ -42,7 +77,8 @@ export const runTaskProcess = async (module: TaskTypeModule) => {
     const standalone = await createStandaloneHost({
       elasticsearch: reviveElasticsearchConfig(init.elasticsearch),
       kibanaVersion: init.kibanaVersion,
-      savedObjectTypes: module.savedObjectTypes,
+      init,
+      module,
     });
     startTaskProcessServer({
       taskDefinitions: new Map([

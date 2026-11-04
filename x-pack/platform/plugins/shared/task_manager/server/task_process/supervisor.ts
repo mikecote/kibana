@@ -25,6 +25,10 @@ export interface TaskProcessSettings {
   kibanaVersion: string;
   /** Kibana's own Elasticsearch connection, which every process connects with. */
   getElasticsearchConfig: () => SerializedElasticsearchConfig;
+  /** What else a task type's process needs, such as the keys and plugin settings it declared. */
+  getInitFor?: (
+    taskType: string
+  ) => Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>;
 }
 
 const READY_TIMEOUT_MS = 30_000;
@@ -33,6 +37,7 @@ const STOP_TIMEOUT_MS = 10_000;
 interface Bundle {
   name: string;
   file: string;
+  taskType: string;
 }
 
 /**
@@ -67,7 +72,11 @@ export class TaskProcessSupervisor {
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as TaskBundleManifest;
     for (const [name, { file, taskType }] of Object.entries(manifest.bundles)) {
-      this.bundleByTaskType.set(taskType, { name, file: join(settings.bundle_dir, file) });
+      this.bundleByTaskType.set(taskType, {
+        name,
+        file: join(settings.bundle_dir, file),
+        taskType,
+      });
     }
     logger.debug(`Task bundles serve ${[...this.bundleByTaskType.keys()]}`);
   }
@@ -113,6 +122,7 @@ export class TaskProcessSupervisor {
       });
       child.send({
         kind: 'init',
+        ...settings.getInitFor?.(bundle.taskType),
         elasticsearch: settings.getElasticsearchConfig(),
         kibanaVersion: settings.kibanaVersion,
         authToken: this.token,

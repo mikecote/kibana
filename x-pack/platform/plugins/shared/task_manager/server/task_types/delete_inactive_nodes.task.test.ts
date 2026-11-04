@@ -6,8 +6,9 @@
  */
 
 import { mockLogger } from '../test_utils';
-import { elasticsearchServiceMock, savedObjectsRepositoryMock } from '@kbn/core/server/mocks';
+import { savedObjectsRepositoryMock } from '@kbn/core/server/mocks';
 import type { RunContext } from '../task';
+import { createTaskHostMock } from '../task_type_module.mocks';
 import type { TaskHost } from '../task_type_module';
 import { CLEANUP_INTERVAL, taskType } from './delete_inactive_nodes.task';
 import type { BackgroundTaskNode } from '../saved_objects/schemas/background_task_node';
@@ -57,10 +58,11 @@ describe('Delete inactive background task nodes', () => {
 
   const logger = mockLogger();
   const savedObjectsRepository = savedObjectsRepositoryMock.create();
+  const base = createTaskHostMock();
   const host: TaskHost = {
+    ...base,
     logger,
-    elasticsearch: elasticsearchServiceMock.createStart().client,
-    savedObjects: { createInternalRepository: () => savedObjectsRepository },
+    savedObjects: { ...base.savedObjects, createInternalRepository: () => savedObjectsRepository },
   };
   const createRunner = () => taskType.createTaskRunner({} as RunContext, host);
 

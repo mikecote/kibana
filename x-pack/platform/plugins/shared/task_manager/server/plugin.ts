@@ -29,13 +29,14 @@ import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server';
 import { join } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
-import type { Logger as TaskLogger } from '@kbn/logging';
 import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
 import type { TaskProcessDispatch } from './task_process/remote_task_runner';
 import { serializeElasticsearchConfig } from './task_process/es_config';
 import { TaskProcessSupervisor } from './task_process/supervisor';
-import type { TaskTypeModule } from './task_type_module';
-import { toTaskDefinition } from './task_type_module';
+import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
+import { assertHostExtensions, toTaskDefinition } from './task_type_module';
+import { serializeSettings } from './task_process/settings';
+import type { TaskProcessInit } from './task_process/wire';
 import { taskType as deleteInactiveNodesTaskType } from './task_types/delete_inactive_nodes.task';
 import { taskType as markRemovedTasksTaskType } from './task_types/mark_removed_tasks_as_unrecognized.task';
 import { scheduleDeleteInactiveNodesTaskDefinition } from './kibana_discovery_service/delete_inactive_nodes_task';
@@ -111,8 +112,10 @@ export interface TaskManagerSetupContract {
    * also be bundled to run in a process of its own. The runner gets the host, which is Core here.
    * @param module - What `defineTaskType` returned
    * @param options.logger - The logger the runner gets; defaults to Task Manager's
+   * @param options.hostExtensions - The real services for the capabilities the module declares
+   * @param options.settings - Getters of the plugin configs the module lists in `settings`
    */
-  registerTaskType: (module: TaskTypeModule, options?: { logger?: TaskLogger }) => void;
+  registerTaskType: (module: TaskTypeModule, options?: TaskTypeRegistrationOptions) => void;
   registerCanEncryptedSavedObjects: (canEncrypt: boolean) => void;
   registerTaskEventLogger: (logger: TaskEventLogger) => void;
 }
@@ -185,6 +188,14 @@ export class TaskManagerPlugin
   private taskProcessSupervisor?: TaskProcessSupervisor;
   /** The task types registered as modules: the ones that can run outside this process. */
   private readonly moduleTaskTypes = new Set<string>();
+  private readonly moduleRegistrations = new Map<
+    string,
+    { module: TaskTypeModule; options?: TaskTypeRegistrationOptions }
+  >();
+  private getTaskProcessInit?: (
+    taskType: string
+  ) => Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'> | undefined;
+  private publicBaseUrl?: string;
   private elasticsearchConfig?: IElasticsearchConfig;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
   private canEncryptSavedObjects: boolean;
@@ -252,18 +263,62 @@ export class TaskManagerPlugin
     core.elasticsearch.legacy.config$.subscribe((config) => {
       this.elasticsearchConfig = config;
     });
+    this.publicBaseUrl = core.http.basePath.publicBaseUrl;
+    const getServerInfo = (publicBaseUrl?: string): TaskHost['server'] => ({
+      uuid: this.initContext.env.instanceUuid,
+      version: this.kibanaVersion,
+      buildNum: this.initContext.env.packageInfo.buildNum,
+      publicBaseUrl,
+      isServerless,
+    });
     const registerTaskType: TaskManagerSetupContract['registerTaskType'] = (module, options) => {
+      assertHostExtensions(module, options);
       this.moduleTaskTypes.add(module.type);
+      this.moduleRegistrations.set(module.type, { module, options });
       this.definitions.registerTaskDefinitions({
         [module.type]: toTaskDefinition(module, async () => {
-          const [coreStart] = await core.getStartServices();
-          return {
+          const [coreStart, pluginsStart] = await core.getStartServices();
+          const extensions = options?.hostExtensions;
+          const host: TaskHost = {
             logger: options?.logger ?? this.logger,
             elasticsearch: coreStart.elasticsearch.client,
             savedObjects: coreStart.savedObjects,
+            executionContext: coreStart.executionContext,
+            security: coreStart.security,
+            server: getServerInfo(coreStart.http.basePath.publicBaseUrl),
           };
+          if (module.encryptedSavedObjectTypes?.length) {
+            host.encryptedSavedObjects = await extensions!.encryptedSavedObjects!();
+          }
+          if (module.eventLog) host.eventLog = extensions!.eventLog;
+          if (module.taskManager) host.taskManager = this.startContract;
+          if (module.uiSettings) host.uiSettings = coreStart.uiSettings;
+          if (module.licensing) host.licensing = { license$: pluginsStart.licensing.license$ };
+          if (module.settings?.length) {
+            host.settings = Object.fromEntries(
+              module.settings.map((id) => [id, options!.settings![id]()])
+            );
+          }
+          return host;
         }),
       });
+    };
+    this.getTaskProcessInit = (taskType) => {
+      const registration = this.moduleRegistrations.get(taskType);
+      if (!registration) return undefined;
+      const { module, options } = registration;
+      const init: Pick<TaskProcessInit, 'server' | 'encryptedSavedObjects' | 'settings'> = {
+        server: getServerInfo(this.publicBaseUrl),
+      };
+      if (module.encryptedSavedObjectTypes?.length) {
+        init.encryptedSavedObjects = options!.hostExtensions!.getEncryptionKeys!();
+      }
+      if (module.settings?.length) {
+        init.settings = Object.fromEntries(
+          module.settings.map((id) => [id, serializeSettings(options!.settings![id]())])
+        ) as TaskProcessInit['settings'];
+      }
+      return init;
     };
 
     const { mode = 'in_process', remote } = this.config.task_execution ?? {};
@@ -643,6 +698,7 @@ export class TaskManagerPlugin
             ),
           kibanaVersion: this.kibanaVersion,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
+          getInitFor: (taskType) => this.getTaskProcessInit?.(taskType) ?? {},
         },
         logger: this.logger,
       });
