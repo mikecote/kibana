@@ -11,12 +11,8 @@ import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server';
 import type { SharePluginStart } from '@kbn/share-plugin/server';
-import { UrlService } from '@kbn/share-plugin/common/url_service';
-import type { LocatorDefinition } from '@kbn/share-plugin/common/url_service';
+import type { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import { DateFormat, DateNanosFormat } from '@kbn/field-formats-plugin/server/lib/converters';
-import { baseFormatters } from '@kbn/field-formats-plugin/common';
-import { createFieldFormatServiceFactory } from '@kbn/field-formats-plugin/server/field_format_service_factory';
 import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
@@ -43,13 +39,14 @@ import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
 import type { IRuleTypeAlerts } from '../../types';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
+import { createStandaloneFieldFormats } from './field_formats';
 
 export interface StandaloneRuleRunOptions {
   host: TaskHost;
   ruleType: UntypedNormalizedRuleType;
   /** The locators the rule type's executor reads from `services.share.url.locators`. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  locators?: Array<LocatorDefinition<any>>;
+  /** The URL service the rule type was built with, so executors read the same locators. */
+  urlService: UrlService;
   /** The connector adapters that rules of this rule type may use through system actions. */
   connectorAdapters?: ConnectorAdapter[];
   /** Registers the connector types a rule of this rule type may enqueue; see stack_connectors. */
@@ -71,7 +68,7 @@ const spaceIdToNamespace = (spaceId?: string) =>
 export const createStandaloneRuleRunRuntime = ({
   host,
   ruleType,
-  locators = [],
+  urlService,
   connectorAdapters = [],
   registerConnectorTypes = () => undefined,
 }: StandaloneRuleRunOptions): {
@@ -151,13 +148,7 @@ export const createStandaloneRuleRunRuntime = ({
     registerConnectorTypes,
   });
 
-  const fieldFormats = {
-    fieldFormatServiceFactory: createFieldFormatServiceFactory([
-      DateFormat,
-      DateNanosFormat,
-      ...baseFormatters,
-    ]),
-  };
+  const fieldFormats = createStandaloneFieldFormats();
   const dataViews = {
     dataViewsServiceFactory: dataViewsServiceFactory({
       logger,
@@ -179,30 +170,6 @@ export const createStandaloneRuleRunRuntime = ({
       isServerless,
     }),
   };
-
-  const urlService = new UrlService({
-    baseUrl: publicBaseUrl ?? '',
-    version: kibanaVersion,
-    navigate: async () => {
-      throw new Error('Locator .navigate() is not supported in a task process.');
-    },
-    getUrl: async () => {
-      throw new Error('Locator .getUrl() is not supported in a task process.');
-    },
-    // Built when the service is, but only failing when a short URL is used.
-    shortUrls: () => ({
-      get: () =>
-        new Proxy(
-          {},
-          {
-            get: () => () => {
-              throw new Error('Short URLs are not supported in a task process.');
-            },
-          }
-        ),
-    }),
-  } as never);
-  locators.forEach((locator) => urlService.locators.create(locator));
 
   const runtime: RuleRunRuntime = {
     actionsConfigMap: getActionsConfigMap(config.rules.run.actions),

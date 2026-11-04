@@ -18,6 +18,7 @@
     "test/scenarios/**/*"
   ],
   "kbn_references": [
+    "@kbn/stack-connectors-plugin",
     "@kbn/synthtrace",
     "@kbn/apm-embeddable-common",
     "@kbn/core",

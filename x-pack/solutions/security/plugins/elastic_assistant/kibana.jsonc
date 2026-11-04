@@ -11,6 +11,9 @@
     "id": "elasticAssistant",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/attack_discovery.task.ts"
+    ],
     "configPath": [
       "xpack",
       "elasticAssistant"

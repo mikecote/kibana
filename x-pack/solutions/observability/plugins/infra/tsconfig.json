@@ -13,6 +13,7 @@
     "test/scout/api/**/*"
   ],
   "kbn_references": [
+    "@kbn/task-manager-plugin",
     "@kbn/synthtrace",
     "@kbn/synthtrace-client",
     "@kbn/core",

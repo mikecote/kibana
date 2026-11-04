@@ -8,6 +8,9 @@
     "id": "slo",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/slo_burn_rate.task.ts"
+    ],
     "configPath": ["xpack", "slo"],
     "requiredPlugins": [
       "aiops",

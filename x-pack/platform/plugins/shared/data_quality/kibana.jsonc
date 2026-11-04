@@ -7,6 +7,9 @@
   "plugin": {
     "id": "dataQuality",
     "server": true,
+    "taskTypes": [
+      "server/task_types/degraded_docs.task.ts"
+    ],
     "browser": true,
     "configPath": [
       "xpack",

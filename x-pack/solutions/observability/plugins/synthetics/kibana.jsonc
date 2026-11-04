@@ -9,6 +9,10 @@
     "id": "synthetics",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/monitor_status.task.ts",
+      "server/task_types/tls.task.ts"
+    ],
     "configPath": ["xpack", "synthetics"],
     "requiredPlugins": [
       "actions",

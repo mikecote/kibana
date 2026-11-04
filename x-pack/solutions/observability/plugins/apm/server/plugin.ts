@@ -189,6 +189,11 @@ export class APMPlugin
     const { getApmIndices } = plugins.apmDataAccess;
 
     if (plugins.alerting) {
+      // The APM rule types read these in a task process too.
+      plugins.alerting.registerTaskProcessSettings('apm', () => currentConfig);
+      plugins.alerting.registerTaskProcessSettings('apmSourcesAccess', () => ({
+        indices: plugins.apmDataAccess.apmIndicesFromConfigFile,
+      }));
       registerApmRuleTypes({
         getApmIndices,
         alerting: plugins.alerting,

@@ -82,12 +82,95 @@ version refuses runs.
 
 ## What a process has, and does not
 
-Has: a logger, Core's Elasticsearch client (also scoped to the task's API key), and, for a module
-that declares `savedObjectTypes`, Core's internal saved objects repository.
+Always: a logger, Core's Elasticsearch client (also scoped to the task's API key), the internal saved
+objects repository for the types the module declares, an execution context that passes through, Core's
+default security (no user, no audit, no UIAM keys), and Kibana's identity (`host.server`: server UUID,
+version, build number, public base URL, serverless flag).
 
-Does not have yet: user-profile enrichment of the fake request, scoped saved objects clients,
-encrypted saved objects, the event log, spaces, plugin config, and anything that is Kibana itself (HTTP routes, other plugins' contracts). A task
-type that needs them stays in Kibana until the host offers them. Tasks scheduled to `runAs` a
-service account always run in Kibana.
+A module asks for more by declaring it, and the host builds only what is declared. In Kibana the
+plugin that registers the task type hands over its own service for the same capability, so a module
+runs the same in both.
+
+| Declare | `host` gets | In a process | In Kibana |
+| --- | --- | --- | --- |
+| `savedObjectTypes` | saved object types registered | Core's repository and a client provider: `getScopedClient` and `getUnsafeInternalClient` take the space from the fake request, use the internal user, and have no security extension | Core |
+| `encryptedSavedObjectTypes` | `encryptedSavedObjects` | the plugin's own service and client with the encryption keys the process is sent | `hostExtensions.encryptedSavedObjects` |
+| `eventLog` | `eventLog` | the event log plugin's writer (its own adapter and service), stamped with Kibana's server UUID, flushed when the process stops; Kibana owns the data stream | `hostExtensions.eventLog` |
+| `taskManager` | `taskManager` (`bulkSchedule`, `aggregate`) | writes `task` saved objects; no `runAs`, explicit ids or API key options, only the task types the module allows | Task Manager's start contract |
+| `uiSettings` | `uiSettings` | Core's `UiSettingsClient` with Core's defaults and the module's | Core |
+| `licensing` | `licensing.license$` | the license, read from Elasticsearch once | the licensing plugin |
+| `settings: ['pluginId']` | `settings.pluginId` | the validated config the process is sent | the getter passed to `registerTaskType` |
+
+```ts
+taskManager.registerTaskType(taskType, {
+  hostExtensions: { getEncryptionKeys: () => esoSetup.getKeysForTaskProcesses() },
+  settings: { myPlugin: () => config },   // sent to the task process of this task type
+});
+```
+
+What a process is sent is decided by the plugin that registers the task type, and the module reads the
+parts it declared. Configs travel with `serializeSettings`, which keeps durations, byte sizes and
+dates. The encryption keys and plugin configs, which can hold secrets, go over the fork channel, the
+same trust as the Elasticsearch credentials; never log them.
+
+Does not have yet: user-profile enrichment of the fake request, spaces beyond the one of the fake
+request (an explicit `namespace` is honoured and `*` is not expanded), the event log query client,
+other plugins' contracts, HTTP routes, UIAM API keys (stateful only for now). A task type that needs
+them stays in Kibana, or declines the run.
+
+### Declining a run
+
+A runner may throw `DeclinedRunError` when it cannot serve this run, such as a rule that uses a
+connector type the process does not know. The process answers `422`, and Kibana runs the task itself,
+as it does for a `404`. Decide before the run has side effects.
+
+### Remote processes
+
+A remote process reads the same things from its environment: `ES_URL` with `ES_API_KEY` or
+`ES_USERNAME` and `ES_PASSWORD`, `PORT`, `TASK_PROCESS_TOKEN`, `ESO_ENCRYPTION_KEY` and
+`ESO_DECRYPTION_ONLY_KEYS` (comma separated), `KIBANA_SERVER_UUID`, `KIBANA_BUILD_NUM`,
+`KIBANA_PUBLIC_BASE_URL`, `KIBANA_SERVERLESS`, and `TASK_PROCESS_SETTINGS`, the path of a JSON file
+`{ "settings": { "<pluginId>": <config> }, "uiSettingsOverrides": {} }` whose configs use the format of
+`serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`).
+
+## Bundles
+
+`node scripts/task_bundle` builds one bundle per file in `plugin.taskTypes`. Workspace source is
+treated as free of import-time side effects, so a barrel such as `@kbn/task-manager-plugin/server`
+costs only what is used from it. Keep imports to the leaf that has what you need anyway: a module that
+reaches a plugin class through a barrel still pays for what that class uses.
+
+## Alerting rule types
+
+Every rule type is a task type module, `alerting:<ruleTypeId>`, built by `createRuleTaskType`
+(`alerting/server/task_types/rule_task_type.ts`). Kibana registers it from the rule type and runs it
+with the alerting plugin's services. The plugin that owns the rule type adds a module file to its
+`plugin.taskTypes`, which builds the same rule type from the host and runs the same `TaskRunner` with
+services rebuilt from the host (`task_types/standalone`): rules settings, maintenance windows, the
+alerts service, an enqueue-only actions runtime (`actions/server/task_types/rule_run_actions.ts`),
+data views, search and the locators the module lists.
+
+```ts
+// <plugin>/server/task_types/my_rule.task.ts
+export const taskType = createRuleTaskType(
+  { ruleTypeId: MY_RULE_ID, getRuleType: ({ isServerless, locators, settings }) => getRuleType(isServerless) },
+  { locators: [createDiscoverAppLocatorDefinition()], registerConnectorTypes: registerConnectorTypesForRuleRuns }
+);
+```
+
+A factory takes what the host has (`logger`, `isServerless`, `publicBaseUrl`, `settings`, `locators`),
+and a plugin whose rule types read its config calls `alerting.registerTaskProcessSettings(id, getConfig)`.
+Add a test with `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
+
+Rule types that need other plugins' runtimes use `createUnsupportedRuleTaskType(id, reason)`: a tiny
+bundle that declines every run, so Kibana runs the rule exactly as before, until the executor can be
+built from the host. Today that is the machine learning based rule types, the infra, synthetics and
+security detection rule types, and attack discovery.
+
+Not the same in a process: no `alert.status.changed` workflow events, usage counters or in-memory
+metrics; connector authorization of the enqueue is not checked until Kibana runs the connector task;
+a rule that uses a connector type or connector adapter the process does not know is declined; and
+each run is a fresh process, so it pays for the encryption service, the license and the alerts
+resource checks every time.
 
 The distributable builds the bundles into `task_bundles/`.

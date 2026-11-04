@@ -11,6 +11,9 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/alerting-plugin",
+    "@kbn/stack-connectors-plugin",
+    "@kbn/task-manager-plugin",
     "@kbn/core",
     "@kbn/dataset-quality-plugin",
     "@kbn/i18n",

@@ -146,6 +146,11 @@ export interface AlertingServerSetup {
   >(
     adapter: ConnectorAdapter<RuleActionParams, ConnectorParams>
   ): void;
+  /**
+   * Lets the rule types of a plugin read its validated config in a task process, as
+   * `host.settings[pluginId]`. The config is sent to the task process, so it may hold secrets.
+   */
+  registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
   registerType<
     Params extends RuleTypeParams = RuleTypeParams,
     ExtractedParams extends RuleTypeParams = RuleTypeParams,
@@ -255,6 +260,12 @@ export class AlertingPlugin {
   private kibanaBaseUrl: string | undefined;
   private usageCounter: UsageCounter | undefined;
   private inMemoryMetrics: InMemoryMetrics;
+  /** Configs a task process of a rule type is sent, by plugin id; plugins add theirs on setup. */
+  private readonly taskProcessSettings: Record<string, () => unknown> = {
+    alerting: () => this.config,
+    actions: () => this.actionsSetup!.getConfig(),
+  };
+  private actionsSetup?: AlertingPluginsSetup['actions'];
   private alertsService: AlertsService | null;
   private pluginStop$: Subject<void>;
   private dataStreamAdapter?: DataStreamAdapter;
@@ -298,6 +309,7 @@ export class AlertingPlugin {
     core: CoreSetup<AlertingPluginsStart, unknown>,
     plugins: AlertingPluginsSetup
   ): AlertingServerSetup {
+    this.actionsSetup = plugins.actions;
     this.kibanaBaseUrl = core.http.basePath.publicBaseUrl;
     this.licenseState = new LicenseState(plugins.licensing.license$);
     this.security = plugins.security;
@@ -404,10 +416,7 @@ export class AlertingPlugin {
         hostExtensions: {
           getEncryptionKeys: () => plugins.encryptedSavedObjects.getKeysForTaskProcesses(),
         },
-        settings: {
-          alerting: () => this.config,
-          actions: () => plugins.actions.getConfig(),
-        },
+        settings: this.taskProcessSettings,
       },
     });
     this.ruleTypeRegistry = ruleTypeRegistry;
@@ -535,6 +544,9 @@ export class AlertingPlugin {
         adapter: ConnectorAdapter<RuleActionParams, ConnectorParams>
       ) => {
         this.connectorAdapterRegistry.register(adapter);
+      },
+      registerTaskProcessSettings: (pluginId, getSettings) => {
+        this.taskProcessSettings[pluginId] = getSettings;
       },
       registerType: <
         Params extends RuleTypeParams = never,

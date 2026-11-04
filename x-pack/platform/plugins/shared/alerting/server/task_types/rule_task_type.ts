@@ -5,20 +5,20 @@
  * 2.0.
  */
 
-import { schema } from '@kbn/config-schema';
-import type { Logger } from '@kbn/core/server';
+import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
+import type { RunContext } from '@kbn/task-manager-plugin/server';
+import { DeclinedRunError } from '@kbn/task-manager-plugin/server/task_running/errors';
 import {
-  DeclinedRunError,
   defineTaskType,
-  type RunContext,
   type TaskHost,
   type TaskTypeModule,
-} from '@kbn/task-manager-plugin/server';
+} from '@kbn/task-manager-plugin/server/task_type_module';
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
 import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
-import type { LocatorDefinition } from '@kbn/share-plugin/common/url_service';
+import { UrlService } from '@kbn/share-plugin/common/url_service';
+import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
 import type { RuleRunActionsSetup } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
@@ -29,14 +29,11 @@ import { RULE_SAVED_OBJECT_TYPE } from '../saved_objects';
 import { TaskRunner } from '../task_runner/task_runner';
 import type { RuleRunRuntime } from '../task_runner/types';
 import type { UntypedRuleType } from '../types';
+import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
 
-export const ruleTaskParamsSchema = schema.object({
-  alertId: schema.string(),
-  spaceId: schema.string(),
-  consumer: schema.maybe(schema.string()),
-});
+export { ruleTaskParamsSchema };
 
 /** What the factory of a rule type may use when a task process builds it: the host, nothing else. */
 export interface RuleTypeModuleDeps {
@@ -46,6 +43,8 @@ export interface RuleTypeModuleDeps {
   publicBaseUrl?: string;
   /** The validated configs of the plugins the module lists, such as `settings.alerting`. */
   settings: Record<string, unknown>;
+  /** The locators the module lists, for rule types that build links with them. */
+  locators: LocatorClient;
 }
 
 export interface RuleTaskTypeOptions {
@@ -57,8 +56,15 @@ export interface RuleTaskTypeOptions {
   /** A task process only: the locators the executor of this rule type reads from `share`. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   locators?: Array<LocatorDefinition<any>>;
+  /**
+   * A task process only: registers locators that need other locators, such as one that builds its
+   * path with the management locator. Runs after `locators` are created.
+   */
+  registerLocators?: (locators: LocatorClient) => void;
   /** A task process only: the connector adapters rules of this rule type may use. */
   connectorAdapters?: ConnectorAdapter[];
+  /** A task process only: saved object types the executor reads, besides what every rule run reads. */
+  savedObjectTypes?: SavedObjectsType[];
   /** A task process only: registers the connector types rules of this rule type may enqueue. */
   registerConnectorTypes?: (
     actions: RuleRunActionsSetup,
@@ -72,13 +78,46 @@ export type RuleTypeSource =
   /** A task process: how to build the rule type from the host, and its id without building it. */
   | { ruleTypeId: string; getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType };
 
-const hostDeps = (host: TaskHost): RuleTypeModuleDeps => ({
-  logger: host.logger,
-  isServerless: host.server.isServerless,
-  kibanaVersion: host.server.version,
-  publicBaseUrl: host.server.publicBaseUrl,
-  settings: host.settings ?? {},
-});
+const createUrlService = (
+  host: Pick<TaskHost, 'server'>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  locators: Array<LocatorDefinition<any>> = [],
+  registerLocators?: (locators: LocatorClient) => void
+) => {
+  const urlService = new UrlService({
+    baseUrl: host.server.publicBaseUrl ?? '',
+    version: host.server.version,
+    navigate: async () => {
+      throw new Error('Locator .navigate() is not supported in a task process.');
+    },
+    getUrl: async () => {
+      throw new Error('Locator .getUrl() is not supported in a task process.');
+    },
+    // Built when the service is, but only failing when a short URL is used.
+    shortUrls: () => ({
+      get: () =>
+        new Proxy(
+          {},
+          {
+            get: () => () => {
+              throw new Error('Short URLs are not supported in a task process.');
+            },
+          }
+        ),
+    }),
+  } as never);
+  locators.forEach((locator) => urlService.locators.create(locator));
+  registerLocators?.(urlService.locators);
+  return urlService;
+};
+
+type HostForRuleType = Pick<TaskHost, 'logger' | 'server' | 'settings'>;
+
+/** A rule task type module, which also says which rule type it builds. */
+export type RuleTaskTypeModule = TaskTypeModule & {
+  /** Builds the rule type the way a task process does; for tests that compare it with Kibana's. */
+  buildRuleType: (host: HostForRuleType) => UntypedNormalizedRuleType;
+};
 
 /**
  * The task type of a rule type, `alerting:<id>`, as a task type module. Kibana builds it from the
@@ -89,27 +128,37 @@ const hostDeps = (host: TaskHost): RuleTypeModuleDeps => ({
 export function createRuleTaskType(
   source: RuleTypeSource,
   options: RuleTaskTypeOptions = {}
-): TaskTypeModule {
+): RuleTaskTypeModule {
   const kibanaRuleType = 'ruleType' in source ? source.ruleType : undefined;
   const id = kibanaRuleType ? kibanaRuleType.id : (source as { ruleTypeId: string }).ruleTypeId;
   const cost = RULE_TYPES_WITH_CUSTOM_COST[id];
 
   let ruleType: UntypedNormalizedRuleType | undefined = kibanaRuleType;
+  let urlService: UrlService | undefined;
+  const buildRuleType = (host: HostForRuleType) => {
+    urlService ??= createUrlService(host, options.locators, options.registerLocators);
+    ruleType ??= normalizeRuleType(
+      (source as { getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType }).getRuleType({
+        logger: host.logger,
+        isServerless: host.server.isServerless,
+        kibanaVersion: host.server.version,
+        publicBaseUrl: host.server.publicBaseUrl,
+        settings: host.settings ?? {},
+        locators: urlService.locators,
+      }),
+      { config: host.settings!.alerting as AlertingConfig, logger: host.logger }
+    );
+    if (ruleType.id !== id) {
+      throw new Error(`Module declares rule type "${id}" but its factory built "${ruleType.id}"`);
+    }
+    return ruleType;
+  };
   let prepared:
     | Promise<{ runtime: RuleRunRuntime; unsupportedActionTypes?: (ids: string[]) => string[] }>
     | undefined;
 
   const prepare = (host: TaskHost) => {
-    ruleType ??= normalizeRuleType(
-      (source as { getRuleType: Function }).getRuleType(hostDeps(host)),
-      {
-        config: host.settings!.alerting as AlertingConfig,
-        logger: host.logger,
-      }
-    );
-    if (ruleType.id !== id) {
-      throw new Error(`Module declares rule type "${id}" but its factory built "${ruleType.id}"`);
-    }
+    if (!kibanaRuleType) buildRuleType(host);
     return (prepared ??= options.getRuntime
       ? options.getRuntime().then((runtime) => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
@@ -117,7 +166,7 @@ export function createRuleTaskType(
             const standalone = createStandaloneRuleRunRuntime({
               host,
               ruleType: ruleType!,
-              locators: options.locators,
+              urlService: urlService!,
               connectorAdapters: options.connectorAdapters,
               registerConnectorTypes: options.registerConnectorTypes,
             });
@@ -168,7 +217,7 @@ export function createRuleTaskType(
     }
   };
 
-  return defineTaskType({
+  const taskType = defineTaskType({
     type: `alerting:${id}`,
     ...(kibanaRuleType
       ? {
@@ -185,7 +234,6 @@ export function createRuleTaskType(
     ...(kibanaRuleType
       ? {}
       : {
-          ...getRuleRunDeclarations(),
           eventLog: {
             providers: [
               { provider: EVENT_LOG_PROVIDER, actions: Object.values(EVENT_LOG_ACTIONS) },
@@ -193,7 +241,6 @@ export function createRuleTaskType(
             create: createStandaloneEventLog,
           },
           taskManager: true as const,
-          uiSettings: { defaults: getRuleRunUiSettings() },
           licensing: true as const,
           settings: ['alerting', 'actions'],
         }),
@@ -218,4 +265,25 @@ export function createRuleTaskType(
       };
     },
   });
+  if (!kibanaRuleType) {
+    // The saved object types and ui settings are built from the code of other plugins, which costs
+    // something, so only when a task process reads them.
+    let declarations: ReturnType<typeof getRuleRunDeclarations> | undefined;
+    const getDeclarations = () => (declarations ??= getRuleRunDeclarations());
+    Object.defineProperties(taskType, {
+      savedObjectTypes: {
+        enumerable: true,
+        get: () => [...getDeclarations().savedObjectTypes, ...(options.savedObjectTypes ?? [])],
+      },
+      encryptedSavedObjectTypes: {
+        enumerable: true,
+        get: () => getDeclarations().encryptedSavedObjectTypes,
+      },
+      uiSettings: {
+        enumerable: true,
+        get: () => ({ defaults: getRuleRunUiSettings() }),
+      },
+    });
+  }
+  return Object.assign(taskType, { buildRuleType });
 }

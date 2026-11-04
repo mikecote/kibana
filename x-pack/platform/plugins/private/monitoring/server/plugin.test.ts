@@ -44,6 +44,7 @@ describe('Monitoring plugin', () => {
     },
     alerting: {
       registerType: jest.fn(),
+      registerTaskProcessSettings: jest.fn(),
     },
   };
 

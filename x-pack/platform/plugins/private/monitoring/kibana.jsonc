@@ -8,6 +8,22 @@
     "id": "monitoring",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/cluster_health.task.ts",
+      "server/task_types/license_expiration.task.ts",
+      "server/task_types/cpu_usage.task.ts",
+      "server/task_types/missing_monitoring_data.task.ts",
+      "server/task_types/disk_usage.task.ts",
+      "server/task_types/thread_pool_search_rejections.task.ts",
+      "server/task_types/thread_pool_write_rejections.task.ts",
+      "server/task_types/memory_usage.task.ts",
+      "server/task_types/nodes_changed.task.ts",
+      "server/task_types/logstash_version_mismatch.task.ts",
+      "server/task_types/kibana_version_mismatch.task.ts",
+      "server/task_types/elasticsearch_version_mismatch.task.ts",
+      "server/task_types/ccr_read_exceptions.task.ts",
+      "server/task_types/large_shard_size.task.ts"
+    ],
     "configPath": ["monitoring"],
     "requiredPlugins": [
       "licensing",

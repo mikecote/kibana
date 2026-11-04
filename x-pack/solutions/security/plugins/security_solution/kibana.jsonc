@@ -10,6 +10,17 @@
     "id": "securitySolution",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/eql.task.ts",
+      "server/task_types/esql.task.ts",
+      "server/task_types/indicator_match.task.ts",
+      "server/task_types/ml.task.ts",
+      "server/task_types/new_terms.task.ts",
+      "server/task_types/query.task.ts",
+      "server/task_types/saved_query.task.ts",
+      "server/task_types/threshold.task.ts",
+      "server/task_types/notifications.task.ts"
+    ],
     "configPath": [
       "xpack",
       "securitySolution"
