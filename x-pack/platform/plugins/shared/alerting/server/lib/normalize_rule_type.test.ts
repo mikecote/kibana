@@ -52,7 +52,7 @@ describe('normalizeRuleType', () => {
 
   it('rejects an action group that the framework reserves', () => {
     const reserved = ruleType();
-    reserved.actionGroups = [{ id: 'recovered', name: 'Recovered' }];
+    reserved.actionGroups = [{ id: 'recovered', name: 'Recovered' }] as never;
     expect(() =>
       normalizeRuleType(reserved, { config: configSchema.validate({}), logger })
     ).toThrow(/reserved by the framework/);
