@@ -48,7 +48,13 @@ const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): Static
       definition: { config: esoConfig, plugin: esoPlugin as never },
     });
   }
-  plugins.push(createModuleStaticPlugin(kibanaVersion));
+  plugins.push(...(module.taskPlugins ?? []));
+  plugins.push(
+    createModuleStaticPlugin(
+      kibanaVersion,
+      (module.taskPlugins ?? []).map(({ manifest }) => manifest.id)
+    )
+  );
   return plugins;
 };
 

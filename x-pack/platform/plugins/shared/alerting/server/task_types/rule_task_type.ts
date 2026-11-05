@@ -72,6 +72,11 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  /**
+   * A task process only: plugins that run next to Core, such as the security plugin that registers
+   * the security delegate. The factory of the rule type reads what they return as `host.plugins[id]`.
+   */
+  taskPlugins?: TaskTypeModule['taskPlugins'];
 }
 
 export type RuleTypeSource =
@@ -245,6 +250,7 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
+    ...(options.taskPlugins ? { taskPlugins: options.taskPlugins } : {}),
     taskTypeGroup: TaskTypeGroup.Alerting,
     paramsSchema: ruleTaskParamsSchema,
     // What a task process needs; Kibana has all of it already, so only the process's module says so.

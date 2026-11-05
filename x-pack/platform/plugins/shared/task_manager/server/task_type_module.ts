@@ -12,6 +12,7 @@ import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
+import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -109,6 +110,8 @@ export interface TaskHost {
   settings?: Record<string, unknown>;
   /** A task process only: what plugins contribute, by key, for the keys the module lists. */
   contributions?: Record<string, unknown[]>;
+  /** A task process only: the `start` contracts of `taskPlugins`, by plugin id. */
+  plugins?: Record<string, unknown>;
 }
 
 /**
@@ -140,6 +143,14 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   declinesAll?: string;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
+  /**
+   * Plugins this task type's process runs besides Core, which Core composes like the plugins of
+   * Kibana: their config, dependencies, `setup` and `start` run in dependency order, so a plugin
+   * can register with Core what Kibana would have it register, such as the security delegate. Each
+   * is the plugin's own slim implementation for a task process (`server/task_plugin.ts`), and the
+   * runner reads what they return from `start` as `host.plugins[id]`. Kibana has the real plugins.
+   */
+  taskPlugins?: ReadonlyArray<StaticPlugin>;
   /**
    * What other plugins contribute to this task type's process (`taskTypeContributions` in their
    * `kibana.jsonc`). The bundler gathers every plugin's files under each key, and a task process
@@ -223,6 +234,7 @@ export const toTaskDefinition = (
     licensing,
     settings,
     contributions,
+    taskPlugins,
     declinesAll,
     createTaskRunner,
     ...definition

@@ -31,6 +31,7 @@ interface SetupDeps {
 
 interface StartDeps {
   encryptedSavedObjects?: EncryptedSavedObjectsPluginStart;
+  [pluginId: string]: unknown;
 }
 
 /**
@@ -151,6 +152,11 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         host.settings = settings;
       }
       if (module.contributions?.keys.length) host.contributions = context.contributions;
+      if (module.taskPlugins?.length) {
+        host.plugins = Object.fromEntries(
+          module.taskPlugins.map(({ manifest }) => [manifest.id, deps[manifest.id]])
+        );
+      }
       resolveHost(host);
     },
 
@@ -161,7 +167,10 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
 };
 
 /** Where the module sits among the plugins of the process: after Task Manager and ESO. */
-export const createModuleStaticPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createModuleStaticPlugin = (
+  kibanaVersion: string,
+  taskPluginIds: string[] = []
+): StaticPlugin => ({
   manifest: {
     id: 'taskTypeModule',
     version: kibanaVersion,
@@ -169,7 +178,7 @@ export const createModuleStaticPlugin = (kibanaVersion: string): StaticPlugin =>
     type: PluginType.standard,
     configPath: ['xpack', 'taskTypeModule'],
     requiredPlugins: ['taskManager'],
-    optionalPlugins: ['encryptedSavedObjects'],
+    optionalPlugins: ['encryptedSavedObjects', ...taskPluginIds],
     requiredBundles: [],
     runtimePluginDependencies: [],
     server: true,

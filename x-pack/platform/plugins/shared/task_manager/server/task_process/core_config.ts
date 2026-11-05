@@ -13,6 +13,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import type { TaskTypeModule } from '../task_type_module';
 import type { SerializedElasticsearchConfig } from './es_config';
+import { reviveSettingsByPlugin } from './settings';
 import type { TaskProcessInit } from './wire';
 
 export interface CoreConfig {
@@ -86,6 +87,10 @@ export const buildCoreConfig = (
 ): CoreConfig => {
   const dir = mkdtempSync(join(tmpdir(), 'kbn-task-process-'));
   const keys = init.encryptedSavedObjects;
+  // Core reads the UIAM client authentication of Elasticsearch requests from `xpack.security.uiam`,
+  // so the settings the security plugin registers for task processes carry it.
+  const uiam = (reviveSettingsByPlugin(init.settings).security as { uiam?: unknown } | undefined)
+    ?.uiam;
   const settings: Record<string, unknown> = {
     elasticsearch: toElasticsearchSettings(init.elasticsearch, dir),
     path: { data: join(dir, 'data') },
@@ -107,13 +112,18 @@ export const buildCoreConfig = (
     ...(init.uiSettingsOverrides || module.uiSettings
       ? { uiSettings: { overrides: init.uiSettingsOverrides ?? {} } }
       : {}),
-    ...(keys
+    ...(keys || uiam
       ? {
           xpack: {
-            encryptedSavedObjects: {
-              ...(keys.encryptionKey ? { encryptionKey: keys.encryptionKey } : {}),
-              keyRotation: { decryptionOnlyKeys: keys.decryptionOnlyKeys },
-            },
+            ...(keys
+              ? {
+                  encryptedSavedObjects: {
+                    ...(keys.encryptionKey ? { encryptionKey: keys.encryptionKey } : {}),
+                    keyRotation: { decryptionOnlyKeys: keys.decryptionOnlyKeys },
+                  },
+                }
+              : {}),
+            ...(uiam ? { security: { uiam } } : {}),
           },
         }
       : {}),
