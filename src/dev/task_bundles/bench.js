@@ -1,0 +1,184 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+
+const { fork, execFileSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const { OUT_DIR } = require('./build');
+const {
+  elasticsearchConfigFromEnv,
+} = require('@kbn/task-manager-plugin/server/task_process/es_config');
+
+// node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
+//   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>]
+// For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
+// the time until the process says it is ready to serve (Core booted, plugins started) and its resident
+// memory once idle, before it has served a task. Needs a running Elasticsearch, since Core connects.
+const args = process.argv.slice(2);
+const getArg = (flag, fallback) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : fallback);
+
+const bundleDir = path.resolve(getArg('--dir', OUT_DIR));
+const nameFilter = getArg('--name');
+const runs = Number(getArg('--runs', 3));
+const settleMs = Number(getArg('--settle', 1500));
+const readyTimeoutMs = 60000;
+
+const esConfig = elasticsearchConfigFromEnv({
+  ES_URL: getArg('--es-url', 'http://localhost:9200'),
+  ES_USERNAME: getArg('--es-user', 'kibana_system'),
+  ES_PASSWORD: getArg('--es-password', 'changeme'),
+});
+
+const median = (values) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+};
+
+/** Settings a module declares that startup checks for: plugins read their own at run time. */
+const getInit = (settingIds) => ({
+  kind: 'init',
+  elasticsearch: esConfig,
+  kibanaVersion: require('@kbn/repo-info').kibanaPackageJson.version,
+  authToken: 'bench',
+  server: {
+    uuid: '5b2de169-2785-441b-ae8c-186a1936b17d',
+    buildNum: 1,
+    isServerless: false,
+    isDev: true,
+  },
+  encryptedSavedObjects: { encryptionKey: 'a'.repeat(32), decryptionOnlyKeys: [] },
+  settings: Object.fromEntries([
+    ...settingIds.map((id) => [id, {}]),
+    // What the security task plugin reads when it registers Core's security delegate.
+    [
+      'security',
+      {
+        audit: { enabled: false },
+        serviceAccounts: { enabled: false },
+        applicationName: 'kibana-.kibana',
+        kibanaServerResourceURL: 'http://localhost:5601',
+      },
+    ],
+    ['taskManager', { api_key_type: 'es', grant_uiam_api_keys: false }],
+  ]),
+});
+
+const rssMb = (pid) =>
+  Number(execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], { encoding: 'utf8' }).trim()) / 1024;
+
+const measureOnce = (file, settingIds) =>
+  new Promise((resolve) => {
+    const started = process.hrtime.bigint();
+    const child = fork(file, [], {
+      env: { ...process.env, PORT: '0' },
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    const timers = {};
+    const finish = (result) => {
+      clearTimeout(timers.ready);
+      child.kill('SIGKILL');
+      resolve(result);
+    };
+    timers.ready = setTimeout(
+      () => finish({ error: `not ready in ${readyTimeoutMs} ms` }),
+      readyTimeoutMs
+    );
+    child.once('exit', (code) =>
+      finish({
+        error: `exited (${code}) before ready: ${
+          stderr.split('\n').find((line) => /failed to start|Error/.test(line)) ?? stderr.trim()
+        }`,
+      })
+    );
+    child.on('message', (message) => {
+      if (message?.kind !== 'ready') return;
+      const startupMs = Number(process.hrtime.bigint() - started) / 1e6;
+      const readyRss = rssMb(child.pid);
+      // Let startup work that continues after the ready signal finish before reading idle memory.
+      setTimeout(() => {
+        let idleRss;
+        try {
+          idleRss = rssMb(child.pid);
+        } catch (e) {
+          idleRss = undefined;
+        }
+        child.removeAllListeners('exit');
+        finish({ startupMs, readyRss, idleRss });
+      }, settleMs);
+    });
+    child.send(getInit(settingIds));
+  });
+
+(async () => {
+  const manifestFile = path.join(bundleDir, 'manifest.json');
+  if (!fs.existsSync(manifestFile)) {
+    throw new Error(`No manifest at ${manifestFile}; run node scripts/task_bundle first`);
+  }
+  const { bundles } = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const selected = Object.entries(bundles).filter(
+    ([name, { taskType }]) =>
+      !nameFilter || name.includes(nameFilter) || taskType.includes(nameFilter)
+  );
+  const results = [];
+  for (const [name, { file, taskType, bytes }] of selected) {
+    // The settings ids the module declares are not in the manifest; any id it asks for at startup is
+    // read from the bundle's own error, so retry once with the ids the error names.
+    let settingIds = [];
+    const samples = [];
+    let error;
+    for (let i = 0; i < runs; i++) {
+      let sample = await measureOnce(path.join(bundleDir, file), settingIds);
+      const missing = sample.error && /not given the settings of: ([\w, ]+)/.exec(sample.error);
+      if (missing) {
+        settingIds = missing[1].split(',').map((id) => id.trim());
+        sample = await measureOnce(path.join(bundleDir, file), settingIds);
+      }
+      if (sample.error) {
+        error = sample.error;
+        break;
+      }
+      samples.push(sample);
+    }
+    const row = {
+      taskType,
+      bundle: name,
+      bundleMb: bytes ? Math.round(bytes / 1048576) : undefined,
+      ...(error
+        ? { error }
+        : {
+            startupMs: Math.round(median(samples.map((s) => s.startupMs))),
+            readyRssMb: Math.round(median(samples.map((s) => s.readyRss))),
+            idleRssMb: Math.round(median(samples.map((s) => s.idleRss ?? s.readyRss))),
+          }),
+    };
+    results.push(row);
+    console.log(
+      error
+        ? `${taskType}: FAILED ${error}`
+        : `${taskType}: ready in ${row.startupMs} ms, idle ${row.idleRssMb} MB (bundle ${row.bundleMb} MB)`
+    );
+  }
+  const ok = results.filter((r) => !r.error);
+  if (ok.length) {
+    console.log(
+      `\n${ok.length}/${results.length} measured; startup ms median ${median(
+        ok.map((r) => r.startupMs)
+      )}, idle MB median ${median(ok.map((r) => r.idleRssMb))}, worst startup ${Math.max(
+        ...ok.map((r) => r.startupMs)
+      )} ms, worst idle ${Math.max(...ok.map((r) => r.idleRssMb))} MB`
+    );
+  }
+  const json = getArg('--json');
+  if (json) fs.writeFileSync(json, `${JSON.stringify(results, null, 2)}\n`);
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
