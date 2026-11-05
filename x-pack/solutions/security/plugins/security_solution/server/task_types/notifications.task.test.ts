@@ -11,12 +11,6 @@ import { expectModuleToMatchRegisteredRuleType } from '@kbn/alerting-plugin/serv
 import { legacyRulesNotificationRuleType } from '../lib/detection_engine/rule_actions_legacy';
 import { taskType } from './notifications.task';
 
-// The connector types are covered by the end to end test of the stack rule types.
-jest.mock(
-  '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs',
-  () => ({ registerConnectorTypesForRuleRuns: jest.fn() })
-);
-
 describe('legacy notifications task type module', () => {
   it('builds the rule type that the plugin registers', () => {
     expectModuleToMatchRegisteredRuleType(

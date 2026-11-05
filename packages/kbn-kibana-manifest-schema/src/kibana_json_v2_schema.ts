@@ -185,6 +185,15 @@ export const MANIFEST_V2: JSONSchema = {
               type: 'array',
               items: { type: 'string' },
             },
+            taskTypeContributions: {
+              description: desc`
+                Paths, relative to the plugin, by contribution key, of files that export what this plugin adds to
+                the task processes of other plugins' task types, such as the connector types a rule run may
+                enqueue (key \`alerting-rule-run\`). A task process bundles the contributions of every plugin.
+              `,
+              type: 'object',
+              additionalProperties: { type: 'array', items: { type: 'string' } },
+            },
             enabledOnAnonymousPages: {
               description: desc`
                 Specifies whether this plugin - and its required dependencies - will be enabled for anonymous pages (login page, status page when

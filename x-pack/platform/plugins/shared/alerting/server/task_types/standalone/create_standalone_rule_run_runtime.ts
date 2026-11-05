@@ -16,10 +16,7 @@ import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
-import {
-  createRuleRunActions,
-  type RuleRunActionsSetup,
-} from '@kbn/actions-plugin/server/task_types/rule_run_actions';
+import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
 import { AlertsService } from '../../alerts_service/alerts_service';
 import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
@@ -38,6 +35,7 @@ import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
 import type { IRuleTypeAlerts } from '../../types';
+import type { RuleRunContribution } from '../rule_run_contribution';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 import { createStandaloneFieldFormats } from './field_formats';
 
@@ -49,11 +47,8 @@ export interface StandaloneRuleRunOptions {
   urlService: UrlService;
   /** The connector adapters that rules of this rule type may use through system actions. */
   connectorAdapters?: ConnectorAdapter[];
-  /** Registers the connector types a rule of this rule type may enqueue; see stack_connectors. */
-  registerConnectorTypes?: (
-    actions: RuleRunActionsSetup,
-    context: { publicBaseUrl?: string }
-  ) => void;
+  /** What other plugins add to a rule run: connector types and adapters of system actions. */
+  contributions?: RuleRunContribution[];
 }
 
 const spaceIdToNamespace = (spaceId?: string) =>
@@ -70,7 +65,7 @@ export const createStandaloneRuleRunRuntime = ({
   ruleType,
   urlService,
   connectorAdapters = [],
-  registerConnectorTypes = () => undefined,
+  contributions = [],
 }: StandaloneRuleRunOptions): {
   runtime: RuleRunRuntime;
   /** The action types a rule would use that this process cannot enqueue. */
@@ -145,7 +140,24 @@ export const createStandaloneRuleRunRuntime = ({
     getEncryptedSavedObjectsClient: host.encryptedSavedObjects!.getClient,
     taskManager: host.taskManager!,
     publicBaseUrl,
-    registerConnectorTypes,
+    registerConnectorTypes: (actions) => {
+      const registries = {
+        actions,
+        alerting: {
+          registerConnectorAdapter: (adapter: unknown) =>
+            connectorAdapterRegistry.register(adapter as ConnectorAdapter),
+        },
+      };
+      contributions.forEach((contribution) =>
+        contribution.register?.(registries, {
+          logger,
+          isServerless,
+          kibanaVersion,
+          publicBaseUrl,
+          settings,
+        })
+      );
+    },
   });
 
   const fieldFormats = createStandaloneFieldFormats();

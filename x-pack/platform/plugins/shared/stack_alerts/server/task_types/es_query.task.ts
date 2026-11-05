@@ -8,7 +8,6 @@
 import { ES_QUERY_ID } from '@kbn/rule-data-utils';
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { createDiscoverAppLocatorDefinition } from '@kbn/discover-plugin/common/task_process_locator';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import { getRuleType } from '../rule_types/es_query/rule_type';
 
 /** The `.es-query` rule type, which a task process can run: see the task types README of Task Manager. */
@@ -20,6 +19,5 @@ export const taskType = createRuleTaskType(
   {
     // The link of the alert to Discover is built with the Discover locator.
     locators: [createDiscoverAppLocatorDefinition()],
-    registerConnectorTypes: registerConnectorTypesForRuleRuns,
   }
 );

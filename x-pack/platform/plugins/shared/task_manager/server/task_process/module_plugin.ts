@@ -135,14 +135,16 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
           logger: initializerContext.logger.get('licensing'),
         });
       }
-      if (module.settings?.length) {
+      if (module.settings?.length || init.settings) {
+        // Everything Kibana sent, which also covers what contributions of other plugins read.
         const settings = reviveSettingsByPlugin(init.settings);
-        const missing = module.settings.filter((id) => !(id in settings));
+        const missing = (module.settings ?? []).filter((id) => !(id in settings));
         if (missing.length) {
           throw new Error(`The task process was not given the settings of: ${missing.join(', ')}`);
         }
         host.settings = settings;
       }
+      if (module.contributions?.keys.length) host.contributions = context.contributions;
       resolveHost(host);
     },
 

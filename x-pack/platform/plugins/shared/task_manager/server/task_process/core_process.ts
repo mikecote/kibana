@@ -68,15 +68,19 @@ export interface TaskProcessCore {
 export const startTaskProcessCore = async ({
   init,
   module,
+  contributions = {},
 }: {
   init: TaskProcessInit;
   module: TaskTypeModule;
+  contributions?: Record<string, unknown[]>;
 }): Promise<TaskProcessCore> => {
   const definitions = new Map<string, TaskRegisterDefinition>();
-  const context: TaskProcessContext = { init, module, definitions };
+  // The module with what plugins contributed to it declared: saved object types and the like.
+  const applied = module.contributions?.apply?.(contributions) ?? module;
+  const context: TaskProcessContext = { init, module: applied, contributions, definitions };
   setTaskProcessContext(context);
 
-  const { settings, cleanup } = buildCoreConfig(init, module);
+  const { settings, cleanup } = buildCoreConfig(init, applied);
   const isDev = init.server?.isDev ?? false;
   const buildNum = init.server?.buildNum ?? Number.MAX_SAFE_INTEGER;
   const env = Env.createDefault(
@@ -108,7 +112,7 @@ export const startTaskProcessCore = async ({
     }
   );
   const root = new Root({ getConfig$: () => new BehaviorSubject(settings) }, env, undefined, {
-    staticPlugins: getStaticPlugins(module, init.kibanaVersion),
+    staticPlugins: getStaticPlugins(applied, init.kibanaVersion),
   });
   await root.preboot();
   await root.setup();

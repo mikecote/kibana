@@ -6,7 +6,6 @@
  */
 
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import { createConfig } from '../config';
 import type { MonitoringConfigSchema } from '../types';
 import { Globals } from '../static_globals';
@@ -23,21 +22,18 @@ export interface MonitoringTaskProcessSettings {
  * that the plugin sets up in Kibana; a task process sets it up from the same config.
  */
 export const createMonitoringRuleTaskType = (ruleTypeId: string, createRule: () => BaseRule) =>
-  createRuleTaskType(
-    {
-      ruleTypeId,
-      getRuleType: ({ logger, publicBaseUrl, settings }) => {
-        const monitoring = settings.monitoring as MonitoringTaskProcessSettings;
-        Globals.init({
-          initializerContext: {},
-          config: createConfig(monitoring.config),
-          getLogger: (...scopes: string[]) => logger.get(...scopes),
-          log: logger,
-          coreSetup: { http: { basePath: { publicBaseUrl } } },
-          setupPlugins: { cloud: { isCloudEnabled: monitoring.isCloud } },
-        } as never);
-        return createRule().getRuleType() as never;
-      },
+  createRuleTaskType({
+    ruleTypeId,
+    getRuleType: ({ logger, publicBaseUrl, settings }) => {
+      const monitoring = settings.monitoring as MonitoringTaskProcessSettings;
+      Globals.init({
+        initializerContext: {},
+        config: createConfig(monitoring.config),
+        getLogger: (...scopes: string[]) => logger.get(...scopes),
+        log: logger,
+        coreSetup: { http: { basePath: { publicBaseUrl } } },
+        setupPlugins: { cloud: { isCloudEnabled: monitoring.isCloud } },
+      } as never);
+      return createRule().getRuleType() as never;
     },
-    { registerConnectorTypes: registerConnectorTypesForRuleRuns }
-  );
+  });

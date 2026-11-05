@@ -72,10 +72,13 @@ const readInit = (): Promise<TaskProcessInit> => {
  * run it as a remote process. Env of a remote process: ES_URL, ES_API_KEY or ES_USERNAME and
  * ES_PASSWORD, PORT, TASK_PROCESS_TOKEN.
  */
-export const runTaskProcess = async (module: TaskTypeModule) => {
+export const runTaskProcess = async (
+  module: TaskTypeModule,
+  { contributions }: { contributions?: Record<string, unknown[]> } = {}
+) => {
   try {
     const init = await readInit();
-    const core = await startTaskProcessCore({ init, module });
+    const core = await startTaskProcessCore({ init, module, contributions });
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,

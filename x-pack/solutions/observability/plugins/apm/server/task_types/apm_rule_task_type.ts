@@ -13,7 +13,6 @@ import {
   apmIndicesSavedObjectDefinition,
   getApmIndicesSavedObject,
 } from '@kbn/apm-sources-access-plugin/server/saved_objects/apm_indices';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import type { APMConfig } from '..';
 import type { RegisterRuleDependencies } from '../routes/alerts/register_apm_rule_types';
 
@@ -57,6 +56,5 @@ export const createApmRuleTaskType = (
     {
       locators: [new AlertsLocatorDefinition()],
       savedObjectTypes: [apmIndicesSavedObjectDefinition],
-      registerConnectorTypes: registerConnectorTypesForRuleRuns,
     }
   );

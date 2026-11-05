@@ -19,7 +19,6 @@ import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
 import { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
-import type { RuleRunActionsSetup } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../constants/event_log';
@@ -32,6 +31,8 @@ import type { UntypedRuleType } from '../types';
 import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
+import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
+import type { RuleRunContribution } from './rule_run_contribution';
 
 export { ruleTaskParamsSchema };
 
@@ -65,11 +66,6 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
-  /** A task process only: registers the connector types rules of this rule type may enqueue. */
-  registerConnectorTypes?: (
-    actions: RuleRunActionsSetup,
-    context: { publicBaseUrl?: string }
-  ) => void;
 }
 
 export type RuleTypeSource =
@@ -127,7 +123,9 @@ export type RuleTaskTypeModule = TaskTypeModule & {
  */
 export function createRuleTaskType(
   source: RuleTypeSource,
-  options: RuleTaskTypeOptions = {}
+  options: RuleTaskTypeOptions = {},
+  /** A task process: what other plugins add to a rule run, such as connector types of system actions. */
+  contributions: RuleRunContribution[] = []
 ): RuleTaskTypeModule {
   const kibanaRuleType = 'ruleType' in source ? source.ruleType : undefined;
   const id = kibanaRuleType ? kibanaRuleType.id : (source as { ruleTypeId: string }).ruleTypeId;
@@ -168,7 +166,7 @@ export function createRuleTaskType(
               ruleType: ruleType!,
               urlService: urlService!,
               connectorAdapters: options.connectorAdapters,
-              registerConnectorTypes: options.registerConnectorTypes,
+              contributions,
             });
             return {
               runtime: standalone.runtime,
@@ -273,15 +271,38 @@ export function createRuleTaskType(
     Object.defineProperties(taskType, {
       savedObjectTypes: {
         enumerable: true,
-        get: () => [...getDeclarations().savedObjectTypes, ...(options.savedObjectTypes ?? [])],
+        get: () => [
+          ...getDeclarations().savedObjectTypes,
+          ...(options.savedObjectTypes ?? []),
+          ...contributions.flatMap((contribution) => contribution.declares?.savedObjectTypes ?? []),
+        ],
       },
       encryptedSavedObjectTypes: {
         enumerable: true,
-        get: () => getDeclarations().encryptedSavedObjectTypes,
+        get: () => [
+          ...getDeclarations().encryptedSavedObjectTypes,
+          ...contributions.flatMap(
+            (contribution) => contribution.declares?.encryptedSavedObjectTypes ?? []
+          ),
+        ],
       },
       uiSettings: {
         enumerable: true,
         get: () => ({ defaults: getRuleRunUiSettings() }),
+      },
+    });
+  }
+  if (!kibanaRuleType) {
+    Object.assign(taskType, {
+      // A task process hands over what plugins contribute; the module is built again with it.
+      contributions: {
+        keys: [RULE_RUN_CONTRIBUTIONS],
+        apply: (contributed: Record<string, unknown[]>) =>
+          createRuleTaskType(
+            source,
+            options,
+            (contributed[RULE_RUN_CONTRIBUTIONS] ?? []) as RuleRunContribution[]
+          ),
       },
     });
   }

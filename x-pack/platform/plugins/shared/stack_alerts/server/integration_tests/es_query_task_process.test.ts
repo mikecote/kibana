@@ -43,6 +43,7 @@ const TASK_TYPE = 'alerting:.es-query';
 const SOURCE_INDEX = 'es-query-source';
 const RULE_ID = 'rule-1';
 const CASES_RULE_ID = 'rule-with-cases';
+const UNKNOWN_RULE_ID = 'rule-with-unknown-action';
 const CONNECTOR_ID = 'server-log-1';
 const ALERTS_INDEX = '.alerts-stack.alerts-default';
 
@@ -60,6 +61,8 @@ describe('the .es-query rule type served from a bundle', () => {
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
     actions: actionsConfigSchema.validate({}),
+    // What Kibana sends for the cases system action, which cases contributes to every rule run.
+    cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
   });
 
   const initFor = () => ({
@@ -260,6 +263,10 @@ describe('the .es-query rule type served from a bundle', () => {
       rule('.cases', { subAction: 'run', subActionParams: {} }) as never,
       { id: CASES_RULE_ID, references }
     );
+    await client.create('alert', rule('.does-not-exist', {}) as never, {
+      id: UNKNOWN_RULE_ID,
+      references,
+    });
     await es.index({
       index: SOURCE_INDEX,
       refresh: 'wait_for',
@@ -352,13 +359,19 @@ describe('the .es-query rule type served from a bundle', () => {
     expect(params.hits.hits.length).toBe(1);
   });
 
+  it('serves a rule that uses the cases system action, which cases contributes to the process', async () => {
+    const fallback = jest.fn();
+    await run(CASES_RULE_ID, fallback);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it('declines a rule that uses an action type it does not know, so Kibana runs it', async () => {
     const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-    await expect(run(CASES_RULE_ID, fallback)).resolves.toEqual({ state: { local: true } });
+    await expect(run(UNKNOWN_RULE_ID, fallback)).resolves.toEqual({ state: { local: true } });
     expect(fallback).toHaveBeenCalledTimes(1);
     const alerts = await es.search({
       index: ALERTS_INDEX,
-      query: { term: { 'kibana.alert.rule.uuid': CASES_RULE_ID } },
+      query: { term: { 'kibana.alert.rule.uuid': UNKNOWN_RULE_ID } },
     });
     expect(alerts.hits.hits).toHaveLength(0);
   });

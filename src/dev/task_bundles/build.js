@@ -38,6 +38,20 @@ const loadTaskType = (file) => {
 /** Native modules stay out of the bundle and resolve from node_modules at run time. */
 const EXTERNALS = ['re2'];
 
+/**
+ * The files plugins contribute under a key (`plugin.taskTypeContributions` in `kibana.jsonc`), such as
+ * `alerting-rule-run` for what every rule run needs. Each file exports `contribution`.
+ */
+const getContributionFiles = (key, packages = getPackages(REPO_ROOT)) =>
+  packages
+    .filter((pkg) => pkg.manifest.type === 'plugin')
+    .flatMap((pkg) =>
+      (pkg.manifest.plugin.taskTypeContributions?.[key] ?? []).map((file) =>
+        path.resolve(REPO_ROOT, pkg.directory, file)
+      )
+    )
+    .sort();
+
 /** Every task type file declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`). */
 const getTaskBundleEntries = (packages = getPackages(REPO_ROOT)) =>
   packages
@@ -157,7 +171,13 @@ const buildTaskBundle = async ({
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.js`);
-  const declines = loadTaskType(entry.file)?.declinesAll;
+  const loaded = loadTaskType(entry.file);
+  const declines = loaded?.declinesAll;
+  // What the module says it takes from other plugins: every plugin's file under each key.
+  const contributions = Object.fromEntries(
+    (loaded?.contributions?.keys ?? []).map((key) => [key, getContributionFiles(key)])
+  );
+  const contributionImports = Object.values(contributions).flat();
   const result = await build({
     stdin: {
       contents: (declines
@@ -171,7 +191,16 @@ const buildTaskBundle = async ({
         : [
             `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
             `import { taskType } from ${JSON.stringify(entry.file)};`,
-            `runTaskProcess(taskType);`,
+            ...contributionImports.map(
+              (file, i) =>
+                `import { contribution as contribution${i} } from ${JSON.stringify(file)};`
+            ),
+            `runTaskProcess(taskType, { contributions: {`,
+            ...Object.entries(contributions).map(([key, files]) => {
+              const names = files.map((file) => `contribution${contributionImports.indexOf(file)}`);
+              return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
+            }),
+            `} });`,
           ]
       ).join('\n'),
       resolveDir: REPO_ROOT,
@@ -246,4 +275,10 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   return manifest;
 };
 
-module.exports = { OUT_DIR, getTaskBundleEntries, buildTaskBundle, writeManifest };
+module.exports = {
+  OUT_DIR,
+  getTaskBundleEntries,
+  getContributionFiles,
+  buildTaskBundle,
+  writeManifest,
+};

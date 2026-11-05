@@ -14,6 +14,7 @@ import type { UntypedNormalizedRuleType } from '../rule_type_registry';
 import type { UntypedRuleType } from '../types';
 import type { RuleRunRuntime } from '../task_runner/types';
 import { createRuleTaskType } from './rule_task_type';
+import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
 import { createRuleTypeHostMock } from './rule_task_type.mocks';
 import { createUnsupportedRuleTaskType } from './unsupported_rule_task_type';
 
@@ -134,6 +135,20 @@ describe('createRuleTaskType', () => {
         'action_task_params',
         'alert',
       ]);
+    });
+
+    it('is built again with what other plugins contribute to rule runs', () => {
+      const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
+      expect(taskType.contributions?.keys).toEqual([RULE_RUN_CONTRIBUTIONS]);
+
+      const contributedType = { name: 'contributed-type', hidden: true } as never;
+      const applied = taskType.contributions!.apply!({
+        [RULE_RUN_CONTRIBUTIONS]: [{ declares: { savedObjectTypes: [contributedType] } }],
+      });
+
+      expect(applied.type).toBe('alerting:test.rule');
+      expect(applied.savedObjectTypes).toContain(contributedType);
+      expect(taskType.savedObjectTypes).not.toContain(contributedType);
     });
 
     it('builds the rule type the way Kibana normalizes it, from the host', () => {

@@ -58,6 +58,7 @@ import { registerInternalAttachments } from './internal_attachments';
 import { registerCaseFileKinds } from './files';
 import type { ConfigType } from './config';
 import { registerConnectorTypes } from './connectors';
+import type { CasesTaskProcessSettings } from './task_types/rule_run_contribution';
 import { registerSavedObjects } from './saved_object_types';
 import type { ServerlessProjectType } from '../common/constants/types';
 import { SERVERLESS_PROJECT_TYPES } from '../common/constants/owners';
@@ -311,6 +312,16 @@ export class CasePlugin
       isCasesAttachmentsEnabled: this.caseConfig.attachments?.enabled === true,
       isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
     });
+
+    // The rule runs of a task process build the connector's parameters with the same settings.
+    plugins.alerting.registerTaskProcessSettings(
+      'cases',
+      (): CasesTaskProcessSettings => ({
+        serverlessProjectType,
+        isCasesAttachmentsEnabled: this.caseConfig.attachments?.enabled === true,
+        isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
+      })
+    );
 
     registerCaseWorkflowSteps(
       plugins.workflowsExtensions,

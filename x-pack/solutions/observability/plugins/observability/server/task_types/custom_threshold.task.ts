@@ -9,7 +9,6 @@ import { OBSERVABILITY_THRESHOLD_RULE_TYPE_ID } from '@kbn/rule-data-utils';
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { createDiscoverAppLocatorDefinition } from '@kbn/discover-plugin/common/task_process_locator';
 import { DISCOVER_APP_LOCATOR } from '@kbn/discover-plugin/common';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import { alertsLocatorID } from '../../common';
 import { AlertsLocatorDefinition } from '../../common/locators/alerts';
 import type { ObservabilityConfig } from '..';
@@ -36,6 +35,5 @@ export const taskType = createRuleTaskType(
   },
   {
     locators: [new AlertsLocatorDefinition(), createDiscoverAppLocatorDefinition()],
-    registerConnectorTypes: registerConnectorTypesForRuleRuns,
   }
 );

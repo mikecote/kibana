@@ -8,7 +8,6 @@
 import { DEGRADED_DOCS_RULE_TYPE_ID } from '@kbn/rule-data-utils';
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { ManagementAppLocatorDefinition } from '@kbn/management-plugin/common/locator';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import { DegradedDocsRuleType } from '@kbn/dataset-quality-plugin/server/rule_types/degraded_docs/register';
 import {
   DatasetQualityDetailsLocatorDefinition,
@@ -31,6 +30,5 @@ export const taskType = createRuleTaskType(
         new DatasetQualityDetailsLocatorDefinition({ useHash: false, managementLocator })
       );
     },
-    registerConnectorTypes: registerConnectorTypesForRuleRuns,
   }
 );

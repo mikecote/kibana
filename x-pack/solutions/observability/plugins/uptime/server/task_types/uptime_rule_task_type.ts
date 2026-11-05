@@ -8,7 +8,6 @@
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { alertsLocatorID } from '@kbn/observability-plugin/common';
 import { AlertsLocatorDefinition } from '@kbn/observability-plugin/common/locators/alerts';
-import { registerConnectorTypesForRuleRuns } from '@kbn/stack-connectors-plugin/server/task_types/register_connector_types_for_rule_runs';
 import { uptimeRequests } from '../legacy_uptime/lib/requests';
 import { licenseCheck } from '../legacy_uptime/lib/domains';
 
@@ -35,7 +34,6 @@ export const createUptimeRuleTaskType = (ruleTypeId: string, factory: UptimeRule
     },
     {
       locators: [new AlertsLocatorDefinition()],
-      registerConnectorTypes: registerConnectorTypesForRuleRuns,
     }
   );
 

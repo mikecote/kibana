@@ -17,6 +17,8 @@ import type { TaskProcessInit } from './wire';
 export interface TaskProcessContext {
   init: TaskProcessInit;
   module: TaskTypeModule;
+  /** What plugins contribute, by key; see `TaskTypeModule.contributions`. */
+  contributions: Record<string, unknown[]>;
   /** The task definitions plugins registered through Task Manager's contract. */
   definitions: Map<string, TaskRegisterDefinition>;
   /** Set by the module's plugin: the host its runner gets, once Core has started. */

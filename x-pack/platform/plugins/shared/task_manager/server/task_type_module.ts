@@ -90,6 +90,8 @@ export interface TaskHost {
   licensing?: { license$: Observable<ILicense> };
   /** Validated plugin configs by plugin id, for the ids listed in `settings`. */
   settings?: Record<string, unknown>;
+  /** A task process only: what plugins contribute, by key, for the keys the module lists. */
+  contributions?: Record<string, unknown[]>;
 }
 
 /**
@@ -121,6 +123,16 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   declinesAll?: string;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
+  /**
+   * What other plugins contribute to this task type's process (`taskTypeContributions` in their
+   * `kibana.jsonc`). The bundler gathers every plugin's files under each key, and a task process
+   * hands the exports to `apply`, which returns the module with what they declare added, and to the
+   * runner as `host.contributions[key]`. Kibana has the plugins themselves and ignores this.
+   */
+  contributions?: {
+    keys: string[];
+    apply?: (contributions: Record<string, unknown[]>) => TaskTypeModule;
+  };
   createTaskRunner: (context: RunContext, host: TaskHost) => CancellableTask;
 }
 
@@ -193,6 +205,7 @@ export const toTaskDefinition = (
     uiSettings,
     licensing,
     settings,
+    contributions,
     declinesAll,
     createTaskRunner,
     ...definition
