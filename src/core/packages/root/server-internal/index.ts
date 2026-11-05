@@ -8,3 +8,4 @@
  */
 
 export { Server, registerServiceConfig, Root, bootstrap } from './src';
+export type { ServerOptions } from './src';

@@ -9,6 +9,8 @@
 
 export { PluginsService } from './plugins_service';
 export type {
+  StaticPlugin,
+  PluginsServiceOptions,
   InternalPluginsServiceSetup,
   InternalPluginsServiceStart,
   DiscoveredPlugins,

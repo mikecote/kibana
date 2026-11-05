@@ -31,7 +31,7 @@ import { createSetupModule, createStartModule } from '@kbn/core-di-internal';
 const OSS_PATH_REGEX = /[\/|\\]src[\/|\\]plugins[\/|\\]/; // Matches src/plugins directory on POSIX and Windows
 const XPACK_PATH_REGEX = /[\/|\\]x-pack[\/|\\]plugins[\/|\\]/; // Matches x-pack/plugins directory on POSIX and Windows
 
-interface PluginDefinition<
+export interface PluginDefinition<
   TSetup = unknown,
   TStart = unknown,
   TPluginsSetup extends object = object,
@@ -87,6 +87,8 @@ export class PluginWrapper<
       readonly manifest: PluginManifest;
       readonly opaqueId: PluginOpaqueId;
       readonly initializerContext: PluginInitializerContext;
+      /** The plugin's server module when it is already in memory, so nothing is loaded from `path`. */
+      readonly definition?: PluginDefinition<TSetup, TStart, TPluginsSetup, TPluginsStart>;
     }
   ) {
     this.path = params.path;
@@ -217,6 +219,9 @@ export class PluginWrapper<
   protected async getPluginDefinition(): Promise<
     PluginDefinition<TSetup, TStart, TPluginsSetup, TPluginsStart>
   > {
+    if (this.params.definition) {
+      return this.params.definition;
+    }
     return (await import(join(this.path, 'server'))) ?? {};
   }
 

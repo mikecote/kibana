@@ -18,6 +18,7 @@ import { isEqual } from 'lodash';
 import { setDiagLogger } from '@kbn/telemetry';
 import type { ElasticConfigType } from './elastic_config';
 import { Server } from '../server';
+import type { ServerOptions } from '../server';
 import { MIGRATION_EXCEPTION_CODE } from '../constants';
 
 /**
@@ -35,12 +36,13 @@ export class Root {
   constructor(
     rawConfigProvider: RawConfigurationProvider,
     env: Env,
-    private readonly onShutdown?: (reason?: Error | string) => void
+    private readonly onShutdown?: (reason?: Error | string) => void,
+    serverOptions?: ServerOptions
   ) {
     this.loggingSystem = new LoggingSystem();
     this.logger = this.loggingSystem.asLoggerFactory();
     this.log = this.logger.get('root');
-    this.server = new Server(rawConfigProvider, env, this.loggingSystem);
+    this.server = new Server(rawConfigProvider, env, this.loggingSystem, serverOptions);
   }
 
   public async preboot() {

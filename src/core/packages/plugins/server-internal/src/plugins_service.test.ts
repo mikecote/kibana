@@ -169,6 +169,44 @@ describe('PluginsService', () => {
   });
 
   describe('#discover()', () => {
+    it('uses static plugins instead of discovering plugins on disk', async () => {
+      const definition = { plugin: jest.fn() };
+      const staticService = new PluginsService(
+        { coreId, env, logger, configService },
+        {
+          staticPlugins: [
+            {
+              manifest: {
+                id: 'staticPlugin',
+                version: 'some-version',
+                configPath: ['staticPlugin'],
+                kibanaVersion: '7.0.0',
+                type: PluginType.standard,
+                requiredPlugins: [],
+                requiredBundles: [],
+                optionalPlugins: [],
+                runtimePluginDependencies: [],
+                server: true,
+                ui: false,
+                owner: { name: 'Core', githubTeam: 'kibana-core' },
+              },
+              definition,
+            },
+          ],
+        }
+      );
+      const [prebootSystem, standardSystem] = MockPluginsSystem.mock.instances.slice(-2) as any;
+      for (const system of [prebootSystem, standardSystem]) {
+        system.getPlugins.mockReturnValue([]);
+        system.uiPlugins.mockReturnValue(new Map());
+      }
+      await staticService.discover({ environment: environmentPreboot, node: nodePreboot });
+
+      expect(mockDiscover).not.toHaveBeenCalled();
+      const added = standardSystem.addPlugin.mock.calls.map(([plugin]: any) => plugin.name);
+      expect(added).toEqual(['staticPlugin']);
+    });
+
     it('throws if plugin has an invalid manifest', async () => {
       mockDiscover.mockReturnValue({
         error$: from([PluginDiscoveryError.invalidManifest('path-1', new Error('Invalid JSON'))]),

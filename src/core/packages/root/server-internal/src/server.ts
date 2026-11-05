@@ -56,7 +56,7 @@ import type {
   InternalCoreSetup,
   InternalCoreStart,
 } from '@kbn/core-lifecycle-server-internal';
-import type { DiscoveredPlugins } from '@kbn/core-plugins-server-internal';
+import type { DiscoveredPlugins, StaticPlugin } from '@kbn/core-plugins-server-internal';
 import { PluginsService } from '@kbn/core-plugins-server-internal';
 import { CoreAppsService } from '@kbn/core-apps-server-internal';
 import { SecurityService } from '@kbn/core-security-server-internal';
@@ -81,6 +81,12 @@ import { registerRootEvents, reportKibanaStartedEvent, type UptimeSteps } from '
 const coreId = Symbol('core');
 
 /** @internal */
+
+/** @internal */
+export interface ServerOptions {
+  /** Plugins already in memory; when set, nothing is discovered on disk (task processes). */
+  staticPlugins?: readonly StaticPlugin[];
+}
 
 export class Server {
   public readonly configService: ConfigService;
@@ -133,7 +139,8 @@ export class Server {
   constructor(
     rawConfigProvider: RawConfigurationProvider,
     public readonly env: Env,
-    private readonly loggingSystem: ILoggingSystem
+    private readonly loggingSystem: ILoggingSystem,
+    options: ServerOptions = {}
   ) {
     const constructorStartUptime = performance.now();
 
@@ -155,7 +162,7 @@ export class Server {
     this.featureFlags = new FeatureFlagsService(core);
     this.http = new HttpService(core);
     this.rendering = new RenderingService(core);
-    this.plugins = new PluginsService(core);
+    this.plugins = new PluginsService(core, { staticPlugins: options.staticPlugins });
     this.elasticsearch = new ElasticsearchService(core);
     this.savedObjects = new SavedObjectsService(core);
     this.uiSettings = new UiSettingsService(core);

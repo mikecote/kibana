@@ -9,6 +9,8 @@
 
 export { PluginsService, PluginWrapper, config } from './src';
 export type {
+  StaticPlugin,
+  PluginsServiceOptions,
   InternalPluginsServiceSetup,
   InternalPluginsServiceStart,
   DiscoveredPlugins,
