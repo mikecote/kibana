@@ -31,28 +31,11 @@ export class DataStreamDataClientBundle implements DataClientBundle {
 
   constructor(private readonly deps: CreateDataClientDeps) {}
 
-  async initSetup(coreSetup: CoreSetup): Promise<void> {
-    coreSetup.dataStreams.registerDataStream({
-      name: WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.name,
-      version: WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.version,
-      hidden: WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.hidden,
-      template: {
-        mappings: WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.mappings,
-        settings: WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.settings,
-        lifecycle: { data_retention: this.deps.dataRetention },
-      },
-    });
-    coreSetup.dataStreams.registerDataStream({
-      name: STEP_EXECUTIONS_DATA_STREAM_DEFINITION.name,
-      version: STEP_EXECUTIONS_DATA_STREAM_DEFINITION.version,
-      hidden: STEP_EXECUTIONS_DATA_STREAM_DEFINITION.hidden,
-      template: {
-        mappings: STEP_EXECUTIONS_DATA_STREAM_DEFINITION.mappings,
-        settings: STEP_EXECUTIONS_DATA_STREAM_DEFINITION.settings,
-        lifecycle: { data_retention: this.deps.dataRetention },
-      },
-    });
-  }
+  /**
+   * The execution data streams are registered with Core by `registerWorkflowDataStreams`, the one
+   * place the engine's data stream definitions are listed.
+   */
+  async initSetup(_coreSetup: CoreSetup): Promise<void> {}
 
   async initStart(coreStart: CoreStart): Promise<void> {
     await Promise.all([

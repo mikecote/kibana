@@ -491,13 +491,13 @@ describe('bulkScheduleWorkflow', () => {
     mockBulkCreateWorkflowExecutions.mockImplementation(async (executions: Array<{ id: string }>) =>
       executions.map(({ id }) => ({ id }))
     );
-    // Spy on the plugin's internal concurrency helper to simulate a drop on the
-    // second item without going through the full ConcurrencyManager machinery.
+    // Spy on the runtime's concurrency helper (the plugin builds the runtime that runs the schedule)
+    // to simulate a drop on the second item without going through the full ConcurrencyManager machinery.
+    const runtime = await (
+      plugin as unknown as { getRuntime: () => Promise<{ checkConcurrencyIfNeeded: jest.Mock }> }
+    ).getRuntime();
     const checkConcurrencyIfNeeded = jest
-      .spyOn(
-        plugin as unknown as { checkConcurrencyIfNeeded: (e: unknown) => Promise<boolean> },
-        'checkConcurrencyIfNeeded'
-      )
+      .spyOn(runtime, 'checkConcurrencyIfNeeded')
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
 

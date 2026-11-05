@@ -11,6 +11,7 @@ import type { CoreStart, KibanaRequest } from '@kbn/core/server';
 import { logEntityAccessControl } from '@kbn/entity-access-control';
 import { getWorkflowPermissions } from '@kbn/workflows';
 import type { WorkflowAccessSubject } from '@kbn/workflows';
+import type { ExecutionIdentityContexts } from '../service_account_execution';
 import { getWorkflowOriginalRequest } from '../service_account_execution';
 
 interface WorkflowAccessContext {
@@ -54,9 +55,10 @@ export const hasWorkflowAccess = async (
     id: string;
     spaceId: string;
     operation?: 'execute' | 'edit';
-  }
+  },
+  executionContexts?: Pick<ExecutionIdentityContexts, 'get'>
 ): Promise<boolean> => {
-  const originalRequest = getWorkflowOriginalRequest(request);
+  const originalRequest = getWorkflowOriginalRequest(request, executionContexts);
   const profileId =
     workflow.access_control?.access_mode === 'private'
       ? (await core.userProfile.getCurrentProfileId({ request: originalRequest })) ?? undefined

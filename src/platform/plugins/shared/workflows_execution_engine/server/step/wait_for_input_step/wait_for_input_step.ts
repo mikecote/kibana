@@ -102,6 +102,7 @@ export class WaitForInputStepImpl implements NodeImplementation, CancellableNode
         executionId: this.workflowRuntime.getWorkflowExecution().id,
         stepExecutionId: this.stepExecutionRuntime.stepExecutionId,
         stepType: this.node.stepType,
+        registry: this.dependencies.hitlLifecycle,
       });
       return;
     }
@@ -180,6 +181,7 @@ export class WaitForInputStepImpl implements NodeImplementation, CancellableNode
       executionId: this.workflowRuntime.getWorkflowExecution().id,
       stepExecutionId: this.stepExecutionRuntime.stepExecutionId,
       stepType: this.node.stepType,
+      registry: this.dependencies.hitlLifecycle,
     });
   }
 
@@ -200,6 +202,7 @@ export class WaitForInputStepImpl implements NodeImplementation, CancellableNode
         stepExecutionRuntime: this.stepExecutionRuntime,
         executionId: execution.id,
         stepType: this.node.stepType,
+        registry: this.dependencies.hitlLifecycle,
         error: new ExecutionError({
           type: 'TimeoutError',
           message: `Input wait exceeded the configured timeout of ${timeout}.`,

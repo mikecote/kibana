@@ -27,7 +27,7 @@ export type {
   WorkflowsExtensionsServerPluginStartDeps,
 } from './types';
 
-export type { EventChainContext } from './event_chain_context';
+export type { EventChainContext, EventChainContextStore } from './event_chain_context';
 
 export {
   EVENT_CHAIN_DEPTH_HEADER,
@@ -37,6 +37,8 @@ export {
   WORKFLOW_EVENT_CHAIN_CONTEXT,
   X_ELASTIC_INTERNAL_ORIGIN_REQUEST,
   getEmitterWorkflowExecutionIdFromRequest,
+  createEventChainContextStore,
+  defaultEventChainContextStore,
   getEventChainContext,
   getEventChainDepthFromHeaders,
   getOutboundEventChainHeaders,

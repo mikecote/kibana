@@ -7,15 +7,16 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import {
   HTTPAuthorizationHeader,
   isExternalUiamCredential,
   isUiamCredential,
 } from '@kbn/core-security-server';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 export const getInternalUiamCallerAttestationHeaders = (
-  coreStart: CoreStart,
+  coreStart: WorkflowCoreStart,
   request: KibanaRequest
 ): Record<string, string> => {
   const authorizationHeader = HTTPAuthorizationHeader.parseFromRequest(request);

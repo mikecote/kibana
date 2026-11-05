@@ -88,7 +88,7 @@ export async function setupDependencies(
     workflowExecution.workflowId,
     config.eventDriven.maxChainDepth
   );
-  setWorkflowEventChainContext(fakeRequest, {
+  (dependencies.eventChainContext?.set ?? setWorkflowEventChainContext)(fakeRequest, {
     depth: eventChainDepth,
     sourceExecutionId: workflowExecution.id,
     ...(visitedWorkflowIds.length > 0 ? { visitedWorkflowIds } : {}),
@@ -196,7 +196,7 @@ export async function setupDependencies(
   const esClient: ElasticsearchClient =
     coreStart.elasticsearch.client.asScoped(fakeRequest).asCurrentUser;
 
-  const workflowTaskManager = new WorkflowTaskManager(taskManager);
+  const workflowTaskManager = new WorkflowTaskManager(taskManager, dependencies.identityContexts);
 
   const enhancedDependencies: ContextDependencies = {
     ...dependencies,

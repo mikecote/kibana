@@ -8,7 +8,7 @@
  */
 
 import { ALERTING_CLONE_API_KEY_HEADER } from '@kbn/alerting-plugin/common';
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import {
   ES_CLIENT_AUTHENTICATION_HEADER,
   HTTPAuthorizationHeader,
@@ -21,6 +21,7 @@ import {
   X_ELASTIC_INTERNAL_ORIGIN_REQUEST,
 } from '@kbn/workflows-extensions/server';
 import { isTextContentType, readResponseStream } from '../utils/http_response';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 export { KibanaApiCallError } from '@kbn/workflows-extensions/server';
 
@@ -117,7 +118,7 @@ export interface CallKibanaApiResult<T = unknown> {
 export interface CallKibanaApiDeps {
   fakeRequest: KibanaRequest;
   workflowRunId?: string;
-  coreStart: CoreStart;
+  coreStart: WorkflowCoreStart;
   /**
    * Space the workflow is running in. When set to a non-default space, the request path is
    * prefixed with `/s/{spaceId}`. When omitted or `'default'`, the path is used as-is.

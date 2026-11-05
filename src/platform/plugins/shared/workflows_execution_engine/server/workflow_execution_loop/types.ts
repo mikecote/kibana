@@ -7,15 +7,17 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreStart, ElasticsearchClient, KibanaRequest } from '@kbn/core/server';
+import type { ElasticsearchClient, KibanaRequest } from '@kbn/core/server';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 import type { NodesFactory } from '../step/nodes_factory';
+import type { HitlLifecycleAuditRegistry } from '../step/wait_for_input_step/hitl_lifecycle_auditor';
 import type { StepExecutionRuntimeFactory } from '../workflow_context_manager/step_execution_runtime_factory';
 import type { StepIoService } from '../workflow_context_manager/step_io_service';
 import type { WorkflowExecutionCursorApi } from '../workflow_context_manager/workflow_execution_cursor';
 import type { WorkflowExecutionRuntimeManager } from '../workflow_context_manager/workflow_execution_runtime_manager';
 import type { WorkflowExecutionState } from '../workflow_context_manager/workflow_execution_state';
 import type { WorkflowRuntimeGraph } from '../workflow_context_manager/workflow_runtime_graph';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 import type { IWorkflowEventLogger } from '../workflow_event_logger';
 import type { WorkflowEventQueue } from '../workflow_event_logger/workflow_event_queue';
 import type { WorkflowTaskManager } from '../workflow_task_manager/workflow_task_manager';
@@ -33,7 +35,9 @@ export interface WorkflowExecutionLoopParams {
   nodesFactory: NodesFactory;
   esClient: ElasticsearchClient;
   fakeRequest: KibanaRequest<unknown, unknown, unknown>;
-  coreStart: CoreStart;
+  coreStart: WorkflowCoreStart;
   signal: AbortSignal;
   workflowTaskManager: WorkflowTaskManager;
+  /** Where lifecycle events of human-in-the-loop waits are audited; the default registry when absent. */
+  hitlLifecycle?: Pick<HitlLifecycleAuditRegistry, 'emit'>;
 }

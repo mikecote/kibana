@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { ElasticsearchClient } from '@kbn/core-elasticsearch-server';
 import { KQLSyntaxError } from '@kbn/es-query';
 import { evaluateKql } from '@kbn/eval-kql';
@@ -33,6 +33,7 @@ import {
 import type { WorkflowTemplatingEngine } from '../templating_engine';
 import { buildStepExecutionId, isTemplateExpression } from '../utils';
 import { isSerializedError } from '../utils/errors';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 export interface ContextManagerInit {
   // New properties for logging
@@ -45,7 +46,7 @@ export interface ContextManagerInit {
   // New properties for internal actions
   esClient: ElasticsearchClient; // ES client (user-scoped if available, fallback otherwise)
   fakeRequest: KibanaRequest;
-  coreStart: CoreStart; // For using Kibana's internal HTTP client
+  coreStart: WorkflowCoreStart; // For using Kibana's internal HTTP client
   dependencies: ContextDependencies;
 }
 
@@ -64,7 +65,7 @@ export class WorkflowContextManager {
   private esClient: ElasticsearchClient;
   private templateEngine: WorkflowTemplatingEngine;
   private fakeRequest: KibanaRequest;
-  private coreStart: CoreStart;
+  private coreStart: WorkflowCoreStart;
   private dependencies: ContextDependencies;
 
   private stackFrames: StackFrame[];
@@ -294,9 +295,9 @@ export class WorkflowContextManager {
   }
 
   /**
-   * Get CoreStart for accessing Kibana's internal services
+   * Get WorkflowCoreStart for accessing Kibana's internal services
    */
-  public getCoreStart(): CoreStart {
+  public getCoreStart(): WorkflowCoreStart {
     return this.coreStart;
   }
 

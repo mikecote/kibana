@@ -13,17 +13,6 @@ import type { GetFieldsOf, MappingsDefinition } from '@kbn/es-mappings';
 import { mappings } from '@kbn/es-mappings';
 import { WORKFLOWS_EXECUTION_LOGS_DATA_STREAM } from './constants';
 
-// Note: Bump the version when you make changes to the definition.
-export const initializeLogsRepositoryDataStream = (coreDataStreams: DataStreamsSetup) => {
-  return coreDataStreams.registerDataStream({
-    name: WORKFLOWS_EXECUTION_LOGS_DATA_STREAM,
-    version: 3,
-    template: {
-      mappings: logsRepositoryMappings,
-    },
-  });
-};
-
 // Note: Only define schema for fields that will be queries against in ES.
 const logsRepositoryMappings = {
   dynamic: false,
@@ -42,6 +31,19 @@ const logsRepositoryMappings = {
     }),
   },
 } satisfies MappingsDefinition;
+
+// Note: Bump the version when you make changes to the definition.
+export const WORKFLOWS_LOGS_DATA_STREAM_DEFINITION = {
+  name: WORKFLOWS_EXECUTION_LOGS_DATA_STREAM,
+  version: 3,
+  template: {
+    mappings: logsRepositoryMappings,
+  },
+};
+
+export const initializeLogsRepositoryDataStream = (coreDataStreams: DataStreamsSetup) => {
+  return coreDataStreams.registerDataStream(WORKFLOWS_LOGS_DATA_STREAM_DEFINITION);
+};
 
 // Note: Document all _source fields here.
 export interface WorkflowLogEvent extends GetFieldsOf<typeof logsRepositoryMappings> {

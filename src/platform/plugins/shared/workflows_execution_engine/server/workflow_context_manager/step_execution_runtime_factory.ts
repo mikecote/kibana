@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { ElasticsearchClient } from '@kbn/core-elasticsearch-server';
 import type { StackFrame } from '@kbn/workflows';
 import { StepExecutionRuntime } from './step_execution_runtime';
@@ -19,6 +19,7 @@ import type { WorkflowRuntimeGraph } from './workflow_runtime_graph';
 import { WorkflowScopeStack } from './workflow_scope_stack';
 import { WorkflowTemplatingEngine } from '../templating_engine';
 import { buildStepExecutionId } from '../utils';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 import type { IWorkflowEventLogger } from '../workflow_event_logger';
 
 /**
@@ -92,7 +93,7 @@ export class StepExecutionRuntimeFactory {
       workflowLogger: IWorkflowEventLogger;
       esClient: ElasticsearchClient; // ES client (user-scoped if available, fallback otherwise)
       fakeRequest: KibanaRequest;
-      coreStart: CoreStart;
+      coreStart: WorkflowCoreStart;
       dependencies: ContextDependencies;
     }
   ) {}
