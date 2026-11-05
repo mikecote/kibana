@@ -198,6 +198,12 @@ export interface TaskTypeHostExtensions {
    */
   getEncryptionKeys?: () => { encryptionKey?: string; decryptionOnlyKeys: string[] };
   eventLog?: TaskHost['eventLog'];
+  /**
+   * What a module reads as `host.plugins[id]` when it runs in Kibana: the plugin's own services, as a
+   * task process gets the `start` contracts of the module's `taskPlugins`. A module then reaches the
+   * same capability the same way in both. Resolved when the first run is created.
+   */
+  plugins?: () => Promise<Record<string, unknown>>;
 }
 
 export interface TaskTypeRegistrationOptions {

@@ -81,7 +81,7 @@ describe('the self client of a task process', () => {
   });
 
   it('calls Kibana with the credential of the run and the internal origin', async () => {
-    const fakeRequest = buildTaskFakeRequest({ apiKey: 'a-run-api-key', spaceId: 'default' });
+    const fakeRequest = buildTaskFakeRequest({ apiKey: 'a-run-api-key', spaceId: 'default' })!;
 
     const response = await core.host.http.selfClient
       .asScoped(fakeRequest)
@@ -96,7 +96,7 @@ describe('the self client of a task process', () => {
 
   it('prefixes the space of the run', async () => {
     received.length = 0;
-    const fakeRequest = buildTaskFakeRequest({ apiKey: 'a-run-api-key', spaceId: 'other' });
+    const fakeRequest = buildTaskFakeRequest({ apiKey: 'a-run-api-key', spaceId: 'other' })!;
 
     await core.host.http.selfClient.asScoped(fakeRequest).fetch('/api/thing', {});
 

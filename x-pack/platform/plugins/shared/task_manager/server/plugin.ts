@@ -319,6 +319,7 @@ export class TaskManagerPlugin
             host.encryptedSavedObjects = await extensions!.encryptedSavedObjects!();
           }
           if (module.eventLog) host.eventLog = extensions!.eventLog;
+          if (extensions?.plugins) host.plugins = await extensions.plugins();
           if (module.taskManager) host.taskManager = this.startContract;
           if (module.uiSettings) host.uiSettings = coreStart.uiSettings;
           if (module.licensing) {
