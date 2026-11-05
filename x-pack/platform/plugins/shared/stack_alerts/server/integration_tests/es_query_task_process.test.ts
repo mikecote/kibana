@@ -15,17 +15,14 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
 import type { Client } from '@elastic/elasticsearch';
-import { REPO_ROOT } from '@kbn/repo-info';
+import { REPO_ROOT, kibanaPackageJson } from '@kbn/repo-info';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
-import {
-  elasticsearchConfigFromEnv,
-  reviveElasticsearchConfig,
-} from '@kbn/task-manager-plugin/server/task_process/es_config';
-import { createStandaloneHost } from '@kbn/task-manager-plugin/server/task_process/host';
+import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
+import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
@@ -38,7 +35,9 @@ const { getTaskBundleEntries, buildTaskBundle } = require(join(
   'src/dev/task_bundles/build'
 ));
 
-const KIBANA_VERSION = '9.9.9';
+// Core, which a task process runs, refuses an Elasticsearch older than itself.
+const KIBANA_VERSION = kibanaPackageJson.version;
+const KIBANA_UUID = '5b2de169-2785-441b-ae8c-186a1936b17d';
 const ENCRYPTION_KEY = 'a'.repeat(32);
 const TASK_TYPE = 'alerting:.es-query';
 const SOURCE_INDEX = 'es-query-source';
@@ -56,7 +55,7 @@ describe('the .es-query rule type served from a bundle', () => {
   let esServer: TestElasticsearchUtils;
   let es: Client;
   let supervisor: TaskProcessSupervisor;
-  let seeder: Awaited<ReturnType<typeof createStandaloneHost>>;
+  let seeder: Awaited<ReturnType<typeof startTaskProcessCore>>;
 
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
@@ -64,7 +63,7 @@ describe('the .es-query rule type served from a bundle', () => {
   });
 
   const initFor = () => ({
-    server: { uuid: 'test-kibana-uuid', buildNum: 1, isServerless: false },
+    server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false },
     encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
     settings: Object.fromEntries(
       Object.entries(settings()).map(([id, config]) => [id, serializeSettings(config)])
@@ -169,10 +168,14 @@ describe('the .es-query rule type served from a bundle', () => {
 
     // Seeds through a host of the same kind the process gets, which writes documents the way Kibana
     // does: migrated, encrypted and in the default space.
-    seeder = await createStandaloneHost({
-      elasticsearch: reviveElasticsearchConfig(esConfig()),
-      kibanaVersion: KIBANA_VERSION,
-      init: initFor(),
+    seeder = await startTaskProcessCore({
+      init: {
+        kind: 'init',
+        elasticsearch: esConfig(),
+        kibanaVersion: KIBANA_VERSION,
+        authToken: '',
+        ...initFor(),
+      },
       module: taskType,
     });
     const client = seeder.host.savedObjects.getUnsafeInternalClient({
@@ -334,7 +337,7 @@ describe('the .es-query rule type served from a bundle', () => {
     }
     const actions = events.hits.hits.map((hit) => hit._source!.event.action);
     expect(actions).toEqual(expect.arrayContaining(['execute-start', 'execute']));
-    expect(events.hits.hits[0]._source!.kibana.server_uuid).toBe('test-kibana-uuid');
+    expect(events.hits.hits[0]._source!.kibana.server_uuid).toBe(KIBANA_UUID);
 
     await es.indices.refresh({ index: ['.kibana_task_manager', '.kibana_alerting_cases'] });
     const tasks = await es.search({

@@ -85,6 +85,27 @@ const repoInfoPlugin = (version) => ({
  * used from it: without this, importing one constant from it pulls in the plugin class and
  * everything the plugin imports.
  */
+/**
+ * Core's rendering service imports the UI bundle locations at load, and they need built assets and
+ * the repository on disk. A task process renders nothing.
+ */
+const uiSharedDepsStubPlugin = {
+  name: 'ui-shared-deps-stub',
+  setup(b) {
+    b.onResolve({ filter: /^@kbn\/ui-shared-deps-(npm|src)$/ }, (args) => ({
+      path: args.path,
+      namespace: 'kbn-task-bundle-ui-stub',
+    }));
+    b.onLoad({ filter: /.*/, namespace: 'kbn-task-bundle-ui-stub' }, () => ({
+      contents: `module.exports = new Proxy({}, { get: (_, key) => key === '__esModule' ? false : 'stub-' + String(key) });`,
+      loader: 'js',
+    }));
+  },
+};
+
+/** Imports kept for their side effects, which the pure workspace plugin would otherwise drop. */
+const SIDE_EFFECT_FILES = /hapi_request_refs|[\\/]kbn-security-hardening[\\/]prototype\.[jt]s$/;
+
 const pureWorkspacePlugin = {
   name: 'pure-workspace',
   setup(b) {
@@ -101,7 +122,8 @@ const pureWorkspacePlugin = {
       if (resolved.errors.length || resolved.external || resolved.namespace !== 'file') {
         return resolved.errors.length ? undefined : resolved;
       }
-      return resolved.path.includes(`${path.sep}node_modules${path.sep}`)
+      return resolved.path.includes(`${path.sep}node_modules${path.sep}`) ||
+        SIDE_EFFECT_FILES.test(resolved.path)
         ? resolved
         : { ...resolved, sideEffects: false };
     });
@@ -189,7 +211,7 @@ const buildTaskBundle = async ({
       '.png': 'empty',
       '.node': 'empty',
     },
-    plugins: [pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
+    plugins: [uiSharedDepsStubPlugin, pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
   });
   return {
     name: entry.name,

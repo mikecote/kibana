@@ -15,7 +15,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
-import { REPO_ROOT } from '@kbn/repo-info';
+import { REPO_ROOT, kibanaPackageJson } from '@kbn/repo-info';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
@@ -40,7 +40,8 @@ const MARK_REMOVED = 'task_manager:mark_removed_tasks_as_unrecognized';
 const DELETE_NODES = 'task_manager:delete_inactive_background_task_nodes';
 const INDEX = backgroundTaskNodeType.indexPattern!;
 const DELETE_BUNDLE = 'taskManager__delete_inactive_nodes.js';
-const KIBANA_VERSION = '9.9.9';
+// Core, which a task process runs, refuses an Elasticsearch older than itself.
+const KIBANA_VERSION = kibanaPackageJson.version;
 
 /**
  * Builds the bundles of Task Manager's own task types and runs them the way Kibana does: forked

@@ -22,7 +22,8 @@ const { getTaskBundleEntries, buildTaskBundle } = require(join(
 ));
 
 /**
- * A bundle must hold what the task needs and not the plugins around it. Plugin classes reach a bundle
+ * A bundle must hold what the task needs and not the plugins around it. The one plugin it does hold
+ * is the encrypted saved objects plugin, which a task process runs as Kibana does. Plugin classes reach a bundle
  * through a barrel import or a constant that lives next to the class, and they bring everything the
  * class imports; this fails when that happens, and when the bundle grows past its budget.
  */
@@ -53,7 +54,9 @@ describe('the .es-query bundle', () => {
     const pluginClasses = inOutput.filter((input) =>
       /\/plugins\/(shared|private)\/[^/]+\/server\/plugin\.ts$/.test(input)
     );
-    expect(pluginClasses).toEqual([]);
+    expect(pluginClasses).toEqual([
+      'x-pack/platform/plugins/shared/encrypted_saved_objects/server/plugin.ts',
+    ]);
     expect(inOutput.filter((input) => input.includes('/public/'))).toEqual([]);
     expect(inOutput.filter((input) => input.includes('node_modules/@elastic/eui/'))).toEqual([]);
 

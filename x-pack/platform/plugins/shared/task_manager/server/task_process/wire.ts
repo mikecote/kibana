@@ -47,6 +47,8 @@ export interface TaskProcessServerInfo {
   buildNum: number;
   publicBaseUrl?: string;
   isServerless: boolean;
+  /** Kibana runs from source, which loosens a few of Core's config checks. */
+  isDev?: boolean;
 }
 
 /** The process's answer once it listens, so Kibana can route task types to its port. */

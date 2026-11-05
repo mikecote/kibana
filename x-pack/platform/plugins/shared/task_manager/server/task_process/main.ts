@@ -6,9 +6,9 @@
  */
 
 import { readFileSync } from 'fs';
-import { reviveElasticsearchConfig, elasticsearchConfigFromEnv } from './es_config';
-import { createStandaloneHost } from './host';
+import { elasticsearchConfigFromEnv } from './es_config';
 import { startTaskProcessServer } from './server';
+import { startTaskProcessCore } from './core_process';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 import type { TaskTypeModule } from '../task_type_module';
 
@@ -38,6 +38,7 @@ export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessIn
       buildNum: env.KIBANA_BUILD_NUM ? Number(env.KIBANA_BUILD_NUM) : Number.MAX_SAFE_INTEGER,
       publicBaseUrl: env.KIBANA_PUBLIC_BASE_URL,
       isServerless: env.KIBANA_SERVERLESS === 'true',
+      isDev: env.KIBANA_DEV === 'true',
     },
     encryptedSavedObjects: env.ESO_ENCRYPTION_KEY
       ? {
@@ -66,29 +67,20 @@ const readInit = (): Promise<TaskProcessInit> => {
 };
 
 /**
- * Entry of a task process: serves one task type for Task Manager, with the host the module asks
- * for. Kibana starts it as a child process; an operator can run it as a remote process.
- * Env of a remote process: ES_URL, ES_API_KEY or ES_USERNAME and ES_PASSWORD, PORT,
- * TASK_PROCESS_TOKEN.
+ * Entry of a task process: Core and the plugins a task type needs, started the way Kibana starts
+ * them, serving one task type for Task Manager. Kibana starts it as a child process; an operator can
+ * run it as a remote process. Env of a remote process: ES_URL, ES_API_KEY or ES_USERNAME and
+ * ES_PASSWORD, PORT, TASK_PROCESS_TOKEN.
  */
 export const runTaskProcess = async (module: TaskTypeModule) => {
   try {
     const init = await readInit();
-    const standalone = await createStandaloneHost({
-      elasticsearch: reviveElasticsearchConfig(init.elasticsearch),
-      kibanaVersion: init.kibanaVersion,
-      init,
-      module,
-    });
+    const core = await startTaskProcessCore({ init, module });
+
     startTaskProcessServer({
-      taskDefinitions: new Map([
-        [
-          module.type,
-          { createTaskRunner: (context) => module.createTaskRunner(context, standalone.host) },
-        ],
-      ]),
+      taskDefinitions: core.definitions,
       port: Number(process.env.PORT ?? 0),
-      logger: standalone.host.logger,
+      logger: core.logger,
       kibanaVersion: init.kibanaVersion,
       authToken: init.authToken || undefined,
       onListening: (port) => {
@@ -98,7 +90,7 @@ export const runTaskProcess = async (module: TaskTypeModule) => {
           process.stdout.write(`READY ${port}\n`);
         }
       },
-      onShutdown: standalone.stop,
+      onShutdown: core.stop,
     });
   } catch (error) {
     process.stderr.write(`Task process failed to start: ${(error as Error).stack ?? error}\n`);

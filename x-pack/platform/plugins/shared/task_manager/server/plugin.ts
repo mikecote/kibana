@@ -310,7 +310,10 @@ export class TaskManagerPlugin
       if (!registration) return undefined;
       const { options } = registration;
       const init: Pick<TaskProcessInit, 'server' | 'encryptedSavedObjects' | 'settings'> = {
-        server: getServerInfo(this.publicBaseUrl),
+        server: {
+          ...getServerInfo(this.publicBaseUrl),
+          isDev: this.initContext.env.mode.dev,
+        } as TaskProcessInit['server'],
       };
       if (options?.hostExtensions?.getEncryptionKeys) {
         init.encryptedSavedObjects = options.hostExtensions.getEncryptionKeys();
