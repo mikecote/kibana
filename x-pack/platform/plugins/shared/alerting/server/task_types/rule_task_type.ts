@@ -19,6 +19,10 @@ import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
 import { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
+import {
+  EVENT_LOG_ACTIONS as ACTIONS_EVENT_LOG_ACTIONS,
+  EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER,
+} from '@kbn/actions-plugin/server/constants/event_log';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
@@ -72,6 +76,12 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  /**
+   * A task process only: the rule type runs connectors itself, such as attack discovery calling the
+   * connector of a model, so the actions executor is initialized in the process (its connector types
+   * come from the contributions of the plugins that own them). Without it a run only enqueues actions.
+   */
+  executeConnectors?: boolean;
   /**
    * A task process only: plugins that run next to Core, such as the security plugin that registers
    * the security delegate. The factory of the rule type reads what they return as `host.plugins[id]`.
@@ -181,6 +191,7 @@ export function createRuleTaskType(
             // The runtime first, so the factory of the rule type can build its services from it.
             const standalone = createStandaloneRuleRunRuntime({
               host,
+              executeConnectors: options.executeConnectors,
               getRuleType: () => ruleType!,
               urlService,
               connectorAdapters: options.connectorAdapters,
@@ -260,6 +271,14 @@ export function createRuleTaskType(
           eventLog: {
             providers: [
               { provider: EVENT_LOG_PROVIDER, actions: Object.values(EVENT_LOG_ACTIONS) },
+              ...(options.executeConnectors
+                ? [
+                    {
+                      provider: ACTIONS_EVENT_LOG_PROVIDER,
+                      actions: Object.values(ACTIONS_EVENT_LOG_ACTIONS),
+                    },
+                  ]
+                : []),
             ],
             create: createStandaloneEventLog,
           },

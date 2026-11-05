@@ -7,11 +7,15 @@
 
 import type { Observable } from 'rxjs';
 import type {
+  AnalyticsServiceStart,
   KibanaRequest,
   Logger,
   SavedObjectsServiceStart,
+  SecurityServiceStart,
   IClusterClient,
 } from '@kbn/core/server';
+import type { IEventLogger } from '@kbn/event-log-plugin/server';
+import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
@@ -39,6 +43,11 @@ import { ConnectorRateLimiter } from '../lib/connector_rate_limiter';
 import { ConnectorTokenClient } from '../lib/connector_token_client';
 import { LeasePool } from '../lib/lease_pool';
 import { LicenseState } from '../lib/license_state';
+import {
+  getCurrentUserProfileIdFromAPIKeyFactory,
+  getServicesFactory,
+  getUnsecuredServicesFactory,
+} from '../lib/executor_services';
 import { createSubActionConnectorFramework } from '../sub_action_framework';
 import { SubActionConnector } from '../sub_action_framework/sub_action_connector';
 import { CaseConnector } from '../sub_action_framework/case';
@@ -69,13 +78,26 @@ export interface RuleRunActionsDeps {
   /** The validated actions config, as Kibana has it. */
   config: ActionsConfig;
   license$: Observable<ILicense>;
-  elasticsearch: Pick<IClusterClient, 'asScoped'>;
+  elasticsearch: Pick<IClusterClient, 'asScoped' | 'asInternalUser'>;
   savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
   getEncryptedSavedObjectsClient: (options: {
     includedHiddenTypes: string[];
   }) => EncryptedSavedObjectsClient;
   taskManager: Pick<TaskManagerStartContract, 'bulkSchedule' | 'aggregate'>;
   publicBaseUrl?: string;
+  /**
+   * Set for rule types that execute connectors themselves in the process, such as attack discovery
+   * calling a model connector: the executor is initialized as the actions plugin initializes it.
+   * Without it nothing executes here, and the enqueued `actions:*` tasks are run by Kibana.
+   */
+  executor?: {
+    security: SecurityServiceStart;
+    eventLogger: IEventLogger;
+    analyticsService: AnalyticsServiceStart;
+    /** The security plugin's authorization, when the process has one. */
+    authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
+    createInternalRepository: SavedObjectsServiceStart['createInternalRepository'];
+  };
   /** Registers the connector types a rule run may enqueue, such as stack_connectors'. */
   registerConnectorTypes: (
     actions: RuleRunActionsSetup,
@@ -159,6 +181,52 @@ export const createRuleRunActions = (
     isESOCanEncrypt: true,
     connectorRateLimiter: new ConnectorRateLimiter({ config: config.rateLimiter }),
   });
+  const { executor } = deps;
+  if (executor) {
+    const getUnsecuredScopedClient = (request: KibanaRequest) =>
+      deps.savedObjects.getScopedClient(request, {
+        excludedExtensions: [SECURITY_EXTENSION_ID],
+        includedHiddenTypes,
+      });
+    actionExecutor.initialize({
+      logger,
+      eventLogger: executor.eventLogger,
+      // A run has one space, the one its request names.
+      spaces: {
+        getSpaceId: (request?: KibanaRequest) =>
+          (request as { spaceId?: string } | undefined)?.spaceId ?? 'default',
+      } as unknown as SpacesServiceStart,
+      security: executor.security,
+      getServices: getServicesFactory({
+        logger,
+        getScopedClient: (request) =>
+          deps.savedObjects.getScopedClient(request, { includedHiddenTypes }),
+        elasticsearch: { client: deps.elasticsearch },
+        encryptedSavedObjectsClient,
+        unsecuredSavedObjectsClient: getUnsecuredScopedClient,
+        configurationUtilities,
+      }),
+      getUnsecuredServices: getUnsecuredServicesFactory({
+        logger,
+        getSavedObjectRepository: () => executor.createInternalRepository(includedHiddenTypes),
+        elasticsearch: { client: deps.elasticsearch },
+        encryptedSavedObjectsClient,
+        unsecuredSavedObjectsRepository: () =>
+          getUnsecuredScopedClient({ headers: {} } as unknown as KibanaRequest),
+        configurationUtilities,
+      }),
+      encryptedSavedObjectsClient,
+      actionTypeRegistry,
+      inMemoryConnectors,
+      getActionsAuthorizationWithRequest: (request: KibanaRequest) =>
+        new ActionsAuthorization({ request, authorization: executor.authorization }),
+      analyticsService: executor.analyticsService,
+      getCurrentUserProfileIdFromAPIKey: getCurrentUserProfileIdFromAPIKeyFactory({
+        logger,
+        elasticsearch: { client: deps.elasticsearch },
+      }),
+    });
+  }
 
   return {
     actionsPlugin: {
@@ -180,7 +248,10 @@ export const createRuleRunActions = (
           request,
           // Without the security plugin there is nothing to authorize against, as with security off;
           // the enqueued connector task is checked again when Kibana runs it.
-          authorization: new ActionsAuthorization({ request }),
+          authorization: new ActionsAuthorization({
+            request,
+            authorization: deps.executor?.authorization,
+          }),
           actionExecutor,
           bulkExecutionEnqueuer,
           connectorTokenClient: new ConnectorTokenClient({

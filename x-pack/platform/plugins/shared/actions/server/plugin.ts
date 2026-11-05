@@ -5,7 +5,6 @@
  * 2.0.
  */
 import { i18n } from '@kbn/i18n';
-import { extractApiKeyIdFromAuthzHeader } from '@kbn/core-security-server';
 import type { PublicMethodsOf, Writable } from '@kbn/utility-types';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type {
@@ -16,14 +15,11 @@ import type {
   KibanaRequest,
   Logger,
   IContextProvider,
-  ElasticsearchServiceStart,
   SavedObjectsClientContract,
   SavedObjectsBulkGetObject,
-  ISavedObjectsRepository,
 } from '@kbn/core/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type {
-  EncryptedSavedObjectsClient,
   EncryptedSavedObjectsPluginSetup,
   EncryptedSavedObjectsPluginStart,
 } from '@kbn/encrypted-saved-objects-plugin/server';
@@ -66,14 +62,12 @@ import {
   LeasePool,
 } from './lib';
 import type {
-  Services,
   ActionType,
   InMemoryConnector,
   ActionTypeConfig,
   ActionTypeSecrets,
   ActionTypeParams,
   ActionsRequestHandlerContext,
-  UnsecuredServices,
   ConnectorLifecycleListener,
 } from './types';
 
@@ -110,6 +104,11 @@ import { createAlertHistoryIndexTemplate } from './preconfigured_connectors/aler
 import { ACTIONS_FEATURE_ID } from '../common';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from './constants/event_log';
 import { ConnectorTokenClient } from './lib/connector_token_client';
+import {
+  getCurrentUserProfileIdFromAPIKeyFactory,
+  getServicesFactory,
+  getUnsecuredServicesFactory,
+} from './lib/executor_services';
 import { UserConnectorTokenClient } from './lib/user_connector_token_client';
 import { InMemoryMetrics, registerClusterCollector, registerNodeCollector } from './monitoring';
 import { createSubActionConnectorFramework } from './sub_action_framework';
@@ -777,45 +776,10 @@ export class ActionsPlugin
     const getInternalSavedObjectsRepositoryWithoutAccessToActions = () =>
       core.savedObjects.createInternalRepository();
 
-    /**
-     * Resolves profile UID from the `Authorization` API-key header for callers that run under a
-     * `FakeRequest` (action executor / background execution), where there is no browser session
-     * and `userProfiles.getCurrent` cannot run. For real `KibanaRequest` traffic, use
-     * `getCurrentUserProfileIdFromRequest` instead.
-     */
-    async function getCurrentUserProfileIdFromAPIKey(
-      request: KibanaRequest
-    ): Promise<string | undefined> {
-      try {
-        const id = extractApiKeyIdFromAuthzHeader(request.headers.authorization);
-        if (!id) {
-          logger.debug(`Failed to decode API key ID from Authorization header.`);
-          return undefined;
-        }
-
-        const response = await core.elasticsearch.client
-          .asScoped(request)
-          .asCurrentUser.security.getApiKey({
-            with_profile_uid: true,
-            id,
-          });
-
-        if (response.api_keys && response.api_keys.length > 0) {
-          return response.api_keys[0].profile_uid;
-        }
-
-        logger.debug(
-          `No API keys were returned from query, cannot retrieve associated profile id.`
-        );
-      } catch (error) {
-        logger.debug(
-          `Failed to retrieve API key for user profile retrieval: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-      return undefined;
-    }
+    const getCurrentUserProfileIdFromAPIKey = getCurrentUserProfileIdFromAPIKeyFactory({
+      logger,
+      elasticsearch: core.elasticsearch,
+    });
 
     const getCurrentUserProfileId = (requestWithAuth: KibanaRequest) =>
       getCurrentUserProfileIdFromRequest(requestWithAuth, plugins.security, logger);
@@ -825,20 +789,24 @@ export class ActionsPlugin
       eventLogger: this.eventLogger!,
       spaces: plugins.spaces?.spacesService,
       security: core.security,
-      getServices: this.getServicesFactory(
-        getScopedSavedObjectsClientWithoutAccessToActions,
-        core.elasticsearch,
+      getServices: getServicesFactory({
+        logger: this.logger,
+        getScopedClient: getScopedSavedObjectsClientWithoutAccessToActions,
+        elasticsearch: core.elasticsearch,
         encryptedSavedObjectsClient,
-        (request: KibanaRequest) => this.getUnsecuredSavedObjectsClient(core.savedObjects, request),
-        actionsConfigUtils
-      ),
-      getUnsecuredServices: this.getUnsecuredServicesFactory(
-        getInternalSavedObjectsRepositoryWithoutAccessToActions,
-        core.elasticsearch,
+        unsecuredSavedObjectsClient: (request: KibanaRequest) =>
+          this.getUnsecuredSavedObjectsClient(core.savedObjects, request),
+        configurationUtilities: actionsConfigUtils,
+      }),
+      getUnsecuredServices: getUnsecuredServicesFactory({
+        logger: this.logger,
+        getSavedObjectRepository: getInternalSavedObjectsRepositoryWithoutAccessToActions,
+        elasticsearch: core.elasticsearch,
         encryptedSavedObjectsClient,
-        () => this.getUnsecuredSavedObjectsClientWithFakeRequest(core.savedObjects),
-        actionsConfigUtils
-      ),
+        unsecuredSavedObjectsRepository: () =>
+          this.getUnsecuredSavedObjectsClientWithFakeRequest(core.savedObjects),
+        configurationUtilities: actionsConfigUtils,
+      }),
       encryptedSavedObjectsClient,
       actionTypeRegistry: actionTypeRegistry!,
       inMemoryConnectors: this.inMemoryConnectors,
@@ -962,48 +930,6 @@ export class ActionsPlugin
       authorization: this.security?.authz,
     });
   };
-
-  private getServicesFactory(
-    getScopedClient: (request: KibanaRequest) => SavedObjectsClientContract,
-    elasticsearch: ElasticsearchServiceStart,
-    encryptedSavedObjectsClient: EncryptedSavedObjectsClient,
-    unsecuredSavedObjectsClient: (request: KibanaRequest) => SavedObjectsClientContract,
-    configurationUtilities: ActionsConfigurationUtilities
-  ): (request: KibanaRequest) => Services {
-    return (request) => {
-      return {
-        savedObjectsClient: getScopedClient(request),
-        scopedClusterClient: elasticsearch.client.asScoped(request).asCurrentUser,
-        connectorTokenClient: new ConnectorTokenClient({
-          unsecuredSavedObjectsClient: unsecuredSavedObjectsClient(request),
-          encryptedSavedObjectsClient,
-          logger: this.logger,
-          configurationUtilities,
-        }),
-      };
-    };
-  }
-
-  private getUnsecuredServicesFactory(
-    getSavedObjectRepository: () => ISavedObjectsRepository,
-    elasticsearch: ElasticsearchServiceStart,
-    encryptedSavedObjectsClient: EncryptedSavedObjectsClient,
-    unsecuredSavedObjectsRepository: () => SavedObjectsClientContract,
-    configurationUtilities: ActionsConfigurationUtilities
-  ): () => UnsecuredServices {
-    return () => {
-      return {
-        savedObjectsClient: getSavedObjectRepository(),
-        scopedClusterClient: elasticsearch.client.asInternalUser,
-        connectorTokenClient: new ConnectorTokenClient({
-          unsecuredSavedObjectsClient: unsecuredSavedObjectsRepository(),
-          encryptedSavedObjectsClient,
-          logger: this.logger,
-          configurationUtilities,
-        }),
-      };
-    };
-  }
 
   private getInMemoryConnectors = () => this.inMemoryConnectors;
 

@@ -17,6 +17,7 @@ import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_view
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
 import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
+import { EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER } from '@kbn/actions-plugin/server/constants/event_log';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
 import { AlertsService } from '../../alerts_service/alerts_service';
 import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
@@ -49,6 +50,8 @@ export interface StandaloneRuleRunOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** What other plugins add to a rule run: connector types and adapters of system actions. */
   contributions?: RuleRunContribution[];
+  /** The rule type executes connectors in the process, so the actions executor is initialized. */
+  executeConnectors?: boolean;
 }
 
 const spaceIdToNamespace = (spaceId?: string) =>
@@ -66,6 +69,7 @@ export const createStandaloneRuleRunRuntime = ({
   urlService,
   connectorAdapters = [],
   contributions = [],
+  executeConnectors = false,
 }: StandaloneRuleRunOptions): {
   runtime: RuleRunRuntime;
   /** The field formats the runtime was built with, for rule types that format values. */
@@ -141,6 +145,17 @@ export const createStandaloneRuleRunRuntime = ({
     getEncryptedSavedObjectsClient: host.encryptedSavedObjects!.getClient,
     taskManager: host.taskManager!,
     publicBaseUrl,
+    executor: executeConnectors
+      ? {
+          security: host.security as SecurityServiceStart,
+          eventLogger: host.eventLog!.getLogger({
+            event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
+          }) as IEventLogger,
+          analyticsService: host.analytics as never,
+          authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
+          createInternalRepository: host.savedObjects.createInternalRepository,
+        }
+      : undefined,
     registerConnectorTypes: (actions) => {
       const registries = {
         actions,
