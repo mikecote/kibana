@@ -17,7 +17,7 @@ import {
   SAVED_QUERY_LOOKUP_FAILED,
   SAVED_QUERY_NOT_FOUND,
 } from '../../../common/translations/errors';
-import type { OsqueryAppContext } from '../../lib/osquery_app_context_services';
+import type { OsqueryActionContext } from '../../lib/osquery_app_context_services';
 import {
   containsDynamicQuery,
   replaceParamsQuery,
@@ -38,7 +38,7 @@ interface BuildQueriesParams {
   params: CreateLiveQueryRequestBodySchema;
   alertData?: ParsedTechnicalFields & { _index: string };
   agents: string[];
-  osqueryContext: OsqueryAppContext;
+  osqueryContext: OsqueryActionContext;
   error?: string;
   spaceId: string;
   spaceScopedClient: SavedObjectsClient;
@@ -291,7 +291,7 @@ interface CreateDynamicQueriesParams {
   params: CreateLiveQueryRequestBodySchema;
   alertData?: ParsedTechnicalFields & { _index: string };
   agents: string[];
-  osqueryContext: OsqueryAppContext;
+  osqueryContext: OsqueryActionContext;
   error?: string;
   spaceId: string;
   spaceScopedClient: SavedObjectsClient;

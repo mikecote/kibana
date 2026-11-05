@@ -402,4 +402,46 @@ describe('test endpoint app context services', () => {
       );
     });
   });
+
+  describe('initialize and startSideEffects', () => {
+    it('wires the dependencies without registering anything', () => {
+      const service = new EndpointAppContextService();
+      const startContract = createMockEndpointAppContextServiceStartContract();
+      service.setup(createMockEndpointAppContextServiceSetupContract());
+
+      service.initialize(startContract);
+
+      expect(service.getInternalEsClient()).toBe(startContract.esClient);
+      expect(service.getLicenseService()).toBe(startContract.licenseService);
+      expect(service.getInternalFleetServices()).toBeDefined();
+      expect(startContract.fleetStartServices.registerExternalCallback).not.toHaveBeenCalled();
+      service.stop();
+    });
+
+    it('registers with Fleet in startSideEffects, which start() calls', () => {
+      const service = new EndpointAppContextService();
+      const startContract = createMockEndpointAppContextServiceStartContract();
+      service.setup(createMockEndpointAppContextServiceSetupContract());
+
+      service.start(startContract);
+
+      expect(startContract.fleetStartServices.registerExternalCallback).toHaveBeenCalledWith(
+        'packagePolicyCreate',
+        expect.any(Function)
+      );
+      service.stop();
+    });
+
+    it('requires setup before initialize and initialize before startSideEffects', () => {
+      const service = new EndpointAppContextService();
+
+      expect(() => service.initialize(createMockEndpointAppContextServiceStartContract())).toThrow(
+        EndpointAppContentServicesNotSetUpError
+      );
+
+      service.setup(createMockEndpointAppContextServiceSetupContract());
+
+      expect(() => service.startSideEffects()).toThrow(EndpointAppContentServicesNotStartedError);
+    });
+  });
 });

@@ -58,6 +58,13 @@ import type { FleetUsage } from '../collectors/register';
 import type { BulkActionsResolver } from './agents/bulk_actions_resolver';
 import { type UninstallTokenServiceInterface } from './security/uninstall_token_service';
 
+/** The hidden saved object types Fleet's internal saved objects clients ask for. */
+export const DEFAULT_INCLUDED_HIDDEN_TYPES = [
+  UNINSTALL_TOKENS_SAVED_OBJECT_TYPE,
+  KibanaSavedObjectType.alertingRuleTemplate,
+  KibanaSavedObjectType.sloTemplate,
+];
+
 class AppContextService {
   private encryptedSavedObjects: EncryptedSavedObjectsClient | undefined;
   private encryptedSavedObjectsSetup: EncryptedSavedObjectsPluginSetup | undefined;
@@ -88,11 +95,7 @@ class AppContextService {
   private fetchUsage?: (signal: AbortSignal) => Promise<FleetUsage | undefined>;
   private lockManagerService: LockManagerService | undefined;
   private alertingStart: AlertingServerStart | undefined;
-  private includedHiddenTypes: string[] = [
-    UNINSTALL_TOKENS_SAVED_OBJECT_TYPE,
-    KibanaSavedObjectType.alertingRuleTemplate,
-    KibanaSavedObjectType.sloTemplate,
-  ];
+  private includedHiddenTypes: string[] = DEFAULT_INCLUDED_HIDDEN_TYPES;
   private reportingStart: ReportingStart | undefined;
   private featureFlags: FeatureFlagsStart | undefined;
   private isFipsEnabled: boolean = false;
@@ -127,6 +130,7 @@ class AppContextService {
     this.reportingStart = appContext.reportingStart;
     this.featureFlags = appContext.featureFlags;
     this.isFipsEnabled = appContext.isFipsEnabled;
+    this.includedHiddenTypes = appContext.includedHiddenTypes ?? DEFAULT_INCLUDED_HIDDEN_TYPES;
 
     if (appContext.config$) {
       this.config$ = appContext.config$;

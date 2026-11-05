@@ -36,7 +36,10 @@ import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { RulesClient } from '@kbn/alerting-plugin/server/rules_client';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { FleetActionsClientInterface } from '@kbn/fleet-plugin/server/services/actions/types';
-import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
+import type {
+  IUnsecuredActionsClient,
+  PluginStartContract as ActionsPluginStartContract,
+} from '@kbn/actions-plugin/server';
 import type { Space } from '@kbn/spaces-plugin/common';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
@@ -72,12 +75,14 @@ import type { IRequestContextFactory } from '../request_context_factory';
 import type { LicenseService } from '../../common/license';
 import { EndpointMetadataService } from './services/metadata';
 import {
+  EndpointAppContentServicesKibanaOnlyError,
   EndpointAppContentServicesNotSetUpError,
   EndpointAppContentServicesNotStartedError,
 } from './errors';
 import type {
   EndpointFleetServicesFactoryInterface,
   EndpointInternalFleetServicesInterface,
+  EndpointFleetStartServices,
 } from './services/fleet/endpoint_fleet_services_factory';
 import { EndpointFleetServicesFactory } from './services/fleet/endpoint_fleet_services_factory';
 import { registerListsPluginEndpointExtensionPoints } from '../lists_integration';
@@ -97,27 +102,48 @@ const CCS_CACHE_TTL_SECONDS = 60;
 /** Single cache key used by `isCcsEnabled` (the cache only ever holds this one entry) */
 const CCS_CACHE_KEY = 'hasConnectedRemoteClusters';
 
+/** What the response actions read of the config, which a task process receives as settings */
+export type EndpointAppContextServiceRunConfig = Pick<
+  ConfigType,
+  'maxUploadResponseActionFileBytes' | 'maxEndpointScriptFileSize'
+>;
+
 export interface EndpointAppContextServiceSetupContract {
-  securitySolutionRequestContextFactory: IRequestContextFactory;
-  cloud: CloudSetup;
+  /** Used by the Fleet callbacks, which only Kibana registers */
+  securitySolutionRequestContextFactory?: IRequestContextFactory;
+  cloud?: CloudSetup;
   loggerFactory: LoggerFactory;
-  telemetry: AnalyticsServiceSetup;
+  telemetry: Pick<AnalyticsServiceSetup, 'reportEvent'>;
 }
 
-export interface EndpointAppContextServiceStartContract {
-  fleetStartServices: FleetStartContract;
-  manifestManager: ManifestManager;
-  security: SecurityServiceStart;
-  alerting: AlertingServerStart;
-  config: ConfigType;
-  registerListsServerExtension?: ListsServerExtensionRegistrar;
+/**
+ * What the response actions need of the app context, which Kibana's `start()` and a task process
+ * (`createEndpointResponseActionsRunServices`) both provide through `initialize()`.
+ */
+export interface EndpointAppContextServiceInitializeContract {
+  fleetStartServices: EndpointFleetStartServices &
+    Pick<FleetStartContract, 'messageSigningService' | 'createFleetActionsClient'> &
+    Partial<Pick<FleetStartContract, 'createFilesClient' | 'authz' | 'registerExternalCallback'>>;
+  security: Pick<SecurityServiceStart, 'authc'>;
+  config: EndpointAppContextServiceRunConfig & Partial<ConfigType>;
   licenseService: LicenseService;
-  exceptionListsClient: ExceptionListClient | undefined;
-  cases: CasesServerStart | undefined;
   featureUsageService: FeatureUsageService;
   experimentalFeatures: ExperimentalFeatures;
   /** An internal ES client */
   esClient: ElasticsearchClient;
+  savedObjectsServiceStart: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
+  /** Only the response actions of 3rd party EDRs use it, and only Kibana has it */
+  connectorActions?: ActionsPluginStartContract;
+}
+
+export interface EndpointAppContextServiceStartContract
+  extends Omit<EndpointAppContextServiceInitializeContract, 'fleetStartServices'> {
+  fleetStartServices: FleetStartContract;
+  manifestManager: ManifestManager;
+  alerting: AlertingServerStart;
+  registerListsServerExtension?: ListsServerExtensionRegistrar;
+  exceptionListsClient: ExceptionListClient | undefined;
+  cases: CasesServerStart | undefined;
   /** Used to build the request-scoped, project-routed client that CPS reads fan out on */
   clusterClient: IClusterClient;
   /** Used to build the project-routed search client that CPS search strategies fan out on */
@@ -129,12 +155,17 @@ export interface EndpointAppContextServiceStartContract {
   isCpsActive: (request: KibanaRequest) => Promise<boolean>;
   productFeaturesService: ProductFeaturesService;
   savedObjectsServiceStart: SavedObjectsServiceStart;
-  connectorActions: ActionsPluginStartContract;
   telemetryConfigProvider: TelemetryConfigProvider;
   spacesService: SpacesServiceStart | undefined;
   agentBuilder?: AgentBuilderPluginStart;
   getExceptionListClient?: ListPluginSetup['getExceptionListClient'];
 }
+
+/** What the app context keeps: everything a task process has, and what only Kibana has when set */
+type EndpointAppContextServiceDependencies = EndpointAppContextServiceInitializeContract &
+  Partial<
+    Omit<EndpointAppContextServiceStartContract, keyof EndpointAppContextServiceInitializeContract>
+  >;
 
 /**
  * The request-bound half of the CPS primitives, handed out by `EndpointAppContextService.asScoped()`.
@@ -190,18 +221,24 @@ export type GetInternalResponseActionsClientOptions = {
  */
 export class EndpointAppContextService {
   private setupDependencies: EndpointAppContextServiceSetupContract | null = null;
-  private startDependencies: EndpointAppContextServiceStartContract | null = null;
+  private startDependencies: EndpointAppContextServiceDependencies | null = null;
   private fleetServicesFactory: EndpointFleetServicesFactoryInterface | null = null;
   private savedObjectsFactoryService: SavedObjectsClientFactory | null = null;
   private readonly ccsCache = new SimpleMemCache({ ttl: CCS_CACHE_TTL_SECONDS });
 
-  public security: SecurityServiceStart | undefined;
+  public security: Pick<SecurityServiceStart, 'authc'> | undefined;
 
   public setup(dependencies: EndpointAppContextServiceSetupContract) {
     this.setupDependencies = dependencies;
   }
 
-  public start(dependencies: EndpointAppContextServiceStartContract) {
+  /**
+   * Wires the dependencies the response actions need: the clients and services they read, with no
+   * side effect on anything else (no Fleet callback, no extension point, no index template). Kibana's
+   * `start()` calls it, and so does a task process, where Kibana is the only one that installs and
+   * registers.
+   */
+  public initialize(dependencies: EndpointAppContextServiceInitializeContract) {
     if (!this.setupDependencies) {
       throw new EndpointAppContentServicesNotSetUpError();
     }
@@ -212,7 +249,7 @@ export class EndpointAppContextService {
     setYaraLogger(this.createLogger('libyara'));
 
     const isScriptsLibraryEnabled =
-      this.startDependencies.experimentalFeatures.responseActionsScriptLibraryManagement;
+      dependencies.experimentalFeatures.responseActionsScriptLibraryManagement;
 
     if (isScriptsLibraryEnabled) {
       SavedObjectsClientFactory.addSavedObjectHiddenType(SCRIPTS_LIBRARY_SAVED_OBJECT_TYPE);
@@ -228,6 +265,16 @@ export class EndpointAppContextService {
       savedObjectsFactory,
       this.createLogger('endpointFleetServices')
     );
+  }
+
+  /**
+   * What Kibana does on start besides wiring: registers with Fleet and the lists plugin, and
+   * installs the scripts library index templates. Must be called after `initialize()`.
+   */
+  public startSideEffects() {
+    if (!this.startDependencies) {
+      throw new EndpointAppContentServicesNotStartedError();
+    }
 
     this.registerFleetExtensions();
     this.registerListsExtensions();
@@ -242,6 +289,11 @@ export class EndpointAppContextService {
         scriptsLogger.error(e);
       });
     }
+  }
+
+  public start(dependencies: EndpointAppContextServiceStartContract) {
+    this.initialize(dependencies);
+    this.startSideEffects();
   }
 
   public stop() {
@@ -276,6 +328,22 @@ export class EndpointAppContextService {
       productFeaturesService,
       experimentalFeatures,
     } = this.startDependencies;
+    const { securitySolutionRequestContextFactory, cloud } = this.setupDependencies;
+
+    if (
+      !registerFleetCallback ||
+      !manifestManager ||
+      !alerting ||
+      !telemetryConfigProvider ||
+      !productFeaturesService ||
+      !securitySolutionRequestContextFactory ||
+      !cloud
+    ) {
+      throw new EndpointError(
+        'Registering the Fleet extensions needs the full Kibana start contract: it is available in Kibana only'
+      );
+    }
+
     const logger = this.createLogger('endpointFleetExtension');
 
     registerFleetCallback(
@@ -294,10 +362,10 @@ export class EndpointAppContextService {
       getPackagePolicyCreateCallback(
         logger,
         manifestManager,
-        this.setupDependencies.securitySolutionRequestContextFactory,
+        securitySolutionRequestContextFactory,
         alerting,
         licenseService,
-        this.setupDependencies.cloud,
+        cloud,
         productFeaturesService,
         telemetryConfigProvider,
         experimentalFeatures
@@ -308,12 +376,7 @@ export class EndpointAppContextService {
 
     registerFleetCallback(
       'packagePolicyUpdate',
-      getPackagePolicyUpdateCallback(
-        this,
-        this.setupDependencies.cloud,
-        productFeaturesService,
-        experimentalFeatures
-      )
+      getPackagePolicyUpdateCallback(this, cloud, productFeaturesService, experimentalFeatures)
     );
 
     registerFleetCallback('packagePolicyPostUpdate', getPackagePolicyPostUpdateCallback(this));
@@ -340,7 +403,7 @@ export class EndpointAppContextService {
       throw new EndpointAppContentServicesNotSetUpError();
     }
 
-    return Boolean(this.setupDependencies.cloud.isServerlessEnabled);
+    return Boolean(this.getCloudSetup().isServerlessEnabled);
   }
 
   /**
@@ -390,8 +453,12 @@ export class EndpointAppContextService {
 
   /** `true` when this request can fan out across linked projects via Cross-Project Search */
   public async isCpsActive(request: KibanaRequest): Promise<boolean> {
-    if (this.startDependencies == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.isCpsActive) {
+      throw new EndpointAppContentServicesKibanaOnlyError('isCpsActive');
     }
 
     return this.startDependencies.isCpsActive(request);
@@ -418,13 +485,17 @@ export class EndpointAppContextService {
       return false;
     }
 
-    return this.startDependencies.isCpsActive(request);
+    return this.isCpsActive(request);
   }
 
   /** The client for reads against Defend-owned indices. Fleet-owned ones keep `getInternalEsClient()` */
   public async getReadEsClient(request?: KibanaRequest): Promise<ElasticsearchClient> {
-    if (!this.startDependencies?.clusterClient) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.clusterClient) {
+      throw new EndpointAppContentServicesKibanaOnlyError('clusterClient');
     }
 
     // `isCpsRead` first, so a caller with no request gets its breadcrumb; the second half narrows
@@ -441,8 +512,12 @@ export class EndpointAppContextService {
    * `getReadEsClient()` when CPS is on, so callers do not branch on the flag themselves.
    */
   public async getScopedSearchClient(request: KibanaRequest): Promise<IScopedSearchClient> {
-    if (!this.startDependencies?.dataStart) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.dataStart) {
+      throw new EndpointAppContentServicesKibanaOnlyError('dataStart');
     }
 
     const { dataStart } = this.startDependencies;
@@ -481,18 +556,24 @@ export class EndpointAppContextService {
   }
 
   public getAgentBuilder(): AgentBuilderPluginStart {
-    if (this.startDependencies?.agentBuilder == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (this.startDependencies.agentBuilder == null) {
+      throw new EndpointAppContentServicesKibanaOnlyError('agentBuilder');
     }
     return this.startDependencies.agentBuilder;
   }
 
   private getFleetAuthzService(): FleetStartContract['authz'] {
-    if (!this.startDependencies?.fleetStartServices) {
-      throw new EndpointAppContentServicesNotStartedError();
+    const authz = this.startDependencies?.fleetStartServices.authz;
+
+    if (!authz) {
+      throw new EndpointAppContentServicesKibanaOnlyError('fleetStartServices.authz');
     }
 
-    return this.startDependencies.fleetStartServices.authz;
+    return authz;
   }
 
   public createLogger(...contextParts: string[]) {
@@ -515,8 +596,12 @@ export class EndpointAppContextService {
   }
 
   public async getEndpointAuthz(request: KibanaRequest): Promise<EndpointAuthz> {
-    if (!this.startDependencies?.productFeaturesService) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.productFeaturesService) {
+      throw new EndpointAppContentServicesKibanaOnlyError('productFeaturesService');
     }
     const fleetAuthz = await this.getFleetAuthzService().fromRequest(request);
     const userRoles = this.security?.authc.getCurrentUser(request)?.roles ?? [];
@@ -565,38 +650,58 @@ export class EndpointAppContextService {
   }
 
   public getProductFeaturesService(): ProductFeaturesService {
-    if (this.startDependencies == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.productFeaturesService) {
+      throw new EndpointAppContentServicesKibanaOnlyError('productFeaturesService');
     }
     return this.startDependencies.productFeaturesService;
   }
 
   public getCloudSetup(): CloudSetup {
-    if (!this.setupDependencies?.cloud) {
+    if (!this.setupDependencies) {
       throw new EndpointAppContentServicesNotSetUpError();
+    }
+
+    if (!this.setupDependencies.cloud) {
+      throw new EndpointAppContentServicesKibanaOnlyError('cloud');
     }
 
     return this.setupDependencies.cloud;
   }
 
   public getTelemetryConfigProvider(): TelemetryConfigProvider {
-    if (!this.startDependencies?.telemetryConfigProvider) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.telemetryConfigProvider) {
+      throw new EndpointAppContentServicesKibanaOnlyError('telemetryConfigProvider');
     }
 
     return this.startDependencies.telemetryConfigProvider;
   }
 
   public async getCasesClient(req: KibanaRequest): Promise<CasesClient> {
-    if (this.startDependencies?.cases == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (this.startDependencies.cases == null) {
+      throw new EndpointAppContentServicesKibanaOnlyError('cases');
     }
     return this.startDependencies.cases.getCasesClientWithRequest(req);
   }
 
   public async getRulesClient(req: KibanaRequest): Promise<RulesClientApi> {
-    if (this.startDependencies == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.alerting) {
+      throw new EndpointAppContentServicesKibanaOnlyError('alerting');
     }
     return this.startDependencies.alerting.getRulesClientWithRequest(req);
   }
@@ -604,8 +709,12 @@ export class EndpointAppContextService {
   public async getAlertingAuthorization(
     req: KibanaRequest
   ): Promise<PublicMethodsOf<AlertingAuthorization>> {
-    if (this.startDependencies == null) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.alerting) {
+      throw new EndpointAppContentServicesKibanaOnlyError('alerting');
     }
     return this.startDependencies.alerting.getAlertingAuthorizationWithRequest(req);
   }
@@ -626,8 +735,12 @@ export class EndpointAppContextService {
   }
 
   public getExceptionListsClient(): ExceptionListClient {
-    if (!this.startDependencies?.exceptionListsClient) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.exceptionListsClient) {
+      throw new EndpointAppContentServicesKibanaOnlyError('exceptionListsClient');
     }
 
     return this.startDependencies.exceptionListsClient;
@@ -678,7 +791,7 @@ export class EndpointAppContextService {
       spaceId,
       isAutomated,
       connectorActions: new NormalizedExternalConnectorClient(
-        this.startDependencies.connectorActions.getUnsecuredActionsClient(),
+        this.getUnsecuredConnectorActionsClient(),
         this.createLogger('responseActions'),
         {
           spaceId,
@@ -696,9 +809,28 @@ export class EndpointAppContextService {
     });
   }
 
+  /** Resolved when a response action first needs it: only Kibana has the actions plugin */
+  private getUnsecuredConnectorActionsClient(): IUnsecuredActionsClient {
+    const connectorActions = this.startDependencies?.connectorActions;
+
+    if (!connectorActions) {
+      const kibanaOnly = () => {
+        throw new EndpointAppContentServicesKibanaOnlyError('connectorActions');
+      };
+
+      return { execute: kibanaOnly, getAll: kibanaOnly, bulkEnqueueExecution: kibanaOnly };
+    }
+
+    return connectorActions.getUnsecuredActionsClient();
+  }
+
   public async getFleetToHostFilesClient() {
-    if (!this.startDependencies?.fleetStartServices) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.fleetStartServices.createFilesClient) {
+      throw new EndpointAppContentServicesKibanaOnlyError('fleetStartServices.createFilesClient');
     }
 
     return this.startDependencies.fleetStartServices.createFilesClient.toHost(
@@ -708,8 +840,12 @@ export class EndpointAppContextService {
   }
 
   public async getFleetFromHostFilesClient(): Promise<FleetFromHostFileClientInterface> {
-    if (!this.startDependencies?.fleetStartServices) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.fleetStartServices.createFilesClient) {
+      throw new EndpointAppContentServicesKibanaOnlyError('fleetStartServices.createFilesClient');
     }
 
     return this.startDependencies.fleetStartServices.createFilesClient.fromHost('endpoint');
@@ -723,7 +859,7 @@ export class EndpointAppContextService {
     return this.startDependencies.fleetStartServices.createFleetActionsClient('endpoint');
   }
 
-  public getTelemetryService(): AnalyticsServiceSetup {
+  public getTelemetryService(): Pick<AnalyticsServiceSetup, 'reportEvent'> {
     if (!this.setupDependencies?.telemetry) {
       throw new EndpointAppContentServicesNotSetUpError();
     }
@@ -731,24 +867,36 @@ export class EndpointAppContextService {
   }
 
   public getActiveSpace(httpRequest: KibanaRequest): Promise<Space> {
-    if (!this.startDependencies?.spacesService) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.spacesService) {
+      throw new EndpointAppContentServicesKibanaOnlyError('spacesService');
     }
 
     return this.startDependencies.spacesService.getActiveSpace(httpRequest);
   }
 
   public getActiveSpaceId(httpRequest: KibanaRequest): string {
-    if (!this.startDependencies?.spacesService) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.spacesService) {
+      throw new EndpointAppContentServicesKibanaOnlyError('spacesService');
     }
 
     return this.startDependencies.spacesService.getSpaceId(httpRequest);
   }
 
   public getAccessibleSpaces(httpRequest: KibanaRequest): Promise<Space[]> {
-    if (!this.startDependencies?.spacesService) {
+    if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
+    }
+
+    if (!this.startDependencies.spacesService) {
+      throw new EndpointAppContentServicesKibanaOnlyError('spacesService');
     }
 
     const spacesClient = this.startDependencies.spacesService.createSpacesClient(httpRequest);
@@ -800,7 +948,7 @@ export class EndpointAppContextService {
       throw new EndpointError(`Missing config value for key: ${key}`);
     }
 
-    return this.startDependencies.config[key];
+    return this.startDependencies.config[key] as ConfigType[TKey];
   }
 
   getScriptsLibraryClient(

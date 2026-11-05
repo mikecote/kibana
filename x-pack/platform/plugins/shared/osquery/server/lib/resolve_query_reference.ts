@@ -142,7 +142,7 @@ export const lookupSavedQuery = async (
  * `run_saved_queries` grants no SO read, so the caller's credentials cannot load the object.
  */
 export const resolveQueryReference = async (
-  coreStart: CoreStart,
+  coreStart: Pick<CoreStart, 'savedObjects'>,
   spaceId: string | undefined,
   reference: { saved_query_id?: string; pack_id?: string }
 ): Promise<ResolvedQueryReference | undefined> => {

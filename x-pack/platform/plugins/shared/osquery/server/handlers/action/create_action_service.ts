@@ -8,7 +8,7 @@
 import type { ParsedTechnicalFields } from '@kbn/rule-registry-plugin/common';
 import type { Subscription } from 'rxjs';
 import type { CreateLiveQueryRequestBodySchema } from '../../../common/api';
-import type { OsqueryAppContext } from '../../lib/osquery_app_context_services';
+import type { OsqueryActionContext } from '../../lib/osquery_app_context_services';
 import type { OsqueryActiveLicenses } from './validate_license';
 import { validateLicense } from './validate_license';
 import { createActionHandler } from './create_action_handler';
@@ -33,7 +33,7 @@ export interface ContainsDynamicQueriesResult {
 const toErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-export const createActionService = (osqueryContext: OsqueryAppContext) => {
+export const createActionService = (osqueryContext: OsqueryActionContext) => {
   let licenseSubscription: Subscription | null = null;
   const licenses: OsqueryActiveLicenses = { isActivePlatinumLicense: false };
 

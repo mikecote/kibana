@@ -7,6 +7,7 @@
 
 import type {
   CoreSetup,
+  CoreStart,
   KibanaRequest,
   Logger,
   LoggerFactory,
@@ -22,6 +23,8 @@ import type {
 } from '@kbn/fleet-plugin/server';
 import type { RuleRegistryPluginStartContract } from '@kbn/rule-registry-plugin/server';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
+import type { ILicense } from '@kbn/licensing-types';
+import type { Observable } from 'rxjs';
 import type { FleetActionsClientInterface } from '@kbn/fleet-plugin/server/services/actions';
 import type { Space, SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import type { ConfigType } from '../../common/config';
@@ -41,7 +44,7 @@ export type OsqueryAppContextServiceStartContract = Partial<
   >
 > & {
   logger: Logger;
-  config: ConfigType;
+  config?: ConfigType;
   registerIngestCallback?: FleetStartContract['registerExternalCallback'];
   ruleRegistryService?: RuleRegistryPluginStartContract;
   spacesService: SpacesServiceStart | undefined;
@@ -146,4 +149,25 @@ export interface OsqueryAppContext {
    * visible to the principal.
    */
   isCpsActive: (request: KibanaRequest) => Promise<boolean>;
+}
+
+/**
+ * What creating a live query action from a rule needs of the app context, which Kibana's plugin and
+ * a task process (see `createOsqueryActionService`) both satisfy.
+ */
+export interface OsqueryActionContext {
+  logFactory: LoggerFactory;
+  licensing: { license$: Observable<ILicense> };
+  getStartServices: () => Promise<
+    [Pick<CoreStart, 'elasticsearch' | 'savedObjects'>, ...unknown[]]
+  >;
+  service: Pick<
+    OsqueryAppContextService,
+    | 'getAgentService'
+    | 'getPackageService'
+    | 'getPackagePolicyService'
+    | 'getAgentPolicyService'
+    | 'getFleetActionsClient'
+  >;
+  telemetryEventsSender: Pick<TelemetryEventsSender, 'reportEvent'>;
 }

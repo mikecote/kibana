@@ -22,6 +22,7 @@
     "test/scout_fleet_real_agent/**/*"
   ],
   "kbn_references": [
+    "@kbn/core-saved-objects-server-mocks",
     "@kbn/core",
     "@kbn/tracing-utils",
     // add references to other TypeScript projects the plugin depends on

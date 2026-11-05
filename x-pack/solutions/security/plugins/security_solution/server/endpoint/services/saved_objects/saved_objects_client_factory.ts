@@ -73,7 +73,9 @@ const STRICT_READONLY_METHOD_CLASSIFICATION: Record<
 export class SavedObjectsClientFactory {
   private static includedHiddenTypes = new Set<string>([REFERENCE_DATA_SAVED_OBJECT_TYPE]);
 
-  constructor(private readonly savedObjectsServiceStart: SavedObjectsServiceStart) {}
+  constructor(
+    private readonly savedObjectsServiceStart: Pick<SavedObjectsServiceStart, 'getScopedClient'>
+  ) {}
 
   /**
    * Add a hidden Saved Object type to the list of types that should be given access by the SO clients created by the SavedObjectsClientFactory.
