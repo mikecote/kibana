@@ -6,10 +6,16 @@
  */
 
 import { AsyncLocalStorage } from 'async_hooks';
+import { defer, of } from 'rxjs';
 import type { TaskHost } from '../task_type_module';
 import type { TaskProcessTelemetry } from './wire';
 
-const storage = new AsyncLocalStorage<TaskProcessTelemetry>();
+interface RunStore {
+  telemetry: TaskProcessTelemetry;
+  featureFlags: Record<string, boolean | string | number>;
+}
+
+const storage = new AsyncLocalStorage<RunStore>();
 
 const emptyTelemetry = (): TaskProcessTelemetry => ({ events: [], featureUsages: [], custom: [] });
 
@@ -18,14 +24,31 @@ const emptyTelemetry = (): TaskProcessTelemetry => ({ events: [], featureUsages:
  * its own buffer, found through the async context the run executes in.
  */
 export const collectTelemetry = async <T>(
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  { featureFlags = {} }: { featureFlags?: RunStore['featureFlags'] } = {}
 ): Promise<{ value?: T; error?: unknown; telemetry: TaskProcessTelemetry }> => {
-  const telemetry = emptyTelemetry();
+  const store: RunStore = { telemetry: emptyTelemetry(), featureFlags };
   try {
-    return { value: await storage.run(telemetry, fn), telemetry };
+    return { value: await storage.run(store, fn), telemetry: store.telemetry };
   } catch (error) {
-    return { error, telemetry };
+    return { error, telemetry: store.telemetry };
   }
+};
+
+/**
+ * The feature flags of a task process: what Kibana evaluated for the run that is asking, and the
+ * fallback of the caller for a flag the task type did not declare, as Core answers without a provider.
+ */
+export const createHostFeatureFlags = (): NonNullable<TaskHost['featureFlags']> => {
+  const read = <T extends boolean | string | number>(flagName: string, fallbackValue: T): T => {
+    const value = storage.getStore()?.featureFlags[flagName];
+    return (typeof value === typeof fallbackValue ? value : fallbackValue) as T;
+  };
+  return {
+    getBooleanValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
+    getStringValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
+    getNumberValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
+  } as NonNullable<TaskHost['featureFlags']>;
 };
 
 /**
@@ -38,17 +61,17 @@ export const createHostTelemetry = (): Pick<TaskHost, 'analytics' | 'telemetry'>
 } => ({
   analytics: {
     reportEvent: (eventType: string, data: unknown) => {
-      storage.getStore()?.events.push({ eventType, data });
+      storage.getStore()?.telemetry.events.push({ eventType, data });
     },
   } as TaskHost['analytics'],
   telemetry: {
     report: (kind, payload) => {
-      storage.getStore()?.custom.push({ kind, payload });
+      storage.getStore()?.telemetry.custom.push({ kind, payload });
     },
   },
   featureUsage: {
     notifyUsage: (featureName, usedAt) => {
-      storage.getStore()?.featureUsages.push({
+      storage.getStore()?.telemetry.featureUsages.push({
         featureName,
         ...(usedAt ? { lastUsed: new Date(usedAt).toISOString() } : {}),
       });

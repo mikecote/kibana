@@ -6,7 +6,7 @@
  */
 
 import type { Observable } from 'rxjs';
-import { combineLatest, Subject, BehaviorSubject } from 'rxjs';
+import { combineLatest, firstValueFrom, Subject, BehaviorSubject } from 'rxjs';
 import { map, distinctUntilChanged } from 'rxjs';
 import type { estypes } from '@elastic/elasticsearch';
 import type {
@@ -194,6 +194,7 @@ export class TaskManagerPlugin
   private taskProcessDispatch?: TaskProcessDispatch;
   private readonly telemetrySinks = new Map<string, (payload: unknown) => void>();
   private analytics?: AnalyticsServiceStart;
+  private featureFlagsService?: CoreStart['featureFlags'];
   private featureUsage?: LicensingPluginStart['featureUsage'];
   private taskProcessSupervisor?: TaskProcessSupervisor;
   /** The task types registered as modules: the ones that can run outside this process. */
@@ -291,6 +292,7 @@ export class TaskManagerPlugin
           const extensions = options?.hostExtensions;
           const host: TaskHost = {
             analytics: coreStart.analytics,
+            ...(module.featureFlags ? { featureFlags: coreStart.featureFlags } : {}),
             telemetry: { report: (kind, payload) => this.telemetrySinks.get(kind)?.(payload) },
             logger: options?.logger ?? this.logger,
             elasticsearch: coreStart.elasticsearch.client,
@@ -350,6 +352,25 @@ export class TaskManagerPlugin
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
         kibanaVersion: this.kibanaVersion,
+        // The feature flags a task type declares, as Kibana's flag service answers them now.
+        getFeatureFlags: async (taskType) => {
+          const flags = this.moduleRegistrations.get(taskType)?.module.featureFlags;
+          if (!flags || !this.featureFlagsService) return undefined;
+          const service = this.featureFlagsService;
+          const values = await Promise.all(
+            Object.entries(flags).map(async ([name, fallback]) => {
+              const value$ =
+                typeof fallback === 'boolean'
+                  ? service.getBooleanValue$(name, fallback)
+                  : typeof fallback === 'number'
+                  ? service.getNumberValue$(name, fallback)
+                  : service.getStringValue$(name, fallback);
+              // oxlint-disable-next-line @kbn/eslint/no_feature_flag_snapshot -- evaluated for every run that is dispatched, so each run reads the current flag value
+              return [name, await firstValueFrom(value$ as Observable<boolean | string | number>)];
+            })
+          );
+          return Object.fromEntries(values);
+        },
         // What a process reports is sent here, by the services only Kibana has.
         reportTelemetry: (telemetry) => {
           for (const { eventType, data } of telemetry.events) {
@@ -515,6 +536,7 @@ export class TaskManagerPlugin
   ): TaskManagerStartContract {
     const { savedObjects, elasticsearch, executionContext, security } = core;
     this.analytics = core.analytics;
+    this.featureFlagsService = core.featureFlags;
     this.featureUsage = licensing.featureUsage;
     const enrichFakeRequest = this.enrichFakeRequest;
     this.licenseSubscriber = new LicenseSubscriber(licensing.license$);

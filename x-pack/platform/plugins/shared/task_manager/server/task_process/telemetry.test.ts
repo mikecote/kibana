@@ -5,7 +5,8 @@
  * 2.0.
  */
 
-import { collectTelemetry, createHostTelemetry } from './telemetry';
+import { firstValueFrom } from 'rxjs';
+import { collectTelemetry, createHostFeatureFlags, createHostTelemetry } from './telemetry';
 
 describe('task process telemetry', () => {
   const host = createHostTelemetry();
@@ -52,5 +53,30 @@ describe('task process telemetry', () => {
 
   it('drops a report made outside any run', () => {
     expect(() => host.analytics.reportEvent('orphan', {})).not.toThrow();
+  });
+
+  describe('feature flags', () => {
+    const flags = createHostFeatureFlags();
+
+    it('answers with what Kibana evaluated for the run that asks', async () => {
+      const { value } = await collectTelemetry(
+        async () => firstValueFrom(flags.getBooleanValue$('a.flag', false)),
+        { featureFlags: { 'a.flag': true } }
+      );
+
+      expect(value).toBe(true);
+    });
+
+    it('answers with the fallback for a flag the run was not given, or of another type', async () => {
+      const { value } = await collectTelemetry(
+        async () => [
+          await firstValueFrom(flags.getBooleanValue$('missing', true)),
+          await firstValueFrom(flags.getStringValue$('a.flag', 'fallback')),
+        ],
+        { featureFlags: { 'a.flag': true } }
+      );
+
+      expect(value).toEqual([true, 'fallback']);
+    });
   });
 });

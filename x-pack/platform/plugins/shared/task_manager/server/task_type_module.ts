@@ -12,6 +12,7 @@ import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
+import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
@@ -85,6 +86,12 @@ export interface TaskHost {
    */
   telemetry: { report: (kind: string, payload: unknown) => void };
 
+  /** Declared with `featureFlags`. */
+  featureFlags?: Pick<
+    FeatureFlagsStart,
+    'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'
+  >;
+
   /** Declared with `encryptedSavedObjectTypes`. */
   encryptedSavedObjects?: {
     getClient: (options?: { includedHiddenTypes?: string[] }) => EncryptedSavedObjectsClient;
@@ -151,6 +158,12 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * runner reads what they return from `start` as `host.plugins[id]`. Kibana has the real plugins.
    */
   taskPlugins?: ReadonlyArray<StaticPlugin>;
+  /**
+   * Feature flags the runner reads, with their fallbacks, as `host.featureFlags`. Kibana evaluates
+   * them with its feature flags service when it dispatches a run and sends the values, so a flag
+   * flipped between runs reaches the next one. The type of the fallback is the type of the flag.
+   */
+  featureFlags?: Record<string, boolean | string | number>;
   /**
    * What other plugins contribute to this task type's process (`taskTypeContributions` in their
    * `kibana.jsonc`). The bundler gathers every plugin's files under each key, and a task process
@@ -235,6 +248,7 @@ export const toTaskDefinition = (
     settings,
     contributions,
     taskPlugins,
+    featureFlags,
     declinesAll,
     createTaskRunner,
     ...definition

@@ -67,6 +67,11 @@ export interface TaskProcessRunRequest {
   uiamApiKeyExternal?: boolean;
   userProfileId?: string;
   userName?: string;
+  /**
+   * The values of the feature flags the task type declares, which Kibana evaluated when it
+   * dispatched this run (so Cloud's flag service, which only Kibana reaches, answers).
+   */
+  featureFlags?: Record<string, boolean | string | number>;
   /** ISO time after which Kibana gives up on this run; the process aborts it too. */
   deadline?: string;
   /** The Kibana version dispatching the run; a process built from another version refuses it. */

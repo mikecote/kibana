@@ -21,7 +21,7 @@ import { createStandaloneLicensing } from './host_capabilities/licensing';
 import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
-import { createHostTelemetry } from './telemetry';
+import { createHostFeatureFlags, createHostTelemetry } from './telemetry';
 import type { TaskProcessTaskManagerSetup } from './task_manager_task_plugin';
 
 interface SetupDeps {
@@ -133,6 +133,7 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         });
       }
       if (module.uiSettings) host.uiSettings = core.uiSettings;
+      if (module.featureFlags) host.featureFlags = createHostFeatureFlags();
       if (module.licensing) {
         host.licensing = {
           ...createStandaloneLicensing({

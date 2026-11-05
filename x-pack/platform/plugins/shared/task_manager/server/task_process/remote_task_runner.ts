@@ -34,6 +34,8 @@ export interface TaskProcessDispatch {
   getRoute(taskType: string): TaskProcessRoute | undefined;
   /** The Kibana version dispatching the run; a process built from another version refuses it. */
   kibanaVersion: string;
+  /** The values of the feature flags a task type declares, for the run being dispatched. */
+  getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
   /** Sends on what a run reported that only this Kibana can send: analytics, feature usage, plugin channels. */
   reportTelemetry?: (telemetry: TaskProcessTelemetry) => void;
 }

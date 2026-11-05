@@ -131,7 +131,9 @@ export const startTaskProcessServer = ({
     inFlight.set(body.executionUuid, { abortController, task });
     try {
       // What the run reports for Kibana to send on comes back with its result, even when it throws.
-      const { value, error, telemetry } = await collectTelemetry(async () => task.run());
+      const { value, error, telemetry } = await collectTelemetry(async () => task.run(), {
+        featureFlags: body.featureFlags,
+      });
       if (error !== undefined) {
         if (isDeclinedRunError(error)) {
           throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
