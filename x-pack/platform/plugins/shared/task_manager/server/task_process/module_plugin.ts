@@ -129,7 +129,14 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
           repository: core.savedObjects.createInternalRepository(['task']),
           esClient: core.elasticsearch.client.asInternalUser,
           logger: initializerContext.logger.get('taskManager'),
-          allowedTypes: /^actions:/,
+          allowedTypes: new RegExp(
+            (typeof module.taskManager === 'object' && module.taskManager.schedulableTypes
+              ? module.taskManager.schedulableTypes
+              : [/^actions:/]
+            )
+              .map(({ source }) => `(?:${source})`)
+              .join('|')
+          ),
         });
       }
       if (module.uiSettings) host.uiSettings = core.uiSettings;

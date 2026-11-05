@@ -122,7 +122,7 @@ describe('createRuleTaskType', () => {
     it('declares what a rule run needs from the host', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
       expect(taskType.settings).toEqual(['alerting', 'actions']);
-      expect(taskType.taskManager).toBe(true);
+      expect(taskType.taskManager).toEqual({ schedulableTypes: [/^actions:/] });
       expect(taskType.licensing).toBe(true);
       expect(taskType.eventLog?.providers).toEqual([
         { provider: 'alerting', actions: expect.arrayContaining(['execute', 'execute-start']) },
@@ -135,6 +135,16 @@ describe('createRuleTaskType', () => {
         'action_task_params',
         'alert',
       ]);
+    });
+
+    it('schedules the task types the rule type asks for besides actions', () => {
+      const taskType = createRuleTaskType(
+        { ruleTypeId: 'test.rule', getRuleType },
+        { schedulableTaskTypes: [/^workflow:run$/] }
+      );
+      expect(taskType.taskManager).toEqual({
+        schedulableTypes: [/^actions:/, /^workflow:run$/],
+      });
     });
 
     it('is built again with what other plugins contribute to rule runs', () => {

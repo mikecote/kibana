@@ -137,8 +137,12 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** Gives the runner `host.eventLog`. */
   eventLog?: TaskEventLogCapability;
-  /** Gives the runner `host.taskManager`, to schedule tasks and aggregate them. */
-  taskManager?: true;
+  /**
+   * Gives the runner `host.taskManager`, to schedule tasks and aggregate them. A task process does
+   * not know the task definitions, so it only schedules the task types that match `schedulableTypes`
+   * (default: the `actions:` tasks that enqueue connectors).
+   */
+  taskManager?: true | { schedulableTypes?: RegExp[] };
   /** Gives the runner `host.uiSettings`, with these defaults registered in a task process. */
   uiSettings?: { defaults?: Array<Record<string, UiSettingsParams>> };
   /** Gives the runner `host.licensing`. */

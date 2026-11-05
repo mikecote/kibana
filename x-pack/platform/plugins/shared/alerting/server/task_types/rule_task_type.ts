@@ -83,6 +83,11 @@ export interface RuleTaskTypeOptions {
    */
   executeConnectors?: boolean;
   /**
+   * A task process only: task types besides `actions:*` that the rule type schedules, such as the
+   * `workflow:run` tasks of attack discovery.
+   */
+  schedulableTaskTypes?: RegExp[];
+  /**
    * A task process only: plugins that run next to Core, such as the security plugin that registers
    * the security delegate. The factory of the rule type reads what they return as `host.plugins[id]`.
    */
@@ -282,7 +287,7 @@ export function createRuleTaskType(
             ],
             create: createStandaloneEventLog,
           },
-          taskManager: true as const,
+          taskManager: { schedulableTypes: [/^actions:/, ...(options.schedulableTaskTypes ?? [])] },
           licensing: true as const,
           settings: ['alerting', 'actions'],
         }),
