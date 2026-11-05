@@ -5,7 +5,11 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type {
+  WorkflowsExtensionsServerPluginSetup,
+  WorkflowStepsRegistry,
+} from '@kbn/workflows-extensions/server';
+import { rerankStepDefinition } from '../step_types/rerank_step';
 import { conversationStepRegistry, type ConversationStepDeps } from './registry';
 import { attachmentStepRegistry, type AttachmentStepDeps } from './attachment_registry';
 import {
@@ -14,16 +18,25 @@ import {
   attachmentTriggerCommonDefinitions,
 } from '../../common/workflows/triggers';
 
+/**
+ * The triggers and the steps that need nothing of the plugin's services: used by `plugin.ts` and by
+ * the contribution to the task process of the workflow task types. The other steps (conversations,
+ * attachments and `runAgent`) read registries that other plugins fill in their `setup()` (agents,
+ * attachment types, tools, skills) and are only registered in Kibana.
+ */
+export function registerAgentBuilderProcessWorkflowDefinitions(registry: WorkflowStepsRegistry) {
+  registry.registerTriggerDefinition(conversationMetadataUpdatedTriggerCommonDefinition);
+  registry.registerTriggerDefinition(conversationUpdatedTriggerCommonDefinition);
+  for (const definition of attachmentTriggerCommonDefinitions) {
+    registry.registerTriggerDefinition(definition);
+  }
+  registry.registerStepDefinition(rerankStepDefinition);
+}
+
 export function registerConversationWorkflowSteps(
   workflowsExtensions: WorkflowsExtensionsServerPluginSetup,
   deps: ConversationStepDeps
 ) {
-  workflowsExtensions.registerTriggerDefinition(conversationMetadataUpdatedTriggerCommonDefinition);
-  workflowsExtensions.registerTriggerDefinition(conversationUpdatedTriggerCommonDefinition);
-  for (const definition of attachmentTriggerCommonDefinitions) {
-    workflowsExtensions.registerTriggerDefinition(definition);
-  }
-
   for (const factory of conversationStepRegistry) {
     workflowsExtensions.registerStepDefinition(factory(deps));
   }

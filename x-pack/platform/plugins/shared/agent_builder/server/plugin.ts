@@ -31,7 +31,7 @@ import { registerFeatures } from './features';
 import { registerRoutes } from './routes';
 import { agentBuilderSpaceSettingsType } from './saved_objects';
 import { registerUISettings } from './ui_settings';
-import { getRunAgentStepDefinition, rerankStepDefinition } from './step_types';
+import { getRunAgentStepDefinition } from './step_types';
 import type { AgentBuilderHandlerContext } from './request_handler_context';
 import { registerAgentBuilderHandlerContext } from './request_handler_context';
 import { createAgentBuilderUsageCounter } from './telemetry/usage_counters';
@@ -49,7 +49,11 @@ import { createConnectorTools } from './services/tools/builtin/connectors';
 import { createAdminPrivilegeSwitcher } from './capabilities/admin_privilege_switcher';
 import { registerInferenceFeatures } from './inference_features';
 import { createConversationEventBus } from './workflows/triggers/conversation_event_bus';
-import { registerAttachmentWorkflowSteps, registerConversationWorkflowSteps } from './workflows';
+import {
+  registerAgentBuilderProcessWorkflowDefinitions,
+  registerAttachmentWorkflowSteps,
+  registerConversationWorkflowSteps,
+} from './workflows';
 import { registerConversationWorkflowEventBridge } from './workflows/triggers/event_bridge';
 import { apiPrivileges } from '../common/features';
 import { runToolIdBackfill } from './backfills/tool_id_backfill';
@@ -176,7 +180,7 @@ export class AgentBuilderPlugin
     setupDeps.workflowsExtensions.registerStepDefinition(
       getRunAgentStepDefinition(this.serviceManager)
     );
-    setupDeps.workflowsExtensions.registerStepDefinition(rerankStepDefinition);
+    registerAgentBuilderProcessWorkflowDefinitions(setupDeps.workflowsExtensions);
 
     registerConversationWorkflowSteps(setupDeps.workflowsExtensions, {
       getConversationClient: async (request) => {

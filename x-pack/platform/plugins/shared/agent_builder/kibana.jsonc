@@ -8,6 +8,11 @@
     "id": "agentBuilder",
     "server": true,
     "browser": true,
+    "taskTypeContributions": {
+      "workflow-steps": [
+        "server/task_types/workflow_steps_contribution.ts"
+      ]
+    },
     "configPath": [
       "xpack",
       "agentBuilder"
