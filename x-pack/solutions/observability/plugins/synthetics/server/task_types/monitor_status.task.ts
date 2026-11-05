@@ -6,10 +6,11 @@
  */
 
 import { SYNTHETICS_STATUS_RULE } from '@kbn/rule-data-utils';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { registerSyntheticsStatusCheckRule } from '../alert_rules/status_rule/monitor_status_rule';
+import { createSyntheticsRuleTaskType } from './synthetics_rule_task_type';
 
-/** The monitor status rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The monitor status rule type, which a task process can run. */
+export const taskType = createSyntheticsRuleTaskType(
   SYNTHETICS_STATUS_RULE,
-  'its executor reads Fleet, private locations and the synthetics service, which only exist in Kibana'
+  registerSyntheticsStatusCheckRule
 );

@@ -6,7 +6,7 @@
  */
 
 import { i18n } from '@kbn/i18n';
-import type { SyntheticsPluginsSetupDependencies } from '../types';
+import type { SyntheticsRulePlugins } from './rule_dependencies';
 import { commonMonitorStateI18, commonStateTranslations } from './translations';
 
 export const MESSAGE = 'message';
@@ -23,7 +23,7 @@ const GROUPING = 'grouping';
 export const getActionVariables = ({
   plugins,
 }: {
-  plugins: SyntheticsPluginsSetupDependencies;
+  plugins: Pick<SyntheticsRulePlugins, 'observability'>;
 }) => {
   return {
     context: [

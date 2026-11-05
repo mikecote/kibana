@@ -21,7 +21,11 @@ import {
 } from '@kbn/response-ops-rule-params/synthetics_tls';
 import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
 import type { ObservabilityUptimeAlert } from '@kbn/alerts-as-data-utils';
-import type { SyntheticsPluginsSetupDependencies, SyntheticsServerSetup } from '../../types';
+import type {
+  SyntheticsRuleMonitorClient,
+  SyntheticsRulePlugins,
+  SyntheticsRuleServer,
+} from '../rule_dependencies';
 import {
   getCertSummary,
   getTLSAlertContext,
@@ -34,7 +38,6 @@ import { TLSRuleExecutor } from './tls_rule_executor';
 import { TLS_CERTIFICATE } from '../../../common/constants/synthetics_alerts';
 import { SyntheticsRuleTypeAlertDefinition, updateState } from '../common';
 import { getActionVariables } from '../action_variables';
-import type { SyntheticsMonitorClient } from '../../synthetics_service/synthetics_monitor/synthetics_monitor_client';
 
 type TLSActionGroups = ActionGroupIdsOf<typeof TLS_CERTIFICATE>;
 type TLSRuleTypeState = SyntheticsCommonState;
@@ -43,9 +46,9 @@ type TLSAlertContext = AlertContext;
 type TLSAlert = ObservabilityUptimeAlert;
 
 export const registerSyntheticsTLSCheckRule = (
-  server: SyntheticsServerSetup,
-  plugins: SyntheticsPluginsSetupDependencies,
-  syntheticsMonitorClient: SyntheticsMonitorClient
+  server: SyntheticsRuleServer,
+  plugins: SyntheticsRulePlugins,
+  syntheticsMonitorClient: SyntheticsRuleMonitorClient
 ) => {
   if (!plugins.alerting) {
     throw new Error(

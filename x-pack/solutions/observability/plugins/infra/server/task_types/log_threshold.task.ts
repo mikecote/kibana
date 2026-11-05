@@ -6,10 +6,14 @@
  */
 
 import { LOG_THRESHOLD_ALERT_TYPE_ID } from '@kbn/rule-data-utils';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { registerLogThresholdRuleType } from '../lib/alerting/log_threshold/register_log_threshold_rule_type';
+import { createInfraRuleTaskType } from './infra_rule_task_type';
 
-/** The log threshold rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The log threshold rule type, which a task process can run. */
+export const taskType = createInfraRuleTaskType(
   LOG_THRESHOLD_ALERT_TYPE_ID,
-  'its executor resolves log views through plugins that only exist in Kibana'
+  registerLogThresholdRuleType,
+  {
+    readsLogViews: true,
+  }
 );

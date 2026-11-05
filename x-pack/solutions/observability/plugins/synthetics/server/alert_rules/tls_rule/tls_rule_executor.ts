@@ -21,7 +21,7 @@ import type { TLSRuleInspect } from '../../../common/runtime_types/alert_rules/c
 import { MonitorConfigRepository } from '../../services/monitor_config_repository';
 import { FINAL_SUMMARY_FILTER } from '../../../common/constants/client_defaults';
 import { formatFilterString } from '../common';
-import type { SyntheticsServerSetup } from '../../types';
+import type { SyntheticsRuleMonitorClient, SyntheticsRuleServer } from '../rule_dependencies';
 import { getSyntheticsCerts } from '../../queries/get_certs';
 import { DYNAMIC_SETTINGS_DEFAULTS, SYNTHETICS_INDEX_PATTERN } from '../../../common/constants';
 import { processMonitors } from '../../saved_objects/synthetics_monitor/process_monitors';
@@ -31,7 +31,6 @@ import type {
   Ping,
 } from '../../../common/runtime_types';
 import { ConfigKey, MonitorTypeEnum } from '../../../common/runtime_types';
-import type { SyntheticsMonitorClient } from '../../synthetics_service/synthetics_monitor/synthetics_monitor_client';
 import { AlertConfigKey } from '../../../common/constants/monitor_management';
 import { SyntheticsEsClient } from '../../lib';
 import { queryFilterMonitors } from '../status_rule/queries/filter_monitors';
@@ -42,8 +41,8 @@ export class TLSRuleExecutor {
   params: TLSRuleParams;
   esClient: SyntheticsEsClient;
   soClient: SavedObjectsClientContract;
-  server: SyntheticsServerSetup;
-  syntheticsMonitorClient: SyntheticsMonitorClient;
+  server: SyntheticsRuleServer;
+  syntheticsMonitorClient: SyntheticsRuleMonitorClient;
   monitors: Array<SavedObjectsFindResult<EncryptedSyntheticsMonitorAttributes>> = [];
   monitorConfigRepository: MonitorConfigRepository;
   logger: Logger;
@@ -55,8 +54,8 @@ export class TLSRuleExecutor {
     p: TLSRuleParams,
     soClient: SavedObjectsClientContract,
     scopedClient: ElasticsearchClient,
-    server: SyntheticsServerSetup,
-    syntheticsMonitorClient: SyntheticsMonitorClient,
+    server: SyntheticsRuleServer,
+    syntheticsMonitorClient: SyntheticsRuleMonitorClient,
     spaceId: string,
     ruleName: string,
     uiSettingsClient?: IUiSettingsClient

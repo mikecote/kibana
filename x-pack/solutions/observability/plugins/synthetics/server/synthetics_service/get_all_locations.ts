@@ -5,11 +5,20 @@
  * 2.0.
  */
 import type { SavedObjectsClientContract } from '@kbn/core/server';
-import { allLocationsToClientContract } from '../routes/settings/private_locations/helpers';
+import { allLocationsToClientContract } from '../routes/settings/private_locations/location_contracts';
 import { getPrivateLocationsAndAgentPolicies } from '../routes/settings/private_locations/get_private_locations';
-import type { SyntheticsServerSetup } from '../types';
+import type { ServiceLocationsServer } from './get_service_locations';
 import { getServiceLocations } from './get_service_locations';
 import type { SyntheticsMonitorClient } from './synthetics_monitor/synthetics_monitor_client';
+
+/** What looking up locations reads of the monitor client, which a task process builds without Fleet. */
+export interface LocationsClient {
+  serviceManagedLocations: Pick<
+    SyntheticsMonitorClient['serviceManagedLocations'],
+    'isAllowed' | 'locations' | 'throttling'
+  >;
+  privateLocationAPI: Pick<SyntheticsMonitorClient['privateLocationAPI'], 'getAgentPolicies'>;
+}
 
 export async function getAllLocations({
   syntheticsMonitorClient,
@@ -17,8 +26,8 @@ export async function getAllLocations({
   server,
   excludeAgentPolicies = false,
 }: {
-  server: SyntheticsServerSetup;
-  syntheticsMonitorClient: SyntheticsMonitorClient;
+  server: ServiceLocationsServer;
+  syntheticsMonitorClient: LocationsClient;
   savedObjectsClient: SavedObjectsClientContract;
   excludeAgentPolicies?: boolean;
 }) {
@@ -51,8 +60,8 @@ export async function getAllLocations({
 }
 
 const getServicePublicLocations = async (
-  server: SyntheticsServerSetup,
-  syntheticsMonitorClient: SyntheticsMonitorClient
+  server: ServiceLocationsServer,
+  syntheticsMonitorClient: LocationsClient
 ) => {
   if (!syntheticsMonitorClient.serviceManagedLocations.isAllowed) {
     return {

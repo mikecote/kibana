@@ -17,7 +17,7 @@ import type { InfraConfig } from '../../../../common/plugin_config_types';
 import { createLogThresholdExecutor, FIRED_ACTIONS } from './log_threshold_executor';
 import { extractReferences, injectReferences } from './log_threshold_references_manager';
 import { LOG_DOCUMENT_COUNT_RULE_TYPE_ID } from '../../../../common/alerting/logs/log_threshold';
-import type { InfraBackendLibs } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import {
   alertDetailUrlActionVariableDescription,
   groupByKeysActionVariableDescription,
@@ -103,7 +103,7 @@ const viewInAppUrlActionVariableDescription = i18n.translate(
 
 export function registerLogThresholdRuleType(
   alertingPlugin: AlertingServerSetup,
-  libs: InfraBackendLibs,
+  libs: InfraAlertingLibs,
   { featureFlags }: InfraConfig
 ) {
   if (!featureFlags.logThresholdAlertRuleEnabled) {

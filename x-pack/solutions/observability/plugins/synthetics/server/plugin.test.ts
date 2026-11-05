@@ -71,7 +71,7 @@ describe('Synthetics server plugin', () => {
       taskManager: taskManagerSetup,
       cloud: {},
       share: {},
-      alerting: {},
+      alerting: { registerTaskProcessSettings: jest.fn() },
       embeddable: {
         registerEmbeddableServerDefinition: jest.fn(),
       },
@@ -91,7 +91,7 @@ describe('Synthetics server plugin', () => {
       security: {},
       fleet: {},
       encryptedSavedObjects: {},
-      alerting: {},
+      alerting: { registerTaskProcessSettings: jest.fn() },
     } as any);
 
     await flushStart();
@@ -120,7 +120,7 @@ describe('Synthetics server plugin', () => {
       taskManager: taskManagerSetup,
       cloud: {},
       share: {},
-      alerting: {},
+      alerting: { registerTaskProcessSettings: jest.fn() },
       embeddable: {
         registerEmbeddableServerDefinition: jest.fn(),
       },
@@ -139,7 +139,7 @@ describe('Synthetics server plugin', () => {
       security: {},
       fleet: {},
       encryptedSavedObjects: {},
-      alerting: {},
+      alerting: { registerTaskProcessSettings: jest.fn() },
     } as any);
 
     await flushStart();

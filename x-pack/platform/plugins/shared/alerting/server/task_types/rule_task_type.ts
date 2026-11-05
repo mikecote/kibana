@@ -6,6 +6,7 @@
  */
 
 import type { Logger, SavedObjectsType } from '@kbn/core/server';
+import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import type { RunContext } from '@kbn/task-manager-plugin/server';
 import { DeclinedRunError } from '@kbn/task-manager-plugin/server/task_running/errors';
@@ -76,6 +77,8 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
+  uiSettings?: Array<Record<string, UiSettingsParams>>;
   /**
    * A task process only: the rule type runs connectors itself, such as attack discovery calling the
    * connector of a model, so the actions executor is initialized in the process (its connector types
@@ -337,7 +340,7 @@ export function createRuleTaskType(
       },
       uiSettings: {
         enumerable: true,
-        get: () => ({ defaults: getRuleRunUiSettings() }),
+        get: () => ({ defaults: [...getRuleRunUiSettings(), ...(options.uiSettings ?? [])] }),
       },
     });
   }

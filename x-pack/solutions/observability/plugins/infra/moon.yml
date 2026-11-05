@@ -161,6 +161,7 @@ dependsOn:
   - '@kbn/tooling-log'
   - '@kbn/core-logging-server-mocks'
   - '@kbn/ui-callout'
+  - '@kbn/core-ui-settings-common'
 tags:
   - plugin
   - prod

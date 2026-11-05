@@ -9,6 +9,7 @@ import axios from 'axios';
 import { pick } from 'lodash';
 import pRetry from 'p-retry';
 import type { SyntheticsServerSetup } from '../types';
+
 import type {
   ManifestLocation,
   PublicLocation,
@@ -41,7 +42,17 @@ export const getDevLocation = (devUrl: string): PublicLocation[] => [
   },
 ];
 
-export async function getServiceLocations(server: SyntheticsServerSetup) {
+/** What looking up the locations of the Synthetics service reads of the server. */
+export type ServiceLocationsServer = Pick<SyntheticsServerSetup, 'logger'> & {
+  config: {
+    service?: Pick<
+      NonNullable<SyntheticsServerSetup['config']['service']>,
+      'manifestUrl' | 'devUrl'
+    >;
+  };
+};
+
+export async function getServiceLocations(server: ServiceLocationsServer) {
   let locations: PublicLocations = [];
 
   if (server.config.service?.devUrl) {

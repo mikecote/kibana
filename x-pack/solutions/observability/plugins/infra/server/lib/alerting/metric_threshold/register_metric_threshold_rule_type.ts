@@ -16,7 +16,8 @@ import { metricThresholdRuleParamsSchema } from '@kbn/response-ops-rule-params/m
 
 import type { InfraConfig } from '../../../../common/plugin_config_types';
 import { METRIC_THRESHOLD_ALERT_TYPE_ID } from '../../../../common/alerting/metrics';
-import type { InfraBackendLibs, InfraLocators } from '../../infra_types';
+import type { InfraLocators } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import {
   alertDetailUrlActionVariableDescription,
   alertStateActionVariableDescription,
@@ -46,7 +47,7 @@ import { MetricsRulesTypeAlertDefinition } from '../register_rule_types';
 
 export function registerMetricThresholdRuleType(
   alertingPlugin: AlertingServerSetup,
-  libs: InfraBackendLibs,
+  libs: InfraAlertingLibs,
   { featureFlags }: InfraConfig,
   locators: InfraLocators
 ) {

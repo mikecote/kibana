@@ -6,10 +6,14 @@
  */
 
 import { METRIC_INVENTORY_THRESHOLD_ALERT_TYPE_ID } from '@kbn/rule-data-utils';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { registerInventoryThresholdRuleType } from '../lib/alerting/inventory_metric_threshold/register_inventory_metric_threshold_rule_type';
+import { createInfraRuleTaskType } from './infra_rule_task_type';
 
-/** The inventory threshold rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The inventory threshold rule type, which a task process can run. */
+export const taskType = createInfraRuleTaskType(
   METRIC_INVENTORY_THRESHOLD_ALERT_TYPE_ID,
-  'its executor resolves log views through plugins that only exist in Kibana'
+  registerInventoryThresholdRuleType,
+  {
+    readsLogViews: true,
+  }
 );

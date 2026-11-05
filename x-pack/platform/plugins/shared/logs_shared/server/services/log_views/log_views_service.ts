@@ -11,9 +11,14 @@ import type {
   Logger,
   SavedObjectsClientContract,
 } from '@kbn/core/server';
+import type { PluginStart as DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
 import type { LogSourcesService } from '@kbn/logs-data-access-plugin/common/types';
 import type { LogView, LogViewAttributes, LogViewsStaticConfig } from '../../../common/log_views';
-import { defaultLogViewAttributes, defaultLogViewsStaticConfig } from '../../../common/log_views';
+import {
+  defaultLogViewAttributes,
+  defaultLogViewId,
+  defaultLogViewsStaticConfig,
+} from '../../../common/log_views';
 import { LogViewsClient } from './log_views_client';
 import type {
   LogViewFallbackHandler,
@@ -21,6 +26,61 @@ import type {
   LogViewsServiceStart,
   LogViewsServiceStartDeps,
 } from './types';
+
+type DataViewsServiceFactory = DataViewsServerPluginStart['dataViewsServiceFactory'];
+
+export interface LogViewsClientFactoryDeps {
+  logger: Logger;
+  dataViewsServiceFactory: DataViewsServiceFactory;
+  internalLogViews: Map<string, LogView>;
+  logViewFallbackHandler: LogViewFallbackHandler;
+  logViewsStaticConfig: LogViewsStaticConfig;
+}
+
+export const createInternalLogView = (
+  logViewId: string,
+  logViewAttributes: Partial<LogViewAttributes>
+): LogView => ({
+  id: logViewId,
+  origin: 'internal',
+  attributes: { ...defaultLogViewAttributes, ...logViewAttributes },
+  updatedAt: Date.now(),
+});
+
+/**
+ * The internal log views that exist without anyone defining them: a static one to fall back on where
+ * the log view saved object is not registered (serverless).
+ */
+export const getBuiltInInternalLogViews = (isServerless: boolean): Map<string, LogView> =>
+  new Map(isServerless ? [[defaultLogViewId, createInternalLogView(defaultLogViewId, {})]] : []);
+
+/**
+ * Builds log views clients from explicit services, so a task process builds them the way the plugin
+ * does.
+ */
+export const createLogViewsClientFactory =
+  ({
+    logger,
+    dataViewsServiceFactory,
+    internalLogViews,
+    logViewFallbackHandler,
+    logViewsStaticConfig,
+  }: LogViewsClientFactoryDeps) =>
+  (
+    savedObjectsClient: SavedObjectsClientContract,
+    elasticsearchClient: ElasticsearchClient,
+    logSourcesService: Promise<LogSourcesService>,
+    request?: KibanaRequest
+  ) =>
+    new LogViewsClient(
+      logger,
+      dataViewsServiceFactory(savedObjectsClient, elasticsearchClient, request),
+      logSourcesService,
+      savedObjectsClient,
+      logViewFallbackHandler,
+      internalLogViews,
+      logViewsStaticConfig
+    );
 
 export class LogViewsService {
   private internalLogViews: Map<string, LogView> = new Map();
@@ -34,12 +94,7 @@ export class LogViewsService {
 
     return {
       defineInternalLogView: (logViewId: string, logViewAttributes: Partial<LogViewAttributes>) => {
-        internalLogViews.set(logViewId, {
-          id: logViewId,
-          origin: 'internal',
-          attributes: { ...defaultLogViewAttributes, ...logViewAttributes },
-          updatedAt: Date.now(),
-        });
+        internalLogViews.set(logViewId, createInternalLogView(logViewId, logViewAttributes));
       },
       registerLogViewFallbackHandler: (handler) => {
         this.logViewFallbackHandler = handler;
@@ -58,23 +113,16 @@ export class LogViewsService {
   }: LogViewsServiceStartDeps): LogViewsServiceStart {
     const { internalLogViews, logger, logViewFallbackHandler, logViewsStaticConfig } = this;
 
+    const getClient = createLogViewsClientFactory({
+      logger,
+      dataViewsServiceFactory: dataViews.dataViewsServiceFactory,
+      internalLogViews,
+      logViewFallbackHandler,
+      logViewsStaticConfig,
+    });
+
     return {
-      getClient(
-        savedObjectsClient: SavedObjectsClientContract,
-        elasticsearchClient: ElasticsearchClient,
-        logSourcesService: Promise<LogSourcesService>,
-        request?: KibanaRequest
-      ) {
-        return new LogViewsClient(
-          logger,
-          dataViews.dataViewsServiceFactory(savedObjectsClient, elasticsearchClient, request),
-          logSourcesService,
-          savedObjectsClient,
-          logViewFallbackHandler,
-          internalLogViews,
-          logViewsStaticConfig
-        );
-      },
+      getClient,
       getScopedClient(request: KibanaRequest) {
         const savedObjectsClient = savedObjects.getScopedClient(request);
         const elasticsearchClient = elasticsearch.client.asScoped(request).asCurrentUser;

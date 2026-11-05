@@ -21,7 +21,7 @@ import type { PrivateLocation, SyntheticsPrivateLocations } from '../../../../co
 import { SYNTHETICS_API_URLS } from '../../../../common/constants';
 import { getPrivateLocations } from '../../../synthetics_service/get_private_locations';
 import type { SyntheticsPrivateLocationsAttributes } from '../../../runtime_types/private_locations';
-import type { SyntheticsMonitorClient } from '../../../synthetics_service/synthetics_monitor/synthetics_monitor_client';
+import type { LocationsClient } from '../../../synthetics_service/get_all_locations';
 import { allLocationsToClientContract } from './helpers';
 
 const loadPrivateLocations = async ({
@@ -103,7 +103,7 @@ export const getPrivateLocationRoute: SyntheticsRestApiRouteFactory<
 
 export const getPrivateLocationsAndAgentPolicies = async (
   savedObjectsClient: SavedObjectsClientContract,
-  syntheticsMonitorClient: SyntheticsMonitorClient,
+  syntheticsMonitorClient: LocationsClient,
   excludeAgentPolicies = false,
   spaceId: string = ALL_SPACES_ID
 ): Promise<SyntheticsPrivateLocationsAttributes & { agentPolicies: AgentPolicyInfo[] }> => {

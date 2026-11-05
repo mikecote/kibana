@@ -7,68 +7,20 @@
 import type { SavedObject, SavedObjectsFindResult } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
 import { formatSecrets, normalizeSecrets } from '../../../synthetics_service/utils';
-import type { AgentPolicyInfo } from '../../../../common/types';
 import type {
   SyntheticsMonitor,
   SyntheticsMonitorWithSecretsAttributes,
   SyntheticsPrivateLocations,
 } from '../../../../common/runtime_types';
-import type {
-  SyntheticsPrivateLocationsAttributes,
-  PrivateLocationAttributes,
-} from '../../../runtime_types/private_locations';
-import type { PrivateLocation } from '../../../../common/runtime_types';
 import type { MonitorConfigUpdate } from '../../monitor_cruds/bulk_cruds/edit_monitor_bulk';
 import { syncEditedMonitorBulk } from '../../monitor_cruds/bulk_cruds/edit_monitor_bulk';
 import type { RouteContext } from '../../types';
 
-export const toClientContract = (
-  locationObject: SavedObject<PrivateLocationAttributes>
-): PrivateLocation => {
-  const location = locationObject.attributes;
-  return {
-    label: location.label,
-    id: location.id,
-    agentPolicyId: location.agentPolicyId,
-    isServiceManaged: false,
-    isInvalid: false,
-    tags: location.tags,
-    geo: location.geo,
-    spaces: locationObject.namespaces,
-  };
-};
-
-export const allLocationsToClientContract = (
-  attributes: SyntheticsPrivateLocationsAttributes,
-  agentPolicies?: AgentPolicyInfo[]
-): SyntheticsPrivateLocations => {
-  return attributes.locations.map((location) => {
-    const agPolicy = agentPolicies?.find((policy) => policy.id === location.agentPolicyId);
-    return {
-      label: location.label,
-      id: location.id,
-      agentPolicyId: location.agentPolicyId,
-      isServiceManaged: false,
-      isInvalid: !Boolean(agPolicy),
-      tags: location.tags,
-      geo: location.geo,
-      spaces: location.spaces,
-    };
-  });
-};
-
-export const toSavedObjectContract = (location: PrivateLocation): PrivateLocationAttributes => {
-  return {
-    label: location.label,
-    id: location.id,
-    agentPolicyId: location.agentPolicyId,
-    tags: location.tags,
-    isServiceManaged: false,
-    geo: location.geo,
-    namespace: location.namespace,
-    spaces: location.spaces,
-  };
-};
+export {
+  toClientContract,
+  allLocationsToClientContract,
+  toSavedObjectContract,
+} from './location_contracts';
 
 // Label edits must rewrite this location's monitors: the label is stored on
 // each monitor's locations array.

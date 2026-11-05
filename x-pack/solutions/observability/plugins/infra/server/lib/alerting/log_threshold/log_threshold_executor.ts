@@ -74,7 +74,7 @@ import {
   UngroupedSearchQueryResponseRT,
 } from '../../../../common/alerting/logs/log_threshold';
 import { getLogsAppAlertUrl } from '../../../../common/formatters/alert_link';
-import type { InfraBackendLibs } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import type { AdditionalContext } from '../common/utils';
 import {
   flattenAdditionalContext,
@@ -133,7 +133,7 @@ const checkValueAgainstComparatorMap: {
 // With forks for group_by vs ungrouped, and ratio vs non-ratio.
 
 export const createLogThresholdExecutor =
-  (libs: InfraBackendLibs) =>
+  (libs: InfraAlertingLibs) =>
   async (
     options: RuleExecutorOptions<
       LogThresholdRuleTypeParams,
@@ -151,8 +151,6 @@ export const createLogThresholdExecutor =
       throw new AlertsClientError();
     }
 
-    const [, { logsShared, logsDataAccess }] = await libs.getStartServices();
-
     try {
       const decoded = ruleParamsRT.decode(params);
 
@@ -163,12 +161,14 @@ export const createLogThresholdExecutor =
 
       const validatedParams = decoded.right;
 
-      const logSourcesService =
-        logsDataAccess.services.logSourcesServiceFactory.getLogSourcesService(savedObjectsClient);
+      const logViewsClient = await libs.getLogViewsClient({
+        savedObjectsClient,
+        esClient: scopedClusterClient.asCurrentUser,
+      });
 
-      const { indices, timestampField, runtimeMappings } = await logsShared.logViews
-        .getClient(savedObjectsClient, scopedClusterClient.asCurrentUser, logSourcesService)
-        .getResolvedLogView(validatedParams.logView);
+      const { indices, timestampField, runtimeMappings } = await logViewsClient.getResolvedLogView(
+        validatedParams.logView
+      );
 
       const alertReporter: LogThresholdAlertReporter = (
         id,

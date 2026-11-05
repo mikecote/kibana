@@ -6,10 +6,11 @@
  */
 
 import { SYNTHETICS_TLS_RULE } from '@kbn/rule-data-utils';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { registerSyntheticsTLSCheckRule } from '../alert_rules/tls_rule/tls_rule';
+import { createSyntheticsRuleTaskType } from './synthetics_rule_task_type';
 
-/** The TLS rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The TLS rule type, which a task process can run. */
+export const taskType = createSyntheticsRuleTaskType(
   SYNTHETICS_TLS_RULE,
-  'its executor reads Fleet, private locations and the synthetics service, which only exist in Kibana'
+  registerSyntheticsTLSCheckRule
 );

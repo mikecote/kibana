@@ -9,7 +9,6 @@ import type { Server } from '@hapi/hapi';
 import type { CoreStart, Plugin, PluginInitializerContext } from '@kbn/core/server';
 import { handleEsError } from '@kbn/es-ui-shared-plugin/server';
 import type { Logger } from '@kbn/logging';
-import type { GetMetricIndicesOptions } from '@kbn/metrics-data-access-plugin/server';
 import { type AlertsLocatorParams, alertsLocatorID } from '@kbn/observability-plugin/common';
 import {
   AssetDetailsLocatorDefinition,
@@ -29,6 +28,11 @@ import { KibanaMetricsAdapter } from './lib/adapters/metrics/kibana_metrics_adap
 import { InfraElasticsearchSourceStatusAdapter } from './lib/adapters/source_status';
 import { registerRuleTypes } from './lib/alerting';
 import {
+  createInfraAlertingLibs,
+  createInfraSources,
+  getInfraLogViewsSettings,
+} from './lib/alerting/create_infra_alerting_libs';
+import {
   LOGS_RULES_ALERT_CONTEXT,
   METRICS_RULES_ALERT_CONTEXT,
 } from './lib/alerting/register_rule_types';
@@ -36,7 +40,7 @@ import { InfraMetricsDomain } from './lib/domains/metrics_domain';
 import type { InfraBackendLibs, InfraDomainLibs } from './lib/infra_types';
 import { createIsCpsPlatformGateEnabled } from './lib/log_analysis/common';
 import { InfraSourceStatus } from './lib/source_status';
-import { infraSourceConfigurationSavedObjectType, InfraSources } from './lib/sources';
+import { infraSourceConfigurationSavedObjectType } from './lib/sources';
 import {
   infraCustomDashboardsSavedObjectType,
   inventoryViewSavedObjectType,
@@ -54,7 +58,6 @@ import type {
   ServerlessInfo,
 } from './types';
 import { UsageCollector } from './usage/usage_collector';
-import { mapSourceToLogView } from './utils/map_source_to_log_view';
 import { registerDataProviders } from './agent_builder/register_data_providers';
 import { getInfraRequestHandlerContext } from './utils/get_infra_request_handler_context';
 
@@ -108,17 +111,7 @@ export class InfraServerPlugin
   setup(core: InfraPluginCoreSetup, plugins: InfraServerPluginSetupDeps) {
     this.serverless.cpsEnabled = plugins.cps?.getCpsEnabled() ?? false;
     const framework = new KibanaFramework(core, this.config, plugins);
-    const metricsClient = plugins.metricsDataAccess.client;
-    metricsClient.setDefaultMetricIndicesHandler(async (options: GetMetricIndicesOptions) => {
-      const sourceConfiguration = await sources.getInfraSourceConfiguration(
-        options.savedObjectsClient,
-        'default'
-      );
-      return sourceConfiguration.configuration.metricAlias;
-    });
-    const sources = new InfraSources({
-      metricsClient,
-    });
+    const sources = createInfraSources({ metricsClient: plugins.metricsDataAccess.client });
 
     const sourceStatus = new InfraSourceStatus(
       new InfraElasticsearchSourceStatusAdapter(framework, this.serverless.isServerless),
@@ -168,10 +161,24 @@ export class InfraServerPlugin
       };
     }) as InfraBackendLibs['plugins'];
 
-    this.libs = {
+    const alertingLibs = createInfraAlertingLibs({
+      logger: this.logger,
+      basePath: core.http.basePath,
       configuration: this.config,
-      framework,
       sources,
+      getLogViewsClient: async ({ savedObjectsClient, esClient }) => {
+        const [, { logsShared, logsDataAccess }] = await core.getStartServices();
+        return logsShared.logViews.getClient(
+          savedObjectsClient,
+          esClient,
+          logsDataAccess.services.logSourcesServiceFactory.getLogSourcesService(savedObjectsClient)
+        );
+      },
+    });
+
+    this.libs = {
+      ...alertingLibs,
+      framework,
       sourceStatus,
       ...domainLibs,
       handleEsError,
@@ -184,8 +191,6 @@ export class InfraServerPlugin
         cps: plugins.cps,
         getStartServices: () => core.getStartServices(),
       }),
-      logger: this.logger,
-      basePath: core.http.basePath,
       plugins: libsPlugins,
       serverless: this.serverless,
     };
@@ -193,17 +198,19 @@ export class InfraServerPlugin
     plugins.features.registerKibanaFeature(getMetricsFeature());
 
     // Register an handler to retrieve the fallback logView starting from a source configuration
-    plugins.logsShared.logViews.registerLogViewFallbackHandler(async (sourceId, { soClient }) => {
-      const sourceConfiguration = await sources.getInfraSourceConfiguration(soClient, sourceId);
-      return mapSourceToLogView(sourceConfiguration);
+    const { logViewFallbackHandler, logViewsStaticConfig } = getInfraLogViewsSettings({
+      sources,
+      configuration: this.config,
     });
-    plugins.logsShared.logViews.setLogViewsStaticConfig({
-      messageFields: this.config.sources?.default?.fields?.message,
-    });
+    plugins.logsShared.logViews.registerLogViewFallbackHandler(logViewFallbackHandler);
+    plugins.logsShared.logViews.setLogViewsStaticConfig(logViewsStaticConfig);
 
     plugins.logsShared.registerUsageCollectorActions({
       countLogs: () => UsageCollector.countLogs(),
     });
+
+    // The rule types read this config in a task process too.
+    plugins.alerting.registerTaskProcessSettings('infra', () => this.config);
 
     registerRuleTypes(plugins.alerting, this.libs, this.config, {
       alertsLocator,

@@ -44,7 +44,8 @@ import { getOriginalActionGroup } from '../../../utils/get_original_action_group
 import { Aggregators, AlertStates } from '../../../../common/alerting/metrics';
 import type { MetricExpressionParams } from '../../../../common/alerting/metrics';
 import { createFormatter } from '../../../../common/formatters';
-import type { InfraBackendLibs, InfraLocators } from '../../infra_types';
+import type { InfraLocators } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import {
   buildFiredAlertReason,
   buildInvalidQueryAlertReason,
@@ -121,7 +122,7 @@ type MetricThresholdAlertReporter = (params: {
 // TODO: Refactor the executor code to have better flow-control with better
 // reasoning of different state/conditions for improved maintainability
 export const createMetricThresholdExecutor =
-  (libs: InfraBackendLibs, { assetDetailsLocator, metricsExplorerLocator }: InfraLocators) =>
+  (libs: InfraAlertingLibs, { assetDetailsLocator, metricsExplorerLocator }: InfraLocators) =>
   async (
     options: RuleExecutorOptions<
       MetricThresholdRuleParams,

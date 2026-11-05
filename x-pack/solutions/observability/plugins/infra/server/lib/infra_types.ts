@@ -6,6 +6,7 @@
  */
 
 import type { Logger } from '@kbn/logging';
+import type { ElasticsearchClient, SavedObjectsClientContract } from '@kbn/core/server';
 import type { IBasePath } from '@kbn/core/server';
 import type { handleEsError } from '@kbn/es-ui-shared-plugin/server';
 import type { ObservabilityConfig } from '@kbn/observability-plugin/server';
@@ -16,6 +17,7 @@ import type {
   MetricsExplorerLocator,
 } from '@kbn/observability-shared-plugin/common';
 import type { AlertsLocator } from '@kbn/observability-plugin/common';
+import type { ILogViewsClient } from '@kbn/logs-shared-plugin/server/services/log_views/types';
 import type { RulesServiceSetup } from '../services/rules';
 import type { InfraConfig, InfraPluginStartServicesAccessor, ServerlessInfo } from '../types';
 import type { KibanaFramework } from './adapters/framework/kibana_framework_adapter';
@@ -47,6 +49,11 @@ export interface InfraBackendLibs extends InfraDomainLibs {
   sources: InfraSources;
   sourceStatus: InfraSourceStatus;
   getAlertDetailsConfig: () => ObservabilityConfig['unsafe']['alertDetails'];
+  /** A log views client for the rule that runs, which reads what its services let it. */
+  getLogViewsClient: (services: {
+    savedObjectsClient: SavedObjectsClientContract;
+    esClient: ElasticsearchClient;
+  }) => Promise<ILogViewsClient>;
   getStartServices: InfraPluginStartServicesAccessor;
   handleEsError: typeof handleEsError;
   isCpsPlatformGateEnabled: () => Promise<boolean>;
