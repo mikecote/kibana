@@ -48,6 +48,14 @@ dependsOn:
   - '@kbn/spaces-plugin'
   - '@kbn/core-spaces-common'
   - '@kbn/i18n'
+  - '@kbn/encrypted-saved-objects-plugin'
+  - '@kbn/event-log-plugin'
+  - '@kbn/security-plugin'
+  - '@kbn/repo-info'
+  - '@kbn/core-base-common'
+  - '@kbn/core-plugins-server-internal'
+  - '@kbn/core-logging-server-mocks'
+  - '@kbn/core-test-helpers-kbn-server'
 tags:
   - plugin
   - prod

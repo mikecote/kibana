@@ -7,11 +7,20 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
+import type {
+  PluginSetupContract as ActionsPluginSetupContract,
+  PluginStartContract as ActionsPluginStartContract,
+} from '@kbn/actions-plugin/server';
 import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type {
+  EncryptedSavedObjectsPluginSetup,
+  EncryptedSavedObjectsPluginStart,
+} from '@kbn/encrypted-saved-objects-plugin/server';
+import type { IEventLogService } from '@kbn/event-log-plugin/server';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type {
   TaskManagerSetupContract,
@@ -100,6 +109,11 @@ export interface WorkflowsExecutionEnginePluginSetupDeps {
   cloud: CloudSetup;
   usageApi?: UsageApiSetup;
   workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  /** What the task process of the workflow task types is given: the actions config, the keys to decrypt with, the event log and the security settings. */
+  actions?: ActionsPluginSetupContract;
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginSetup;
+  eventLog?: IEventLogService;
+  security?: SecurityPluginSetup;
 }
 
 export interface WorkflowsExecutionEnginePluginStartDeps {
@@ -109,6 +123,7 @@ export interface WorkflowsExecutionEnginePluginStartDeps {
   workflowsExtensions: WorkflowsExtensionsServerPluginStart;
   licensing: LicensingPluginStart;
   spaces?: SpacesPluginStart;
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginStart;
 }
 
 export type ExecuteWorkflow = (

@@ -9,6 +9,11 @@
     "configPath": ["workflowsExecutionEngine"],
     "id": "workflowsExecutionEngine",
     "browser": false,
+    "taskTypes": [
+      "server/task_types/workflow_run.task.ts",
+      "server/task_types/workflow_resume.task.ts",
+      "server/task_types/workflow_scheduled.task.ts"
+    ],
     "server": true,
     "requiredPlugins": [
       "taskManager",
@@ -18,6 +23,9 @@
     ],
     "optionalPlugins": [
       "alerting",
+      "encryptedSavedObjects",
+      "eventLog",
+      "security",
       "usageApi",
       "cloud",
       "spaces",

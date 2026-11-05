@@ -1,0 +1,90 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+
+import type { Logger } from '@kbn/logging';
+import { ServerStepRegistry } from './step_registry/step_registry';
+import { registerInternalStepDefinitions } from './steps';
+import { TriggerRegistry } from './trigger_registry/trigger_registry';
+import { registerInternalTriggerDefinitions } from './triggers';
+import type {
+  WorkflowsExtensionsServerPluginSetup,
+  WorkflowsExtensionsServerPluginStart,
+} from './types';
+
+/** The part of the setup contract a plugin registers its steps and triggers through. */
+export type WorkflowStepsRegistry = Pick<
+  WorkflowsExtensionsServerPluginSetup,
+  'registerStepDefinition' | 'registerTriggerDefinition'
+>;
+
+/** What the execution engine reads of the registry when it runs a workflow. */
+export type WorkflowStepsRegistryView = Pick<
+  WorkflowsExtensionsServerPluginStart,
+  | 'isReady'
+  | 'hasStepDefinition'
+  | 'getStepDefinition'
+  | 'getAllStepDefinitions'
+  | 'getTriggerDefinition'
+  | 'getAllTriggerDefinitions'
+>;
+
+/**
+ * Builds the step and trigger registry without the plugin lifecycle, with the internal `data.*`
+ * steps and the internal triggers registered: what a task process builds, and then hands to the
+ * `workflow-steps` contributions of the plugins that register steps, as those plugins hand it to
+ * `setup()` in Kibana. `isReady()` resolves once the loaders registered so far have settled.
+ */
+export const createServerStepRegistry = (
+  logger: Logger
+): WorkflowStepsRegistry & WorkflowStepsRegistryView => {
+  const stepRegistry = new ServerStepRegistry(logger);
+  const triggerRegistry = new TriggerRegistry();
+  registerInternalStepDefinitions(stepRegistry);
+  registerInternalTriggerDefinitions(triggerRegistry);
+  return {
+    registerStepDefinition: (definition) => stepRegistry.register(definition),
+    registerTriggerDefinition: (definition) => triggerRegistry.register(definition),
+    getStepDefinition: (id) => stepRegistry.get(id),
+    hasStepDefinition: (id) => stepRegistry.has(id),
+    getAllStepDefinitions: () => stepRegistry.getAll(),
+    getTriggerDefinition: (id) => triggerRegistry.get(id),
+    getAllTriggerDefinitions: () => triggerRegistry.list(),
+    isReady: async () => {
+      await stepRegistry.whenReady();
+    },
+  };
+};
+
+/**
+ * What a plugin that registers workflow steps or triggers adds to the process of the workflows
+ * engine task types (contribution key {@link WORKFLOW_STEPS_CONTRIBUTIONS}), as it adds them to
+ * Kibana in its `setup()`. Exported as `contribution` from a file listed under
+ * `taskTypeContributions` in the plugin's `kibana.jsonc`.
+ */
+export interface WorkflowStepsContribution {
+  register(
+    registry: WorkflowStepsRegistry,
+    context: WorkflowStepsContributionContext
+  ): void | Promise<void>;
+}
+
+/** What a contribution may use: the process (its host), not the plugins around it. */
+export interface WorkflowStepsContributionContext {
+  /** The task host of the process; the services the plugin's steps are built from. */
+  host: unknown;
+  logger: Logger;
+  isServerless: boolean;
+  kibanaVersion: string;
+  publicBaseUrl?: string;
+  /** The validated configs Kibana sent, by plugin id. */
+  settings: Record<string, unknown>;
+}
+
+/** The contribution key under which plugins add their workflow steps and triggers. */
+export const WORKFLOW_STEPS_CONTRIBUTIONS = 'workflow-steps';

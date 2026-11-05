@@ -70,6 +70,7 @@ jest.mock('./repositories/workflow_execution_repository', () => ({
 }));
 
 import { WorkflowsExecutionEnginePlugin } from './plugin';
+import { captureTaskDefinitions } from './test_utils/capture_task_definitions';
 import { WORKFLOW_RUN_TASK_TYPE } from './workflow_task_manager/types';
 
 describe('concurrency queue recovery wiring', () => {
@@ -97,9 +98,7 @@ describe('concurrency queue recovery wiring', () => {
     ]);
 
     const taskManagerSetup = taskManagerMock.createSetup();
-    taskManagerSetup.registerTaskDefinitions.mockImplementation((definitions) => {
-      Object.assign(taskDefinitions, definitions);
-    });
+    captureTaskDefinitions(taskManagerSetup, taskDefinitions);
 
     plugin.setup(coreSetup as never, {
       taskManager: taskManagerSetup,

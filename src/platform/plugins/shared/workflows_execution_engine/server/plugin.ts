@@ -7,7 +7,6 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { schema } from '@kbn/config-schema';
 import type {
   CoreSetup,
   CoreStart,
@@ -15,28 +14,24 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import type { TaskRegisterDefinition } from '@kbn/task-manager-plugin/server';
+import type { TaskTypeRegistrationOptions } from '@kbn/task-manager-plugin/server/task_type_module';
 import { WorkflowRepository } from '@kbn/workflows';
 import type { WorkflowsExecutionEngineConfig } from './config';
-import {
-  createWorkflowRuntime,
-  WORKFLOW_RESUME_TASK_MAX_ATTEMPTS,
-  WORKFLOW_RUN_TASK_MAX_ATTEMPTS,
-  WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS,
-} from './create_workflow_runtime';
-import type {
-  WorkflowRuntime,
-  WorkflowTaskContext,
-  WorkflowTaskFunction,
-} from './create_workflow_runtime';
+import { createWorkflowRuntime } from './create_workflow_runtime';
+import type { WorkflowRuntime } from './create_workflow_runtime';
 import { registerWorkflowDataStreams } from './data_streams';
 import { ensureWorkflowsDataStreamsRolledOver } from './lib/data_streams/ensure_data_streams_rolled_over';
 import { WorkflowExecutionTelemetryClient } from './lib/telemetry/workflow_execution_telemetry_client';
+import type { WorkflowMeteringRecord } from './metering';
 import { WorkflowsMeteringService } from './metering/metering_service';
 import { createDataClientBundle, type DataClientBundle } from './repositories/data_access_layer';
 import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 import { resolveWorkflowWorkloads } from './service_account_workload_resolver';
 import { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
+import { WORKFLOWS_METERING_TELEMETRY_KIND } from './task_types/constants';
+import { taskType as resumeTaskType } from './task_types/workflow_resume.task';
+import { taskType as runTaskType } from './task_types/workflow_run.task';
+import { taskType as scheduledTaskType } from './task_types/workflow_scheduled.task';
 import type {
   WorkflowsExecutionEnginePluginSetup,
   WorkflowsExecutionEnginePluginSetupDeps,
@@ -44,13 +39,6 @@ import type {
   WorkflowsExecutionEnginePluginStartDeps,
 } from './types';
 import type { WorkflowCloudInfo } from './workflow_core_services';
-import {
-  WORKFLOW_RESUME_TASK_TYPE,
-  WORKFLOW_RUN_TASK_TYPE,
-  WORKFLOW_SCHEDULED_TASK_TYPE,
-} from './workflow_task_manager/types';
-
-type CancellableTask = ReturnType<TaskRegisterDefinition['createTaskRunner']>;
 
 interface SetupDependencies {
   cloudSetup: WorkflowCloudInfo | undefined;
@@ -151,49 +139,59 @@ export class WorkflowsExecutionEnginePlugin
       );
     }
 
-    plugins.taskManager.registerTaskDefinitions({
-      [WORKFLOW_RUN_TASK_TYPE]: {
-        title: 'Run Workflow',
-        description: 'Executes a workflow immediately',
-        // Set high timeout for long-running workflows.
-        // This is high value to allow long-running workflows.
-        // The workflow timeout logic defined in workflow execution engine logic is the primary control.
-        timeout: '365d',
-        // Retries allow `resolveInterruptedWorkflowRunTask` to fail-fast abandoned executions after interrupt.
-        maxAttempts: WORKFLOW_RUN_TASK_MAX_ATTEMPTS,
-        createTaskRunner: this.createTaskRunner((runtime) => runtime.runWorkflowTask),
+    // The three task types are modules: the plugin hands them its runtime (`host.plugins`), a task
+    // process builds its own from its host. What a process may be told is registered here.
+    const taskTypeOptions: TaskTypeRegistrationOptions = {
+      logger: this.logger,
+      hostExtensions: {
+        plugins: async () => ({ workflowsExecutionEngine: { runtime: await this.getRuntime() } }),
+        encryptedSavedObjects: async () => {
+          const [, start] = await core.getStartServices();
+          const eso = start.encryptedSavedObjects;
+          if (!eso) throw new Error('Encrypted saved objects are not available');
+          return {
+            getClient: eso.getClient,
+            isEncryptionError: eso.isEncryptionError,
+            canEncrypt: plugins.encryptedSavedObjects?.canEncrypt ?? false,
+          };
+        },
+        getEncryptionKeys: () =>
+          plugins.encryptedSavedObjects?.getKeysForTaskProcesses() ?? { decryptionOnlyKeys: [] },
+        // Kibana hands the runtime its own services; the event log is only read in a task process.
+        eventLog: plugins.eventLog ?? {
+          registerProviderActions: () => {},
+          getLogger: () => {
+            throw new Error('The event log is not available');
+          },
+        },
       },
-    });
-    plugins.taskManager.registerTaskDefinitions({
-      [WORKFLOW_RESUME_TASK_TYPE]: {
-        paramsSchema: schema.object({
-          workflowRunId: schema.string(),
-          spaceId: schema.string(),
-        }),
-        title: 'Resume Workflow',
-        description: 'Resumes a paused workflow',
-        allowPriorityOverride: true,
-        // Set high timeout for long-running workflows.
-        // This is high value to allow long-running workflows.
-        // The workflow timeout logic defined in workflow execution engine logic is the primary control.
-        timeout: '365d',
-        // Retries allow `resolveInterruptedWorkflowResumeTask` to fail-fast abandoned executions after interrupt.
-        maxAttempts: WORKFLOW_RESUME_TASK_MAX_ATTEMPTS,
-        createTaskRunner: this.createTaskRunner((runtime) => runtime.resumeWorkflowTask),
+      settings: {
+        workflowsExecutionEngine: () => this.config,
+        workflowsExecutionEngineCloud: () => {
+          const cloudSetup = this.setupDependencies?.cloudSetup;
+          return cloudSetup
+            ? {
+                kibanaUrl: cloudSetup.kibanaUrl,
+                serverless: cloudSetup.serverless,
+                deploymentId: cloudSetup.deploymentId,
+                csp: cloudSetup.csp,
+                region: cloudSetup.region,
+                elasticsearchClusterId: cloudSetup.elasticsearchClusterId,
+              }
+            : null;
+        },
+        security: () => plugins.security?.getTaskProcessSettings() ?? null,
+        actions: () => plugins.actions?.getConfig(),
       },
-    });
-    plugins.taskManager.registerTaskDefinitions({
-      [WORKFLOW_SCHEDULED_TASK_TYPE]: {
-        title: 'Scheduled Workflow Execution',
-        description: 'Executes workflows on a scheduled basis',
-        // Set high timeout for long-running workflows.
-        // This is high value to allow long-running workflows.
-        // The workflow timeout logic defined in workflow execution engine logic is the primary control.
-        timeout: '365d',
-        maxAttempts: WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS,
-        createTaskRunner: this.createTaskRunner((runtime) => runtime.scheduledWorkflowTask),
-      },
-    });
+    };
+    for (const taskType of [runTaskType, resumeTaskType, scheduledTaskType]) {
+      plugins.taskManager.registerTaskType(taskType, taskTypeOptions);
+    }
+    // What a task process measured goes to the usage API from here.
+    plugins.taskManager.registerTaskProcessTelemetrySink(
+      WORKFLOWS_METERING_TELEMETRY_KIND,
+      (record) => this.meteringService?.report(record as WorkflowMeteringRecord)
+    );
 
     return {};
   }
@@ -248,7 +246,7 @@ export class WorkflowsExecutionEnginePlugin
   }
 
   /** The runtime of this node; built from the start services when a task runs before `start()` returns. */
-  private getRuntime(): Promise<WorkflowRuntime> {
+  public getRuntime(): Promise<WorkflowRuntime> {
     if (!this.runtimePromise) {
       const { coreSetup } = this;
       if (!coreSetup) {
@@ -259,21 +257,5 @@ export class WorkflowsExecutionEnginePlugin
         .then(([coreStart, plugins]) => this.buildRuntime(coreStart, plugins));
     }
     return this.runtimePromise;
-  }
-
-  /**
-   * Task Manager needs the runner synchronously, the runtime needs Kibana's start services: the
-   * runner is made on the first `run` or `cancel`, once the runtime is available.
-   */
-  private createTaskRunner(pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction) {
-    return (context: WorkflowTaskContext): CancellableTask => {
-      let runner: Promise<CancellableTask> | undefined;
-      const getRunner = () =>
-        (runner ??= this.getRuntime().then((runtime) => pick(runtime)(context)));
-      return {
-        run: async () => (await getRunner()).run(),
-        cancel: async () => (await getRunner()).cancel?.(),
-      };
-    };
   }
 }

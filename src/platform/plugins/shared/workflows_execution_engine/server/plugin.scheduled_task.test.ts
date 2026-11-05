@@ -94,6 +94,7 @@ jest.mock('./repositories/workflow_execution_repository', () => ({
 import { UNKNOWN_EXECUTION_IDENTITY } from './lib/execution_identity';
 import { getAuthenticatedUser } from './lib/get_user';
 import { WorkflowsExecutionEnginePlugin } from './plugin';
+import { captureTaskDefinitions } from './test_utils/capture_task_definitions';
 import { WORKFLOW_SCHEDULED_TASK_TYPE } from './workflow_task_manager/types';
 
 describe('workflow:scheduled task runner', () => {
@@ -148,9 +149,7 @@ describe('workflow:scheduled task runner', () => {
     ]);
 
     const taskManagerSetup = taskManagerMock.createSetup();
-    taskManagerSetup.registerTaskDefinitions.mockImplementation((definitions) => {
-      Object.assign(taskDefinitions, definitions);
-    });
+    captureTaskDefinitions(taskManagerSetup, taskDefinitions);
 
     plugin.setup(coreSetup as never, {
       taskManager: taskManagerSetup,
