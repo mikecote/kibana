@@ -33,15 +33,13 @@ import type {
 
 import type { ElasticsearchClient } from '@kbn/core/server';
 import { ENDPOINT_ARTIFACT_LIST_IDS } from '@kbn/securitysolution-list-constants';
-import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import { parseDuration } from '@kbn/alerting-plugin/server';
 import type { ExceptionListClient } from '@kbn/lists-plugin/server';
 import type { SanitizedRuleAction, GapReason } from '@kbn/alerting-plugin/common';
 import { gapReasonType } from '@kbn/alerting-plugin/common';
 import type { SuppressionFieldsLatest } from '@kbn/rule-registry-plugin/common/schemas';
-import type { TimestampOverride } from '../../../../../common/api/detection_engine/model/rule_schema';
-import type { Privilege } from '../../../../../common/api/detection_engine';
 import type {
+  RuleRunAlerting,
   SearchAfterAndBulkCreateReturnType,
   SignalSearchResponse,
   WrappedSignalHit,
@@ -51,6 +49,8 @@ import type {
   WrappedEventHit,
   SecuritySharedParams,
 } from '../types';
+import type { TimestampOverride } from '../../../../../common/api/detection_engine/model/rule_schema';
+import type { Privilege } from '../../../../../common/api/detection_engine';
 import type { ShardError } from '../../../types';
 import type {
   EqlRuleParams,
@@ -381,7 +381,7 @@ export const getRuleRangeTuples = async ({
   interval: string;
   maxSignals: number;
   ruleExecutionLogger: IRuleExecutionLogForExecutors;
-  alerting: AlertingServerSetup;
+  alerting: RuleRunAlerting;
   lastEnabledAt: Date | null | undefined;
 }) => {
   const originalFrom = dateMath.parse(from, { forceNow: startedAt });

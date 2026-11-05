@@ -28,7 +28,8 @@ import type {
 } from '@kbn/data-plugin/server';
 
 import type { RuleRegistryPluginConfig } from './config';
-import { type IRuleDataService, RuleDataService, Dataset } from './rule_data_plugin_service';
+import { type IRuleDataService, createRuleDataService, Dataset } from './rule_data_plugin_service';
+import { RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID } from './task_types/rule_data_task_process_services';
 import { AlertsClientFactory } from './alert_data_client/alerts_client_factory';
 import type { AlertsClient } from './alert_data_client/alerts_client';
 import type { RacApiRequestHandlerContext, RacRequestHandlerContext } from './types';
@@ -102,12 +103,10 @@ export class RuleRegistryPlugin
 
     const dataStreamAdapter = plugins.alerting.getDataStreamAdapter();
 
-    this.ruleDataService = new RuleDataService({
+    this.ruleDataService = createRuleDataService({
       logger,
       kibanaVersion,
-      disabledRegistrationContexts: this.config.write.disabledRegistrationContexts,
-      isWriteEnabled: this.config.write.enabled,
-      isWriterCacheEnabled: this.config.write.cache.enabled,
+      config: this.config,
       getClusterClient: async () => {
         const deps = await startDependencies;
         return deps.core.elasticsearch.client.asInternalUser;
@@ -118,7 +117,11 @@ export class RuleRegistryPlugin
       elasticsearchAndSOAvailability$,
     });
 
-    this.ruleDataService.initializeService();
+    // What a task process that runs a rule type of a plugin that uses the rule registry reads of it.
+    plugins.alerting.registerTaskProcessSettings(
+      RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID,
+      () => this.config
+    );
 
     core
       .getStartServices()

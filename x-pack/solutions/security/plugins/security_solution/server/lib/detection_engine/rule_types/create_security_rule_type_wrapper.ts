@@ -12,7 +12,7 @@ import type { estypes } from '@elastic/elasticsearch';
 import { addSpanLabels } from '@kbn/apm-utils';
 import { TIMESTAMP } from '@kbn/rule-data-utils';
 import { createPersistenceRuleTypeWrapper } from '@kbn/rule-registry-plugin/server';
-import { buildExceptionFilter } from '@kbn/lists-plugin/server/services/exception_lists';
+import { buildExceptionFilter } from '@kbn/lists-plugin/server/services/exception_lists/build_exception_filter';
 import { technicalRuleFieldMap } from '@kbn/rule-registry-plugin/common/assets/field_maps/technical_rule_field_map';
 import type { FieldMap } from '@kbn/alerts-as-data-utils';
 import { parseScheduleDates } from '@kbn/securitysolution-io-ts-utils';
@@ -95,7 +95,6 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
   ({
     lists,
     actions,
-    docLinks,
     logger,
     config,
     publicBaseUrl,
@@ -118,7 +117,6 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
   (type) => {
     const { alertIgnoreFields: ignoreFields, alertMergeStrategy: mergeStrategy } = config;
     // Rule preview must stay non-operational, similar to regular actions
-    const responseActionsService = isPreview ? noop : scheduleNotificationResponseActionsService;
     const persistenceRuleType = createPersistenceRuleTypeWrapper({
       ruleDataClient,
       logger,
@@ -181,6 +179,17 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
             state,
             rule,
           } = options;
+          // The response actions run while the executors go on; the run waits for them to be written,
+          // so a task process does not exit before they are.
+          const pendingResponseActions: Array<Promise<unknown>> = [];
+          const responseActionsService: typeof scheduleNotificationResponseActionsService =
+            isPreview
+              ? noop
+              : (scheduleParams) => {
+                  const scheduled = scheduleNotificationResponseActionsService(scheduleParams);
+                  if (scheduled) pendingResponseActions.push(Promise.resolve(scheduled));
+                  return scheduled;
+                };
           addApmLabelsFromParams(params);
           agent.setCustomContext({ [SECURITY_MERGE_STRATEGY]: mergeStrategy });
           agent.setCustomContext({ [SECURITY_PARAMS]: params });
@@ -501,6 +510,15 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
                 warningMessages: [],
               };
             }
+
+            const failedResponseActions = (await Promise.allSettled(pendingResponseActions)).filter(
+              (settled): settled is PromiseRejectedResult => settled.status === 'rejected'
+            );
+            failedResponseActions.forEach(({ reason }) =>
+              ruleExecutionLogger.error(
+                `Failed to schedule response actions: ${reason?.message ?? reason}`
+              )
+            );
 
             const disabledActions = rule.actions.filter(
               (action) => !actions.isActionTypeEnabled(action.actionTypeId)

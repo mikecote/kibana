@@ -4,9 +4,9 @@
  * 2.0; you may not use this file except in compliance with the Elastic License
  * 2.0.
  */
-import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
 import moment from 'moment';
 import type { GapReasonType } from '@kbn/alerting-plugin/common';
+import type { RuleRunAnalytics } from '../../types';
 import { GAP_DETECTED_EVENT } from '../../../../telemetry/event_based/events';
 import { parseInterval } from '../utils';
 import type { RuleParams } from '../../../rule_schema';
@@ -20,7 +20,7 @@ export const sendGapDetectedTelemetryEvent = ({
   ruleParams,
   gapReasonType,
 }: {
-  analytics: AnalyticsServiceSetup;
+  analytics: RuleRunAnalytics;
   interval: string;
   gapDuration: moment.Duration;
   originalFrom: moment.Moment;

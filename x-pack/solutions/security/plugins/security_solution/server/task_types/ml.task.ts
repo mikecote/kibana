@@ -6,10 +6,20 @@
  */
 
 import { ML_RULE_TYPE_ID } from '@kbn/securitysolution-rules';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import {
+  createMlTaskProcessServices,
+  getMlTaskProcessSavedObjectTypes,
+} from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
+import { createMlAlertType } from '../lib/detection_engine/rule_types';
+import { createSecurityRuleTaskType } from './security_rule_task_type';
 
-/** The `ML_RULE_TYPE_ID` detection rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The `ML_RULE_TYPE_ID` detection rule type, which a task process can run. */
+export const taskType = createSecurityRuleTaskType(
   ML_RULE_TYPE_ID,
-  'its executor needs the rule registry, the lists and exceptions services, endpoint response actions and telemetry, which only exist in Kibana'
+  (wrap, deps) => {
+    // The ML services of the process, which first wait for the license the way Kibana's do.
+    const ml = createMlTaskProcessServices(deps);
+    return ml.withLicense(wrap(createMlAlertType(ml.sharedServicesProviders)) as never);
+  },
+  { savedObjectTypes: getMlTaskProcessSavedObjectTypes() }
 );

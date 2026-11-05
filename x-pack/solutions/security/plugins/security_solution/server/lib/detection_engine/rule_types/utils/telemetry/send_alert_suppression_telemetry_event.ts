@@ -4,8 +4,8 @@
  * 2.0; you may not use this file except in compliance with the Elastic License
  * 2.0.
  */
-import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
 import type { SanitizedRuleConfig } from '@kbn/alerting-plugin/common';
+import type { RuleRunAnalytics } from '../../types';
 import { ALERT_SUPPRESSION_EVENT } from '../../../../telemetry/event_based/events';
 import type { AlertSuppressionDuration } from '../../../../../../common/api/detection_engine/model/rule_schema/common_attributes.gen';
 import type { RuleParams } from '../../../rule_schema';
@@ -31,7 +31,7 @@ export const suppressionDurationToSeconds = (
 };
 
 interface SendAlertSuppressionEventArgs {
-  analytics: AnalyticsServiceSetup;
+  analytics: RuleRunAnalytics;
   suppressedAlertsCount: number;
   createdAlertsCount: number;
   ruleParams: RuleParams;

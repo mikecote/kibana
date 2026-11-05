@@ -6,10 +6,10 @@
  */
 
 import { INDICATOR_RULE_TYPE_ID } from '@kbn/securitysolution-rules';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { createIndicatorMatchAlertType } from '../lib/detection_engine/rule_types';
+import { createSecurityRuleTaskType } from './security_rule_task_type';
 
-/** The `INDICATOR_RULE_TYPE_ID` detection rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
-  INDICATOR_RULE_TYPE_ID,
-  'its executor needs the rule registry, the lists and exceptions services, endpoint response actions and telemetry, which only exist in Kibana'
+/** The `INDICATOR_RULE_TYPE_ID` detection rule type, which a task process can run. */
+export const taskType = createSecurityRuleTaskType(INDICATOR_RULE_TYPE_ID, (wrap) =>
+  wrap(createIndicatorMatchAlertType())
 );

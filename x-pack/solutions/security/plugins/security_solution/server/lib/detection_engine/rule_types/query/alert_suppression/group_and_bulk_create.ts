@@ -34,7 +34,7 @@ import type { UnifiedQueryRuleParams } from '../../../rule_schema';
 import type { BuildReasonMessage } from '../../utils/reason_formatters';
 import { AlertSuppressionMissingFieldsStrategyEnum } from '../../../../../../common/api/detection_engine/model/rule_schema';
 import { bulkCreateUnsuppressedAlerts } from './bulk_create_unsuppressed_alerts';
-import type { ITelemetryEventsSender } from '../../../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_telemetry_sender';
 import { DEFAULT_SUPPRESSION_MISSING_FIELDS_STRATEGY } from '../../../../../../common/detection_engine/constants';
 import { getNumberOfSuppressedAlerts } from '../../utils/get_number_of_suppressed_alerts';
 import * as i18n from '../../translations';
@@ -52,7 +52,7 @@ export interface GroupAndBulkCreateParams {
   buildReasonMessage: BuildReasonMessage;
   bucketHistory?: BucketHistory[];
   groupByFields: string[];
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   isLoggedRequestsEnabled: boolean;
 }
 

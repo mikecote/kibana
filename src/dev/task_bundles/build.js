@@ -35,8 +35,11 @@ const loadTaskType = (file) => {
   }
 };
 
-/** Native modules stay out of the bundle and resolve from node_modules at run time. */
-const EXTERNALS = ['re2'];
+/**
+ * Native modules stay out of the bundle and resolve from node_modules at run time. `canvas` is the
+ * optional native dependency of jsdom, which jsdom loads inside a try/catch.
+ */
+const EXTERNALS = ['re2', 'canvas'];
 
 /**
  * The files plugins contribute under a key (`plugin.taskTypeContributions` in `kibana.jsonc`), such as

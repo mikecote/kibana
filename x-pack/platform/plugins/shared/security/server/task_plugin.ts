@@ -24,7 +24,7 @@ import { buildSecurityApi } from './build_delegate_apis';
 import type { ConfigType, UiamConfigType } from './config';
 import type { RunTimeSecurity } from './run_time_security';
 import { createRunTimeSecurity } from './run_time_security';
-import type { SecurityLicense } from '../common';
+import type { AuthenticatedUser, SecurityLicense } from '../common';
 import { SecurityLicenseService } from '../common/licensing/license_service';
 
 /**
@@ -104,8 +104,10 @@ const plugin: PluginInitializer<void, SecurityTaskPluginStart> = async (initiali
   let license: SecurityLicense | undefined;
   let auditSetup: AuditServiceSetup | undefined;
   let delegate: CoreSecurityDelegateContract | undefined;
+  // A process has no session: the user is what the run's fake request was enriched with, which the
+  // delegate reads the same way, so this must not go back through the delegate.
   const getCurrentUser = (request: KibanaRequest) =>
-    delegate?.authc.getCurrentUser(request) ?? null;
+    (request as { auth?: { credentials?: AuthenticatedUser } }).auth?.credentials ?? null;
   let runTime: RunTimeSecurity | undefined;
   const getRunTime = () => {
     if (!runTime) throw new Error('The security services are not available before Core starts');

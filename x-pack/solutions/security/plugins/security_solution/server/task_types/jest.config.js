@@ -15,5 +15,4 @@ module.exports = {
   collectCoverageFrom: [
     '<rootDir>/x-pack/solutions/security/plugins/security_solution/server/task_types/**/*.{ts,tsx}',
   ],
-  moduleNameMapper: require('../__mocks__/module_name_map'),
 };

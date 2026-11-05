@@ -53,6 +53,6 @@ export const getSharedParamsMock = <T extends RuleParams = QueryRuleParams>({
   ignoreFieldsRegexes: [],
   eventsTelemetry: createMockTelemetryEventsSender(true),
   licensing: licensingMock.createSetup(),
-  scheduleNotificationResponseActionsService: () => null,
+  scheduleNotificationResponseActionsService: () => undefined,
   ...rewrites,
 });

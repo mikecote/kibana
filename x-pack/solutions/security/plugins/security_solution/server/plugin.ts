@@ -17,10 +17,7 @@ import type {
 } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
-import { ECS_COMPONENT_TEMPLATE_NAME } from '@kbn/alerting-plugin/server';
-import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
 import type { IRuleDataClient } from '@kbn/rule-registry-plugin/server';
-import { Dataset } from '@kbn/rule-registry-plugin/server';
 import type { ListPluginSetup } from '@kbn/lists-plugin/server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { NewPackagePolicy, UpdatePackagePolicyWithId } from '@kbn/fleet-plugin/common';
@@ -57,7 +54,7 @@ import { CheckMetadataTransformsTask } from './endpoint/lib/metadata';
 import { initEncryptedSavedObjects, initSavedObjects } from './saved_objects';
 import { AppClientFactory } from './client';
 import type { ConfigType } from './config';
-import { createConfig } from './config';
+import { createConfig, getTaskProcessSettings, TASK_PROCESS_SETTINGS_ID } from './config';
 import type { ThreatIntelRuntime } from './threat_intel/wiring';
 import {
   createThreatIntelRuntime,
@@ -73,7 +70,6 @@ import {
   DEFAULT_ALERTS_INDEX,
   DEFAULT_DETECTIONS_CLOSE_REASONS_KEY,
   EXCLUDE_COLD_AND_FROZEN_TIERS_IN_ANALYZER,
-  SERVER_APP_ID,
 } from '../common/constants';
 import { registerCaseAttachments } from './cases/attachments/register';
 import { securityAlertAttachmentType } from './cases/attachments/alert';
@@ -113,10 +109,15 @@ import {
   isLegacyNotificationRuleExecutor,
   legacyRulesNotificationRuleType,
 } from './lib/detection_engine/rule_actions_legacy';
+import { createSecurityRuleTypeWrapper } from './lib/detection_engine/rule_types/create_security_rule_type_wrapper';
 import {
-  createSecurityRuleTypeWrapper,
-  securityRuleTypeFieldMap,
-} from './lib/detection_engine/rule_types/create_security_rule_type_wrapper';
+  createSecurityRuleRunServices,
+  getSecurityRuleDataServiceOptions,
+} from './lib/detection_engine/rule_types/create_security_rule_run_services';
+import {
+  createRuleRunTelemetrySink,
+  RULE_RUN_TELEMETRY_KIND,
+} from './lib/telemetry/rule_run_telemetry_sender';
 import type { CreateSecurityRuleTypeWrapperProps } from './lib/detection_engine/rule_types/types';
 import { calculateRulesAuthz } from './lib/detection_engine/rule_management/authz';
 
@@ -591,28 +592,12 @@ export class Plugin implements ISecuritySolutionPlugin {
     });
 
     const { ruleDataService } = plugins.ruleRegistry;
-    let ruleDataClient: IRuleDataClient | null = null;
     let previewRuleDataClient: IRuleDataClient | null = null;
 
-    const ruleDataServiceOptions = {
-      feature: SERVER_APP_ID,
-      registrationContext: 'security',
-      dataset: Dataset.alerts,
-      componentTemplateRefs: [ECS_COMPONENT_TEMPLATE_NAME],
-      componentTemplates: [
-        {
-          name: 'mappings',
-          mappings: mappingFromFieldMap(securityRuleTypeFieldMap, false),
-        },
-      ],
-      secondaryAlias: config.signalsIndex,
-    };
-
-    ruleDataClient = ruleDataService.initializeIndex(ruleDataServiceOptions);
     const previewIlmPolicy = previewPolicy.policy;
 
     previewRuleDataClient = ruleDataService.initializeIndex({
-      ...ruleDataServiceOptions,
+      ...getSecurityRuleDataServiceOptions(config),
       additionalPrefix: '.preview',
       ilmPolicy: previewIlmPolicy,
       secondaryAlias: undefined,
@@ -631,18 +616,26 @@ export class Plugin implements ISecuritySolutionPlugin {
       return calculateRulesAuthz({ coreStart, request });
     };
 
-    const securityRuleTypeOptions = {
+    // What a task process that runs a detection rule reads of the configuration of this plugin, and
+    // where it reports the telemetry that only this plugin can send.
+    plugins.alerting.registerTaskProcessSettings(TASK_PROCESS_SETTINGS_ID, () =>
+      getTaskProcessSettings(config)
+    );
+    plugins.taskManager?.registerTaskProcessTelemetrySink(
+      RULE_RUN_TELEMETRY_KIND,
+      createRuleRunTelemetrySink(() => this.telemetryEventsSender)
+    );
+
+    const securityRuleTypeOptions = createSecurityRuleRunServices({
+      ruleDataService,
       lists: plugins.lists,
-      docLinks: core.docLinks,
       actions: plugins.actions,
       logger: this.logger,
       config: this.config,
       publicBaseUrl: core.http.basePath.publicBaseUrl,
-      ruleDataClient,
       ruleExecutionLoggerFactory:
         this.ruleMonitoringService.createRuleExecutionLogClientForExecutors,
       version: pluginContext.env.packageInfo.version,
-      experimentalFeatures: config.experimentalFeatures,
       alerting: plugins.alerting,
       analytics: core.analytics,
       isServerless: this.isServerless,
@@ -659,7 +652,8 @@ export class Plugin implements ISecuritySolutionPlugin {
       },
       getRulesAuthz,
       getOsqueryResponseActionsAuthzChecker,
-    };
+    });
+    const { ruleDataClient } = securityRuleTypeOptions;
 
     const securityRuleTypeWrapper = createSecurityRuleTypeWrapper(securityRuleTypeOptions);
 

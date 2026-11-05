@@ -12,6 +12,7 @@ import type {
   IRouter,
   SavedObjectsClientContract,
 } from '@kbn/core/server';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 
@@ -24,6 +25,10 @@ import type {
 
 export type ContextProvider = IContextProvider<ListsRequestHandlerContext, 'lists'>;
 export type ListsPluginStart = void;
+
+export interface PluginsSetup {
+  alerting?: Pick<AlertingServerSetup, 'registerTaskProcessSettings'>;
+}
 
 export interface PluginsStart {
   security: SecurityPluginStart | undefined | null;

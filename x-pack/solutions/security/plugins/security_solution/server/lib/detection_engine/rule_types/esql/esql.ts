@@ -14,7 +14,12 @@ import {
   getIndexListFromEsqlQuery,
   getMvExpandFields,
 } from '@kbn/securitysolution-utils';
-import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
+import type {
+  RuleRunLicensing,
+  SecurityRuleServices,
+  SecuritySharedParams,
+  SignalSource,
+} from '../types';
 import { buildEsqlSearchRequest } from './build_esql_search_request';
 import { performEsqlRequest } from './esql_request';
 import { wrapEsqlAlerts } from './wrap_esql_alerts';
@@ -33,7 +38,6 @@ import {
 import { fetchSourceDocuments } from './fetch_source_documents';
 import { buildReasonMessageForEsqlAlert } from '../utils/reason_formatters';
 import type { RulePreviewLoggedRequest } from '../../../../../common/api/detection_engine/rule_preview/rule_preview.gen';
-import type { SecurityRuleServices, SecuritySharedParams, SignalSource } from '../types';
 import { getDataTierFilter } from '../utils/get_data_tier_filter';
 import { getDataStreamNamespaceFilter } from '../utils/get_data_stream_namespace_filter';
 import { checkErrorDetails } from '../utils/check_error_details';
@@ -70,7 +74,7 @@ export const esqlExecutor = async ({
   sharedParams: SecuritySharedParams<EsqlRuleParams>;
   services: SecurityRuleServices;
   state: EsqlState;
-  licensing: LicensingPluginSetup;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
   ruleExecutionTimeout?: string;
 }) => {

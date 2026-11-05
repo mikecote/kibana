@@ -6,7 +6,8 @@
  */
 
 import type { ElasticsearchClient, SavedObjectsClientContract } from '@kbn/core/server';
-import type { ExceptionListClient, ListClient, ListPluginSetup } from '@kbn/lists-plugin/server';
+import type { ExceptionListClient, ListClient } from '@kbn/lists-plugin/server';
+import type { RuleRunLists } from '../types';
 
 export const getListClient = ({
   lists,
@@ -15,7 +16,7 @@ export const getListClient = ({
   esClient,
   savedObjectClient,
 }: {
-  lists: ListPluginSetup | undefined;
+  lists: RuleRunLists | undefined;
   spaceId: string;
   updatedByUser: string | null;
   esClient: ElasticsearchClient;

@@ -8,7 +8,12 @@
 import { isEmpty } from 'lodash';
 import { firstValueFrom } from 'rxjs';
 
-import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
+import type {
+  RuleRunLicensing,
+  SearchAfterAndBulkCreateReturnType,
+  SecuritySharedParams,
+  SecurityRuleServices,
+} from '../types';
 
 import type { ThresholdRuleParams } from '../../rule_schema';
 import { getFilter } from '../utils/get_filter';
@@ -18,11 +23,6 @@ import { getThresholdBucketFilters } from './get_threshold_bucket_filters';
 import { getThresholdSignalHistory } from './get_threshold_signal_history';
 import { bulkCreateSuppressedThresholdAlerts } from './bulk_create_suppressed_threshold_alerts';
 
-import type {
-  SearchAfterAndBulkCreateReturnType,
-  SecuritySharedParams,
-  SecurityRuleServices,
-} from '../types';
 import type { ThresholdAlertState, ThresholdSignalHistory } from './types';
 import {
   addToSearchAfterReturn,
@@ -46,7 +46,7 @@ export const thresholdExecutor = async ({
   services: SecurityRuleServices;
   startedAt: Date;
   state: ThresholdAlertState;
-  licensing: LicensingPluginSetup;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
 }): Promise<SearchAfterAndBulkCreateReturnType & { state: ThresholdAlertState }> => {
   const {

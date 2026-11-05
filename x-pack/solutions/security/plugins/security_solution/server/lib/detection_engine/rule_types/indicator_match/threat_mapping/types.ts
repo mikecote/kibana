@@ -5,15 +5,14 @@
  * 2.0.
  */
 import type { estypes } from '@elastic/elasticsearch';
-import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
 import type {
   OpenPointInTimeResponse,
   QueryDslBoolQuery,
 } from '@elastic/elasticsearch/lib/api/types';
 import type { ElasticsearchClient } from '@kbn/core/server';
 import type { Filter, DataViewFieldBase } from '@kbn/es-query';
-import type { ITelemetryEventsSender } from '../../../../telemetry/sender';
 import type {
+  RuleRunLicensing,
   RuleRangeTuple,
   SearchAfterAndBulkCreateReturnType,
   WrapSuppressedHits,
@@ -21,6 +20,7 @@ import type {
   SecuritySharedParams,
   SecurityRuleServices,
 } from '../../types';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_telemetry_sender';
 import type { ThreatRuleParams } from '../../../rule_schema';
 import type { IRuleExecutionLogForExecutors } from '../../../rule_monitoring';
 import type { ScheduleNotificationResponseActionsService } from '../../../rule_response_actions/schedule_notification_response_actions';
@@ -38,17 +38,17 @@ export type ThreatMappingEntries = ThreatMappingEntry[];
 
 export interface CreateThreatSignalsOptions {
   sharedParams: SecuritySharedParams<ThreatRuleParams>;
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   services: SecurityRuleServices;
   wrapSuppressedHits: WrapSuppressedHits;
-  licensing: LicensingPluginSetup;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
 }
 
 export interface CreateThreatSignalOptions {
   sharedParams: SecuritySharedParams<ThreatRuleParams>;
   currentThreatList: ThreatListItem[];
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   filters: unknown[];
   services: SecurityRuleServices;
   wrapSuppressedHits: WrapSuppressedHits;
@@ -66,7 +66,7 @@ export interface CreateThreatSignalOptions {
 export interface CreateEventSignalOptions {
   sharedParams: SecuritySharedParams<ThreatRuleParams>;
   currentEventList: EventItem[];
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   filters: unknown[];
   services: SecurityRuleServices;
   wrapSuppressedHits: WrapSuppressedHits;

@@ -11,7 +11,7 @@ import { get, isEmpty, sum } from 'lodash';
 
 import type { ThreatMapping } from '../../../../../../common/api/detection_engine/model/rule_schema';
 import { TelemetryChannel } from '../../../../telemetry/types';
-import type { ITelemetryEventsSender } from '../../../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_telemetry_sender';
 
 import type { SearchAfterAndBulkCreateReturnType, SignalSourceHit } from '../../types';
 import { parseInterval } from '../../utils/utils';
@@ -264,7 +264,7 @@ export const getMaxClauseCountErrorValue = (
   searchesPerformed: SearchAfterAndBulkCreateReturnType[],
   threatEntriesCount: number,
   previousChunkSize: number,
-  eventsTelemetry: ITelemetryEventsSender | undefined
+  eventsTelemetry: RuleRunTelemetrySender | undefined
 ) =>
   searchesPerformed.reduce<{
     maxClauseCountValue: number;

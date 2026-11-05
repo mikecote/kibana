@@ -5,16 +5,15 @@
  * 2.0.
  */
 
-import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
-
 import { firstValueFrom } from 'rxjs';
+import type { RuleRunLicensing } from '../types';
 
 import type { AlertSuppressionCamel } from '../../../../../common/api/detection_engine/model/rule_schema';
 
 interface GetIsAlertSuppressionActiveParams {
   alertSuppression: AlertSuppressionCamel | undefined;
   isFeatureDisabled?: boolean | undefined;
-  licensing: LicensingPluginSetup;
+  licensing: RuleRunLicensing;
 }
 
 export const alertSuppressionTypeGuard = (

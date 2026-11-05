@@ -76,6 +76,7 @@ import {
   SUPPRESSION_BEHAVIOR_ON_ALERT_CLOSURE_SETTING_ENUM,
 } from '../common/constants';
 import type { ExperimentalFeatures } from '../common/experimental_features';
+import { parseExperimentalConfigValue } from '../common/experimental_features';
 import { LogLevelSetting } from '../common/api/detection_engine/rule_monitoring';
 
 type SettingsConfig = Record<string, UiSettingsParams<unknown>>;
@@ -1029,3 +1030,21 @@ export const getDefaultValueReportSettings = (): SettingsConfig => ({
     solutionViews: ['classic', 'security'],
   },
 });
+
+/**
+ * The ui settings of this plugin as `initUiSettings` registers them, for a task process that runs a
+ * detection rule and reads them (the excluded data tiers, the included data stream namespaces). The
+ * defaults do not depend on the configuration; only validations and experimental features, which a
+ * rule run does not read, change which ones exist.
+ */
+export const getSecurityRuleRunUiSettings = (): Array<Record<string, UiSettingsParams>> => {
+  const registered: Array<Record<string, UiSettingsParams>> = [];
+  initUiSettings(
+    {
+      register: (settings: Record<string, UiSettingsParams>) => registered.push(settings),
+    } as never,
+    parseExperimentalConfigValue([]).features,
+    false
+  );
+  return registered;
+};

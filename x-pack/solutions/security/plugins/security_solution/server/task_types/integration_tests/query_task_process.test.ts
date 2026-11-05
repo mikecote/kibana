@@ -29,6 +29,11 @@ import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/r
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import {
+  ConfigSchema as securityConfigSchema,
+  createConfig as createSecurityConfig,
+} from '@kbn/security-plugin/server/config';
+import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
 import { createMockConfig } from '../../config.mock';
 import { getTaskProcessSettings } from '../../config';
 import { taskType } from '../query.task';
@@ -68,6 +73,16 @@ describe('the siem.queryRule rule type served from a bundle', () => {
     securitySolution: getTaskProcessSettings(createMockConfig()),
     ruleRegistry: ruleRegistryConfig.schema.validate({}),
     lists: listsConfigSchema.validate({}),
+    // What Kibana sends for the security task plugin of the process.
+    security: getSecurityTaskProcessSettings({
+      config: createSecurityConfig(
+        securityConfigSchema.validate({ audit: { enabled: false } }),
+        loggingSystemMock.create().get(),
+        { isTLSEnabled: false }
+      ),
+      applicationName: 'kibana-.kibana',
+      kibanaServerResourceURL: 'http://localhost:5601',
+    }),
   });
 
   const initFor = () => ({
@@ -129,6 +144,11 @@ describe('the siem.queryRule rule type served from a bundle', () => {
         [type.name]: type.mappings,
       });
     }
+    // The `config` document of ui settings, which a run reads and Kibana would have created.
+    indexMappings.set('.kibana', {
+      ...(indexMappings.get('.kibana') ?? {}),
+      config: { properties: { buildNum: { type: 'integer' } } },
+    });
     indexMappings.set('.kibana_task_manager', {
       ...(indexMappings.get('.kibana_task_manager') ?? {}),
       task: {

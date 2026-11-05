@@ -47,7 +47,7 @@ import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
-import type { AlertingServerStart } from '@kbn/alerting-plugin/server/plugin';
+import type { AlertingServerSetup, AlertingServerStart } from '@kbn/alerting-plugin/server/plugin';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SavedObjectTaggingStart } from '@kbn/saved-objects-tagging-plugin/server';
@@ -181,6 +181,7 @@ import { registerReassignAgentsToVersionSpecificPoliciesTask } from './services/
 import { VersionSpecificPolicyAssignmentTask } from './tasks/version_specific_policy_assignment_task';
 
 export interface FleetSetupDeps {
+  alerting?: Pick<AlertingServerSetup, 'registerTaskProcessSettings'>;
   security: SecurityPluginSetup;
   features?: FeaturesPluginSetup;
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
@@ -394,6 +395,9 @@ export class FleetPlugin
     this.securitySetup = deps.security;
     this.isFipsEnabled = core.security.fips.isEnabled();
     const config = this.configInitialValue;
+
+    // What a task process that runs a rule with response actions reads of Fleet's configuration.
+    deps.alerting?.registerTaskProcessSettings('fleet', () => config);
 
     core.status.set(this.fleetStatus$.asObservable());
 
