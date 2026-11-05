@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { SavedObjectsType } from '@kbn/core/server';
+import type { KibanaRequest, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { Logger } from '@kbn/logging';
@@ -89,10 +89,27 @@ export interface WorkflowStepsContribution {
   ): void | Promise<void>;
 }
 
+/**
+ * What the engine's own runtime offers the steps of a task process, which a plugin's step reads in
+ * Kibana from the start contracts of the actions and workflows plugins.
+ */
+export interface WorkflowStepsContributionServices {
+  /** The actions client of a request: the one of the connectors the process runs. */
+  getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
+  /** Emits a trigger event: the workflows it matches are scheduled by this run's process. */
+  emitEvent: (params: {
+    triggerId: string;
+    payload: Record<string, unknown>;
+    request: KibanaRequest;
+  }) => Promise<void>;
+}
+
 /** What a contribution may use: the process (its host), not the plugins around it. */
 export interface WorkflowStepsContributionContext {
   /** The task host of the process; the services the plugin's steps are built from. */
   host: unknown;
+  /** The services of the engine's runtime, which are not part of the host. Absent in unit tests of a contribution that does not use them. */
+  services?: WorkflowStepsContributionServices;
   logger: Logger;
   isServerless: boolean;
   kibanaVersion: string;

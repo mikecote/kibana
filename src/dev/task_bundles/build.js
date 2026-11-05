@@ -220,6 +220,7 @@ const buildTaskBundle = async ({
     loader: {
       '.md': 'text',
       '.txt': 'text',
+      '.text': 'text',
       '.html': 'text',
       '.yaml': 'text',
       '.css': 'empty',

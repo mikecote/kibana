@@ -95,7 +95,6 @@ import { deleteLegacyEventsDataStream } from './lib/significant_events/events';
 import { registerStreamsAgentBuilder } from './agent_builder/register';
 import { registerSignificantEventsSkills } from './agent_builder/skills/register_skills';
 import { registerAgentBuilderSmlTypes } from './agent_builder/sml/register_sml_types';
-import { resolveModelStepDefinition } from './step_definitions/resolve_model';
 import {
   createContinuousOnboardingWorkflowService,
   type ContinuousOnboardingWorkflowService,
@@ -111,7 +110,7 @@ import {
 } from './lib/workflows/significant_events_scheduled_workflows';
 import { createWorkflowClients } from './lib/workflows/create_workflow_clients';
 import { removeLegacyDefaultSpaceWorkflows } from './lib/workflows/setup/remove_legacy_default_space_workflows';
-import { registerSignificantEventsWorkflowTriggers } from './workflows/triggers/register_triggers';
+import { registerSignificantEventsWorkflowSteps } from './workflows/register_significant_events_workflow_steps';
 import { createTriggerEmitter } from './workflows/triggers/emit';
 import {
   installDiscoveryAgents,
@@ -441,17 +440,14 @@ export class SignificantEventsPlugin
     plugins.workflowsExtensions?.registerManagedWorkflowOwner(
       SIGNIFICANT_EVENTS_MANAGED_WORKFLOW_OWNER
     );
-    plugins.workflowsExtensions?.registerStepDefinition(
-      resolveModelStepDefinition({
+    if (plugins.workflowsExtensions) {
+      registerSignificantEventsWorkflowSteps(plugins.workflowsExtensions, {
         getInference: () => this.server?.inference,
         getSavedObjects: () => this.server?.core?.savedObjects,
         getUiSettings: () => this.server?.core?.uiSettings,
         logger: this.logger.get('resolve_model'),
-      })
-    );
-
-    // Custom event-driven triggers users can subscribe to from their own workflows.
-    registerSignificantEventsWorkflowTriggers(plugins.workflowsExtensions);
+      });
+    }
 
     if (plugins.workflowsManagement && plugins.workflowsExtensions) {
       const { management: managementApi } = plugins.workflowsManagement;

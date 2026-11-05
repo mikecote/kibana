@@ -17,6 +17,7 @@ project:
   owner: '@elastic/search-ml-ux'
   sourceRoot: x-pack/platform/plugins/private/gen_ai_settings
 dependsOn:
+  - '@kbn/core-ui-settings-common'
   - '@kbn/core'
   - '@kbn/app-header'
   - '@kbn/management-plugin'

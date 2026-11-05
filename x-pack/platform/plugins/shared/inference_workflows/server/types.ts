@@ -21,3 +21,14 @@ export interface InferenceWorkflowsStartDeps {
   inference: InferenceServerStart;
   searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;
 }
+
+/**
+ * What the `ai.*` steps read of the inference services, read when a step runs: Kibana reads them from
+ * the start contracts of the plugins, a task process builds them from its host.
+ */
+export interface InferenceStepServices {
+  inference: InferenceServerStart;
+  searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;
+}
+
+export type GetInferenceStepServices = () => Promise<InferenceStepServices>;

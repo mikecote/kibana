@@ -7,7 +7,7 @@
 
 import { isSpanContextValid, trace } from '@opentelemetry/api';
 import { ByteSizeValue } from '@kbn/config-schema';
-import type { CoreSetup, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { ConnectorTelemetryMetadata } from '@kbn/inference-common';
 import {
   isTemplateRequiredConnector,
@@ -19,14 +19,14 @@ import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import {
   normalizeConnectorFeatureIds,
   resolveConnectorIdFromFeatures,
-} from '@kbn/search-inference-endpoints/server';
+} from '@kbn/search-inference-endpoints/server/lib/resolve_connector_id_from_features';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import {
   AGGREGATE_BY_REQUIRES_PLUGIN_ID_MESSAGE,
   AiPromptStepCommonDefinition,
   normalizeOptionalConnectorParam,
 } from '../../../../common/steps/ai';
-import type { InferenceWorkflowsStartDeps } from '../../../types';
+import type { GetInferenceStepServices } from '../../../types';
 import { AI_PROMPT_FEATURE_ID } from '../ai_feature_ids';
 import { resolveConnectorId } from '../utils/resolve_connector_id';
 
@@ -163,11 +163,11 @@ const completePromptWithTemplate = async ({
   };
 };
 
-export const aiPromptStepDefinition = (coreSetup: CoreSetup<InferenceWorkflowsStartDeps>) =>
+export const aiPromptStepDefinition = (getServices: GetInferenceStepServices) =>
   createServerStepDefinition({
     ...AiPromptStepCommonDefinition,
     handler: async (context) => {
-      const [, { inference, searchInferenceEndpoints }] = await coreSetup.getStartServices();
+      const { inference, searchInferenceEndpoints } = await getServices();
 
       const featureIds = normalizeConnectorFeatureIds(context.config['connector-id-by-feature']);
       const connectorId = normalizeOptionalConnectorParam(context.config['connector-id']);

@@ -89,6 +89,7 @@ export {
 export type {
   WorkflowStepsContribution,
   WorkflowStepsContributionContext,
+  WorkflowStepsContributionServices,
   WorkflowStepsRegistry,
   WorkflowStepsRegistryView,
 } from './create_server_step_registry';

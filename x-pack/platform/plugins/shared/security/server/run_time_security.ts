@@ -14,7 +14,9 @@ import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
 import { createApiKeys } from './authentication/api_keys/create_api_keys';
 import type { InternalAuthenticationServiceStart } from './authentication/authentication_service';
 import { checkPrivilegesFactory } from './authorization/check_privileges';
+import { checkPrivilegesDynamicallyWithRequestFactory } from './authorization/check_privileges_dynamically';
 import type { UiamConfigType } from './config';
+import type { SpacesService } from './plugin';
 import { UiamService } from './uiam/uiam_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 
@@ -45,6 +47,10 @@ export interface RunTimeSecurityOptions {
 export interface RunTimeSecurity {
   authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser'>;
   authz: ReturnType<typeof checkPrivilegesFactory> & {
+    /** Checks at the space of the request: a run's fake request names its space. */
+    checkPrivilegesDynamicallyWithRequest: ReturnType<
+      typeof checkPrivilegesDynamicallyWithRequestFactory
+    >;
     actions: Actions;
     applicationName: string;
   };
@@ -91,7 +97,20 @@ export const createRunTimeSecurity = ({
 
   return {
     authc: { apiKeys, getCurrentUser },
-    authz: { ...privileges, actions, applicationName },
+    authz: {
+      ...privileges,
+      // A process has no spaces plugin: the space is the one the run's request carries.
+      checkPrivilegesDynamicallyWithRequest: checkPrivilegesDynamicallyWithRequestFactory(
+        privileges.checkPrivilegesWithRequest,
+        () =>
+          ({
+            getSpaceId: (request: KibanaRequest) =>
+              (request as { spaceId?: string }).spaceId ?? 'default',
+          } as SpacesService)
+      ),
+      actions,
+      applicationName,
+    },
     audit,
   };
 };

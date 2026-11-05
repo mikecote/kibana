@@ -93,7 +93,7 @@ export const formatPrivileges = (
 interface CheckAndFormatPrivilegesOpts {
   indexPatterns: string[];
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   privilegesToCheck: CheckPrivilegesPayload;
 }
 
@@ -118,7 +118,7 @@ export async function checkAndFormatPrivileges({
 
 export interface CheckEntityStoreIndexPrivilegesOpts {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   spaceId: string;
   /**
    * Also checks read access to the metadata alias/index pattern, e.g. for the

@@ -14,7 +14,11 @@ import {
   type NightshiftModelRestriction,
 } from './resolve_nightshift_model';
 
-type ModelCoreServices = Pick<CoreStart, 'savedObjects' | 'uiSettings'>;
+/** The parts of Core the model resolution reads, which a task process's host has too. */
+interface ModelCoreServices {
+  savedObjects: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+  uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
+}
 
 export const getNightshiftModelRestriction = async ({
   request,

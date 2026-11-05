@@ -111,22 +111,7 @@ export const createWorkflowRuntimeFromHost = async (
     };
   }
 
-  // Steps: the internal ones, and what the plugins contribute.
   const workflowsExtensions = createServerStepRegistry(logger);
-  const stepContributions = (host.contributions?.[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ??
-    []) as WorkflowStepsContribution[];
-  await Promise.all(
-    stepContributions.map((contribution) =>
-      contribution.register(workflowsExtensions, {
-        host,
-        logger,
-        isServerless: host.server.isServerless,
-        kibanaVersion: host.server.version,
-        publicBaseUrl: host.server.publicBaseUrl,
-        settings,
-      })
-    )
-  );
 
   // Connectors: the actions of the process, with the connector types the plugins contribute.
   const connectorContributions = (host.contributions?.[RULE_RUN_CONTRIBUTIONS_KEY] ??
@@ -163,6 +148,34 @@ export const createWorkflowRuntimeFromHost = async (
     },
   });
   stops.push(stop);
+
+  // Steps: the internal ones (registered with the registry), and what the plugins contribute, which
+  // may use the actions and the runtime of the engine, read when a step runs.
+  const started: { runtime?: WorkflowRuntime } = {};
+  const stepContributions = (host.contributions?.[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ??
+    []) as WorkflowStepsContribution[];
+  await Promise.all(
+    stepContributions.map((contribution) =>
+      contribution.register(workflowsExtensions, {
+        host,
+        logger,
+        isServerless: host.server.isServerless,
+        kibanaVersion: host.server.version,
+        publicBaseUrl: host.server.publicBaseUrl,
+        settings,
+        services: {
+          getActionsClientWithRequest: (request) =>
+            actionsPlugin.getActionsClientWithRequest(request),
+          emitEvent: (params) => {
+            if (!started.runtime) {
+              throw new Error('The workflows runtime is not ready to emit events');
+            }
+            return started.runtime.emitEvent(params);
+          },
+        },
+      })
+    )
+  );
 
   const runtime = createWorkflowRuntime({
     logger,
@@ -204,6 +217,8 @@ export const createWorkflowRuntimeFromHost = async (
       return hasActionType(`.${base}`) || hasActionType(base);
     },
   });
+
+  started.runtime = runtime;
 
   return {
     runtime,
