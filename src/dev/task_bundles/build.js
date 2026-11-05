@@ -20,12 +20,6 @@ const RUNTIME_ENTRY = path.join(
   'x-pack/platform/plugins/shared/task_manager/server/task_process/main'
 );
 
-/** The entry of a task type that always declines: no host, so no Core in the bundle. */
-const DECLINE_ENTRY = path.join(
-  REPO_ROOT,
-  'x-pack/platform/plugins/shared/task_manager/server/task_process/decline_main'
-);
-
 /** Loads a task type file, which needs the transpiler; undefined when it cannot be loaded here. */
 const loadTaskType = (file) => {
   try {
@@ -175,7 +169,6 @@ const buildTaskBundle = async ({
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.js`);
   const loaded = loadTaskType(entry.file);
-  const declines = loaded?.declinesAll;
   // What the module says it takes from other plugins: every plugin's file under each key.
   const contributions = Object.fromEntries(
     (loaded?.contributions?.keys ?? []).map((key) => [key, getContributionFiles(key)])
@@ -183,29 +176,19 @@ const buildTaskBundle = async ({
   const contributionImports = Object.values(contributions).flat();
   const result = await build({
     stdin: {
-      contents: (declines
-        ? [
-            `import { runDecliningTaskProcess } from ${JSON.stringify(DECLINE_ENTRY)};`,
-            `runDecliningTaskProcess(${JSON.stringify({
-              taskType: loadTaskType(entry.file).type,
-              reason: declines,
-            })});`,
-          ]
-        : [
-            `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
-            `import { taskType } from ${JSON.stringify(entry.file)};`,
-            ...contributionImports.map(
-              (file, i) =>
-                `import { contribution as contribution${i} } from ${JSON.stringify(file)};`
-            ),
-            `runTaskProcess(taskType, { contributions: {`,
-            ...Object.entries(contributions).map(([key, files]) => {
-              const names = files.map((file) => `contribution${contributionImports.indexOf(file)}`);
-              return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
-            }),
-            `} });`,
-          ]
-      ).join('\n'),
+      contents: [
+        `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
+        `import { taskType } from ${JSON.stringify(entry.file)};`,
+        ...contributionImports.map(
+          (file, i) => `import { contribution as contribution${i} } from ${JSON.stringify(file)};`
+        ),
+        `runTaskProcess(taskType, { contributions: {`,
+        ...Object.entries(contributions).map(([key, files]) => {
+          const names = files.map((file) => `contribution${contributionImports.indexOf(file)}`);
+          return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
+        }),
+        `} });`,
+      ].join('\n'),
       resolveDir: REPO_ROOT,
       sourcefile: `${entry.name}.entry.ts`,
       loader: 'ts',
@@ -251,7 +234,6 @@ const buildTaskBundle = async ({
     outfile,
     bytes: fs.statSync(outfile).size,
     entry,
-    ...(declines ? { declines } : {}),
     ...(metafile ? { metafile: result.metafile } : {}),
   };
 };
@@ -264,13 +246,12 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   const manifest = {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
     bundles: Object.fromEntries(
-      results.map(({ entry, name, bytes, declines }) => [
+      results.map(({ entry, name, bytes }) => [
         name,
         {
           file: `${name}.js`,
           taskType: readTaskType(entry.file),
           bytes,
-          ...(declines ? { declines } : {}),
         },
       ])
     ),

@@ -16,7 +16,6 @@ import type { RuleRunRuntime } from '../task_runner/types';
 import { createRuleTaskType } from './rule_task_type';
 import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
 import { createRuleTypeHostMock } from './rule_task_type.mocks';
-import { createUnsupportedRuleTaskType } from './unsupported_rule_task_type';
 
 jest.mock('../task_runner/task_runner');
 
@@ -207,23 +206,5 @@ describe('createRuleTaskType', () => {
       expect(deps.locators.get('A_LOCATOR')).toBeDefined();
       expect(registerLocators).toHaveBeenCalledWith(deps.locators);
     });
-  });
-});
-
-describe('createUnsupportedRuleTaskType', () => {
-  it('declines every run, naming why', async () => {
-    const taskType = createUnsupportedRuleTaskType('test.rule', 'it needs a plugin');
-    expect(taskType.type).toBe('alerting:test.rule');
-    const task = taskType.createTaskRunner(context, createTaskHostMock());
-    await expect(task.run()).rejects.toMatchObject({
-      name: 'DeclinedRunError',
-      message: 'alerting:test.rule cannot run in a task process: it needs a plugin',
-    });
-  });
-
-  it('needs nothing from the host', () => {
-    const taskType = createUnsupportedRuleTaskType('test.rule', 'reason');
-    expect(taskType.savedObjectTypes).toBeUndefined();
-    expect(taskType.settings).toBeUndefined();
   });
 });

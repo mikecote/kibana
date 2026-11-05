@@ -17,7 +17,7 @@ import type { TaskProcessInit, TaskProcessReady } from './wire';
 
 /** `manifest.json` of a task bundle directory: which task types each bundle serves. */
 export interface TaskBundleManifest {
-  bundles: Record<string, { file: string; taskType: string; declines?: string }>;
+  bundles: Record<string, { file: string; taskType: string }>;
 }
 
 export interface TaskProcessSettings {
@@ -71,9 +71,7 @@ export class TaskProcessSupervisor {
       );
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as TaskBundleManifest;
-    for (const [name, { file, taskType, declines }] of Object.entries(manifest.bundles)) {
-      // A task type that always declines is run by Kibana: no process is worth starting to say so.
-      if (declines) continue;
+    for (const [name, { file, taskType }] of Object.entries(manifest.bundles)) {
       this.bundleByTaskType.set(taskType, {
         name,
         file: join(settings.bundle_dir, file),

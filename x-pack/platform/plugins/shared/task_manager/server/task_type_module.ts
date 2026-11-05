@@ -150,11 +150,6 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   uiSettings?: { defaults?: Array<Record<string, UiSettingsParams>> };
   /** Gives the runner `host.licensing`. */
   licensing?: true;
-  /**
-   * Set when this task type can never run in a task process yet, with the reason. Its bundle is tiny
-   * and declines every run, and Kibana does not start it, because it knows the answer.
-   */
-  declinesAll?: string;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
   /**
@@ -257,7 +252,6 @@ export const toTaskDefinition = (
     contributions,
     taskPlugins,
     featureFlags,
-    declinesAll,
     createTaskRunner,
     ...definition
   } = module;

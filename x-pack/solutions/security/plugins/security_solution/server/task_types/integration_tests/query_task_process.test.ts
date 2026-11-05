@@ -319,7 +319,6 @@ describe('the siem.queryRule rule type served from a bundle', () => {
     expect(taskType.settings).toEqual(
       expect.arrayContaining(['alerting', 'actions', 'securitySolution', 'ruleRegistry'])
     );
-    expect(taskType.declinesAll).toBeUndefined();
   });
 
   it('runs the rule, writes the alert and the rule execution events', async () => {
