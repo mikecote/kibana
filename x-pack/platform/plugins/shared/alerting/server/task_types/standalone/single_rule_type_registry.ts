@@ -15,17 +15,18 @@ import type { RuleRunRuntime } from '../../task_runner/types';
  * knows no other, and checks the license of this one when the rule is loaded.
  */
 export const createSingleRuleTypeRegistry = (
-  ruleType: UntypedNormalizedRuleType,
+  getRuleType: () => UntypedNormalizedRuleType,
   licenseState: Pick<ILicenseState, 'ensureLicenseForRuleType'>
 ): RuleRunRuntime['ruleTypeRegistry'] => {
   const get = (id: string) => {
+    const ruleType = getRuleType();
     if (id !== ruleType.id) {
       throw Boom.badRequest(`Rule type "${id}" is not served by this task process.`);
     }
     return ruleType as never;
   };
   return {
-    has: (id: string) => id === ruleType.id,
+    has: (id: string) => id === getRuleType().id,
     get,
     ensureRuleTypeEnabled: (id: string) => licenseState.ensureLicenseForRuleType(get(id)),
   };

@@ -10,7 +10,7 @@ import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 describe('createSingleRuleTypeRegistry', () => {
   const ruleType = { id: 'test.rule' } as never;
   const licenseState = { ensureLicenseForRuleType: jest.fn() };
-  const registry = createSingleRuleTypeRegistry(ruleType, licenseState);
+  const registry = createSingleRuleTypeRegistry(() => ruleType, licenseState);
 
   it('has its rule type and no other', () => {
     expect(registry.has('test.rule')).toBe(true);

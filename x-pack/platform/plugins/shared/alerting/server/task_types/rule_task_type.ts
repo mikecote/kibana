@@ -19,6 +19,7 @@ import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
 import { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
+import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../constants/event_log';
@@ -46,6 +47,11 @@ export interface RuleTypeModuleDeps {
   settings: Record<string, unknown>;
   /** The locators the module lists, for rule types that build links with them. */
   locators: LocatorClient;
+  /** What the process runs on, for factories that build the services a rule type uses. */
+  host: TaskHost;
+  /** The services of a rule run, which the rule type may use once it runs; not while it is built. */
+  runtime: RuleRunRuntime;
+  fieldFormats: FieldFormatsStart;
 }
 
 export interface RuleTaskTypeOptions {
@@ -133,7 +139,10 @@ export function createRuleTaskType(
 
   let ruleType: UntypedNormalizedRuleType | undefined = kibanaRuleType;
   let urlService: UrlService | undefined;
-  const buildRuleType = (host: HostForRuleType) => {
+  const buildRuleType = (
+    host: HostForRuleType,
+    services: Partial<Pick<RuleTypeModuleDeps, 'runtime' | 'fieldFormats'>> = {}
+  ) => {
     urlService ??= createUrlService(host, options.locators, options.registerLocators);
     ruleType ??= normalizeRuleType(
       (source as { getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType }).getRuleType({
@@ -143,6 +152,9 @@ export function createRuleTaskType(
         publicBaseUrl: host.server.publicBaseUrl,
         settings: host.settings ?? {},
         locators: urlService.locators,
+        host: host as TaskHost,
+        runtime: services.runtime as RuleRunRuntime,
+        fieldFormats: services.fieldFormats as FieldFormatsStart,
       }),
       { config: host.settings!.alerting as AlertingConfig, logger: host.logger }
     );
@@ -155,26 +167,33 @@ export function createRuleTaskType(
     | Promise<{ runtime: RuleRunRuntime; unsupportedActionTypes?: (ids: string[]) => string[] }>
     | undefined;
 
-  const prepare = (host: TaskHost) => {
-    if (!kibanaRuleType) buildRuleType(host);
-    return (prepared ??= options.getRuntime
+  const prepare = (host: TaskHost) =>
+    (prepared ??= options.getRuntime
       ? options.getRuntime().then((runtime) => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
           ({ createStandaloneRuleRunRuntime }) => {
+            urlService ??= createUrlService(host, options.locators, options.registerLocators);
+            // The runtime first, so the factory of the rule type can build its services from it.
             const standalone = createStandaloneRuleRunRuntime({
               host,
-              ruleType: ruleType!,
-              urlService: urlService!,
+              getRuleType: () => ruleType!,
+              urlService,
               connectorAdapters: options.connectorAdapters,
               contributions,
             });
+            buildRuleType(host, {
+              runtime: standalone.runtime,
+              fieldFormats: standalone.fieldFormats as never,
+            });
+            if (ruleType!.alerts) {
+              standalone.runtime.alertsService?.register(ruleType!.alerts as never);
+            }
             return {
               runtime: standalone.runtime,
               unsupportedActionTypes: standalone.getUnsupportedActionTypes,
             };
           }
         ));
-  };
 
   /**
    * A rule that uses a connector type or connector adapter this process does not know cannot be

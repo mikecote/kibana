@@ -34,14 +34,14 @@ import { MaintenanceWindowsService } from '../../task_runner/maintenance_windows
 import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
-import type { IRuleTypeAlerts } from '../../types';
 import type { RuleRunContribution } from '../rule_run_contribution';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 import { createStandaloneFieldFormats } from './field_formats';
 
 export interface StandaloneRuleRunOptions {
   host: TaskHost;
-  ruleType: UntypedNormalizedRuleType;
+  /** The rule type this runtime serves, once its factory has built it: a run reads it, building does not. */
+  getRuleType: () => UntypedNormalizedRuleType;
   /** The locators the rule type's executor reads from `services.share.url.locators`. */
   /** The URL service the rule type was built with, so executors read the same locators. */
   urlService: UrlService;
@@ -62,12 +62,14 @@ const spaceIdToNamespace = (spaceId?: string) =>
  */
 export const createStandaloneRuleRunRuntime = ({
   host,
-  ruleType,
+  getRuleType,
   urlService,
   connectorAdapters = [],
   contributions = [],
 }: StandaloneRuleRunOptions): {
   runtime: RuleRunRuntime;
+  /** The field formats the runtime was built with, for rule types that format values. */
+  fieldFormats: ReturnType<typeof createStandaloneFieldFormats>;
   /** The action types a rule would use that this process cannot enqueue. */
   getUnsupportedActionTypes: (actionTypeIds: string[]) => string[];
   stop: () => void;
@@ -126,7 +128,6 @@ export const createStandaloneRuleRunRuntime = ({
         totalFieldsLimit: config.alertsService.totalFieldsLimit,
       })
     : null;
-  if (alertsService && ruleType.alerts) alertsService.register(ruleType.alerts as IRuleTypeAlerts);
 
   const connectorAdapterRegistry = new ConnectorAdapterRegistry();
   connectorAdapters.forEach((adapter) => connectorAdapterRegistry.register(adapter));
@@ -205,7 +206,7 @@ export const createStandaloneRuleRunRuntime = ({
     logger,
     maintenanceWindowsService,
     maxAlerts: config.rules.run.alerts.max,
-    ruleTypeRegistry: createSingleRuleTypeRegistry(ruleType, licenseState),
+    ruleTypeRegistry: createSingleRuleTypeRegistry(getRuleType, licenseState),
     rulesSettingsService,
     apiKeyType: (config.rules.apiKeyType as ApiKeyType) ?? ApiKeyType.ES,
     savedObjects,
@@ -219,6 +220,7 @@ export const createStandaloneRuleRunRuntime = ({
 
   return {
     runtime,
+    fieldFormats,
     getUnsupportedActionTypes: (actionTypeIds) =>
       actionTypeIds.filter((id) => !hasActionType(id) && !connectorAdapterRegistry.has(id)),
     stop: () => {
