@@ -27,7 +27,7 @@ import type { UnifiedAttachmentAttributes } from '../../common/types/attachments
 import type { PartialField } from '../../types';
 import type { IndexRefresh } from '../types';
 import type { AttachmentSavedObjectType } from '../user_actions/types';
-import type { ConfigType } from '../../config';
+import type { CasesClientConfig } from '../../config';
 
 export type MixSavedObjectResponse =
   | SavedObject<AttachmentPersistedAttributes>
@@ -37,7 +37,7 @@ export type MixSavedObjectResponse =
 export interface ServiceContext {
   log: Logger;
   unsecuredSavedObjectsClient: SavedObjectsClientContract;
-  config: ConfigType;
+  config: CasesClientConfig;
   /**
    * Cases-analytics v2 attachments writer. Real implementation when v2 is
    * enabled, `V2_NOOP_ATTACHMENTS_WRITER` otherwise — every call site

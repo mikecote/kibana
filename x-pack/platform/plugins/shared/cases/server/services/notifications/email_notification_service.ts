@@ -8,8 +8,8 @@
 import pMap from 'p-map';
 import type { IBasePath, Logger } from '@kbn/core/server';
 import type { NotificationsPluginStart } from '@kbn/notifications-plugin/server';
-import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { UserProfileUserInfo } from '@kbn/user-profile-components';
+import type { CasesSecurityStart } from '../../client/types';
 import { CASE_SAVED_OBJECT, MAX_CONCURRENT_SEARCHES } from '../../../common/constants';
 import type { CaseSavedObjectTransformed } from '../../common/types/case';
 import { getCaseViewPath } from '../../common/utils';
@@ -22,8 +22,11 @@ type UserProfileUserInfoWithEmail = WithRequiredProperty<UserProfileUserInfo, 'e
 
 export class EmailNotificationService implements NotificationService {
   private readonly logger: Logger;
-  private readonly notifications: NotificationsPluginStart;
-  private readonly security: SecurityPluginStart;
+  private readonly notifications: Pick<
+    NotificationsPluginStart,
+    'isEmailServiceAvailable' | 'getEmailService'
+  >;
+  private readonly security: Pick<CasesSecurityStart, 'userProfiles'>;
   private readonly spaceId: string;
   private readonly publicBaseUrl?: IBasePath['publicBaseUrl'];
 
@@ -35,8 +38,8 @@ export class EmailNotificationService implements NotificationService {
     spaceId,
   }: {
     logger: Logger;
-    notifications: NotificationsPluginStart;
-    security: SecurityPluginStart;
+    notifications: Pick<NotificationsPluginStart, 'isEmailServiceAvailable' | 'getEmailService'>;
+    security: Pick<CasesSecurityStart, 'userProfiles'>;
     spaceId: string;
     publicBaseUrl?: IBasePath['publicBaseUrl'];
   }) {

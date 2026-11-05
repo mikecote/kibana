@@ -70,6 +70,14 @@ export interface WorkflowsExtensionsServerPluginSetup {
    * Register plugin id as a managed workflows owner during setup.
    */
   registerManagedWorkflowOwner(pluginId: string): void;
+
+  /**
+   * Registers the config a plugin's steps read in the task process of the workflow task types, to be
+   * listed in the `declares.settings` of its `workflow-steps` contribution and read there as
+   * `settings[pluginId]`. The getter runs each time a process is started, so it may read start
+   * services. Use `alerting.registerTaskProcessSettings` only for rule runs.
+   */
+  registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
 }
 
 /**
@@ -95,6 +103,9 @@ export type WorkflowsExtensionsServerPluginStart =
      * @returns The workflows client
      */
     getClient(request: KibanaRequest): Promise<WorkflowsClient>;
+
+    /** The getters registered with `registerTaskProcessSettings`, by plugin id. */
+    getTaskProcessSettings(): Record<string, () => unknown>;
 
     /**
      * Initialize a plugin-scoped managed workflows client. The plugin id is bound once

@@ -54,6 +54,9 @@
     "taskTypeContributions": {
       "alerting-rule-run": [
         "server/task_types/rule_run_contribution.ts"
+      ],
+      "workflow-steps": [
+        "server/task_types/workflow_steps_contribution.ts"
       ]
     }
   }

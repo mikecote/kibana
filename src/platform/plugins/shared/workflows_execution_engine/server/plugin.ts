@@ -71,6 +71,8 @@ export class WorkflowsExecutionEnginePlugin
 
   /** One runtime per Kibana node, built from `start()`'s services (or `getStartServices` if a task comes first). */
   private runtimePromise?: Promise<WorkflowRuntime>;
+  /** What a task process may be told: the engine's own, and (from `start`) what the step plugins register. */
+  private readonly taskTypeSettings: NonNullable<TaskTypeRegistrationOptions['settings']> = {};
 
   constructor(initializerContext: PluginInitializerContext) {
     this.logger = initializerContext.logger.get();
@@ -165,25 +167,26 @@ export class WorkflowsExecutionEnginePlugin
           },
         },
       },
-      settings: {
-        workflowsExecutionEngine: () => this.config,
-        workflowsExecutionEngineCloud: () => {
-          const cloudSetup = this.setupDependencies?.cloudSetup;
-          return cloudSetup
-            ? {
-                kibanaUrl: cloudSetup.kibanaUrl,
-                serverless: cloudSetup.serverless,
-                deploymentId: cloudSetup.deploymentId,
-                csp: cloudSetup.csp,
-                region: cloudSetup.region,
-                elasticsearchClusterId: cloudSetup.elasticsearchClusterId,
-              }
-            : null;
-        },
-        security: () => plugins.security?.getTaskProcessSettings() ?? null,
-        actions: () => plugins.actions?.getConfig(),
-      },
+      settings: this.taskTypeSettings,
     };
+    Object.assign(this.taskTypeSettings, {
+      workflowsExecutionEngine: () => this.config,
+      workflowsExecutionEngineCloud: () => {
+        const cloudSetup = this.setupDependencies?.cloudSetup;
+        return cloudSetup
+          ? {
+              kibanaUrl: cloudSetup.kibanaUrl,
+              serverless: cloudSetup.serverless,
+              deploymentId: cloudSetup.deploymentId,
+              csp: cloudSetup.csp,
+              region: cloudSetup.region,
+              elasticsearchClusterId: cloudSetup.elasticsearchClusterId,
+            }
+          : null;
+      },
+      security: () => plugins.security?.getTaskProcessSettings() ?? null,
+      actions: () => plugins.actions?.getConfig(),
+    });
     for (const taskType of [runTaskType, resumeTaskType, scheduledTaskType]) {
       plugins.taskManager.registerTaskType(taskType, taskTypeOptions);
     }
@@ -202,6 +205,10 @@ export class WorkflowsExecutionEnginePlugin
     if (!this.setupDependencies) {
       throw new Error('Setup not called before start');
     }
+
+    // The configs the steps of other plugins read in a task process: their getters are registered
+    // during their `setup()`, and read when a process starts.
+    Object.assign(this.taskTypeSettings, plugins.workflowsExtensions.getTaskProcessSettings());
 
     void this.dataClientBundle.initStart(coreStart);
 

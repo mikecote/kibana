@@ -461,7 +461,7 @@ describe('Cases Plugin', () => {
 
       const clients = [
         ['connector', registerConnectorTypes.mock.calls[0][0].getCasesClient],
-        ['workflow', registerCaseWorkflowSteps.mock.calls[0][1]],
+        ['workflow', registerCaseWorkflowSteps.mock.calls[0][1].getCasesClient],
         ['agent_builder', registerCasesAgentBuilderTools.mock.calls[0][1]],
         ['plugin_contract', startContract.getCasesClientWithRequest],
       ] as const;

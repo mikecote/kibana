@@ -10,6 +10,7 @@ import type { SavedObjectsClientContract, Logger, KibanaRequest } from '@kbn/cor
 import type { ActionsClient } from '@kbn/actions-plugin/server';
 import type { LensServerPluginSetup } from '@kbn/lens-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
+import type { KibanaFeature } from '@kbn/features-plugin/common';
 import type { IBasePath } from '@kbn/core-http-browser';
 import type { ISavedObjectsSerializer } from '@kbn/core-saved-objects-server';
 import type { KueryNode } from '@kbn/es-query';
@@ -31,10 +32,27 @@ import type { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unif
 import type { LicensingService } from '../services/licensing';
 import type { NotificationService } from '../services/notifications/types';
 import type { User } from '../common/types/user';
-import type { ConfigType } from '../config';
+import type { CasesClientConfig } from '../config';
 import type { CasesEventBus } from '../events/event_bus';
 import type { ActionSource } from '../../common/types/domain';
 import type { CasesClient } from './client';
+
+/**
+ * What the cases client reads of the security plugin: the privileges of the owners and the user
+ * profiles. A task process builds it from the security task plugin and Core's user profile service.
+ */
+export interface CasesSecurityStart {
+  authz: Pick<
+    SecurityPluginStart['authz'],
+    'mode' | 'actions' | 'checkPrivilegesDynamicallyWithRequest'
+  >;
+  userProfiles: Pick<SecurityPluginStart['userProfiles'], 'getCurrent' | 'bulkGet'>;
+}
+
+/** What the cases client reads of the features: the owners of the cases each feature grants. */
+export interface CasesFeatures {
+  getKibanaFeatures(): Array<Pick<KibanaFeature, 'id' | 'cases'>>;
+}
 
 export interface CasesServices {
   alertsService: AlertService;
@@ -61,13 +79,13 @@ export interface CasesClientArgs {
   readonly authorization: PublicMethodsOf<Authorization>;
   readonly actionsClient: PublicMethodsOf<ActionsClient>;
   readonly unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
-  readonly securityStartPlugin: SecurityPluginStart;
+  readonly securityStartPlugin: CasesSecurityStart;
   readonly spaceId: string;
   readonly savedObjectsSerializer: ISavedObjectsSerializer;
   readonly publicBaseUrl?: IBasePath['publicBaseUrl'];
   readonly fileService: FileServiceStart;
   readonly usageCounter?: IUsageCounter;
-  readonly config: ConfigType;
+  readonly config: CasesClientConfig;
   readonly casesEventBus?: CasesEventBus;
   readonly request: KibanaRequest;
   readonly closeReasonValidator?: (closeReason: string, owner: string) => Promise<boolean>;

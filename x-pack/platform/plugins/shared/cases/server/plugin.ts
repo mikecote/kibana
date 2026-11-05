@@ -58,7 +58,9 @@ import { registerInternalAttachments } from './internal_attachments';
 import { registerCaseFileKinds } from './files';
 import type { ConfigType } from './config';
 import { registerConnectorTypes } from './connectors';
-import type { CasesTaskProcessSettings } from './task_types/rule_run_contribution';
+import type { CasesTaskProcessSettings } from './task_types/cases_task_process_settings';
+import { CASES_USAGE_COUNTER_TELEMETRY_KIND } from './task_types/cases_task_process_settings';
+import { createCasesWorkflowsProcessSettings } from './task_types/create_cases_workflows_process_settings';
 import { registerSavedObjects } from './saved_object_types';
 import type { ServerlessProjectType } from '../common/constants/types';
 import { SERVERLESS_PROJECT_TYPES } from '../common/constants/owners';
@@ -106,6 +108,9 @@ export class CasePlugin
   private casesEventBus?: CasesEventBus;
   private readonly closeReasonValidators: Map<string, CloseReasonValidator> = new Map();
   private casesAnalyticsV2Service?: CasesAnalyticsV2Service;
+  /** What the workflow task process is sent (see `createCasesWorkflowsProcessSettings`), read after `start()`. */
+  private getWorkflowsProcessSettings: () => CasesTaskProcessSettings['workflows'] = () =>
+    undefined;
 
   constructor(private readonly initializerContext: PluginInitializerContext) {
     this.caseConfig = initializerContext.config.get<ConfigType>();
@@ -313,24 +318,37 @@ export class CasePlugin
       isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
     });
 
-    // The rule runs of a task process build the connector's parameters with the same settings.
-    plugins.alerting.registerTaskProcessSettings(
-      'cases',
-      (): CasesTaskProcessSettings => ({
-        serverlessProjectType,
-        isCasesAttachmentsEnabled: this.caseConfig.attachments?.enabled === true,
-        isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
-      })
+    // The rule runs of a task process build the connector's parameters with the same settings, and
+    // the workflow task types the client of the cases steps.
+    const getTaskProcessSettings = (): CasesTaskProcessSettings => ({
+      serverlessProjectType,
+      isCasesAttachmentsEnabled: this.caseConfig.attachments?.enabled === true,
+      isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
+      workflows: this.getWorkflowsProcessSettings(),
+    });
+    plugins.alerting.registerTaskProcessSettings('cases', getTaskProcessSettings);
+    plugins.workflowsExtensions?.registerTaskProcessSettings('cases', getTaskProcessSettings);
+
+    // A task process returns what it counted with the usage counter of the run's client.
+    plugins.taskManager?.registerTaskProcessTelemetrySink(
+      CASES_USAGE_COUNTER_TELEMETRY_KIND,
+      (payload) =>
+        this.usageCounter?.incrementCounter(
+          payload as Parameters<IUsageCounter['incrementCounter']>[0]
+        )
     );
 
-    registerCaseWorkflowSteps(
-      plugins.workflowsExtensions,
-      getCasesClient('workflow'),
-      this.unifiedAttachmentTypeRegistry,
-      this.caseConfig.attachments?.enabled === true,
-      this.caseConfig.templates?.enabled === true,
-      () => core.getStartServices()
-    );
+    registerCaseWorkflowSteps(plugins.workflowsExtensions, {
+      getCasesClient: getCasesClient('workflow'),
+      isTemplatesEnabled: this.caseConfig.templates?.enabled === true,
+      addAttachments:
+        this.caseConfig.attachments?.enabled === true
+          ? {
+              unifiedAttachmentTypeRegistry: this.unifiedAttachmentTypeRegistry,
+              waitForStartServices: () => core.getStartServices(),
+            }
+          : undefined,
+    });
     registerCaseWorkflowTriggers(plugins.workflowsExtensions);
 
     const isCasesAgentBuilderAllowed =
@@ -495,6 +513,18 @@ export class CasePlugin
     // this.casesEventBus will be set to a defined value in the setup() function
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     registerCasesWorkflowEventBridge(this.casesEventBus!, plugins.workflowsExtensions, this.logger);
+
+    this.getWorkflowsProcessSettings = () =>
+      createCasesWorkflowsProcessSettings({
+        config: this.caseConfig,
+        spacesEnabled: plugins.spaces != null,
+        features: plugins.features,
+        notifications: plugins.notifications,
+        // this.casesEventBus will be set to a defined value in the setup() function
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        casesEventBus: this.casesEventBus!,
+        closeReasonOwners: [...this.closeReasonValidators.keys()],
+      });
 
     this.clientFactory.initialize({
       // securityPluginSetup will be set to a defined value in the setup() function

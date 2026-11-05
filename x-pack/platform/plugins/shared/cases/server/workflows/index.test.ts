@@ -20,14 +20,13 @@ describe('registerCaseWorkflowSteps', () => {
     const getCasesClient = jest.fn();
     const waitForStartServices = jest.fn(() => Promise.resolve());
 
-    registerCaseWorkflowSteps(
-      workflowsExtensions as never,
-      getCasesClient as never,
-      registry,
-      isCasesAttachmentsEnabled,
+    registerCaseWorkflowSteps(workflowsExtensions as never, {
+      getCasesClient: getCasesClient as never,
       isTemplatesEnabled,
-      waitForStartServices
-    );
+      addAttachments: isCasesAttachmentsEnabled
+        ? { unifiedAttachmentTypeRegistry: registry, waitForStartServices }
+        : undefined,
+    });
 
     return { register: workflowsExtensions.registerStepDefinition, waitForStartServices };
   };

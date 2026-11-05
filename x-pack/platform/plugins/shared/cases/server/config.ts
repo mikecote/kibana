@@ -178,3 +178,9 @@ export const ConfigSchema = schema.object({
 });
 
 export type ConfigType = TypeOf<typeof ConfigSchema>;
+
+/**
+ * What the cases client reads of the config, which is also what a task process is sent: a subset
+ * of the validated config so that a process does not need the plugin's config schema.
+ */
+export type CasesClientConfig = Pick<ConfigType, 'templates' | 'assigneeIdentity' | 'attachments'>;
