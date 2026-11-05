@@ -258,3 +258,78 @@ fresh process, so it pays for the encryption service, the license and the alerts
 time.
 
 The distributable builds the bundles into `task_bundles/`.
+
+## Workflows
+
+`workflow:run`, `workflow:resume` and `workflow:scheduled` (`workflows_execution_engine/server/task_types`)
+are modules too. The engine's run-time is `createWorkflowRuntime(deps)`, built with explicit
+dependencies: Kibana's plugin builds it from its services and a process builds it from its host
+(`task_types/process_runtime.ts`). Kibana registers the three modules with `registerTaskType` and hands
+the same module code the engine's runtime as `hostExtensions.plugins`, so a module reads
+`host.plugins.workflowsExecutionEngine.runtime` in both.
+
+What a workflow run needs beyond a rule run, and where it comes from in a process:
+
+- **Calls to Kibana.** `host.http` is Core's self client aimed at the Kibana that dispatched the run:
+  Kibana sends its public URL (or its own address) and `server.basePath` in `init`. `callKibanaApi`,
+  `kibana.*` steps and the `kibanaUrl` template variable use it with the credential of the run.
+- **Task Manager.** `host.taskManager` has `schedule`, `bulkSchedule`, `get`, `bulkGet`, `fetch`, `remove`,
+  `removeIfExists`, `bulkRemove`, `runSoon` and `ensureScheduled`, written over the same `task` saved
+  objects as `TaskStore`, including the invalidation of the API keys of removed tasks. `runSoon` sets
+  `runAt` to now and Kibana's claim cycle picks it up: there is no nudge from a process.
+- **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
+  run and schedule a `workflow:resume` task; a second process finishes it.
+- **Data streams.** Clients are built with `DataStreamClient.fromDefinition` over the engine's shared
+  definitions: nothing is installed.
+- **Metering.** The usage record is returned with the run (`host.telemetry`, kind `workflows.metering`)
+  and Kibana sends it.
+- **Connector steps.** The actions executor is initialized as for attack discovery, with the connector
+  types of the `alerting-rule-run` contributions.
+- **Steps.** The process step registry (`createServerStepRegistry`) holds the internal `data.*` steps and
+  what plugins contribute under the key `workflow-steps`.
+
+### Contributing steps
+
+A plugin lists a file under `plugin.taskTypeContributions['workflow-steps']` in its `kibana.jsonc`. It
+exports `contribution: WorkflowStepsContribution` whose `register(registry, context)` calls the same
+registration function the plugin's `setup()` calls, with services built from `context.host` and
+`context.services`. `declares` adds the saved object types, encrypted types, ui settings, settings, feature
+flags and event log providers it needs to the module. Rules to follow:
+
+- A plugin sends its settings with `workflowsExtensions.registerTaskProcessSettings(id, getter)` in `setup`.
+  They are optional: a disabled plugin sends none and the contribution registers nothing.
+- Do not register a step that reads a registry other plugins fill in their own `setup()` (agent builder
+  tools, agents and attachment types, cases attachment types, the features registry). It would behave
+  differently from Kibana. A workflow that uses a step the process lacks is declined before anything is
+  written, and Kibana runs it.
+- `context.registerRunCheck(check)` declines a single step by what it asks for (a connector feature the
+  process does not know, a templated value, an input only Kibana can serve).
+- A step that emits events without waiting must flush them before it returns, because the process exits
+  with the run.
+- `workflows` with `settings.run_as` are declined: service accounts are not supported in a process.
+
+### What stays in Kibana
+
+These steps are not registered in a process, so a workflow that uses one runs in Kibana:
+
+- **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
+  message) and `ai.attachment.*` (add, update, delete, read, list). They read agents, attachment types,
+  templates, tools and skills that other plugins register in `setup()`. `ai.rerank` and the triggers run.
+- **cases:** `cases.addAlerts`, `cases.addEvents`, `cases.addAttachments`, `cases.deleteAttachments` and
+  `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
+  files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
+  a close reason validator or an email service the process lacks.
+- **proposals:** `proposals.createProposal`, `proposals.cloneProposal`.
+- **discoveries:** `security.attack-discovery.persistDiscoveries`, and `run` with a `feature_id`.
+- **context_engine:** `getFeedbackContext`, `recordImprovements`, and any step on Agent Builder's managed
+  index, a templated index id or workflow verifiers.
+- **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`.
+- **agentic_investigations:** all four steps.
+- **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
+  plugin and agent execution).
+- **evals** steps that name a task provider a suite registered in Kibana, and **ai.\*** steps whose
+  `connector-id-by-feature` names a feature the process does not know.
+
+The common cause is the registries. A contribution mechanism for agent builder's tools, agents and
+attachment types would move most of this list into processes.
+
