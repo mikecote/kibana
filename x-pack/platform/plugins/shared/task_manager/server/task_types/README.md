@@ -169,6 +169,60 @@ the bundler imports them and the process hands them to the module. Stack connect
 observability AI assistant contribute the connector types and adapters of their system actions, so a
 rule module never names the plugins that add connectors.
 
+## Making a plugin's services available to other plugins' tasks
+
+A task process has no plugin lifecycle, so a service that another plugin's task needs has to be built
+from explicit inputs. These are the steps, in the order most plugins need them.
+
+1. **Extract a run-time factory with explicit dependencies.** Move the construction of the service out
+   of `plugin.ts` into a function in the plugin's `server/` that takes what it needs as arguments
+   (clients, the license observable, config, logger) and not `getStartServices`, plugin class state or
+   module globals. `plugin.ts` calls the same function with Kibana's services, so there is one
+   implementation. Examples: `createMlRunServices`, `createFleetRunServices`, `createRuleDataService`,
+   `createInferenceRunServices`, `createRunTimeSecurity`. Read services lazily when they are used, not
+   while the factory runs, because the process builds things in a different order than Kibana.
+2. **Throw for what cannot exist.** If a part needs something only Kibana has (HTTP routes, the
+   session, a long-lived poller), make it throw "only available in Kibana" when used, so a path that
+   reaches it fails loudly. Do not return an empty object that silently does nothing.
+3. **Do not install anything at startup.** Index, template and data stream creation belongs to Kibana.
+   Take already-installed definitions (build a client from its definition, skip mapping updates on
+   read). Installs a run itself triggers in Kibana, such as an alerts index for a new space, stay as
+   they are and use the plugin's own idempotent code.
+4. **Send the config the factory reads.** Register it with `alerting.registerTaskProcessSettings(id,
+   () => config)` in `setup` and list the id in the module's `settings`. Send only what is read, in a
+   form `serializeSettings` handles (plain values, durations, byte sizes and dates; no functions,
+   `Map`, `Set` or `RegExp`), and read it as `host.settings[id]`. A plugin that cannot depend on
+   alerting exposes a `getTaskProcessSettings()` on its setup contract and a plugin that can (alerting
+   itself does this for `security`) registers it. Task Manager sends its own settings.
+5. **Declare what the task reads of Core.** On the module or `createRuleTaskType` options: saved object
+   types (`savedObjectTypes`), encrypted saved objects (`encryptedSavedObjectTypes`), event log
+   providers, ui settings defaults, feature flags, the task types it schedules. Types the plugin owns
+   should come from the same code that registers them in `setup` (a `get<Plugin>SavedObjectTypes()`
+   that runs the real registration with a collecting registrar), so the process and Kibana cannot
+   disagree.
+6. **If Core must know about it, ship a task plugin.** Things that register with Core at `setup`, such
+   as the security delegate, need a plugin: add `server/task_plugin.ts` exporting a `StaticPlugin`
+   (`manifest` and `definition` with an optional `config`), keep it free of routes and the plugin class,
+   and have the module list it in `taskPlugins`. Its `start` contract is what the runner reads as
+   `host.plugins[id]`.
+7. **If other task types need to register something with your plugin, take contributions.** Define the
+   shape in the consuming plugin, add a key to the task type's `contributions` and have contributing
+   plugins list a file under `plugin.taskTypeContributions` in their `kibana.jsonc` that exports
+   `contribution`. Rule runs use `alerting-rule-run` (see `RuleRunContribution`).
+8. **Report through the host.** Use `host.analytics.reportEvent`, `host.telemetry.report(kind, payload)`
+   and `host.licensing.featureUsage` rather than the service directly: the process returns them with the
+   run and Kibana reports them. A plugin with a channel of its own registers a sink with
+   `registerTaskProcessTelemetrySink(kind, sink)`.
+9. **Keep the bundle clean.** Import leaf files, not barrels. A cycle through an `export *` barrel
+   leaves names undefined inside a bundle. Do not import a plugin class (`server/plugin.ts`); use
+   `node scripts/task_bundle --name <bundle>` and the bundle hygiene test (`es_query_bundle.test.ts`)
+   to check what ends up inside.
+10. **Test it three ways.** A unit test of the factory with the plugin's existing mocks; a parity test
+    (`expectModuleToMatchRegisteredRuleType`) for each rule type module; and, for a new family, a real
+    run: build the bundle, run it through the supervisor against a real Elasticsearch and assert the
+    run was not declined and wrote what Kibana would (see the tests named `*_task_process.test.ts`).
+    `node scripts/task_bundle_bench` shows what the addition costs in startup time and memory.
+
 ## Alerting rule types
 
 Every rule type is a task type module, `alerting:<ruleTypeId>`, built by `createRuleTaskType`
