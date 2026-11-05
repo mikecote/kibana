@@ -101,8 +101,10 @@ export const defineWorkflowTaskType = (
       'security',
       'actions',
       'taskManager',
-      ...new Set(declared.flatMap(({ settings }) => settings ?? [])),
     ],
+    // What contributions read: a plugin that is disabled sends nothing, and its contribution then
+    // registers nothing, so these are not required.
+    optionalSettings: [...new Set(declared.flatMap(({ settings }) => settings ?? []))],
     // Only when contributions declare some: it gives the runner `host.uiSettings`.
     ...(declared.some(({ uiSettings }) => uiSettings?.length)
       ? { uiSettings: { defaults: declared.flatMap(({ uiSettings }) => uiSettings ?? []) } }

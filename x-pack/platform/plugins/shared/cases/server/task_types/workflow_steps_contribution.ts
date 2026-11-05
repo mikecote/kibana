@@ -90,7 +90,9 @@ export const contribution: WorkflowStepsContribution = {
   register: (registry, { host, logger, services, settings, publicBaseUrl, registerRunCheck }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const workflows = (settings.cases as CasesTaskProcessSettings | undefined)?.workflows;
-    if (!workflows) throw new Error('Kibana did not send the settings of the cases workflow steps');
+    // Cases is disabled in Kibana, which then sends no settings: nothing to register, and a workflow
+    // that uses a cases step is declined for the missing step.
+    if (!workflows) return;
     const { elasticsearch, savedObjects, licensing, userProfile, security, telemetry, plugins } =
       host as TaskHost;
     const securityPlugin = plugins?.security as SecurityTaskPluginStart | undefined;

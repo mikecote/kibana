@@ -41,7 +41,9 @@ const workflowsSettings: CasesWorkflowsProcessSettings = {
   closeReasonOwners: [],
 };
 
-const registerContribution = async (workflows = workflowsSettings) => {
+const registerContribution = async (
+  workflows: typeof workflowsSettings | null = workflowsSettings
+) => {
   const registry = createServerStepRegistry(loggerMock.create());
   const internalSteps = registry.getAllStepDefinitions().length;
   const internalTriggers = registry.getAllTriggerDefinitions().length;
@@ -75,7 +77,9 @@ const registerContribution = async (workflows = workflowsSettings) => {
     isServerless: false,
     kibanaVersion: '1.0.0',
     settings: {
-      cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: true, workflows },
+      ...(workflows
+        ? { cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: true, workflows } }
+        : {}),
     },
     services: {
       executionDataClients: {
@@ -143,6 +147,13 @@ describe('cases workflow-steps contribution', () => {
 
     kibana.triggers.forEach((id) => expect(registry.getTriggerDefinition(id)).toBeDefined());
     expect(registry.getAllTriggerDefinitions().length).toBe(internalTriggers + 8);
+  });
+
+  it('registers nothing when Kibana sent no cases settings, as when cases is disabled', async () => {
+    const { registry, internalSteps, internalTriggers } = await registerContribution(null);
+
+    expect(registry.getAllStepDefinitions()).toHaveLength(internalSteps);
+    expect(registry.getAllTriggerDefinitions()).toHaveLength(internalTriggers);
   });
 
   it('registers setExtendedFields only when the templates feature is on', async () => {

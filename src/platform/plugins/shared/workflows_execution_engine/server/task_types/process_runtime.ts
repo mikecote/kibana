@@ -16,6 +16,7 @@ import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { SystemConnectorsMap } from '@kbn/workflows';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
 import type {
   WorkflowStepRunCheck,
@@ -224,10 +225,17 @@ export const createWorkflowRuntimeFromHost = async (
     // A connector step (`ConnectorStepImpl`) is `<connector type>` or `<connector type>.<sub action>`,
     // where the connector type is an action type id without its dot (`webhook`, `slack`, `cases`).
     // `console` is answered by the step itself. The `http` step runs as the `.http` system connector.
-    isConnectorStepType: (stepType) => {
-      if (stepType === 'console') return true;
-      const [base] = stepType.split('.');
-      return hasActionType(`.${base}`) || hasActionType(base);
+    //
+    // The engine runs a step as a connector when it names a `connector-id`, or when it is a system
+    // connector (`http`). A step that does neither is a custom step, so one missing from the registry
+    // (a plugin whose steps this process does not have, such as `cases.addAlerts`) is declined and
+    // never mistaken for a connector whose type shares its prefix.
+    isConnectorStepType: ({ type, config: stepConfig }) => {
+      if (type === 'console') return true;
+      const [base] = type.split('.');
+      const knownConnector = hasActionType(`.${base}`) || hasActionType(base);
+      if (!knownConnector) return false;
+      return typeof stepConfig['connector-id'] === 'string' || SystemConnectorsMap.has(`.${type}`);
     },
   });
 

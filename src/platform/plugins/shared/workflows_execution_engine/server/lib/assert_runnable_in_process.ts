@@ -27,7 +27,7 @@ export interface WorkflowRunCapabilities {
    * Built-in steps (`if`, `foreach`, `elasticsearch.*`, `kibana.*`, `data.set`, ...) never need the
    * registry; every other step type is looked up in the registry unless this says it is a connector.
    */
-  isConnectorStepType?(stepType: string): boolean;
+  isConnectorStepType?(step: { type: string; config: Record<string, unknown> }): boolean;
   /**
    * Why a step cannot be served here as Kibana would serve it (such as a feature it names that this
    * process does not know), or `undefined`. Absent in Kibana.
@@ -112,9 +112,18 @@ export const findMissingWorkflowCapabilities = (
 ): MissingWorkflowCapabilities => {
   const requirements = collectWorkflowRequirements(definition);
   return {
-    missingStepTypes: requirements.stepTypes.filter(
-      (type) => !capabilities.hasStepDefinition(type) && !capabilities.isConnectorStepType?.(type)
-    ),
+    // Per step, because whether a step is a connector step depends on how it is written (`connector-id`).
+    missingStepTypes: [
+      ...new Set(
+        requirements.steps
+          .filter(
+            (step) =>
+              !capabilities.hasStepDefinition(step.type) &&
+              !capabilities.isConnectorStepType?.(step)
+          )
+          .map((step) => step.type)
+      ),
+    ].sort(),
     missingTriggerTypes: requirements.triggerTypes.filter(
       (type) => !capabilities.hasTriggerDefinition(type)
     ),

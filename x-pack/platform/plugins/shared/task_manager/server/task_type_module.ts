@@ -159,6 +159,12 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
   /**
+   * Ids of plugins whose config the runner reads when it has it, as `host.settings[id]`. Unlike
+   * `settings`, a missing one is not an error: the plugin may be disabled in Kibana, and whatever
+   * reads it then does not apply (a contribution of that plugin registers nothing).
+   */
+  optionalSettings?: string[];
+  /**
    * Plugins this task type's process runs besides Core, which Core composes like the plugins of
    * Kibana: their config, dependencies, `setup` and `start` run in dependency order, so a plugin
    * can register with Core what Kibana would have it register, such as the security delegate. Each
@@ -264,6 +270,7 @@ export const toTaskDefinition = (
     contributions,
     taskPlugins,
     featureFlags,
+    optionalSettings,
     createTaskRunner,
     ...definition
   } = module;

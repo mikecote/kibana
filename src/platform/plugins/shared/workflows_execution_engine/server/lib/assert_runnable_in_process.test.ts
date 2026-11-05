@@ -110,11 +110,27 @@ describe('findMissingWorkflowCapabilities', () => {
   it('returns the step types and trigger types that are not registered', () => {
     const missing = findMissingWorkflowCapabilities(
       nestedWorkflow,
-      capabilities({ steps: ['cases.createCase'], isConnectorStepType: (type) => type === 'slack' })
+      capabilities({
+        steps: ['cases.createCase'],
+        isConnectorStepType: ({ type }) => type === 'slack',
+      })
     );
     expect(missing.missingStepTypes).toEqual(['agent.run', 'cases.addComment']);
     expect(missing.missingTriggerTypes).toEqual(['cases.created']);
     expect(missing.runAsUnavailable).toBe(false);
+  });
+
+  it('does not mistake a missing custom step for a connector step of the same prefix', () => {
+    const missing = findMissingWorkflowCapabilities(
+      nestedWorkflow,
+      capabilities({
+        steps: ['agent.run', 'cases.createCase', 'slack'],
+        // `cases` is a connector type, but `cases.addComment` names no connector id: a custom step.
+        isConnectorStepType: ({ type, config }) =>
+          type.split('.')[0] === 'cases' && typeof config['connector-id'] === 'string',
+      })
+    );
+    expect(missing.missingStepTypes).toEqual(['cases.addComment']);
   });
 
   it('is empty when everything is registered', () => {
