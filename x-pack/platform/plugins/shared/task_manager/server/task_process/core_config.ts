@@ -100,6 +100,7 @@ export const buildCoreConfig = (
       autoListen: false,
       port: 0,
       ...(init.server?.uuid ? { uuid: init.server.uuid } : {}),
+      ...(init.server?.basePath ? { basePath: init.server.basePath } : {}),
       ...(init.server?.publicBaseUrl ? { publicBaseUrl: init.server.publicBaseUrl } : {}),
     },
     // Kibana owns the saved object indices and the data streams; a run only reads and writes documents.

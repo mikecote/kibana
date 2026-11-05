@@ -97,6 +97,11 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         executionContext: core.executionContext,
         security: core.security,
         userProfile: core.userProfile,
+        http: {
+          selfClient: core.http.selfClient,
+          basePath: core.http.basePath,
+          getServerInfo: core.http.getServerInfo,
+        },
         server: {
           uuid: init.server?.uuid ?? env.instanceUuid,
           version: env.packageInfo.version,

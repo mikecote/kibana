@@ -14,6 +14,7 @@ import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
+import type { HttpServiceStart } from '@kbn/core-http-server';
 import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
@@ -87,6 +88,11 @@ export interface TaskHost {
    */
   telemetry: { report: (kind: string, payload: unknown) => void };
 
+  /**
+   * Core's HTTP contract for calling Kibana itself. In a task process there is no listener: the self
+   * client calls the Kibana that dispatched the run, at the address it sent in `server`.
+   */
+  http: Pick<HttpServiceStart, 'selfClient' | 'basePath' | 'getServerInfo'>;
   /** Core's user profile service; in a task process the security task plugin's delegate answers. */
   userProfile?: UserProfileServiceStart;
   /** Declared with `featureFlags`. */

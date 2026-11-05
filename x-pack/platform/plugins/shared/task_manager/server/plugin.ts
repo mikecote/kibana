@@ -207,6 +207,8 @@ export class TaskManagerPlugin
     taskType: string
   ) => Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'> | undefined;
   private publicBaseUrl?: string;
+  private getKibanaAddress?: () => string | undefined;
+  private serverBasePath?: string;
   private elasticsearchConfig?: IElasticsearchConfig;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
   private canEncryptSavedObjects: boolean;
@@ -275,6 +277,17 @@ export class TaskManagerPlugin
       this.elasticsearchConfig = config;
     });
     this.publicBaseUrl = core.http.basePath.publicBaseUrl;
+    // How a process reaches this Kibana: the public URL, or the address it listens on.
+    this.getKibanaAddress = () => {
+      if (this.publicBaseUrl) return this.publicBaseUrl;
+      const { protocol, hostname, port } = core.http.getServerInfo();
+      if (protocol === 'socket') return undefined;
+      const host = hostname === '0.0.0.0' || hostname === '::' ? 'localhost' : hostname;
+      return `${protocol}://${host.includes(':') ? `[${host}]` : host}:${port}${
+        core.http.basePath.serverBasePath
+      }`;
+    };
+    this.serverBasePath = core.http.basePath.serverBasePath;
     const getServerInfo = (publicBaseUrl?: string): TaskHost['server'] => ({
       uuid: this.initContext.env.instanceUuid,
       version: this.kibanaVersion,
@@ -292,6 +305,7 @@ export class TaskManagerPlugin
           const extensions = options?.hostExtensions;
           const host: TaskHost = {
             analytics: coreStart.analytics,
+            http: coreStart.http,
             ...(module.featureFlags ? { featureFlags: coreStart.featureFlags } : {}),
             telemetry: { report: (kind, payload) => this.telemetrySinks.get(kind)?.(payload) },
             logger: options?.logger ?? this.logger,
@@ -330,7 +344,8 @@ export class TaskManagerPlugin
       const { options } = registration;
       const init: Pick<TaskProcessInit, 'server' | 'encryptedSavedObjects' | 'settings'> = {
         server: {
-          ...getServerInfo(this.publicBaseUrl),
+          ...getServerInfo(this.getKibanaAddress?.() ?? this.publicBaseUrl),
+          ...(this.serverBasePath ? { basePath: this.serverBasePath } : {}),
           isDev: this.initContext.env.mode.dev,
         } as TaskProcessInit['server'],
       };

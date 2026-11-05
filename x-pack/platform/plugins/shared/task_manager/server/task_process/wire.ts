@@ -45,7 +45,13 @@ export interface TaskProcessInit {
 export interface TaskProcessServerInfo {
   uuid: string;
   buildNum: number;
+  /**
+   * Where a process reaches this Kibana over HTTP: its public URL, or its own address when none is
+   * configured. Core's self client calls it with the run's credentials.
+   */
   publicBaseUrl?: string;
+  /** Kibana's `server.basePath`, which the self client prefixes to every path. */
+  basePath?: string;
   isServerless: boolean;
   /** Kibana runs from source, which loosens a few of Core's config checks. */
   isDev?: boolean;
