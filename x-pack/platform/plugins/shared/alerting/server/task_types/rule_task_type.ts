@@ -8,6 +8,8 @@
 import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
+import { kibanaPackageJson } from '@kbn/repo-info';
+import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import type { RunContext } from '@kbn/task-manager-plugin/server';
 import { DeclinedRunError } from '@kbn/task-manager-plugin/server/task_running/errors';
 import {
@@ -276,7 +278,12 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
-    ...(options.taskPlugins ? { taskPlugins: options.taskPlugins } : {}),
+    // Every rule run enqueues actions as its user: the privileges of the connector are checked by the
+    // security plugin's own authorization, so the process always has it (and Core's security delegate).
+    taskPlugins: [
+      ...(options.taskPlugins ?? []).filter(({ manifest }) => manifest.id !== 'security'),
+      createSecurityTaskPlugin(kibanaPackageJson.version),
+    ],
     taskTypeGroup: TaskTypeGroup.Alerting,
     paramsSchema: ruleTaskParamsSchema,
     // What a task process needs; Kibana has all of it already, so only the process's module says so.
@@ -300,7 +307,7 @@ export function createRuleTaskType(
           },
           taskManager: { schedulableTypes: [/^actions:/, ...(options.schedulableTaskTypes ?? [])] },
           licensing: true as const,
-          settings: ['alerting', 'actions', ...(options.settings ?? [])],
+          settings: [...new Set(['alerting', 'actions', 'security', ...(options.settings ?? [])])],
         }),
     createTaskRunner: (context, host): CancellableTask => {
       const runner = prepare(host).then(async (services) => {

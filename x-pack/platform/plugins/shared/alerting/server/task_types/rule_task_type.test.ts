@@ -120,7 +120,9 @@ describe('createRuleTaskType', () => {
 
     it('declares what a rule run needs from the host', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
-      expect(taskType.settings).toEqual(['alerting', 'actions']);
+      expect(taskType.settings).toEqual(['alerting', 'actions', 'security']);
+      // The privileges of a connector are checked when a run enqueues it, as in Kibana.
+      expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual(['security']);
       expect(taskType.taskManager).toEqual({ schedulableTypes: [/^actions:/] });
       expect(taskType.licensing).toBe(true);
       expect(taskType.eventLog?.providers).toEqual([

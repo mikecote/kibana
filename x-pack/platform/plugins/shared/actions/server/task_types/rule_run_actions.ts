@@ -87,6 +87,11 @@ export interface RuleRunActionsDeps {
   taskManager: Pick<TaskManagerStartContract, 'bulkSchedule' | 'aggregate'>;
   publicBaseUrl?: string;
   /**
+   * The security plugin's authorization: the privileges of the connector are checked when a rule run
+   * enqueues it, as in Kibana. Without it (security is off) nothing is checked.
+   */
+  authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
+  /**
    * Set for rule types that execute connectors themselves in the process, such as attack discovery
    * calling a model connector: the executor is initialized as the actions plugin initializes it.
    * Without it nothing executes here, and the enqueued `actions:*` tasks are run by Kibana.
@@ -95,8 +100,6 @@ export interface RuleRunActionsDeps {
     security: SecurityServiceStart;
     eventLogger: IEventLogger;
     analyticsService: AnalyticsServiceStart;
-    /** The security plugin's authorization, when the process has one. */
-    authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
     createInternalRepository: SavedObjectsServiceStart['createInternalRepository'];
   };
   /** Registers the connector types a rule run may enqueue, such as stack_connectors'. */
@@ -220,7 +223,7 @@ export const createRuleRunActions = (
       actionTypeRegistry,
       inMemoryConnectors,
       getActionsAuthorizationWithRequest: (request: KibanaRequest) =>
-        new ActionsAuthorization({ request, authorization: executor.authorization }),
+        new ActionsAuthorization({ request, authorization: deps.authorization }),
       analyticsService: executor.analyticsService,
       getCurrentUserProfileIdFromAPIKey: getCurrentUserProfileIdFromAPIKeyFactory({
         logger,
@@ -247,12 +250,7 @@ export const createRuleRunActions = (
           scopedClusterClient: deps.elasticsearch.asScoped(request),
           inMemoryConnectors,
           request,
-          // Without the security plugin there is nothing to authorize against, as with security off;
-          // the enqueued connector task is checked again when Kibana runs it.
-          authorization: new ActionsAuthorization({
-            request,
-            authorization: deps.executor?.authorization,
-          }),
+          authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
           actionExecutor,
           bulkExecutionEnqueuer,
           connectorTokenClient: new ConnectorTokenClient({

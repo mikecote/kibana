@@ -17,6 +17,7 @@
     "@kbn/actions-plugin",
     "@kbn/spaces-plugin",
     "@kbn/security-plugin",
+    "@kbn/repo-info",
     "@kbn/licensing-plugin",
     "@kbn/task-manager-plugin",
     "@kbn/event-log-plugin",

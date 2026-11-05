@@ -38,7 +38,7 @@ const connectorType: ActionType = {
 };
 
 describe('createRuleRunActions', () => {
-  const create = (config = {}) =>
+  const create = (config = {}, extra: Partial<Parameters<typeof createRuleRunActions>[0]> = {}) =>
     createRuleRunActions({
       logger: loggingSystemMock.createLogger(),
       config: configSchema.validate(config),
@@ -49,6 +49,7 @@ describe('createRuleRunActions', () => {
       taskManager: { bulkSchedule: jest.fn(), aggregate: jest.fn() },
       publicBaseUrl: 'https://kibana.test',
       registerConnectorTypes: (actions) => actions.registerType(connectorType),
+      ...extra,
     });
 
   it('knows the connector types that were registered, and no others', () => {
@@ -96,5 +97,36 @@ describe('createRuleRunActions', () => {
     } as never);
     expect(client.bulkEnqueueExecution).toEqual(expect.any(Function));
     stop();
+  });
+
+  describe('the privileges of the connector, checked when a run enqueues it', () => {
+    const authorization = (hasAllRequested: boolean) =>
+      ({
+        mode: { useRbacForRequest: () => true },
+        actions: {
+          savedObject: { get: (type: string, operation: string) => `${type}:${operation}` },
+        },
+        checkPrivilegesDynamicallyWithRequest: () => async () => ({ hasAllRequested }),
+      } as never);
+    const request = { headers: {}, spaceId: 'default' } as never;
+    const actions = [{ id: 'connector-1', params: {}, spaceId: 'default', apiKey: null }] as never;
+
+    it('refuses a user who may not execute connectors', async () => {
+      const { actionsPlugin, stop } = create({}, { authorization: authorization(false) });
+      const client = await actionsPlugin.getActionsClientWithRequest(request);
+      await expect(client.bulkEnqueueExecution(actions)).rejects.toThrow(
+        'Unauthorized to execute actions'
+      );
+      stop();
+    });
+
+    it('does not refuse a user who may', async () => {
+      const { actionsPlugin, stop } = create({}, { authorization: authorization(true) });
+      const client = await actionsPlugin.getActionsClientWithRequest(request);
+      await expect(client.bulkEnqueueExecution(actions)).rejects.not.toThrow(
+        'Unauthorized to execute actions'
+      );
+      stop();
+    });
   });
 });

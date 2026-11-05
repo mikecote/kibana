@@ -145,6 +145,7 @@ export const createStandaloneRuleRunRuntime = ({
     getEncryptedSavedObjectsClient: host.encryptedSavedObjects!.getClient,
     taskManager: host.taskManager!,
     publicBaseUrl,
+    authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
     executor: executeConnectors
       ? {
           security: host.security as SecurityServiceStart,
@@ -152,7 +153,6 @@ export const createStandaloneRuleRunRuntime = ({
             event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
           }) as IEventLogger,
           analyticsService: host.analytics as never,
-          authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
           createInternalRepository: host.savedObjects.createInternalRepository,
         }
       : undefined,
