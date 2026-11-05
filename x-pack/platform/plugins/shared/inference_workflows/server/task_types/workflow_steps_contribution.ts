@@ -16,6 +16,7 @@ import type {
   WorkflowStepsContribution,
   WorkflowStepsContributionServices,
 } from '@kbn/workflows-extensions/server';
+import { checkConnectorFeatures } from './check_connector_features';
 import { registerInferenceFeatures } from '../steps/ai/register_inference_features';
 import { registerAiWorkflowSteps } from '../steps/ai/register_ai_workflow_steps';
 import type { InferenceStepServices } from '../types';
@@ -43,7 +44,7 @@ export const contribution: WorkflowStepsContribution = {
       getAnonymizationUiSettings(),
     ],
   },
-  register: (registry, { host, logger, services }) => {
+  register: (registry, { host, logger, services, registerRunCheck }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     getActionsClientWithRequest = services.getActionsClientWithRequest;
     const { elasticsearch, savedObjects, uiSettings } = host as TaskHost;
@@ -51,6 +52,9 @@ export const contribution: WorkflowStepsContribution = {
 
     const features = new InferenceFeatureRegistry(logger.get('inferenceFeatures'));
     registerInferenceFeatures({ features });
+    registerRunCheck?.((step) =>
+      checkConnectorFeatures(step.config, (featureId) => features.get(featureId) !== undefined)
+    );
 
     let services$: InferenceStepServices | undefined;
     const getServices = async (): Promise<InferenceStepServices> => {

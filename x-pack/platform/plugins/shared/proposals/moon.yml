@@ -17,6 +17,7 @@ project:
   owner: '@elastic/security-solution'
   sourceRoot: x-pack/platform/plugins/shared/proposals
 dependsOn:
+  - '@kbn/task-manager-plugin'
   - '@kbn/core'
   - '@kbn/config-schema'
   - '@kbn/core-security-server'

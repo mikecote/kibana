@@ -8,6 +8,9 @@
   "plugin": {
     "id": "proposals",
     "configPath": ["xpack", "proposals"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    },
     "browser": true,
     "server": true,
     "requiredPlugins": ["agentBuilder", "features", "workflowsExtensions", "workflowsManagement"],

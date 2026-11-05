@@ -28,6 +28,7 @@ import { getWorkflowExecution as readWorkflowExecution } from './lib/get_workflo
 import { getManagedWorkflowStatus as readManagedWorkflowStatus } from '../services/managed_workflow_status';
 import { WorkflowAccessControlService } from '../services/workflow_access_control';
 import type { WorkflowAccessCore } from '../services/workflow_access_control';
+import type { WorkflowExecutionStatusItem } from '../services/workflow_execution_query_service';
 import { WorkflowReadService } from '../services/workflow_read_service';
 import { createStorage } from '../storage/workflow_storage';
 
@@ -158,6 +159,12 @@ export interface WorkflowsReadApi {
       request: KibanaRequest;
     }
   ) => Promise<WorkflowExecutionDto | null>;
+  /** The status of each execution the request can read; an id that is missing, in another space or whose workflow it cannot read is left out. */
+  getWorkflowExecutionStatuses: (
+    executionIds: string[],
+    spaceId: string,
+    options: { request: KibanaRequest }
+  ) => Promise<WorkflowExecutionStatusItem[]>;
   getManagedWorkflowStatus: (
     id: ManagedWorkflowId,
     options: GetManagedWorkflowStatusOptions,
@@ -213,6 +220,31 @@ export const createWorkflowsReadApi = ({
         spaceId,
         options,
       }),
+    getWorkflowExecutionStatuses: async (executionIds, spaceId, { request }) => {
+      const ids = [...new Set(executionIds)];
+      if (ids.length === 0) return [];
+      const { items } = await workflowExecutionsDataClient.getByIds(ids, {
+        sourceIncludes: ['spaceId', 'workflowId', 'status'],
+      });
+      const executions = items
+        .map(({ document }) => document)
+        .filter((execution) => execution.spaceId === spaceId)
+        .map(({ id, workflowId, status }) => ({ id, workflowId, status }));
+      const readable = new Set<string>();
+      await Promise.all(
+        [...new Set(executions.map(({ workflowId }) => workflowId).filter(Boolean))].map(
+          async (workflowId) => {
+            const workflow = await reader.getWorkflow(workflowId, spaceId, {
+              includeDeleted: true,
+            });
+            if (workflow && (await access.checkAccess(workflow, 'read', request))) {
+              readable.add(workflowId);
+            }
+          }
+        )
+      );
+      return executions.filter(({ workflowId }) => readable.has(workflowId));
+    },
     getManagedWorkflowStatus: (id, options, registeredPluginId) =>
       readManagedWorkflowStatus({ reader, id, options, registeredPluginId }),
   };

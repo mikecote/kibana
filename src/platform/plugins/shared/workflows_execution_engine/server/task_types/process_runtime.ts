@@ -17,7 +17,10 @@ import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
+import type {
+  WorkflowStepRunCheck,
+  WorkflowStepsContribution,
+} from '@kbn/workflows-extensions/server';
 import {
   RULE_RUN_CONTRIBUTIONS_KEY,
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
@@ -152,6 +155,7 @@ export const createWorkflowRuntimeFromHost = async (
   // Steps: the internal ones (registered with the registry), and what the plugins contribute, which
   // may use the actions and the runtime of the engine, read when a step runs.
   const started: { runtime?: WorkflowRuntime } = {};
+  const runChecks: WorkflowStepRunCheck[] = [];
   const stepContributions = (host.contributions?.[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ??
     []) as WorkflowStepsContribution[];
   await Promise.all(
@@ -163,7 +167,9 @@ export const createWorkflowRuntimeFromHost = async (
         kibanaVersion: host.server.version,
         publicBaseUrl: host.server.publicBaseUrl,
         settings,
+        registerRunCheck: (check) => runChecks.push(check),
         services: {
+          executionDataClients: dataClients,
           getActionsClientWithRequest: (request) =>
             actionsPlugin.getActionsClientWithRequest(request),
           emitEvent: (params) => {
@@ -208,6 +214,13 @@ export const createWorkflowRuntimeFromHost = async (
     },
     cloud,
     preflight: assertRunnableInProcessPreflight,
+    checkStep: (step) => {
+      for (const check of runChecks) {
+        const reason = check(step);
+        if (reason) return reason;
+      }
+      return undefined;
+    },
     // A connector step (`ConnectorStepImpl`) is `<connector type>` or `<connector type>.<sub action>`,
     // where the connector type is an action type id without its dot (`webhook`, `slack`, `cases`).
     // `console` is answered by the step itself. The `http` step runs as the `.http` system connector.

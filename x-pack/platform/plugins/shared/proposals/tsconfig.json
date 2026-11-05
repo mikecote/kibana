@@ -11,6 +11,7 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/task-manager-plugin",
     "@kbn/core",
     "@kbn/config-schema",
     "@kbn/core-security-server",

@@ -170,6 +170,43 @@ describe('assertRunnableInProcess', () => {
   });
 });
 
+describe('step checks', () => {
+  const featureWorkflow = definition({
+    steps: [
+      { name: 'ask', type: 'ai.prompt', 'connector-id-by-feature': 'other', with: { prompt: 'x' } },
+      { name: 'plain', type: 'ai.prompt', with: { prompt: 'x' } },
+    ],
+  });
+  const checkStep = (step: { config: Record<string, unknown> }) =>
+    step.config['connector-id-by-feature'] === 'other' ? 'feature not registered' : undefined;
+
+  it('collects the steps as written', () => {
+    expect(collectWorkflowRequirements(featureWorkflow).steps).toEqual([
+      expect.objectContaining({
+        type: 'ai.prompt',
+        config: expect.objectContaining({ 'connector-id-by-feature': 'other' }),
+      }),
+      expect.objectContaining({ type: 'ai.prompt' }),
+    ]);
+  });
+
+  it('declines a step the process cannot serve as Kibana would', () => {
+    const caps = capabilities({ steps: ['ai.prompt'], checkStep });
+    expect(findMissingWorkflowCapabilities(featureWorkflow, caps).unsupportedSteps).toEqual([
+      'ai.prompt: feature not registered',
+    ]);
+    expect(() => assertRunnableInProcess(featureWorkflow, caps)).toThrow(
+      /steps not supported in this process: ai.prompt: feature not registered/
+    );
+  });
+
+  it('does not check anything without a checkStep (Kibana)', () => {
+    expect(() =>
+      assertRunnableInProcess(featureWorkflow, capabilities({ steps: ['ai.prompt'] }))
+    ).not.toThrow();
+  });
+});
+
 describe('assertRunnableInProcessPreflight', () => {
   const context = (loaded: WorkflowYaml | undefined) => ({
     taskType: 'workflow:run' as const,

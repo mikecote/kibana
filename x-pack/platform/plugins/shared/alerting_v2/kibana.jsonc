@@ -9,6 +9,9 @@
     "browser": true,
     "server": true,
     "configPath": ["xpack", "alerting_v2"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    },
     "requiredPlugins": [
       "taskManager",
       "features",

@@ -21,8 +21,7 @@ import { registerFeaturePrivileges } from '../lib/security/privileges';
 import { registerSavedObjects } from '../saved_objects';
 import { EventLoggerToken } from '../lib/services/event_log_service/tokens';
 import { LoggerServiceToken } from '../lib/services/logger_service/logger_service';
-import { registerCreateAlertEventStep } from '../lib/workflow_extensions/register_create_alert_event_step';
-import { registerTriggerDefinitions } from '../lib/workflow_extensions/register_trigger_definitions';
+import { registerAlertingV2WorkflowSteps } from '../lib/workflow_extensions/register_alerting_v2_workflow_steps';
 import { registerAlertingV2ManagedWorkflowOwner } from '../lib/workflow_extensions/managed_workflows';
 import { registerAlertingV2UsageCollector } from '../lib/usage/usage_collector';
 import {
@@ -78,7 +77,6 @@ export function bindOnSetup({ bind }: ContainerModuleLoadOptions) {
       PluginSetup<AlertingServerSetupDependencies['workflowsExtensions']>('workflowsExtensions')
     );
     registerAlertingV2ManagedWorkflowOwner(workflowsExtensionsSetup);
-    registerTriggerDefinitions(workflowsExtensionsSetup);
 
     const getAlertEventsClient = (request: KibanaRequest) =>
       container
@@ -90,11 +88,10 @@ export function bindOnSetup({ bind }: ContainerModuleLoadOptions) {
         request,
         PrivilegeChecker
       ).canWrite('alerts');
-    registerCreateAlertEventStep(
-      workflowsExtensionsSetup,
+    registerAlertingV2WorkflowSteps(workflowsExtensionsSetup, {
       getAlertEventsClient,
-      checkAlertWritePrivilege
-    );
+      checkAlertWritePrivilege,
+    });
 
     // Usage collection is optional. The telemetry task that feeds this collector
     // is registered unconditionally via the `TaskDefinition` registry in

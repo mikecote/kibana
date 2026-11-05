@@ -87,6 +87,7 @@ export {
   WORKFLOW_STEPS_CONTRIBUTIONS,
 } from './create_server_step_registry';
 export type {
+  WorkflowStepRunCheck,
   WorkflowStepsContribution,
   WorkflowStepsContributionContext,
   WorkflowStepsContributionServices,

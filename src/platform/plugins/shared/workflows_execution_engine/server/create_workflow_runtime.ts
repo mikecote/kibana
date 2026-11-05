@@ -225,6 +225,8 @@ export interface WorkflowRuntimeDeps {
    * `DeclinedRunError` to have Task Manager run the task in Kibana. Absent in Kibana.
    */
   preflight?: WorkflowPreflight;
+  /** Why a step cannot be served as Kibana would (the preflight declines the run); part of the preflight capabilities. */
+  checkStep?: WorkflowRunCapabilities['checkStep'];
   /** Whether a step type is served by a connector (the actions client); part of the preflight capabilities. */
   isConnectorStepType?: (stepType: string) => boolean;
 }
@@ -343,6 +345,7 @@ export const createWorkflowRuntime = (deps: WorkflowRuntimeDeps): WorkflowRuntim
     hasTriggerDefinition: (triggerType) =>
       workflowsExtensions.getTriggerDefinition(triggerType) !== undefined,
     isConnectorStepType: deps.isConnectorStepType,
+    checkStep: deps.checkStep,
     canRunAs: () => {
       try {
         return security.serviceAccounts.isEnabled();

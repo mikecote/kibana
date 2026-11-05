@@ -39,7 +39,14 @@ describe('inference_workflows workflow-steps contribution', () => {
       isServerless: false,
       kibanaVersion: '1.0.0',
       settings: {},
-      services: { getActionsClientWithRequest: jest.fn(), emitEvent: jest.fn() },
+      services: {
+        executionDataClients: {
+          createWorkflowDataClient: jest.fn(),
+          createStepDataClient: jest.fn(),
+        },
+        getActionsClientWithRequest: jest.fn(),
+        emitEvent: jest.fn(),
+      },
     });
     await registry.isReady();
 

@@ -28,6 +28,11 @@ export interface WorkflowRunCapabilities {
    * registry; every other step type is looked up in the registry unless this says it is a connector.
    */
   isConnectorStepType?(stepType: string): boolean;
+  /**
+   * Why a step cannot be served here as Kibana would serve it (such as a feature it names that this
+   * process does not know), or `undefined`. Absent in Kibana.
+   */
+  checkStep?(step: { type: string; config: Record<string, unknown> }): string | undefined;
   /** Whether workflows can run as a service account (`settings.run_as`) here. */
   canRunAs(): boolean;
 }
@@ -38,6 +43,8 @@ export interface WorkflowRequirements {
   stepTypes: string[];
   /** Trigger types the workflow declares that are not built in (`manual`, `alert`, `scheduled`). */
   triggerTypes: string[];
+  /** The steps as written (type and configuration), for the checks of `WorkflowRunCapabilities.checkStep`. */
+  steps: Array<{ type: string; config: Record<string, unknown> }>;
   /** The service account the workflow runs as (`settings.run_as`), if any. */
   runAs: string | undefined;
   /** Set when the definition cannot be compiled into a graph; the run itself then fails normally. */
@@ -61,6 +68,7 @@ export const collectWorkflowRequirements = (definition: WorkflowYaml): WorkflowR
   const runAs = definition.settings?.run_as;
 
   const stepTypes = new Set<string>();
+  const steps: WorkflowRequirements['steps'] = [];
   try {
     const graph = WorkflowGraph.fromWorkflowDefinition(definition, defaultWorkflowSettings);
     for (const node of graph.getAllNodes()) {
@@ -68,23 +76,30 @@ export const collectWorkflowRequirements = (definition: WorkflowYaml): WorkflowR
       // connector steps. Everything else has its own node type.
       if (isAtomic(node) && node.stepType) {
         stepTypes.add(node.stepType);
+        steps.push({
+          type: node.stepType,
+          config: (node as { configuration?: Record<string, unknown> }).configuration ?? {},
+        });
       }
     }
   } catch (error) {
     return {
       stepTypes: [],
+      steps: [],
       triggerTypes: [...triggerTypes],
       runAs,
       graphError: error instanceof Error ? error.message : String(error),
     };
   }
 
-  return { stepTypes: [...stepTypes].sort(), triggerTypes: [...triggerTypes].sort(), runAs };
+  return { stepTypes: [...stepTypes].sort(), steps, triggerTypes: [...triggerTypes].sort(), runAs };
 };
 
 export interface MissingWorkflowCapabilities {
   missingStepTypes: string[];
   missingTriggerTypes: string[];
+  /** Why steps cannot be served as Kibana would (`checkStep`), as `<step type>: <reason>`. */
+  unsupportedSteps: string[];
   /** The workflow runs as a service account and `canRunAs()` is false. */
   runAsUnavailable: boolean;
   requirements: WorkflowRequirements;
@@ -103,6 +118,10 @@ export const findMissingWorkflowCapabilities = (
     missingTriggerTypes: requirements.triggerTypes.filter(
       (type) => !capabilities.hasTriggerDefinition(type)
     ),
+    unsupportedSteps: requirements.steps.flatMap((step) => {
+      const reason = capabilities.checkStep?.(step);
+      return reason ? [`${step.type}: ${reason}`] : [];
+    }),
     runAsUnavailable: requirements.runAs !== undefined && !capabilities.canRunAs(),
     requirements,
   };
@@ -128,6 +147,9 @@ export const assertRunnableInProcess = (
     reasons.push(
       `trigger types not available in this process: ${missing.missingTriggerTypes.join(', ')}`
     );
+  }
+  if (missing.unsupportedSteps.length > 0) {
+    reasons.push(`steps not supported in this process: ${missing.unsupportedSteps.join('; ')}`);
   }
   if (missing.runAsUnavailable) {
     reasons.push('service account execution (settings.run_as) is not available in this process');

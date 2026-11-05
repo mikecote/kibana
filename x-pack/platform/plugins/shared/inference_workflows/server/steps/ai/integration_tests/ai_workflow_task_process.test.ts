@@ -16,6 +16,7 @@ import type { AddressInfo } from 'net';
 import { startWorkflowProcessHarness } from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
 
 const WORKFLOW_ID = 'ai-prompt-workflow';
+const FEATURE_WORKFLOW_ID = 'ai-feature-workflow';
 const CONNECTOR_ID = 'llm-connector';
 const ANSWER = 'hello from the stub model';
 
@@ -89,6 +90,17 @@ describe('inference_workflows steps served from the workflow:scheduled bundle', 
 
     harness = await startWorkflowProcessHarness({
       workflows: {
+        // Names a feature another plugin registers in Kibana: the process cannot resolve it like Kibana.
+        [FEATURE_WORKFLOW_ID]: {
+          steps: [
+            {
+              name: 'ask',
+              type: 'ai.prompt',
+              'connector-id-by-feature': 'agent_builder_unknown_feature',
+              with: { prompt: 'Say hello to the workflow' },
+            },
+          ],
+        },
         [WORKFLOW_ID]: {
           steps: [
             {
@@ -145,5 +157,13 @@ describe('inference_workflows steps served from the workflow:scheduled bundle', 
     expect(llmRequests[0].url).toBe('/v1/chat/completions');
     expect(llmRequests[0].headers.authorization).toBe('Bearer test-key');
     expect(llmRequests[0].body).toContain('Say hello to the workflow');
+  });
+
+  it('declines a workflow that names an inference feature the process does not know, writing nothing', async () => {
+    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+    await harness.run(FEATURE_WORKFLOW_ID, fallback as never);
+
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(await harness.executionsOf(FEATURE_WORKFLOW_ID)).toHaveLength(0);
   });
 });

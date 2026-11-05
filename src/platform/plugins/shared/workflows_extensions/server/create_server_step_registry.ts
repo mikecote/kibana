@@ -96,6 +96,15 @@ export interface WorkflowStepsContribution {
 export interface WorkflowStepsContributionServices {
   /** The actions client of a request: the one of the connectors the process runs. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
+  /**
+   * The clients of the execution and step execution storage, over the indices or data streams the
+   * engine is configured with (the types are the engine's `WorkflowExecutionsDataClient` and
+   * `StepExecutionsDataClient`).
+   */
+  executionDataClients: {
+    createWorkflowDataClient: () => unknown;
+    createStepDataClient: () => unknown;
+  };
   /** Emits a trigger event: the workflows it matches are scheduled by this run's process. */
   emitEvent: (params: {
     triggerId: string;
@@ -104,12 +113,25 @@ export interface WorkflowStepsContributionServices {
   }) => Promise<void>;
 }
 
+/**
+ * A check a contribution registers on the steps of a workflow before a task process runs it: it
+ * returns why the process cannot serve the step as Kibana would (the run is then declined and Kibana
+ * runs it), or `undefined`.
+ */
+export type WorkflowStepRunCheck = (step: {
+  type: string;
+  /** The step as written in the workflow definition. */
+  config: Record<string, unknown>;
+}) => string | undefined;
+
 /** What a contribution may use: the process (its host), not the plugins around it. */
 export interface WorkflowStepsContributionContext {
   /** The task host of the process; the services the plugin's steps are built from. */
   host: unknown;
   /** The services of the engine's runtime, which are not part of the host. Absent in unit tests of a contribution that does not use them. */
   services?: WorkflowStepsContributionServices;
+  /** Registers a check that can decline a workflow whose steps the process cannot serve like Kibana. */
+  registerRunCheck?: (check: WorkflowStepRunCheck) => void;
   logger: Logger;
   isServerless: boolean;
   kibanaVersion: string;

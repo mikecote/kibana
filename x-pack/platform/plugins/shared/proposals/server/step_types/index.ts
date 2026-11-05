@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { ProposalsService } from '../services/proposals_service';
 import type { ResolveProposalUser } from '../services/resolve_proposal_user';
 import type { ProposalPrivilegesChecker } from '../services/check_proposal_privileges';
@@ -23,7 +23,7 @@ export const registerStepDefinitions = ({
   resolveUser,
   privileges,
 }: {
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
   getProposalsService: () => ProposalsService;
   resolveUser: ResolveProposalUser;
   privileges: ProposalPrivilegesChecker;
