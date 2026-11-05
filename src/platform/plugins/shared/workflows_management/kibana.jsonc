@@ -36,6 +36,9 @@
     ],
     "optionalPlugins": ["alerting", "serverless", "cloud", "inbox"],
     "runtimePluginDependencies": ["agentBuilder"],
-    "extraPublicDirs": ["common"]
+    "extraPublicDirs": ["common"],
+    "taskTypeContributions": {
+      "alerting-rule-run": ["server/task_types/rule_run_contribution.ts"]
+    }
   }
 }

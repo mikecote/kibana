@@ -14,8 +14,10 @@ import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
 import { createApiKeys } from './authentication/api_keys/create_api_keys';
 import type { InternalAuthenticationServiceStart } from './authentication/authentication_service';
 import { checkPrivilegesFactory } from './authorization/check_privileges';
+import { checkSavedObjectsPrivilegesWithRequestFactory } from './authorization/check_saved_objects_privileges';
 import { authorizationModeFactory } from './authorization/mode';
 import type { UiamConfigType } from './config';
+import type { SpacesService } from './plugin';
 import { UiamService } from './uiam/uiam_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 
@@ -50,6 +52,9 @@ export interface RunTimeSecurity {
     applicationName: string;
     /** Whether the privileges of a request are checked, which the license decides. */
     mode: ReturnType<typeof authorizationModeFactory>;
+    checkSavedObjectsPrivilegesWithRequest: ReturnType<
+      typeof checkSavedObjectsPrivilegesWithRequestFactory
+    >;
   };
   audit: AuditServiceSetup;
 }
@@ -92,9 +97,23 @@ export const createRunTimeSecurity = ({
   const actions = new Actions();
   const privileges = checkPrivilegesFactory(actions, async () => clusterClient, applicationName);
 
+  // Spaces are always on in a task process, and a namespace is the id of its space but for the default.
+  const spacesService = {
+    namespaceToSpaceId: (namespace?: string) => namespace ?? 'default',
+  } as unknown as SpacesService;
+
   return {
     authc: { apiKeys, getCurrentUser },
-    authz: { ...privileges, actions, applicationName, mode: authorizationModeFactory(license) },
+    authz: {
+      ...privileges,
+      actions,
+      applicationName,
+      mode: authorizationModeFactory(license),
+      checkSavedObjectsPrivilegesWithRequest: checkSavedObjectsPrivilegesWithRequestFactory(
+        privileges.checkPrivilegesWithRequest,
+        () => spacesService
+      ),
+    },
     audit,
   };
 };

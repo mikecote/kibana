@@ -252,8 +252,7 @@ its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a te
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
 Not the same in a process: no `alert.status.changed` workflow events, usage counters or in-memory
-metrics; connector authorization of the enqueue is not checked until Kibana runs the connector task;
-a rule that uses a connector type or adapter the process does not know is declined; and each run is a
+metrics; a rule that uses a connector type or adapter the process does not know is declined; and each run is a
 fresh process, so it pays for the encryption service, the license and the alerts resource checks every
 time.
 

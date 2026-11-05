@@ -8,6 +8,7 @@
 import type { RuleRunActionsSetup } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import { parseExperimentalConfigValue } from '../../common/experimental_features';
 import { registerConnectorTypes } from '../connector_types';
+import { registerConnectorTypesFromSpecs } from '../connector_types_from_spec';
 
 /**
  * Registers the connector types of this plugin where a task process enqueues the actions of a rule
@@ -17,11 +18,19 @@ import { registerConnectorTypes } from '../connector_types';
  */
 export const registerConnectorTypesForRuleRuns = (
   actions: RuleRunActionsSetup,
-  { publicBaseUrl }: { publicBaseUrl?: string } = {}
-) =>
-  registerConnectorTypes({
-    // The part of the actions contract that registering a connector type uses.
-    actions: actions as Parameters<typeof registerConnectorTypes>[0]['actions'],
+  {
     publicBaseUrl,
-    experimentalFeatures: parseExperimentalConfigValue([]),
-  });
+    enableExperimental = [],
+  }: {
+    publicBaseUrl?: string;
+    /** `xpack.stack_connectors.enableExperimental`, as Kibana has it. */
+    enableExperimental?: string[];
+  } = {}
+) => {
+  const experimentalFeatures = parseExperimentalConfigValue(enableExperimental);
+  // The part of the actions contract that registering a connector type uses.
+  const setup = actions as Parameters<typeof registerConnectorTypes>[0]['actions'];
+  registerConnectorTypes({ actions: setup, publicBaseUrl, experimentalFeatures });
+  // As the plugin does, which also registers what the specs of the connectors define.
+  if (experimentalFeatures.connectorsFromSpecs) registerConnectorTypesFromSpecs({ actions: setup });
+};

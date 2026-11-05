@@ -24,6 +24,7 @@ import { buildSecurityApi } from './build_delegate_apis';
 import type { ConfigType, UiamConfigType } from './config';
 import type { RunTimeSecurity } from './run_time_security';
 import { createRunTimeSecurity } from './run_time_security';
+import { setupSavedObjects } from './saved_objects';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 import { SecurityLicenseService } from '../common/licensing/license_service';
 
@@ -146,6 +147,25 @@ const plugin: PluginInitializer<void, SecurityTaskPluginStart> = async (initiali
       });
       core.security.registerSecurityDelegate(delegate);
       auditSetup = audit;
+
+      // What the plugin registers with saved objects: a scoped client reads and writes with Kibana's
+      // own user, after the privileges of the request were checked (as `getRunTime` is only called
+      // once a request is served, the authorization it builds from Core's start is there).
+      setupSavedObjects({
+        audit,
+        authz: {
+          get mode() {
+            return getRunTime().authz.mode;
+          },
+          get actions() {
+            return getRunTime().authz.actions;
+          },
+          checkSavedObjectsPrivilegesWithRequest: (request) =>
+            getRunTime().authz.checkSavedObjectsPrivilegesWithRequest(request),
+        },
+        savedObjects: core.savedObjects,
+        getCurrentUser,
+      });
     },
 
     start(core) {

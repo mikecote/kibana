@@ -179,4 +179,52 @@ describe('the security plugin in a task process', () => {
     expect(host.security.authc.apiKeys.uiam).not.toBeNull();
     expect(typeof host.security.authc.apiKeys.uiam!.grant).toBe('function');
   });
+
+  it('authorizes the saved objects a scoped client reads with the privileges of the request', async () => {
+    const { host } = await boot();
+    // Kibana registers its privileges in Elasticsearch when it starts, which a process does not.
+    await es.security.putPrivileges({
+      privileges: {
+        'kibana-.kibana': {
+          read_config: { actions: ['saved_object:config/get'] },
+        },
+      },
+    });
+    await es.security.putRole({
+      name: 'config-reader',
+      applications: [
+        {
+          application: 'kibana-.kibana',
+          privileges: ['read_config'],
+          resources: ['space:default'],
+        },
+      ],
+    });
+    const login = (username: string) => ({
+      authorization: `Basic ${Buffer.from(`${username}:changeme-password`).toString('base64')}`,
+    });
+    await es.security.putUser({
+      username: 'config-reader-user',
+      password: 'changeme-password',
+      roles: ['config-reader'],
+    });
+    await es.security.putUser({
+      username: 'no-kibana-access',
+      password: 'changeme-password',
+      roles: [],
+    });
+
+    // A user who may read the type is not refused, the object is just not there: it was authorized.
+    await expect(
+      host.savedObjects
+        .getScopedClient(kibanaRequestFactory({ headers: login('config-reader-user') }))
+        .get('config', 'not-there')
+    ).rejects.toMatchObject({ output: { statusCode: 404 } });
+    // A user without privileges on the type is refused, as Kibana would.
+    await expect(
+      host.savedObjects
+        .getScopedClient(kibanaRequestFactory({ headers: login('no-kibana-access') }))
+        .get('config', 'not-there')
+    ).rejects.toMatchObject({ output: { statusCode: 403 } });
+  });
 });

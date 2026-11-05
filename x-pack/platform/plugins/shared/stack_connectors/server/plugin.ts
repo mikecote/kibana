@@ -6,6 +6,7 @@
  */
 
 import type { PluginInitializerContext, Plugin, CoreSetup, CoreStart } from '@kbn/core/server';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
 import type { PluginSetupContract as ActionsPluginSetupContract } from '@kbn/actions-plugin/server';
 import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
@@ -17,6 +18,7 @@ import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { SpacesPluginSetup } from '@kbn/spaces-plugin/server';
 import { registerInferenceConnectorsUsageCollector } from './usage/inference/inference_connectors_usage_collector';
 import { registerConnectorTypes } from './connector_types';
+import { STACK_CONNECTORS_TASK_PROCESS_SETTINGS_ID } from './task_types/constants';
 import {
   getWellKnownEmailServiceRoute,
   getWebhookSecretHeadersKeyRoute,
@@ -29,6 +31,7 @@ import { registerConnectorTypesFromSpecs } from './connector_types_from_spec';
 
 export interface ConnectorsPluginsSetup {
   actions: ActionsPluginSetupContract;
+  alerting?: AlertingServerSetup;
   usageCollection?: UsageCollectionSetup;
   cloud?: CloudSetup;
 }
@@ -103,6 +106,14 @@ export class StackConnectorsPlugin
     if (this.experimentalFeatures.connectorsFromSpecs) {
       registerConnectorTypesFromSpecs({ actions });
     }
+
+    // A task process registers the same connector types, so it needs the same experimental features.
+    plugins.alerting?.registerTaskProcessSettings(
+      STACK_CONNECTORS_TASK_PROCESS_SETTINGS_ID,
+      () => ({
+        enableExperimental: this.config.enableExperimental,
+      })
+    );
 
     if (plugins.usageCollection) {
       registerInferenceConnectorsUsageCollector(plugins.usageCollection, core);

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { connectorsSpecs } from '@kbn/connector-specs';
 import { registerConnectorTypesForRuleRuns } from './register_connector_types_for_rule_runs';
 
 describe('registerConnectorTypesForRuleRuns', () => {
@@ -18,6 +19,8 @@ describe('registerConnectorTypesForRuleRuns', () => {
         getClientLeasePool: jest.fn(),
         getActionsConfigurationUtilities: jest.fn().mockReturnValue({
           getAwsSesConfig: jest.fn(),
+          isInboundEventsEnabled: () => true,
+          isConnectorSigningKeysEnabled: () => true,
         }),
       } as never,
       { publicBaseUrl: 'https://kibana.test' }
@@ -28,5 +31,24 @@ describe('registerConnectorTypesForRuleRuns', () => {
       expect.arrayContaining(['.email', '.index', '.server-log', '.slack', '.webhook'])
     );
     expect(registerSubActionConnectorType).toHaveBeenCalled();
+  });
+
+  it('registers the connector types the specs define, as the plugin does', () => {
+    const registerType = jest.fn();
+    registerConnectorTypesForRuleRuns({
+      registerType,
+      registerSubActionConnectorType: jest.fn(),
+      getClientLeasePool: jest.fn(),
+      getActionsConfigurationUtilities: jest.fn().mockReturnValue({
+        getAwsSesConfig: jest.fn(),
+        isInboundEventsEnabled: () => true,
+        isConnectorSigningKeysEnabled: () => true,
+      }),
+    } as never);
+
+    const ids = registerType.mock.calls.map(([type]) => type.id);
+    const specIds = Object.values(connectorsSpecs).map((spec) => spec.metadata.id);
+    expect(specIds.length).toBeGreaterThan(10);
+    expect(ids).toEqual(expect.arrayContaining(specIds));
   });
 });

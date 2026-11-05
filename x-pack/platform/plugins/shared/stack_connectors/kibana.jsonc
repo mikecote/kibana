@@ -18,7 +18,7 @@
       "licensing",
       "spaces"
     ],
-    "optionalPlugins": ["usageCollection", "cloud"],
+    "optionalPlugins": ["usageCollection", "cloud", "alerting"],
     "extraPublicDirs": ["public/common"],
     "taskTypeContributions": {
       "alerting-rule-run": [

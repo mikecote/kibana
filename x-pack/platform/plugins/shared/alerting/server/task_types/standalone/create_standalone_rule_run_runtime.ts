@@ -229,8 +229,8 @@ export const createStandaloneRuleRunRuntime = ({
     spaceIdToNamespace,
     uiSettings,
     isServerless,
-    // A process has no UIAM key to grant: see the task types README.
-    shouldGrantUiam: false,
+    // As in Kibana: UIAM API keys are used when Core's security exposes them (serverless with UIAM).
+    shouldGrantUiam: !!host.security.authc.apiKeys.uiam,
   };
 
   return {
