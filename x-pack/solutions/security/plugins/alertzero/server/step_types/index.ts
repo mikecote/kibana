@@ -6,7 +6,7 @@
  */
 
 import type { ElasticsearchClient, Logger } from '@kbn/core/server';
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { ActionsService } from '../services/actions/actions_service';
@@ -25,6 +25,22 @@ import type { PackageReportStepDependencies } from './package_report/package_rep
 import type { ReportWorkerOutcomeStepDeps } from './report_worker_outcome/report_worker_outcome_step';
 import { getReportWorkerOutcomeStepDefinition } from './report_worker_outcome/report_worker_outcome_step';
 
+/**
+ * Registers the alert triage steps, which only need Task Manager's aggregation and the Kibana API of
+ * the run: Kibana and the task process of the workflow task types register them with this function.
+ */
+export const registerTriageStepDefinitions = ({
+  workflowsExtensions,
+  getTaskManager,
+}: {
+  workflowsExtensions: WorkflowStepsRegistry;
+  getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+}) => {
+  workflowsExtensions.registerStepDefinition(getTriageHeadroomStepDefinition({ getTaskManager }));
+  workflowsExtensions.registerStepDefinition(getTriagePlanSweepStepDefinition());
+  workflowsExtensions.registerStepDefinition(getTriageLoadAlertsStepDefinition());
+};
+
 export const registerStepDefinitions = ({
   workflowsExtensions,
   getActionsService,
@@ -38,7 +54,7 @@ export const registerStepDefinitions = ({
   getTaskManager,
   logger,
 }: {
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
   getActionsService: () => ActionsService;
   getConversations: () => AgentBuilderPluginStart['conversations'];
   getExecution: SummarizeInvestigationStepDependencies['executeAgent'];
@@ -68,9 +84,7 @@ export const registerStepDefinitions = ({
       resolveConnectorId,
     })
   );
-  workflowsExtensions.registerStepDefinition(getTriageHeadroomStepDefinition({ getTaskManager }));
-  workflowsExtensions.registerStepDefinition(getTriagePlanSweepStepDefinition());
-  workflowsExtensions.registerStepDefinition(getTriageLoadAlertsStepDefinition());
+  registerTriageStepDefinitions({ workflowsExtensions, getTaskManager });
 };
 
 export { getPackageReportStepDefinition } from './package_report';
@@ -82,7 +96,7 @@ export const registerAlertZeroStepDefinitions = ({
   workflowsExtensions,
   ...deps
 }: ReportWorkerOutcomeStepDeps & {
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
 }): void => {
   workflowsExtensions.registerStepDefinition(getReportWorkerOutcomeStepDefinition(deps));
 };

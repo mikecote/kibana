@@ -87,6 +87,10 @@ import {
   type ManagedInstallReadinessResult,
   waitForManagedWorkflowInstallReadiness,
 } from '../lib/wait_for_managed_workflow_install_readiness';
+import {
+  readInstalledManagedWorkflowState,
+  toManagedWorkflowInstanceState,
+} from '../services/managed_workflow_status';
 import { ManagedWorkflowsService } from '../services/managed_workflows_service';
 import { WorkflowAccessControlService } from '../services/workflow_access_control';
 import { WorkflowChangeHistoryService } from '../services/workflow_change_history_service';
@@ -103,11 +107,7 @@ import type {
 import { WorkflowExecutionQueryService } from '../services/workflow_execution_query_service';
 import { WorkflowSearchService } from '../services/workflow_search_service';
 import { WorkflowValidationService } from '../services/workflow_validation_service';
-import {
-  createStorage,
-  type WorkflowProperties,
-  type WorkflowStorage,
-} from '../storage/workflow_storage';
+import { createStorage, type WorkflowStorage } from '../storage/workflow_storage';
 import { WorkflowTaskScheduler } from '../tasks/workflow_task_scheduler';
 import type { WorkflowsServerPluginSetupDeps, WorkflowsServerPluginStartDeps } from '../types';
 
@@ -401,11 +401,12 @@ export class WorkflowsService {
     pluginId: string
   ): Promise<ManagedWorkflowInstanceState | null> {
     await this.ensureInitialized();
-    const source = await this.crudService.getWorkflowDocumentSource(id, spaceId);
-    if (!source?.managed || source.managedBy !== pluginId) {
-      return null;
-    }
-    return this.toManagedWorkflowInstanceState(id, source);
+    return readInstalledManagedWorkflowState({
+      reader: this.crudService,
+      id,
+      spaceId,
+      pluginId,
+    });
   }
 
   public async listInstalledManagedWorkflowStates(
@@ -413,20 +414,7 @@ export class WorkflowsService {
   ): Promise<ManagedWorkflowInstanceState[]> {
     await this.ensureInitialized();
     const documents = await this.crudService.getManagedWorkflowDocumentsAllSpaces({ pluginId });
-    return documents.map(({ id, source }) => this.toManagedWorkflowInstanceState(id, source));
-  }
-
-  private toManagedWorkflowInstanceState(
-    id: string,
-    source: WorkflowProperties
-  ): ManagedWorkflowInstanceState {
-    return {
-      workflowId: id,
-      spaceId: source.spaceId,
-      definitionId: source.originManagedWorkflowId ?? null,
-      templateValues: source.managedTemplateValues ?? null,
-      documentVersion: source.version ?? null,
-    };
+    return documents.map(({ id, source }) => toManagedWorkflowInstanceState(id, source));
   }
 
   public async createWorkflow(

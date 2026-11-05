@@ -82,6 +82,8 @@ export interface WorkflowStepsContribution {
     settings?: string[];
     uiSettings?: Array<Record<string, UiSettingsParams>>;
     featureFlags?: Record<string, boolean | string | number>;
+    /** Event log providers (and their actions) the steps write events with. */
+    eventLogProviders?: Array<{ provider: string; actions: string[] }>;
   };
   register(
     registry: WorkflowStepsRegistry,
@@ -105,6 +107,16 @@ export interface WorkflowStepsContributionServices {
     createWorkflowDataClient: () => unknown;
     createStepDataClient: () => unknown;
   };
+  /**
+   * Schedules a workflow run (a `workflow:run` task) and returns its execution id: what the engine's
+   * `scheduleWorkflow` does for the management API in Kibana (the types are the engine's
+   * `WorkflowExecutionEngineModel` and `KibanaRequest`).
+   */
+  scheduleWorkflow?: (
+    workflow: unknown,
+    context: Record<string, unknown>,
+    request: KibanaRequest
+  ) => Promise<{ workflowExecutionId: string }>;
   /** Emits a trigger event: the workflows it matches are scheduled by this run's process. */
   emitEvent: (params: {
     triggerId: string;
@@ -130,6 +142,8 @@ export interface WorkflowStepsContributionContext {
   host: unknown;
   /** The services of the engine's runtime, which are not part of the host. Absent in unit tests of a contribution that does not use them. */
   services?: WorkflowStepsContributionServices;
+  /** Whether a step type is registered in this process, once every contribution registered. */
+  hasStepDefinition?: (stepTypeId: string) => boolean;
   /** Registers a check that can decline a workflow whose steps the process cannot serve like Kibana. */
   registerRunCheck?: (check: WorkflowStepRunCheck) => void;
   logger: Logger;

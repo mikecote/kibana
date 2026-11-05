@@ -16,6 +16,7 @@ import {
 import { GLOBAL_WORKFLOW_SPACE_ID } from '@kbn/workflows/server';
 import type {
   GetManagedWorkflowStatusOptions,
+  ManagedWorkflowInstanceState,
   ManagedWorkflowOperationOptions,
   ManagedWorkflowStatus,
   ManagedWorkflowStatusReport,
@@ -192,4 +193,35 @@ export const getManagedWorkflowStatus = async ({
     registryHash,
     existing,
   });
+};
+
+/** The persisted state of one managed workflow instance, from its stored document. */
+export const toManagedWorkflowInstanceState = (
+  id: string,
+  source: WorkflowProperties
+): ManagedWorkflowInstanceState => ({
+  workflowId: id,
+  spaceId: source.spaceId,
+  definitionId: source.originManagedWorkflowId ?? null,
+  templateValues: source.managedTemplateValues ?? null,
+  documentVersion: source.version ?? null,
+});
+
+/** The state of a managed workflow that `pluginId` installed, or `null`: what a task process reads with the owner-bound client. */
+export const readInstalledManagedWorkflowState = async ({
+  reader,
+  id,
+  spaceId,
+  pluginId,
+}: {
+  reader: Pick<WorkflowReadService, 'getWorkflowDocumentSource'>;
+  id: string;
+  spaceId: string;
+  pluginId: string;
+}): Promise<ManagedWorkflowInstanceState | null> => {
+  const source = await reader.getWorkflowDocumentSource(id, spaceId);
+  if (!source?.managed || source.managedBy !== pluginId) {
+    return null;
+  }
+  return toManagedWorkflowInstanceState(id, source);
 };

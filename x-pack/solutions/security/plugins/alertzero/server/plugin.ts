@@ -24,6 +24,7 @@ import {
   TEMPLATE_ID_ESCALATION,
   TEMPLATE_ID_INVESTIGATION,
 } from '@kbn/alertzero-common';
+import type { Subscription } from 'rxjs';
 import { getSubscriptionAvailability } from '../common/availability';
 import {
   ALERTZERO_API_PRIVILEGE_READ,
@@ -82,6 +83,10 @@ import {
   registerAlertZeroStepDefinitions,
   registerStepDefinitions,
 } from './step_types';
+import {
+  ALERTZERO_TASK_PROCESS_SETTINGS_ID,
+  type AlertZeroTaskProcessSettings,
+} from './task_types/alertzero_task_process_settings';
 
 export class AlertZeroPlugin
   implements
@@ -136,6 +141,11 @@ export class AlertZeroPlugin
 
   /** Set in start from `xpack.security.serviceAccounts.enabled`. False until then. */
   private serviceAccountsEnabled = false;
+  /** Whether the managed workflows client started: a task process is told, as it has no such client of its own. */
+  private managedWorkflowsReady = false;
+  /** The latest telemetry opt-in decision, which a task process is told when it is dispatched. */
+  private telemetryOptedIn = false;
+  private telemetryOptInSubscription?: Subscription;
 
   constructor(context: PluginInitializerContext<AlertZeroConfig>) {
     this.logger = context.logger.get();
@@ -180,6 +190,17 @@ export class AlertZeroPlugin
     registerAlertZeroTelemetryEvents(coreSetup.analytics);
 
     this.workflowsManagementApi = workflowsManagement.management;
+
+    // What the steps read of this plugin in a task process of the workflow task types, evaluated when
+    // a process is dispatched. Registered inside the config guard: a disabled plugin sends nothing.
+    workflowsExtensions.registerTaskProcessSettings(
+      ALERTZERO_TASK_PROCESS_SETTINGS_ID,
+      (): AlertZeroTaskProcessSettings => ({
+        serviceAccountsEnabled: this.serviceAccountsEnabled,
+        managedWorkflowsReady: this.managedWorkflowsReady,
+        telemetryOptedIn: this.telemetryOptedIn,
+      })
+    );
 
     // Missing runtime dependencies must not make installed workflows eligible for orphan cleanup.
     registerOwner({ workflowsExtensions });
@@ -338,6 +359,10 @@ export class AlertZeroPlugin
     }
 
     this.serviceAccountsEnabled = core.security.serviceAccounts.isEnabled();
+    // The telemetry plugin replays its latest decision; a task process is told the current one.
+    this.telemetryOptInSubscription = plugins.telemetry?.isOptedIn$?.subscribe((optedIn) => {
+      this.telemetryOptedIn = optedIn === true;
+    });
 
     const { agentBuilder, agenticInvestigations, proposals } = plugins;
     // Optional dependencies allow the upgrade shell to load without starting feature work.
@@ -364,6 +389,9 @@ export class AlertZeroPlugin
       return undefined;
     });
     this.managedWorkflows = managedWorkflows;
+    void managedWorkflows.then((client) => {
+      this.managedWorkflowsReady = client !== undefined;
+    });
 
     this.conversationProposalsService = new ConversationProposalsService(
       proposals.getProposalsService(),
@@ -515,5 +543,7 @@ export class AlertZeroPlugin
     return this.spaces?.spacesService.getSpaceId(request) ?? 'default';
   }
 
-  stop() {}
+  stop() {
+    this.telemetryOptInSubscription?.unsubscribe();
+  }
 }

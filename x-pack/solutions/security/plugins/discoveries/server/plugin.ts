@@ -37,6 +37,10 @@ import { DEFAULT_CONNECTOR_TIMEOUT_MS } from '.';
 import { preCreateDefaultAdhocAttackDiscoveryIndex } from './lib/attack_discovery/pre_create_default_adhoc_index';
 import { logStartupHealthCheck } from './lib/startup_health_check';
 import { createAttackDiscoveryWorkflowExecutor } from './lib/schedules/workflow_executor/create_attack_discovery_workflow_executor';
+import {
+  DISCOVERIES_TASK_PROCESS_SETTINGS_ID,
+  getDiscoveriesTaskProcessSettings,
+} from './task_types/discoveries_task_process_settings';
 import { registerRoutes } from './routes';
 import { createAttackDiscoveryAttachmentType } from './agent_builder/attachments/attack_discovery';
 import { createAttackDiscoveryVerdictAttachmentType } from './agent_builder/attachments/attack_discovery_verdict';
@@ -175,6 +179,17 @@ export class DiscoveriesPlugin
     } else {
       this.logger.warn('WorkflowsManagement API not available, skipping workflow registration');
     }
+
+    // What the steps read of the config in a task process of the workflow task types.
+    plugins.workflowsExtensions.registerTaskProcessSettings(
+      DISCOVERIES_TASK_PROCESS_SETTINGS_ID,
+      () =>
+        getDiscoveriesTaskProcessSettings({
+          connectorTimeout: this.config.connectorTimeout ?? DEFAULT_CONNECTOR_TIMEOUT_MS,
+          langSmithApiKey: this.config.langSmithApiKey,
+          langSmithProject: this.config.langSmithProject,
+        })
+    );
 
     this.workflowStepRegistrationResult = registerWorkflowSteps(plugins.workflowsExtensions, {
       adhocAttackDiscoveryDataClient: this.adhocAttackDiscoveryDataClient,

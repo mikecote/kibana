@@ -88,6 +88,7 @@ const createMockEventLog = () => ({
 
 const createMockWorkflowsExtensions = () => ({
   registerManagedWorkflowOwner: jest.fn(),
+  registerTaskProcessSettings: jest.fn(),
   registerStepType: jest.fn(),
 });
 

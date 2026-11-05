@@ -169,10 +169,17 @@ export const createWorkflowRuntimeFromHost = async (
         publicBaseUrl: host.server.publicBaseUrl,
         settings,
         registerRunCheck: (check) => runChecks.push(check),
+        hasStepDefinition: (stepTypeId) => workflowsExtensions.hasStepDefinition(stepTypeId),
         services: {
           executionDataClients: dataClients,
           getActionsClientWithRequest: (request) =>
             actionsPlugin.getActionsClientWithRequest(request),
+          scheduleWorkflow: (workflow, workflowContext, request) => {
+            if (!started.runtime) {
+              throw new Error('The workflows runtime is not ready to schedule workflows');
+            }
+            return started.runtime.scheduleWorkflow(workflow as never, workflowContext, request);
+          },
           emitEvent: (params) => {
             if (!started.runtime) {
               throw new Error('The workflows runtime is not ready to emit events');

@@ -7,10 +7,9 @@
 
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import type { Logger } from '@kbn/core/server';
-import type { CoreStart } from '@kbn/core/server';
 
 import { createTracedLogger } from '@kbn/discoveries/impl/lib/create_traced_logger';
-import type { DiscoveriesPluginStartDeps } from '../../../types';
+import type { GetStepServices } from '../../step_services';
 import { asNonEmpty } from '../../../lib/non_empty_string';
 import { getAlertsIndexForSpace } from '../../../lib/get_alerts_index_for_space';
 import { resolveConnectorDetails } from '../../helpers/resolve_connector_details';
@@ -28,10 +27,7 @@ export const getDefaultValidationStepDefinition = ({
   getStartServices,
   logger,
 }: {
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices: GetStepServices;
   logger: Logger;
 }) =>
   createServerStepDefinition({

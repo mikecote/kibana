@@ -6,11 +6,11 @@
  */
 
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
-import type { CoreStart, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import type { Replacements } from '@kbn/elastic-assistant-common';
 import { getAnonymizedAlerts } from '@kbn/discoveries/impl/attack_discovery/graphs';
 import { DefaultAlertRetrievalStepCommonDefinition } from '../../../../common/step_types/default_alert_retrieval_step';
-import type { DiscoveriesPluginStartDeps } from '../../../types';
+import type { GetStepServices } from '../../step_services';
 import { asNonEmpty } from '../../../lib/non_empty_string';
 import { resolveConnectorDetails } from '../../helpers/resolve_connector_details';
 import { fetchAnonymizationFields } from './helpers/fetch_anonymization_fields';
@@ -30,10 +30,7 @@ export const getDefaultAlertRetrievalStepDefinition = ({
 }: {
   getEventLogIndex: () => Promise<string>;
   getEventLogger: () => Promise<unknown>;
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices: GetStepServices;
   logger: Logger;
 }) =>
   createServerStepDefinition({

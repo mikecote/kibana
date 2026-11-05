@@ -5,14 +5,13 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { AnalyticsServiceSetup, Logger } from '@kbn/core/server';
 import type { IRuleDataClient } from '@kbn/rule-registry-plugin/server';
-import type { CoreStart } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
+import type { WorkflowsManagementApi } from '@kbn/discoveries/impl/attack_discovery/generation/types';
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
-import type { DiscoveriesPluginStartDeps } from '../types';
+import type { GetStepServices } from './step_services';
 import { getDefaultAlertRetrievalStepDefinition } from './steps/default_alert_retrieval_step';
 import { getDefaultValidationStepDefinition } from './steps/default_validation_step';
 import { getGenerateStepDefinition } from './steps/generate_step';
@@ -29,10 +28,7 @@ type StepRegistrationOutcome =
   | { error: string; id: string; success: false }
   | { id: string; success: true };
 
-type GetStartServices = () => Promise<{
-  coreStart: CoreStart;
-  pluginsStart: DiscoveriesPluginStartDeps;
-}>;
+type GetStartServices = GetStepServices;
 
 const tryRegisterStep = ({
   getStartServices,
@@ -43,7 +39,7 @@ const tryRegisterStep = ({
   getStartServices: GetStartServices;
   logger: Logger;
   stepDefinition: { id: string };
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
 }): StepRegistrationOutcome => {
   try {
     // Register a flag-gated loader instead of the definition directly. The
@@ -66,7 +62,7 @@ const tryRegisterStep = ({
     };
 
     workflowsExtensions.registerStepDefinition(
-      loader as Parameters<WorkflowsExtensionsServerPluginSetup['registerStepDefinition']>[0]
+      loader as Parameters<WorkflowStepsRegistry['registerStepDefinition']>[0]
     );
     return { id: stepDefinition.id, success: true };
   } catch (err) {
@@ -77,7 +73,7 @@ const tryRegisterStep = ({
 };
 
 export const registerWorkflowSteps = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup,
+  workflowsExtensions: WorkflowStepsRegistry,
   {
     adhocAttackDiscoveryDataClient,
     analytics,
@@ -90,19 +86,17 @@ export const registerWorkflowSteps = (
     logger,
     workflowsManagementApi,
   }: {
-    adhocAttackDiscoveryDataClient: IRuleDataClient;
+    /** Without it the persist step is not registered: a task process has no rule data client. */
+    adhocAttackDiscoveryDataClient?: IRuleDataClient;
     analytics?: AnalyticsServiceSetup;
     connectorTimeout: number;
     getEventLogIndex: () => Promise<string>;
     getEventLogger: () => Promise<IEventLogger>;
-    getStartServices: () => Promise<{
-      coreStart: CoreStart;
-      pluginsStart: DiscoveriesPluginStartDeps;
-    }>;
+    getStartServices: GetStepServices;
     langSmithApiKey?: string;
     langSmithProject?: string;
     logger: Logger;
-    workflowsManagementApi?: WorkflowsServerPluginSetup['management'];
+    workflowsManagementApi?: WorkflowsManagementApi;
   }
 ): StepRegistrationResult => {
   const defaultAlertRetrievalStepDef = withWorkflowsEnabledGuard(
@@ -142,23 +136,28 @@ export const registerWorkflowSteps = (
     workflowsExtensions,
   });
 
-  const persistDiscoveriesStepDef = withWorkflowsEnabledGuard(
-    getPersistDiscoveriesStepDefinition({
-      adhocAttackDiscoveryDataClient,
-      getStartServices,
-      logger,
-    }),
-    getStartServices
-  );
-  logger.debug(
-    () => `Registering persistDiscoveriesStepDefinition with id: ${persistDiscoveriesStepDef.id}`
-  );
-  const persistDiscoveriesOutcome = tryRegisterStep({
-    getStartServices,
-    logger,
-    stepDefinition: persistDiscoveriesStepDef,
-    workflowsExtensions,
-  });
+  const persistDiscoveriesOutcome = adhocAttackDiscoveryDataClient
+    ? (() => {
+        const persistDiscoveriesStepDef = withWorkflowsEnabledGuard(
+          getPersistDiscoveriesStepDefinition({
+            adhocAttackDiscoveryDataClient,
+            getStartServices,
+            logger,
+          }),
+          getStartServices
+        );
+        logger.debug(
+          () =>
+            `Registering persistDiscoveriesStepDefinition with id: ${persistDiscoveriesStepDef.id}`
+        );
+        return tryRegisterStep({
+          getStartServices,
+          logger,
+          stepDefinition: persistDiscoveriesStepDef,
+          workflowsExtensions,
+        });
+      })()
+    : undefined;
 
   const generateStepDef = withWorkflowsEnabledGuard(
     getGenerateStepDefinition({
@@ -203,7 +202,7 @@ export const registerWorkflowSteps = (
     defaultAlertRetrievalOutcome,
     defaultValidationOutcome,
     generateOutcome,
-    persistDiscoveriesOutcome,
+    ...(persistDiscoveriesOutcome ? [persistDiscoveriesOutcome] : []),
     runOutcome,
   ];
 

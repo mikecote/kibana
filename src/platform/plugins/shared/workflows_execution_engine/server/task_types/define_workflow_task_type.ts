@@ -90,6 +90,7 @@ export const defineWorkflowTaskType = (
     eventLog: {
       providers: [
         { provider: ACTIONS_EVENT_LOG_PROVIDER, actions: Object.values(ACTIONS_EVENT_LOG_ACTIONS) },
+        ...declared.flatMap(({ eventLogProviders }) => eventLogProviders ?? []),
       ],
       create: createStandaloneEventLog,
     },

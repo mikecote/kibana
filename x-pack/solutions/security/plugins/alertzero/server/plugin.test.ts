@@ -75,6 +75,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
       const features = { registerKibanaFeature: jest.fn() };
       const workflowsExtensions = {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerStepDefinition: jest.fn(),
       };
       const skills = { register: jest.fn() };
@@ -114,6 +115,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: undefined,
@@ -134,7 +136,10 @@ describe('AlertZeroPlugin feature-flag gating', () => {
         coreMock.createSetup() as never,
         {
           features: { registerKibanaFeature: jest.fn() },
-          workflowsExtensions: { registerManagedWorkflowOwner: jest.fn() },
+          workflowsExtensions: {
+            registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
+          },
           workflowsManagement: undefined,
           contextEngine,
         } as never
@@ -153,6 +158,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: undefined,
@@ -166,6 +172,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
       const plugin = new AlertZeroPlugin(createContext(createConfig({ enabled: false })));
       const workflowsExtensions = {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerStepDefinition: jest.fn(),
       };
 
@@ -203,6 +210,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
         const coreSetup = coreMock.createSetup();
         const workflowsExtensions = {
           registerManagedWorkflowOwner: jest.fn(),
+          registerTaskProcessSettings: jest.fn(),
           registerStepDefinition: jest.fn(),
         };
         const dependencies = {
@@ -243,6 +251,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -268,6 +277,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -284,6 +294,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
       const features = { registerKibanaFeature: jest.fn() };
       const workflowsExtensions = {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerStepDefinition: jest.fn(),
       };
       const skills = { register: jest.fn() };
@@ -350,6 +361,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features,
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -384,6 +396,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -404,6 +417,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
       const plugin = new AlertZeroPlugin(createContext(createConfig({ enabled: true })));
       const workflowsExtensions = {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerStepDefinition: jest.fn(),
       };
 
@@ -439,6 +453,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -470,6 +485,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },
@@ -497,6 +513,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
       const features = { registerKibanaFeature: jest.fn() };
       const workflowsExtensions = {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerStepDefinition: jest.fn(),
       };
       const skills = { register: jest.fn() };
@@ -536,6 +553,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
             features: { registerKibanaFeature: jest.fn() },
             workflowsExtensions: {
               registerManagedWorkflowOwner: jest.fn(),
+              registerTaskProcessSettings: jest.fn(),
               registerStepDefinition: jest.fn(),
             },
             workflowsManagement: { management: {} },
@@ -591,6 +609,7 @@ describe('AlertZeroPlugin feature-flag gating', () => {
           features: { registerKibanaFeature: jest.fn() },
           workflowsExtensions: {
             registerManagedWorkflowOwner: jest.fn(),
+            registerTaskProcessSettings: jest.fn(),
             registerStepDefinition: jest.fn(),
           },
           workflowsManagement: { management: {} },

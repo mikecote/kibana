@@ -13,6 +13,7 @@ import { ExecutionStatus } from '@kbn/workflows';
 import { ExecutionError } from '@kbn/workflows/server';
 import { createVerifyKiStepDefinition } from './verify_ki_step';
 import { createVerifyKi } from './verify_ki';
+import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import { ESQL_VALID_RUNTIME_VERIFIER_ID, ESQL_VALID_SYNTAX_VERIFIER_ID } from '../ki_verification';
 import type { KiVerifierWorkflowRunner } from '../ki_verification';
 import { mockKiStepTelemetry } from './test_utils';
@@ -110,7 +111,14 @@ describe('verify_ki workflow step', () => {
 
   const makeDefinition = (withWorkflows = true) =>
     createVerifyKiStepDefinition(
-      coreSetup,
+      async (spaceId) => {
+        const [coreStart] = await coreSetup.getStartServices();
+        return isContextEngineEnabledInSpace({
+          savedObjects: coreStart.savedObjects,
+          uiSettings: coreStart.uiSettings,
+          spaceId,
+        });
+      },
       createVerifyKi({
         getAuditLogger: async (request) => {
           const [coreStart] = await coreSetup.getStartServices();

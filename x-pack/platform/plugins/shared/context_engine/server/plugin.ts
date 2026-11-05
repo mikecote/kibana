@@ -20,7 +20,6 @@ import { i18n } from '@kbn/i18n';
 import { CONTEXT_ENGINE_MEMORY_ENABLED_SETTING_ID } from '@kbn/management-settings-ids';
 import { WorkflowsManagementOperationPrivileges } from '@kbn/workflows';
 import { CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID } from '../common/constants';
-import { apiPrivileges } from '../common/features';
 import type {
   ContextEnginePluginSetup,
   ContextEnginePluginStart,
@@ -46,11 +45,11 @@ import { installImprovementsIndexTemplate } from './improvements/storage';
 import { SignalsService } from './signals/service';
 import type { SignalsServiceApi } from './signals/service';
 import { registerSignalGeneratorTaskDefinition, scheduleSignalGenerator } from './tasks';
-import { createVerifyKiStepDefinition } from './step_types/verify_ki_step';
 import { createVerifyKi } from './step_types/verify_ki';
 import { registerStepDefinitions } from './step_types';
 import { ContextEngineAnalyticsService } from './telemetry';
 import { isContextEngineEnabledInSpace } from './utils/is_context_engine_enabled_in_space';
+import { createPrivilegeChecks } from './utils/create_privilege_checks';
 import { resolveSpaceId } from './utils/resolve_space_id';
 
 /** Must match the `pluginId` on the managed workflow definition. */
@@ -106,23 +105,12 @@ export class ContextEnginePlugin
     this.analyticsService.registerContextEngineEventTypes();
     const analyticsService = this.analyticsService;
 
-    const checkApiPrivileges = async (
-      request: KibanaRequest,
-      spaceId: string,
-      actions: readonly string[]
-    ): Promise<boolean> => {
-      const [, startDeps] = await coreSetup.getStartServices();
-      const { security } = startDeps;
-      if (!security) {
-        return true;
-      }
-      const { hasAllRequested } = await security.authz
-        .checkPrivilegesWithRequest(request)
-        .atSpace(spaceId, {
-          kibana: actions.map((action) => security.authz.actions.api.get(action)),
-        });
-      return hasAllRequested;
-    };
+    const { checkApiPrivileges, checkWritePrivilege } = createPrivilegeChecks({
+      getAuthz: async () => {
+        const [, startDeps] = await coreSetup.getStartServices();
+        return startDeps.security?.authz;
+      },
+    });
 
     const verifyKi = createVerifyKi({
       getAuditLogger: async (request) => {
@@ -137,9 +125,6 @@ export class ContextEnginePlugin
       analyticsService,
       logger: this.logger.get('context_steps'),
     });
-    setupDeps.workflowsExtensions.registerStepDefinition(
-      createVerifyKiStepDefinition(coreSetup, verifyKi)
-    );
 
     coreSetup.uiSettings.registerGlobal({
       [CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID]: {
@@ -261,20 +246,6 @@ export class ContextEnginePlugin
         uiSettings: coreStart.uiSettings,
         spaceId,
       });
-    };
-
-    const checkWritePrivilege = async (request: KibanaRequest, spaceId: string) => {
-      const [, startDeps] = await coreSetup.getStartServices();
-      const { security } = startDeps;
-      if (!security) {
-        return true;
-      }
-      const { hasAllRequested } = await security.authz
-        .checkPrivilegesWithRequest(request)
-        .atSpace(spaceId, {
-          kibana: [security.authz.actions.api.get(apiPrivileges.writeContextEngine)],
-        });
-      return hasAllRequested;
     };
 
     registerStepDefinitions({

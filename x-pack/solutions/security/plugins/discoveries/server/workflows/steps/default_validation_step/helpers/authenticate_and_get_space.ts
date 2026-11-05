@@ -5,23 +5,21 @@
  * 2.0.
  */
 
-import type {
-  AuthenticatedUser,
-  CoreStart,
-  ElasticsearchClient,
-  KibanaRequest,
-} from '@kbn/core/server';
+import type { AuthenticatedUser, ElasticsearchClient, KibanaRequest } from '@kbn/core/server';
 
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
-import type { DiscoveriesPluginStartDeps } from '../../../../types';
+import type {
+  DiscoveriesStepCoreServices,
+  DiscoveriesStepPluginServices,
+} from '../../../step_services';
 
 export const authenticateAndGetSpace = async ({
   coreStart,
   pluginsStart,
   request,
 }: {
-  coreStart: CoreStart;
-  pluginsStart: DiscoveriesPluginStartDeps;
+  coreStart: Pick<DiscoveriesStepCoreServices, 'elasticsearch'>;
+  pluginsStart: Pick<DiscoveriesStepPluginServices, 'spaces'>;
   request: KibanaRequest;
 }): Promise<{
   authenticationInfo: unknown;

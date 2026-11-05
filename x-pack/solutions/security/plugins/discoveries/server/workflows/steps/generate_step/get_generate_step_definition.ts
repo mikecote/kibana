@@ -6,11 +6,10 @@
  */
 
 import type { Logger } from '@kbn/core/server';
-import type { CoreStart } from '@kbn/core/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 
 import { GenerateStepCommonDefinition } from '../../../../common/step_types/generate_step';
-import type { DiscoveriesPluginStartDeps } from '../../../types';
+import type { GetStepServices } from '../../step_services';
 import { asNonEmpty } from '../../../lib/non_empty_string';
 import { resolveConnectorDetails } from '../../helpers/resolve_connector_details';
 import { invokeGenerationGraph } from './helpers/invoke_generation_graph';
@@ -32,10 +31,7 @@ export const getGenerateStepDefinition = ({
   connectorTimeout: number;
   getEventLogIndex: () => Promise<string>;
   getEventLogger: () => Promise<unknown>;
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices: GetStepServices;
   langSmithApiKey?: string;
   langSmithProject?: string;
   logger: Logger;

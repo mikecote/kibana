@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { AiIndexService } from '../ai_indices/service';
 import type { ImprovementsServiceApi } from '../improvements/service';
 import { registerStepDefinitions } from '.';
@@ -16,7 +16,7 @@ describe('registerStepDefinitions', () => {
     const definitions: Array<{ id: string }> = [];
     const workflowsExtensions = {
       registerStepDefinition: jest.fn((definition: { id: string }) => definitions.push(definition)),
-    } as unknown as WorkflowsExtensionsServerPluginSetup;
+    } as unknown as WorkflowStepsRegistry;
     const telemetry = mockKiStepTelemetry();
 
     registerStepDefinitions({
@@ -38,11 +38,35 @@ describe('registerStepDefinitions', () => {
     });
 
     expect(definitions.map((definition) => definition.id)).toEqual([
+      'context-engine.verifyKi',
       'context-engine.createKi',
       'context-engine.updateKi',
       'context-engine.deleteKi',
       'context-engine.getFeedbackContext',
       'context-engine.recordImprovements',
+    ]);
+  });
+
+  it('registers only the KI steps without the feedback analysis dependencies', () => {
+    const definitions: Array<{ id: string }> = [];
+    const workflowsExtensions = {
+      registerStepDefinition: jest.fn((definition: { id: string }) => definitions.push(definition)),
+    } as unknown as WorkflowStepsRegistry;
+
+    registerStepDefinitions({
+      workflowsExtensions,
+      getAiIndexService: () => ({} as AiIndexService),
+      isContextEngineEnabled: async () => true,
+      checkWritePrivilege: async () => true,
+      ...mockKiStepTelemetry(),
+      verifyKi: jest.fn(),
+    });
+
+    expect(definitions.map((definition) => definition.id)).toEqual([
+      'context-engine.verifyKi',
+      'context-engine.createKi',
+      'context-engine.updateKi',
+      'context-engine.deleteKi',
     ]);
   });
 });

@@ -5,19 +5,21 @@
  * 2.0.
  */
 
-import type { AnalyticsServiceSetup, CoreStart, Logger } from '@kbn/core/server';
+import type { AnalyticsServiceSetup, Logger } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import { v4 as uuidv4 } from 'uuid';
 import { executeGenerationWorkflow } from '@kbn/discoveries/impl/attack_discovery/generation/execute_generation_workflow';
-import type { WorkflowConfig } from '@kbn/discoveries/impl/attack_discovery/generation/types';
+import type {
+  WorkflowConfig,
+  WorkflowsManagementApi,
+} from '@kbn/discoveries/impl/attack_discovery/generation/types';
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
 
 import { RunStepCommonDefinition } from '../../../../common/step_types/run_step';
 import { getAlertsIndexForSpace } from '../../../lib/get_alerts_index_for_space';
 import { isWorkflowsEnabledForSpace } from '../../../lib/is_workflows_enabled_for_space';
-import type { DiscoveriesPluginStartDeps } from '../../../types';
+import type { GetStepServices } from '../../step_services';
 import { resolveConnectorDetails } from '../../helpers/resolve_connector_details';
 import { resolveDefaultConnectorId } from '../../helpers/resolve_default_connector_id';
 import { checkManagedWorkflowIntegrity } from '../../../managed_workflows/check_managed_workflow_integrity';
@@ -42,12 +44,9 @@ export const getRunStepDefinition = ({
   analytics?: AnalyticsServiceSetup;
   getEventLogIndex: () => Promise<string>;
   getEventLogger: () => Promise<IEventLogger>;
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices: GetStepServices;
   logger: Logger;
-  workflowsManagementApi?: WorkflowsServerPluginSetup['management'];
+  workflowsManagementApi?: WorkflowsManagementApi;
 }) =>
   createServerStepDefinition({
     ...RunStepCommonDefinition,

@@ -12,6 +12,7 @@
     "target/**/*"
   ],
   "kbn_references": [
+    "@kbn/workflows-execution-engine",
     "@kbn/agent-builder-common",
     "@kbn/agent-builder-plugin",
     "@kbn/agent-builder-server",
