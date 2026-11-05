@@ -16,9 +16,13 @@ import { ML_JOB_SAVED_OBJECT_TYPE } from '@kbn/ml-common-types/saved_objects';
 import { DEFAULT_TRAINED_MODELS_PAGE_SIZE } from '../../common/constants/trained_models';
 import type { TrainedModelJob, MLSavedObjectService } from './service';
 
-export function savedObjectClientsFactory(
-  getSavedObjectsStart: () => SavedObjectsServiceStart | null
-) {
+/** What ML reads of the saved objects service: the same in Kibana and in a task process. */
+export type MlSavedObjectsStart = Pick<
+  SavedObjectsServiceStart,
+  'createInternalRepository' | 'getScopedClient'
+>;
+
+export function savedObjectClientsFactory(getSavedObjectsStart: () => MlSavedObjectsStart | null) {
   return {
     // create a saved object client scoped to the current request
     // which has access to ml-job objects

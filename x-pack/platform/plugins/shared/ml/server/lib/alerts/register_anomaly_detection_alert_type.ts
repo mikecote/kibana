@@ -17,7 +17,7 @@ import type {
   RuleTypeParams,
   RuleTypeState,
 } from '@kbn/alerting-plugin/common';
-import type { IRuleTypeAlerts, RuleExecutorOptions } from '@kbn/alerting-plugin/server';
+import type { IRuleTypeAlerts, RuleExecutorOptions, RuleType } from '@kbn/alerting-plugin/server';
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import { ALERT_REASON, ALERT_URL } from '@kbn/rule-data-utils';
 import type { MlAnomalyDetectionAlert } from '@kbn/alerts-as-data-utils';
@@ -154,13 +154,12 @@ export const THRESHOLD_MET_GROUP: ActionGroup<AnomalyScoreMatchGroupId> = {
   }),
 };
 
-export function registerAnomalyDetectionAlertType({
-  alerting,
+export function getAnomalyDetectionAlertRuleType({
   mlSharedServices,
-}: RegisterAlertParams) {
+}: Pick<RegisterAlertParams, 'mlSharedServices'>) {
   const fieldFormatCache = new Map<string, AnomalyDetectionRuleState>();
 
-  alerting.registerType<
+  const ruleType: RuleType<
     MlAnomalyDetectionAlertParams,
     never, // Only use if defining useSavedObjectReferences hook
     RuleTypeState,
@@ -169,7 +168,7 @@ export function registerAnomalyDetectionAlertType({
     AnomalyScoreMatchGroupId,
     RecoveredActionGroupId,
     MlAnomalyDetectionAlert
-  >({
+  > = {
     id: ML_ALERT_TYPES.ANOMALY_DETECTION,
     name: i18n.translate('xpack.ml.anomalyDetectionAlert.name', {
       defaultMessage: 'Anomaly detection',
@@ -341,5 +340,13 @@ export function registerAnomalyDetectionAlertType({
       return { state: {} };
     },
     alerts: ANOMALY_DETECTION_AAD_CONFIG,
-  });
+  };
+  return ruleType;
+}
+
+export function registerAnomalyDetectionAlertType({
+  alerting,
+  mlSharedServices,
+}: RegisterAlertParams) {
+  alerting.registerType(getAnomalyDetectionAlertRuleType({ mlSharedServices }));
 }

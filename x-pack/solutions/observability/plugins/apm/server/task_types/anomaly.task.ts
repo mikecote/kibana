@@ -6,10 +6,10 @@
  */
 
 import { ApmRuleType } from '@kbn/rule-data-utils';
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
+import { registerAnomalyRuleType } from '../routes/alerts/rule_types/anomaly/register_anomaly_rule_type';
+import { createApmRuleTaskType } from './apm_rule_task_type';
 
-/** The `ApmRuleType.Anomaly` rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
-  ApmRuleType.Anomaly,
-  'its executor needs the machine learning shared services, which only exist in Kibana'
-);
+/** The `ApmRuleType.Anomaly` rule type, which a task process can run with the machine learning services of its host. */
+export const taskType = createApmRuleTaskType(ApmRuleType.Anomaly, registerAnomalyRuleType, {
+  usesMl: true,
+});

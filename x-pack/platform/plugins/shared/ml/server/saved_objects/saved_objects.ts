@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { SavedObjectsServiceSetup } from '@kbn/core/server';
+import type { SavedObjectsServiceSetup, SavedObjectsType } from '@kbn/core/server';
 import rison from '@kbn/rison';
 import {
   ML_JOB_SAVED_OBJECT_TYPE,
@@ -25,6 +25,13 @@ interface MlModuleAttributes {
   query?: string;
   jobs: object[];
   datafeeds: object[];
+}
+
+/** The saved object types ML registers, for a task process, which registers the ones it reads. */
+export function getMlSavedObjectTypes(): SavedObjectsType[] {
+  const types: SavedObjectsType[] = [];
+  setupSavedObjects({ registerType: (type: SavedObjectsType) => types.push(type) } as never);
+  return types;
 }
 
 export function setupSavedObjects(savedObjects: SavedObjectsServiceSetup) {

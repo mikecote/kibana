@@ -13,6 +13,10 @@ import {
   apmIndicesSavedObjectDefinition,
   getApmIndicesSavedObject,
 } from '@kbn/apm-sources-access-plugin/server/saved_objects/apm_indices';
+import {
+  createMlTaskProcessServices,
+  getMlTaskProcessSavedObjectTypes,
+} from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
 import type { APMConfig } from '..';
 import type { RegisterRuleDependencies } from '../routes/alerts/register_apm_rule_types';
 
@@ -29,13 +33,17 @@ export interface ApmTaskProcessSettings {
  */
 export const createApmRuleTaskType = (
   ruleTypeId: string,
-  register: (dependencies: RegisterRuleDependencies) => void
+  register: (dependencies: RegisterRuleDependencies) => void,
+  /** The rule type reads the machine learning services of the `ml` plugin. */
+  options: { usesMl?: boolean } = {}
 ) =>
   createRuleTaskType(
     {
       ruleTypeId,
-      getRuleType: ({ logger, publicBaseUrl, settings, locators }) =>
-        getRuleTypeFromRegistration((alerting) =>
+      getRuleType: (deps) => {
+        const { logger, publicBaseUrl, settings, locators } = deps;
+        const ml = options.usesMl ? createMlTaskProcessServices(deps) : undefined;
+        const ruleType = getRuleTypeFromRegistration((alerting) =>
           register({
             alerting,
             basePath: { publicBaseUrl },
@@ -47,14 +55,20 @@ export const createApmRuleTaskType = (
             apmConfig: settings.apm as APMConfig,
             logger: logger.get('rule'),
             alertsLocator: locators.get(alertsLocatorID),
-            // The three rule types of this module do not use these.
+            // The rule types of this module do not use these two.
             observability: undefined,
             ruleDataClient: undefined,
+            ml: ml?.sharedServicesProviders,
           } as never)
-        ),
+        );
+        return (ml ? ml.withLicense(ruleType) : ruleType) as never;
+      },
     },
     {
       locators: [new AlertsLocatorDefinition()],
-      savedObjectTypes: [apmIndicesSavedObjectDefinition],
+      savedObjectTypes: [
+        apmIndicesSavedObjectDefinition,
+        ...(options.usesMl ? getMlTaskProcessSavedObjectTypes() : []),
+      ],
     }
   );

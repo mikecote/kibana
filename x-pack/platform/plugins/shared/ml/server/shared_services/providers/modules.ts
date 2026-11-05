@@ -7,7 +7,7 @@
 
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
 import type { TypeOf } from '@kbn/config-schema';
-import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
+import type { MlDataViews } from '../shared_services';
 import type { CompatibleModule } from '../../../common/constants/app';
 import type { GetGuards } from '../shared_services';
 import type { DataRecognizer } from '../../models/data_recognizer';
@@ -32,7 +32,7 @@ export interface ModulesProvider {
 
 export function getModulesProvider(
   getGuards: GetGuards,
-  getDataViews: () => DataViewsPluginStart,
+  getDataViews: () => MlDataViews,
   compatibleModuleType: CompatibleModule | null,
   serverless: ServerlessInfo
 ): ModulesProvider {

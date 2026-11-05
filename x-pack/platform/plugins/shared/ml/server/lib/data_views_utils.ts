@@ -12,12 +12,12 @@ import type {
 } from '@kbn/core/server';
 
 import type { DataViewsService } from '@kbn/data-views-plugin/common';
-import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
+import type { MlDataViews } from '../shared_services/shared_services';
 
 export type GetDataViewsService = () => Promise<DataViewsService>;
 
 export function getDataViewsServiceFactory(
-  getDataViews: () => DataViewsPluginStart | null,
+  getDataViews: () => MlDataViews | null,
   savedObjectClient: SavedObjectsClientContract,
   scopedClient: IScopedClusterClient,
   request: KibanaRequest

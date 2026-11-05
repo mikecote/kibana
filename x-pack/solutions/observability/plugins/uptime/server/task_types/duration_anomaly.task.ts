@@ -5,11 +5,13 @@
  * 2.0.
  */
 
-import { createUnsupportedRuleTaskType } from '@kbn/alerting-plugin/server/task_types/unsupported_rule_task_type';
 import { CLIENT_ALERT_TYPES } from '../../common/constants/uptime_alerts';
+import { durationAnomalyAlertFactory } from '../legacy_uptime/lib/alerts/duration_anomaly';
+import { createUptimeRuleTaskType } from './uptime_rule_task_type';
 
-/** The `durationAnomaly` rule type. A task process cannot run it yet, so every run goes to Kibana. */
-export const taskType = createUnsupportedRuleTaskType(
+/** The `durationAnomaly` rule type, which a task process can run with the machine learning services of its host. */
+export const taskType = createUptimeRuleTaskType(
   CLIENT_ALERT_TYPES.DURATION_ANOMALY,
-  'its executor needs the machine learning shared services, which only exist in Kibana'
+  durationAnomalyAlertFactory as never,
+  { usesMl: true }
 );

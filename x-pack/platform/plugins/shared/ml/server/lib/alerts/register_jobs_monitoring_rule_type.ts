@@ -22,7 +22,7 @@ import type {
   RecoveredActionGroupId,
   RuleTypeState,
 } from '@kbn/alerting-plugin/common';
-import type { RuleExecutorOptions, IRuleTypeAlerts } from '@kbn/alerting-plugin/server';
+import type { RuleExecutorOptions, IRuleTypeAlerts, RuleType } from '@kbn/alerting-plugin/server';
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import type { MlAnomalyDetectionHealthAlert } from '@kbn/alerts-as-data-utils';
 import type { ALERT_REASON } from '@kbn/rule-data-utils';
@@ -201,12 +201,11 @@ export const ANOMALY_DETECTION_HEALTH_AAD_CONFIG: IRuleTypeAlerts<MlAnomalyDetec
   shouldWrite: true,
 };
 
-export function registerJobsMonitoringRuleType({
-  alerting,
+export function getJobsMonitoringRuleType({
   mlServicesProviders,
   logger,
-}: RegisterAlertParams) {
-  alerting.registerType<
+}: Pick<RegisterAlertParams, 'mlServicesProviders' | 'logger'>) {
+  const ruleType: RuleType<
     AnomalyDetectionJobsHealthRuleParams,
     never, // Only use if defining useSavedObjectReferences hook
     RuleTypeState,
@@ -215,7 +214,7 @@ export function registerJobsMonitoringRuleType({
     AnomalyDetectionJobRealtimeIssue,
     RecoveredActionGroupId,
     MlAnomalyDetectionHealthAlert
-  >({
+  > = {
     id: ML_ALERT_TYPES.AD_JOBS_HEALTH,
     name: i18n.translate('xpack.ml.jobsHealthAlertingRule.name', {
       defaultMessage: 'Anomaly detection jobs health',
@@ -316,5 +315,14 @@ export function registerJobsMonitoringRuleType({
 
       return { state: {} };
     },
-  });
+  };
+  return ruleType;
+}
+
+export function registerJobsMonitoringRuleType({
+  alerting,
+  mlServicesProviders,
+  logger,
+}: RegisterAlertParams) {
+  alerting.registerType(getJobsMonitoringRuleType({ mlServicesProviders, logger }));
 }
