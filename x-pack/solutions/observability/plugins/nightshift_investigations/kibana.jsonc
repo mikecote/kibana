@@ -29,5 +29,8 @@
     ],
     "requiredBundles": [],
     "extraPublicDirs": ["common"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"],
+    },
   },
 }
