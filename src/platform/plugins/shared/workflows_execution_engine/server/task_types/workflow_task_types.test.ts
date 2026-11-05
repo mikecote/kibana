@@ -127,7 +127,11 @@ describe('workflow task type modules with contributions', () => {
       expect(applied.encryptedSavedObjectTypes?.map(({ type }) => type)).toEqual(
         expect.arrayContaining(['action', 'task', 'contributed-encrypted'])
       );
-      expect(applied.settings).toEqual(expect.arrayContaining(['security', 'contributedPlugin']));
+      // The engine's own settings are required; what a contribution reads is optional, because a
+      // disabled plugin sends nothing and its contribution then registers nothing.
+      expect(applied.settings).toEqual(expect.arrayContaining(['security']));
+      expect(applied.settings).not.toContain('contributedPlugin');
+      expect(applied.optionalSettings).toEqual(['contributedPlugin']);
       expect(applied.uiSettings?.defaults).toEqual(contribution.declares.uiSettings);
       expect(applied.featureFlags).toEqual({
         [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false,
