@@ -21,6 +21,7 @@ import type {
   Logger,
   CoreStart,
 } from '@kbn/core/server';
+import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-shared';
@@ -118,6 +119,12 @@ export interface TaskManagerSetupContract {
   registerTaskType: (module: TaskTypeModule, options?: TaskTypeRegistrationOptions) => void;
   registerCanEncryptedSavedObjects: (canEncrypt: boolean) => void;
   registerTaskEventLogger: (logger: TaskEventLogger) => void;
+  /**
+   * Registers where what a task process reported on a channel of a plugin goes. A process cannot
+   * send it, so it returns the payloads with the run and Kibana hands them to the sink of the same
+   * kind; a task type that runs in Kibana calls the sink directly through `host.telemetry`.
+   */
+  registerTaskProcessTelemetrySink: (kind: string, sink: (payload: unknown) => void) => void;
 }
 
 export type TaskManagerStartContract = Pick<
@@ -185,6 +192,9 @@ export class TaskManagerPlugin
   private executionControlService?: TaskExecutionControlService;
   private heapSizeLimit: number = 0;
   private taskProcessDispatch?: TaskProcessDispatch;
+  private readonly telemetrySinks = new Map<string, (payload: unknown) => void>();
+  private analytics?: AnalyticsServiceStart;
+  private featureUsage?: LicensingPluginStart['featureUsage'];
   private taskProcessSupervisor?: TaskProcessSupervisor;
   /** The task types registered as modules: the ones that can run outside this process. */
   private readonly moduleTaskTypes = new Set<string>();
@@ -280,6 +290,8 @@ export class TaskManagerPlugin
           const [coreStart, pluginsStart] = await core.getStartServices();
           const extensions = options?.hostExtensions;
           const host: TaskHost = {
+            analytics: coreStart.analytics,
+            telemetry: { report: (kind, payload) => this.telemetrySinks.get(kind)?.(payload) },
             logger: options?.logger ?? this.logger,
             elasticsearch: coreStart.elasticsearch.client,
             savedObjects: coreStart.savedObjects,
@@ -293,7 +305,12 @@ export class TaskManagerPlugin
           if (module.eventLog) host.eventLog = extensions!.eventLog;
           if (module.taskManager) host.taskManager = this.startContract;
           if (module.uiSettings) host.uiSettings = coreStart.uiSettings;
-          if (module.licensing) host.licensing = { license$: pluginsStart.licensing.license$ };
+          if (module.licensing) {
+            host.licensing = {
+              license$: pluginsStart.licensing.license$,
+              featureUsage: pluginsStart.licensing.featureUsage,
+            };
+          }
           if (module.settings?.length) {
             host.settings = Object.fromEntries(
               module.settings.map((id) => [id, options!.settings![id]()])
@@ -333,6 +350,18 @@ export class TaskManagerPlugin
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
         kibanaVersion: this.kibanaVersion,
+        // What a process reports is sent here, by the services only Kibana has.
+        reportTelemetry: (telemetry) => {
+          for (const { eventType, data } of telemetry.events) {
+            this.analytics?.reportEvent(eventType, data as object);
+          }
+          for (const { featureName, lastUsed } of telemetry.featureUsages) {
+            this.featureUsage?.notifyUsage(featureName, lastUsed ? new Date(lastUsed) : undefined);
+          }
+          for (const { kind, payload } of telemetry.custom) {
+            this.telemetrySinks.get(kind)?.(payload);
+          }
+        },
         getRoute: (taskType) => {
           if (!this.moduleTaskTypes.has(taskType)) return undefined;
           return mode === 'remote'
@@ -474,6 +503,9 @@ export class TaskManagerPlugin
       registerTaskEventLogger: (logger: TaskEventLogger) => {
         this.taskEventLogger = logger;
       },
+      registerTaskProcessTelemetrySink: (kind, sink) => {
+        this.telemetrySinks.set(kind, sink);
+      },
     };
   }
 
@@ -482,6 +514,8 @@ export class TaskManagerPlugin
     { cloud, licensing }: TaskManagerPluginsStart
   ): TaskManagerStartContract {
     const { savedObjects, elasticsearch, executionContext, security } = core;
+    this.analytics = core.analytics;
+    this.featureUsage = licensing.featureUsage;
     const enrichFakeRequest = this.enrichFakeRequest;
     this.licenseSubscriber = new LicenseSubscriber(licensing.license$);
     const isServerless = this.initContext.env.packageInfo.buildFlavor === 'serverless';

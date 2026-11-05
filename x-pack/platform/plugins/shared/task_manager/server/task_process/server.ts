@@ -13,6 +13,7 @@ import { isDeclinedRunError, serializeTaskRunError } from '../task_running/error
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
+import { collectTelemetry } from './telemetry';
 import type { RunContext, CancellableTask } from '../task';
 
 /** What the server needs of a task definition: a way to create the run's task. */
@@ -129,20 +130,24 @@ export const startTaskProcessServer = ({
     });
     inFlight.set(body.executionUuid, { abortController, task });
     try {
-      const result = await task.run();
-      return {
-        kind: 'result',
-        result: serializeRunResult(result as never),
-        customTaskRunEventFields: customFields.at(-1),
-      } as TaskProcessRunResponse;
-    } catch (error) {
-      if (isDeclinedRunError(error)) {
-        throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
+      // What the run reports for Kibana to send on comes back with its result, even when it throws.
+      const { value, error, telemetry } = await collectTelemetry(async () => task.run());
+      if (error !== undefined) {
+        if (isDeclinedRunError(error)) {
+          throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
+        }
+        return {
+          kind: 'thrown',
+          error: serializeTaskRunError(error),
+          customTaskRunEventFields: customFields.at(-1),
+          telemetry,
+        } as TaskProcessRunResponse;
       }
       return {
-        kind: 'thrown',
-        error: serializeTaskRunError(error),
+        kind: 'result',
+        result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
+        telemetry,
       } as TaskProcessRunResponse;
     } finally {
       clearTimeout(deadlineTimer);

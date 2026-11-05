@@ -21,6 +21,7 @@ import { createStandaloneLicensing } from './host_capabilities/licensing';
 import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
+import { createHostTelemetry } from './telemetry';
 import type { TaskProcessTaskManagerSetup } from './task_manager_task_plugin';
 
 interface SetupDeps {
@@ -86,7 +87,9 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
 
     start(core: CoreStart, deps: StartDeps) {
       const { env } = initializerContext;
+      const { featureUsage, ...reporting } = createHostTelemetry();
       const host: TaskHost = {
+        ...reporting,
         logger,
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
@@ -130,10 +133,13 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
       }
       if (module.uiSettings) host.uiSettings = core.uiSettings;
       if (module.licensing) {
-        host.licensing = createStandaloneLicensing({
-          asInternalUser: core.elasticsearch.client.asInternalUser,
-          logger: initializerContext.logger.get('licensing'),
-        });
+        host.licensing = {
+          ...createStandaloneLicensing({
+            asInternalUser: core.elasticsearch.client.asInternalUser,
+            logger: initializerContext.logger.get('licensing'),
+          }),
+          featureUsage,
+        };
       }
       if (module.settings?.length || init.settings) {
         // Everything Kibana sent, which also covers what contributions of other plugins read.

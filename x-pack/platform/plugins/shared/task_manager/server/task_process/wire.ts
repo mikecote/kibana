@@ -85,10 +85,21 @@ export interface SerializedRunResult {
   taskRunError?: SerializedTaskRunError;
 }
 
+/**
+ * What a run reports that only Kibana can send on: analytics events through Core, feature usage
+ * through licensing, and payloads that a plugin sends through a channel of its own, such as security
+ * telemetry. The process returns them with the run, and the Kibana that dispatched the run reports them.
+ */
+export interface TaskProcessTelemetry {
+  events: Array<{ eventType: string; data: unknown }>;
+  featureUsages: Array<{ featureName: string; lastUsed?: string }>;
+  custom: Array<{ kind: string; payload: unknown }>;
+}
+
 export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }
-) & { customTaskRunEventFields?: Record<string, unknown> };
+) & { customTaskRunEventFields?: Record<string, unknown>; telemetry?: TaskProcessTelemetry };
 
 const TASK_INSTANCE_DATE_FIELDS = ['scheduledAt', 'startedAt', 'retryAt', 'runAt'] as const;
 

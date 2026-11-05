@@ -22,6 +22,7 @@ dependsOn:
   - '@kbn/usage-collection-plugin'
   - '@kbn/config-schema'
   - '@kbn/config'
+  - '@kbn/core-analytics-server'
   - '@kbn/core-base-common'
   - '@kbn/core-plugins-server-internal'
   - '@kbn/core-root-server-internal'

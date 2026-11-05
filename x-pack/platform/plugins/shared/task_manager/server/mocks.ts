@@ -19,6 +19,7 @@ const createSetupMock = () => {
     registerTaskType: jest.fn(),
     registerCanEncryptedSavedObjects: jest.fn(),
     registerTaskEventLogger: jest.fn(),
+    registerTaskProcessTelemetrySink: jest.fn(),
   });
 
   return mock;

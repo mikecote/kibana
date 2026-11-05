@@ -11,6 +11,7 @@ import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
+import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -71,6 +72,18 @@ export interface TaskHost {
     isServerless: boolean;
   };
 
+  /**
+   * Core's analytics in Kibana. In a task process the events are returned with the run, and the
+   * Kibana that dispatched it reports them.
+   */
+  analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
+  /**
+   * A channel of a plugin, such as security telemetry, that only Kibana can send on: a task process
+   * returns the payloads with the run and Kibana hands them to the sink the plugin registered with
+   * `registerTaskProcessTelemetrySink`; in Kibana the sink is called directly.
+   */
+  telemetry: { report: (kind: string, payload: unknown) => void };
+
   /** Declared with `encryptedSavedObjectTypes`. */
   encryptedSavedObjects?: {
     getClient: (options?: { includedHiddenTypes?: string[] }) => EncryptedSavedObjectsClient;
@@ -87,7 +100,11 @@ export interface TaskHost {
   /** Declared with `uiSettings`. */
   uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   /** Declared with `licensing`. */
-  licensing?: { license$: Observable<ILicense> };
+  licensing?: {
+    license$: Observable<ILicense>;
+    /** Records that a licensed feature was used; reported by Kibana when a task process returns. */
+    featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
+  };
   /** Validated plugin configs by plugin id, for the ids listed in `settings`. */
   settings?: Record<string, unknown>;
   /** A task process only: what plugins contribute, by key, for the keys the module lists. */

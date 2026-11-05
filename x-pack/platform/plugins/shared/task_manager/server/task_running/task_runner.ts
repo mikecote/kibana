@@ -568,6 +568,7 @@ export class TaskManagerRunner implements TaskRunner {
               timeoutMs: parseIntervalAsMillisecond(this.timeout),
               signal: abortController.signal,
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
+              reportTelemetry: this.taskProcessDispatch.reportTelemetry,
               // A process that cannot be started, or does not serve this type, leaves the run to
               // this process.
               fallback: runInThisProcess,
