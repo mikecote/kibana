@@ -195,8 +195,11 @@ export const createWorkflowRuntimeFromHost = async (
     },
     cloud,
     preflight: assertRunnableInProcessPreflight,
-    // A connector step is a step whose type is the id of a connector type of the process.
+    // A connector step (`ConnectorStepImpl`) is `<connector type>` or `<connector type>.<sub action>`,
+    // where the connector type is an action type id without its dot (`webhook`, `slack`, `cases`).
+    // `console` is answered by the step itself. The `http` step runs as the `.http` system connector.
     isConnectorStepType: (stepType) => {
+      if (stepType === 'console') return true;
       const [base] = stepType.split('.');
       return hasActionType(`.${base}`) || hasActionType(base);
     },
