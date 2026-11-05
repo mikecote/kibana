@@ -21,7 +21,7 @@ import type { InternalAuthenticationServiceStart } from './authentication';
 import { createFakeRequestEnrichment } from './authentication/fake_request_enrichment';
 import type { ServiceAccountsServiceStart } from './service_accounts';
 import type { Session } from './session_management';
-import { getPrintableSessionId } from './session_management';
+import { getPrintableSessionId } from './session_management/session';
 import type { UserProfileServiceStartInternal } from './user_profile';
 
 export const buildSecurityApi = ({
@@ -32,7 +32,7 @@ export const buildSecurityApi = ({
   config,
   logger,
 }: {
-  getAuthc: () => InternalAuthenticationServiceStart;
+  getAuthc: () => Pick<InternalAuthenticationServiceStart, 'getCurrentUser' | 'apiKeys'>;
   getSession: () => Pick<Session, 'getSID'>;
   getServiceAccounts: () => ServiceAccountsServiceStart | null;
   audit: AuditServiceSetup;

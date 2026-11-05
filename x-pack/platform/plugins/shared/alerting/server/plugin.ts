@@ -313,6 +313,11 @@ export class AlertingPlugin {
     this.kibanaBaseUrl = core.http.basePath.publicBaseUrl;
     this.licenseState = new LicenseState(plugins.licensing.license$);
     this.security = plugins.security;
+    // The security plugin's task process settings (UIAM, audit, license) are read when a run is dispatched.
+    const securitySetup = plugins.security;
+    if (securitySetup?.getTaskProcessSettings) {
+      this.taskProcessSettings.security = () => securitySetup.getTaskProcessSettings();
+    }
 
     const elasticsearchAndSOAvailability$ = getElasticsearchAndSOAvailability(core.status.core$);
 

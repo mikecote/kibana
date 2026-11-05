@@ -30,8 +30,7 @@ import type {
 } from '@kbn/security-plugin-types-server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 
-import { APIKeys } from './api_keys';
-import { UiamAPIKeys } from './api_keys/uiam';
+import { createApiKeys } from './api_keys/create_api_keys';
 import type { AuthenticationResult } from './authentication_result';
 import type { ProviderLoginAttempt } from './authenticator';
 import { Authenticator } from './authenticator';
@@ -449,9 +448,9 @@ export class AuthenticationService {
     const getCurrentUser = (request: KibanaRequest) =>
       http.auth.get<AuthenticatedUser>(request).state ?? null;
 
-    const apiKeys = new APIKeys({
+    const apiKeys = createApiKeys({
+      loggerFactory: this.logger,
       clusterClient,
-      logger: this.logger.get('api-key'),
       license: this.license,
       applicationName,
       kibanaFeatures,
@@ -460,15 +459,6 @@ export class AuthenticationService {
       serviceAccountsEnabled: config.serviceAccounts.enabled,
       getCurrentUser,
     });
-
-    const uiamAPIKeys = uiam
-      ? new UiamAPIKeys({
-          logger: this.logger.get('api-key-uiam'),
-          license: this.license,
-          uiam,
-          getCurrentUser,
-        })
-      : null;
 
     const uiamOAuth = uiam
       ? new UiamOAuth({
@@ -538,28 +528,7 @@ export class AuthenticationService {
     }));
 
     return {
-      apiKeys: {
-        areAPIKeysEnabled: apiKeys.areAPIKeysEnabled.bind(apiKeys),
-        areCrossClusterAPIKeysEnabled: apiKeys.areCrossClusterAPIKeysEnabled.bind(apiKeys),
-        create: apiKeys.create.bind(apiKeys),
-        update: apiKeys.update.bind(apiKeys),
-        grantAsInternalUser: apiKeys.grantAsInternalUser.bind(apiKeys),
-        cloneAsInternalUser: apiKeys.cloneAsInternalUser.bind(apiKeys),
-        invalidate: apiKeys.invalidate.bind(apiKeys),
-        validate: apiKeys.validate.bind(apiKeys),
-        invalidateAsInternalUser: apiKeys.invalidateAsInternalUser.bind(apiKeys),
-        uiam: uiamAPIKeys
-          ? {
-              grant: uiamAPIKeys.grant.bind(uiamAPIKeys),
-              invalidate: uiamAPIKeys.invalidate.bind(uiamAPIKeys),
-              convert: uiamAPIKeys.convert.bind(uiamAPIKeys),
-              getInternalCallerAttestationHeaders:
-                uiamAPIKeys.getInternalCallerAttestationHeaders.bind(uiamAPIKeys),
-              isOwnClientAuthentication: uiamAPIKeys.isOwnClientAuthentication.bind(uiamAPIKeys),
-              isExternalApiKey: uiamAPIKeys.isExternalApiKey.bind(uiamAPIKeys),
-            }
-          : null,
-      },
+      apiKeys,
 
       oauth: uiamOAuth
         ? {
