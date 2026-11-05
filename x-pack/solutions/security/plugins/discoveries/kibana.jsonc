@@ -31,7 +31,12 @@
       "spaces",
       "workflowsManagement"
     ],
-    "requiredBundles": []
+    "requiredBundles": [],
+    "taskTypeContributions": {
+      "attack-discovery-workflow-executor": [
+        "server/task_types/workflow_executor_contribution.ts"
+      ]
+    }
   }
 }
 

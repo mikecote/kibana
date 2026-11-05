@@ -23,13 +23,13 @@ import {
   getManagedWorkflowDefinition,
 } from '@kbn/workflows/managed';
 import type { ManagedWorkflowId } from '@kbn/workflows/managed';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
+import type { ScheduledWorkflowsExtensions } from '@kbn/discoveries/impl/attack_discovery/workflow_executor_contribution';
 
 export interface CheckManagedWorkflowIntegrityParams {
   analytics?: AnalyticsServiceSetup;
   logger: Logger;
   spaceId: string;
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart;
+  workflowsExtensions: ScheduledWorkflowsExtensions;
 }
 
 const BUILT_IN_STEP_PREFIXES = ['data.', 'elasticsearch.', 'kibana.', 'workflow.'] as const;
@@ -55,7 +55,7 @@ const collectStepTypes = (steps: unknown[]): string[] => {
 
 const getUnregisteredStepType = (
   workflowId: string,
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart
+  workflowsExtensions: Pick<ScheduledWorkflowsExtensions, 'hasStepDefinition'>
 ): string | null => {
   const definition = getManagedWorkflowDefinition(workflowId);
   if (!definition?.yaml) return null;

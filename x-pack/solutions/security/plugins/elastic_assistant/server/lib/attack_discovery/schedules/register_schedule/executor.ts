@@ -43,8 +43,14 @@ import { deduplicateAttackDiscoveries } from '../../persistence/deduplication';
 import { getScheduledIndexPattern } from '../../persistence/get_scheduled_index_pattern';
 import { updateAlertsWithAttackIds } from './update_alerts_with_attack_ids';
 
+/** What the legacy path needs of the inference plugin: lookups and a client that need no request. */
+export type AttackDiscoveryInference = Pick<
+  InferenceServerStart,
+  'getConnectorByIdWithoutClientRequest' | 'getClientWithoutRequest'
+>;
+
 export interface AttackDiscoveryScheduleExecutorParams {
-  getInference: () => InferenceServerStart | undefined;
+  getInference: () => AttackDiscoveryInference | undefined;
   getWorkflowExecutorFactory: () => AttackDiscoveryWorkflowExecutorFactory | undefined;
   options: AttackDiscoveryExecutorOptions;
   logger: Logger;

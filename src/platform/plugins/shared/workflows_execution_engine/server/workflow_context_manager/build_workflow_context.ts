@@ -7,7 +7,6 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreStart } from '@kbn/core/server';
 import type { EsWorkflowExecution, WorkflowContext } from '@kbn/workflows';
 import { pickWorkflowDocumentVersion } from '@kbn/workflows';
 import {
@@ -16,14 +15,15 @@ import {
 } from '@kbn/workflows/spec/lib/field_conversion';
 import type { ContextDependencies } from './types';
 import { buildWorkflowExecutionUrl, getKibanaUrl } from '../utils';
+import type { KibanaUrlSource } from '../utils/get_kibana_url';
 
 export type WorkflowExecutionForInputRendering = Partial<EsWorkflowExecution> &
   Pick<EsWorkflowExecution, 'id' | 'workflowId' | 'spaceId' | 'createdAt'>;
 
 export function buildInputDefaultRenderContext(
   workflowExecution: WorkflowExecutionForInputRendering,
-  coreStart?: CoreStart,
-  dependencies?: ContextDependencies
+  coreStart?: KibanaUrlSource,
+  dependencies?: Pick<ContextDependencies, 'cloudSetup'>
 ): WorkflowContext {
   const startedAt = workflowExecution.startedAt ?? workflowExecution.createdAt;
   const kibanaUrl = getKibanaUrl(coreStart, dependencies?.cloudSetup);
@@ -81,8 +81,8 @@ export function buildInputDefaultRenderContext(
 
 export function buildWorkflowContext(
   workflowExecution: EsWorkflowExecution,
-  coreStart?: CoreStart,
-  dependencies?: ContextDependencies
+  coreStart?: KibanaUrlSource,
+  dependencies?: Pick<ContextDependencies, 'cloudSetup'>
 ): WorkflowContext {
   const normalizedInputsSchema = getInputsFromDefinition(workflowExecution.workflowDefinition);
   const renderContext = buildInputDefaultRenderContext(workflowExecution, coreStart, dependencies);
@@ -97,8 +97,8 @@ export function buildWorkflowContext(
 /** Liquid render context with `event.inputs` aliased. Do not persist this object. */
 export function buildWorkflowRenderContext(
   workflowExecution: EsWorkflowExecution,
-  coreStart?: CoreStart,
-  dependencies?: ContextDependencies
+  coreStart?: KibanaUrlSource,
+  dependencies?: Pick<ContextDependencies, 'cloudSetup'>
 ): WorkflowContext {
   const context = buildWorkflowContext(workflowExecution, coreStart, dependencies);
   const rawEvent = context.event as Record<string, unknown> | undefined;

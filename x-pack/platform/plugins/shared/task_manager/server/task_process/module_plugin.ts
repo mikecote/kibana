@@ -96,6 +96,7 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,
         security: core.security,
+        userProfile: core.userProfile,
         server: {
           uuid: init.server?.uuid ?? env.instanceUuid,
           version: env.packageInfo.version,
@@ -124,11 +125,24 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         // Flushes what the adapter still buffers before the process exits.
         stops.push(stop);
       }
+      const taskManagerSettings = reviveSettingsByPlugin(init.settings).taskManager as
+        | { api_key_type?: string; grant_uiam_api_keys?: boolean }
+        | undefined;
       if (module.taskManager) {
         host.taskManager = createHostTaskScheduling({
           repository: core.savedObjects.createInternalRepository(['task']),
           esClient: core.elasticsearch.client.asInternalUser,
           logger: initializerContext.logger.get('taskManager'),
+          // Tasks that carry the credentials of a request are written as Task Manager writes them.
+          credentials: taskManagerSettings
+            ? {
+                savedObjects: core.savedObjects,
+                security: core.security,
+                apiKeyType: taskManagerSettings.api_key_type as never,
+                grantUiamApiKeys: taskManagerSettings.grant_uiam_api_keys === true,
+                canEncrypt: encryption?.canEncrypt ?? false,
+              }
+            : undefined,
           allowedTypes: new RegExp(
             (typeof module.taskManager === 'object' && module.taskManager.schedulableTypes
               ? module.taskManager.schedulableTypes

@@ -39,7 +39,7 @@ describe('WorkflowAccessControlService', () => {
   let core: ReturnType<typeof coreMock.createStart>;
   let document: WorkflowProperties;
   let service: WorkflowAccessControlService;
-  let crud: ConstructorParameters<typeof WorkflowAccessControlService>[1];
+  let crud: NonNullable<ConstructorParameters<typeof WorkflowAccessControlService>[1]>;
   let authz: ReturnType<typeof securityMock.createStart>['authz'];
   const atSpace = jest.fn();
   const globally = jest.fn();

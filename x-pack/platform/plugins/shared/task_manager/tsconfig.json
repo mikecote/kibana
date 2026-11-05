@@ -19,6 +19,7 @@
     "@kbn/usage-collection-plugin",
     "@kbn/config-schema",
     "@kbn/config",
+    "@kbn/core-user-profile-server",
     "@kbn/core-feature-flags-server",
     "@kbn/core-analytics-server",
     "@kbn/core-base-common",

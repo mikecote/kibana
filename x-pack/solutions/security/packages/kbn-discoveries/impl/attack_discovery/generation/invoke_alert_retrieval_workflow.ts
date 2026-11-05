@@ -128,7 +128,8 @@ export interface WorkflowsManagementApi {
     workflow: WorkflowExecutionEngineModel,
     spaceId: string,
     inputs: Record<string, unknown>,
-    request: KibanaRequest
+    request: KibanaRequest,
+    triggeredBy?: string
   ) => Promise<string>;
   /**
    * Schedules the workflow via the task manager and returns the execution ID

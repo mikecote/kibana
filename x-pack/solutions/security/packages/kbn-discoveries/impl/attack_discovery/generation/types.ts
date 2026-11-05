@@ -15,7 +15,7 @@ import type {
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { Document } from '@langchain/core/documents';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
+import type { WorkflowsManagementApi } from './invoke_alert_retrieval_workflow';
 import type { AttackDiscoverySource, SourceMetadata } from '../persistence/event_logging';
 
 export type DefaultWorkflowKey =
@@ -51,8 +51,26 @@ export type GetEventLogIndex = () => Promise<string>;
 
 export type GetEventLogger = () => Promise<IEventLogger>;
 
+/**
+ * What generating a workflow reads from Core, and nothing else: Core's start contract has all of it,
+ * and a task process builds it from its host.
+ */
+export interface GenerationCoreServices {
+  elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asScoped'> };
+  featureFlags: Pick<CoreStart['featureFlags'], 'getBooleanValue$'>;
+  http: { basePath: Pick<CoreStart['http']['basePath'], 'get'> };
+  security: {
+    authc: {
+      apiKeys: Pick<
+        CoreStart['security']['authc']['apiKeys'],
+        'grantAsInternalUser' | 'invalidateAsInternalUser'
+      >;
+    };
+  };
+}
+
 export type GetStartServices = () => Promise<{
-  coreStart: CoreStart;
+  coreStart: GenerationCoreServices;
   pluginsStart: unknown;
 }>;
 
@@ -209,12 +227,10 @@ export interface ExecuteGenerationWorkflowParams {
   type: string;
   workflowConfig: WorkflowConfig;
   /**
-   * Workflows management API (setup contract) used to invoke workflows.
-   *
-   * IMPORTANT: workflowsManagement exposes `management` only on the setup contract.
-   * The start contract is empty, so we must pass this in from plugin setup.
+   * The workflows API used to read and invoke workflows: the `management` API of the workflows
+   * management plugin, or what a task process builds with the same reads and scheduler.
    */
-  workflowsManagementApi?: WorkflowsServerPluginSetup['management'];
+  workflowsManagementApi?: WorkflowsManagementApi;
 }
 
 export type {

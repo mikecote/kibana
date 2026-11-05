@@ -7,7 +7,6 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { createHash } from 'node:crypto';
 import pMap from 'p-map';
 import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { toWorkflowExecutionEngineModel } from '@kbn/workflows';
@@ -25,11 +24,17 @@ import type {
   GetManagedWorkflowStatusOptions,
   ManagedWorkflowOperationOptions,
   ManagedWorkflowServiceInstallOptions,
-  ManagedWorkflowStatus,
   ManagedWorkflowStatusReport,
 } from '@kbn/workflows/server/types';
 import type { WorkflowsExecutionEnginePluginStart } from '@kbn/workflows-execution-engine/server';
 import { updateYamlField } from '@kbn/workflows-yaml';
+import {
+  assertPluginRegistration,
+  computeManagedDefinitionHash,
+  getManagedWorkflowStatus,
+  getRequiredSpaceId,
+  resolveWorkflowDocumentId,
+} from './managed_workflow_status';
 import type { WorkflowCrudService } from './workflow_crud_service';
 import type { ManagedWorkflowOrphan } from './workflow_occ_types';
 import { WorkflowChangeHistoryAction } from '../../common/lib/workflow_change_history/constants';
@@ -41,10 +46,6 @@ import type { WorkflowProperties } from '../storage/workflow_storage';
 const MANAGED_WORKFLOW_SYSTEM_USER = 'elastic/kibana';
 const MAX_MANAGED_INSTALL_RETRIES = 2;
 const ORPHAN_DELETE_CONCURRENCY = 10;
-
-const computeDefinitionHash = (yaml: string): string => {
-  return createHash('sha256').update(yaml.trim()).digest('hex');
-};
 
 interface ManagedWorkflowsServiceDeps {
   crudService: WorkflowCrudService;
@@ -199,10 +200,10 @@ export class ManagedWorkflowsService {
     if (!definition) {
       throw new Error(`Unknown managed workflow id: ${id}`);
     }
-    this.assertPluginRegistration(definition, registeredPluginId);
+    assertPluginRegistration(definition, registeredPluginId);
 
-    const workflowDocumentId = this.resolveWorkflowDocumentId(id, options);
-    const spaceId = this.getRequiredSpaceId(options);
+    const workflowDocumentId = resolveWorkflowDocumentId(id, options);
+    const spaceId = getRequiredSpaceId(options);
 
     // Abort before trackInstall; mark incomplete so ready() does not treat a gated skip
     // as "owner removed this workflow" and force-delete persisted docs.
@@ -215,7 +216,7 @@ export class ManagedWorkflowsService {
 
     const isStartupWindow = !this.readyPluginIds.has(registeredPluginId);
     const now = new Date();
-    const definitionHash = this.computeManagedDefinitionHash(definition);
+    const definitionHash = computeManagedDefinitionHash(definition);
     const existingDocument = await this.deps.crudService.getWorkflowDocumentWithVersion(
       workflowDocumentId,
       spaceId
@@ -374,10 +375,10 @@ export class ManagedWorkflowsService {
     if (!definition) {
       throw new Error(`Unknown managed workflow id: ${id}`);
     }
-    this.assertPluginRegistration(definition, registeredPluginId);
+    assertPluginRegistration(definition, registeredPluginId);
 
-    const workflowDocumentId = this.resolveWorkflowDocumentId(id, options);
-    const spaceId = this.getRequiredSpaceId(options);
+    const workflowDocumentId = resolveWorkflowDocumentId(id, options);
+    const spaceId = getRequiredSpaceId(options);
     const existing = await this.deps.crudService.getWorkflowDocumentSource(
       workflowDocumentId,
       spaceId,
@@ -411,70 +412,11 @@ export class ManagedWorkflowsService {
     options: GetManagedWorkflowStatusOptions,
     registeredPluginId: string
   ): Promise<ManagedWorkflowStatusReport> {
-    const definition = getManagedWorkflowDefinition(id);
-    if (!definition) {
-      throw new Error(`Unknown managed workflow id: ${id}`);
-    }
-    this.assertPluginRegistration(definition, registeredPluginId);
-
-    const workflowDocumentId = this.resolveWorkflowDocumentId(id, options);
-    const spaceId = this.getRequiredSpaceId(options);
-    const registryHash = this.computeManagedDefinitionHash(definition);
-    const existing = await this.deps.crudService.getWorkflowDocumentSource(
-      workflowDocumentId,
-      spaceId,
-      {
-        includeDeleted: true,
-        includeGlobal: true,
-      }
-    );
-
-    if (!existing || existing.deleted_at) {
-      return this.createManagedWorkflowStatusReport({
-        status: 'missing',
-        workflowDocumentId,
-        definitionId: id,
-        spaceId,
-        definition,
-        registryHash,
-      });
-    }
-
-    if (existing.managed !== true) {
-      return this.createManagedWorkflowStatusReport({
-        status: 'not_managed',
-        workflowDocumentId,
-        definitionId: id,
-        spaceId,
-        definition,
-        registryHash,
-        existing,
-      });
-    }
-
-    const storedHash = existing.definitionHash ?? null;
-    const storedVersion = existing.managedVersion ?? null;
-    let status: ManagedWorkflowStatus = 'intact';
-    if (!existing.valid || !existing.definition) {
-      status = 'invalid';
-    } else if (!existing.enabled) {
-      status = 'disabled';
-    } else if (
-      storedHash !== registryHash ||
-      storedVersion !== definition.version ||
-      existing.originManagedWorkflowId !== definition.id
-    ) {
-      status = 'drifted';
-    }
-
-    return this.createManagedWorkflowStatusReport({
-      status,
-      workflowDocumentId,
-      definitionId: id,
-      spaceId,
-      definition,
-      registryHash,
-      existing,
+    return getManagedWorkflowStatus({
+      reader: this.deps.crudService,
+      id,
+      options,
+      registeredPluginId,
     });
   }
 
@@ -488,10 +430,10 @@ export class ManagedWorkflowsService {
     if (!definition) {
       throw new Error(`Unknown managed workflow id: ${id}`);
     }
-    this.assertPluginRegistration(definition, registeredPluginId);
+    assertPluginRegistration(definition, registeredPluginId);
 
-    const workflowDocumentId = this.resolveWorkflowDocumentId(id, options);
-    const spaceId = this.getRequiredSpaceId(options);
+    const workflowDocumentId = resolveWorkflowDocumentId(id, options);
+    const spaceId = getRequiredSpaceId(options);
     const existing = await this.deps.crudService.getWorkflowDocumentSource(
       workflowDocumentId,
       spaceId,
@@ -757,41 +699,6 @@ export class ManagedWorkflowsService {
     };
   }
 
-  private createManagedWorkflowStatusReport(params: {
-    status: ManagedWorkflowStatus;
-    workflowDocumentId: string;
-    definitionId: ManagedWorkflowId;
-    spaceId: string;
-    definition: ManagedWorkflowDefinition;
-    registryHash: string;
-    existing?: WorkflowProperties;
-  }): ManagedWorkflowStatusReport {
-    const {
-      status,
-      workflowDocumentId,
-      definitionId,
-      spaceId,
-      definition,
-      registryHash,
-      existing,
-    } = params;
-
-    return {
-      status,
-      workflowId: workflowDocumentId,
-      definitionId,
-      spaceId: existing?.spaceId ?? spaceId,
-      installed: Boolean(existing),
-      enabled: existing?.enabled ?? null,
-      valid: existing?.valid ?? null,
-      managedBy: existing?.managedBy ?? null,
-      storedVersion: existing?.managedVersion ?? null,
-      registryVersion: definition.version,
-      storedHash: existing?.definitionHash ?? null,
-      registryHash,
-    };
-  }
-
   private async prepareManagedWorkflowDocument(params: {
     definition: ManagedWorkflowDefinition;
     workflowDocumentId: string;
@@ -842,53 +749,6 @@ export class ManagedWorkflowsService {
     };
   }
 
-  private assertPluginRegistration(
-    definition: ManagedWorkflowDefinition,
-    registeredPluginId: string
-  ): void {
-    if (registeredPluginId !== definition.pluginId) {
-      throw new Error(
-        `Managed workflow '${definition.id}' is owned by plugin '${definition.pluginId}' but was registered by '${registeredPluginId}'`
-      );
-    }
-  }
-
-  private resolveWorkflowDocumentId(id: string, options: ManagedWorkflowOperationOptions): string {
-    const customId = options.workflowId?.trim();
-    const suffix = options.workflowIdSuffix?.trim();
-
-    if (customId && suffix) {
-      throw new Error(
-        `Managed workflow '${id}' cannot be installed with both workflowId and workflowIdSuffix`
-      );
-    }
-
-    if (suffix) {
-      return `${id}-${suffix}`;
-    }
-
-    if (customId) {
-      if (!customId.startsWith(`${id}-`) && customId !== id) {
-        throw new Error(
-          `Managed workflow '${id}' custom workflowId must equal '${id}' or start with '${id}-'`
-        );
-      }
-      return customId;
-    }
-
-    return id;
-  }
-
-  private getRequiredSpaceId(options: ManagedWorkflowOperationOptions): string {
-    const spaceId = options.spaceId?.trim();
-    if (!spaceId) {
-      throw new Error(
-        `Managed workflow operations require an explicit spaceId. Use '${GLOBAL_WORKFLOW_SPACE_ID}' for global workflows.`
-      );
-    }
-    return spaceId;
-  }
-
   private resolveManagedWorkflowYaml(params: {
     definition: ManagedWorkflowDefinition;
     values?: ManagedWorkflowTemplateValues;
@@ -925,18 +785,6 @@ export class ManagedWorkflowsService {
       yaml: definition.yaml,
       managedTemplateValues: null,
     };
-  }
-
-  private computeManagedDefinitionHash(definition: ManagedWorkflowDefinition): string {
-    if (definition.yamlTemplate) {
-      return computeDefinitionHash(definition.yamlTemplate.toString());
-    }
-    if (!definition.yaml) {
-      throw new Error(
-        `Managed workflow '${definition.id}' must define either yaml or yamlTemplate`
-      );
-    }
-    return computeDefinitionHash(definition.yaml);
   }
 
   private areTemplateValuesEqual(

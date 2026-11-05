@@ -8,6 +8,7 @@
  */
 
 import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { CoreStart, KibanaRequest } from '@kbn/core/server';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
@@ -90,6 +91,11 @@ export interface WorkflowsExecutionEnginePluginStart {
 }
 
 export interface WorkflowsExecutionEnginePluginSetupDeps {
+  /**
+   * Optional: the config a task process reads when it schedules workflows is registered with it,
+   * so rule types that schedule workflows can run in a task process.
+   */
+  alerting?: AlertingServerSetup;
   taskManager: TaskManagerSetupContract;
   cloud: CloudSetup;
   usageApi?: UsageApiSetup;

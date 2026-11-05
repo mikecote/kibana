@@ -58,7 +58,19 @@ const REMOVE_EXECUTION_TASKS_PAGE_SIZE = 100;
 export const WORKFLOW_PARKED_RUNNER_DELAY_MS = 365 * 24 * 60 * 60 * 1000;
 
 export class WorkflowTaskManager {
-  constructor(private taskManager: TaskManagerStartContract) {}
+  constructor(
+    private taskManager: Pick<
+      TaskManagerStartContract,
+      | 'get'
+      | 'schedule'
+      | 'fetch'
+      | 'removeIfExists'
+      | 'runSoon'
+      | 'bulkGet'
+      | 'bulkRemove'
+      | 'ensureScheduled'
+    >
+  ) {}
 
   /**
    * Schedules or updates a single `workflow:resume` at the earliest idle deadline (HITL /

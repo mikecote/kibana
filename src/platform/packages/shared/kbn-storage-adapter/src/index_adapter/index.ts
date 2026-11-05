@@ -150,6 +150,12 @@ export interface StorageIndexAdapterOptions<TApplicationType> {
    *    the `illegal_argument_exception` on the first write and retries.
    */
   isServerless?: boolean;
+  /**
+   * When true, reads (`search`, `get`) never reconcile the index template or the mappings, so an
+   * adapter that only reads (such as one a task process builds over indices Kibana already
+   * installed) installs nothing. Defaults to false.
+   */
+  skipMappingUpdatesOnRead?: boolean;
 }
 
 /**
@@ -416,6 +422,9 @@ export class StorageIndexAdapter<
   }
 
   private async ensureMappingsBeforeReading<T>(cb: () => Promise<T>): Promise<T> {
+    if (this.options.skipMappingUpdatesOnRead) {
+      return cb();
+    }
     if (!this.updateMappingsPromise) {
       this.updateMappingsPromise = this.updateMappingsIfNeeded().catch((error) => {
         this.updateMappingsPromise = undefined;

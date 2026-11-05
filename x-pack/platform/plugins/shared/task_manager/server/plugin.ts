@@ -337,14 +337,21 @@ export class TaskManagerPlugin
       if (options?.hostExtensions?.getEncryptionKeys) {
         init.encryptedSavedObjects = options.hostExtensions.getEncryptionKeys();
       }
-      if (options?.settings) {
-        init.settings = Object.fromEntries(
-          Object.entries(options.settings).map(([id, getSettings]) => [
-            id,
-            serializeSettings(getSettings()),
-          ])
-        ) as TaskProcessInit['settings'];
-      }
+      init.settings = {
+        ...(options?.settings
+          ? Object.fromEntries(
+              Object.entries(options.settings).map(([id, getSettings]) => [
+                id,
+                serializeSettings(getSettings()),
+              ])
+            )
+          : {}),
+        // What a process needs to schedule tasks with credentials as this Kibana does.
+        taskManager: serializeSettings({
+          api_key_type: this.config.api_key_type,
+          grant_uiam_api_keys: this.config.grant_uiam_api_keys,
+        }),
+      } as TaskProcessInit['settings'];
       return init;
     };
 

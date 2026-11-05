@@ -16,7 +16,7 @@ export const ENTITY_ACCESS_CONTROL_ADMIN_ACTION = 'entity_access_control:admin';
 
 /** Checks administrative application privileges without granting API keys an override. */
 export const isEntityAccessControlAdmin = async (
-  core: { security: SecurityServiceStart },
+  core: { security: Pick<SecurityServiceStart, 'authc'> },
   request?: KibanaRequest,
   authz?: { checkPrivilegesWithRequest: CheckPrivilegesWithRequest }
 ): Promise<boolean> => {

@@ -116,14 +116,18 @@ export type WorkflowStorage = StorageIndexAdapter<WorkflowStorageSettings, Workf
 export const createStorage = ({
   logger,
   esClient,
+  readOnly = false,
 }: {
   logger: Logger;
   esClient: ElasticsearchClient;
+  /** Reads never install or update the template or the mappings: for callers that only read. */
+  readOnly?: boolean;
 }): WorkflowStorage => {
   // @ts-expect-error type mismatch for tags type
   return new StorageIndexAdapter<WorkflowStorageSettings, WorkflowProperties>(
     esClient,
     logger,
-    storageSettings
+    storageSettings,
+    readOnly ? { skipMappingUpdatesOnRead: true } : undefined
   );
 };

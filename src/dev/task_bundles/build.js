@@ -238,6 +238,7 @@ const buildTaskBundle = async ({
       '.md': 'text',
       '.txt': 'text',
       '.html': 'text',
+      '.yaml': 'text',
       '.css': 'empty',
       '.svg': 'empty',
       '.png': 'empty',

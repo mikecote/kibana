@@ -15,6 +15,7 @@ export type {
   ExecuteGraphGenerationParams,
   ExecuteGenerationWorkflowParams,
   GetEventLogIndex,
+  GenerationCoreServices,
   GetEventLogger,
   GetStartServices,
   InvokeAlertRetrievalParams,

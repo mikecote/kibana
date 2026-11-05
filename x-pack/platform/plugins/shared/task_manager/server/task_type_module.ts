@@ -13,6 +13,7 @@ import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
+import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
@@ -86,6 +87,8 @@ export interface TaskHost {
    */
   telemetry: { report: (kind: string, payload: unknown) => void };
 
+  /** Core's user profile service; in a task process the security task plugin's delegate answers. */
+  userProfile?: UserProfileServiceStart;
   /** Declared with `featureFlags`. */
   featureFlags?: Pick<
     FeatureFlagsStart,
@@ -104,7 +107,7 @@ export interface TaskHost {
    */
   eventLog?: TaskHostEventLog;
   /** Declared with `taskManager`. */
-  taskManager?: Pick<TaskManagerStartContract, 'bulkSchedule' | 'aggregate'>;
+  taskManager?: Pick<TaskManagerStartContract, 'schedule' | 'bulkSchedule' | 'aggregate'>;
   /** Declared with `uiSettings`. */
   uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   /** Declared with `licensing`. */
@@ -220,7 +223,8 @@ export const assertHostExtensions = (
   }
   if (module.eventLog && !ext.eventLog) missing.push('hostExtensions.eventLog');
   for (const id of module.settings ?? []) {
-    if (!settings[id]) missing.push(`settings.${id}`);
+    // Task Manager sends its own settings to every task process.
+    if (id !== 'taskManager' && !settings[id]) missing.push(`settings.${id}`);
   }
   if (missing.length) {
     throw new Error(

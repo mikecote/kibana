@@ -18,12 +18,12 @@ import {
   type AttackDiscoveryExecutorOptions,
   type AttackDiscoveryScheduleType,
 } from '@kbn/attack-discovery-schedules-common';
-import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { AttackDiscoveryWorkflowExecutorFactory } from '../../../../types';
 import { attackDiscoveryScheduleExecutor } from './executor';
+import type { AttackDiscoveryInference } from './executor';
 
 export interface GetAttackDiscoveryScheduleParams {
-  getInference: () => InferenceServerStart | undefined;
+  getInference: () => AttackDiscoveryInference | undefined;
   getWorkflowExecutorFactory: () => AttackDiscoveryWorkflowExecutorFactory | undefined;
   logger: Logger;
   publicBaseUrl: string | undefined;

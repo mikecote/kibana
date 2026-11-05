@@ -9,14 +9,10 @@ import type {
   AnalyticsServiceSetup,
   CoreSetup,
   CoreStart,
-  IScopedClusterClient,
   Logger,
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import type { FakeRawRequest } from '@kbn/core-http-server';
-import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
-import { asSpaceId } from '@kbn/core-spaces-common';
 import { ECS_COMPONENT_TEMPLATE_NAME } from '@kbn/alerting-plugin/server';
 import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
 import type { IRuleDataClient, IndexOptions } from '@kbn/rule-registry-plugin/server';
@@ -36,10 +32,11 @@ import {
 } from '@kbn/discoveries/impl/lib/telemetry/event_based_telemetry';
 import { reportMisconfiguration } from '@kbn/discoveries/impl/lib/telemetry/report_misconfiguration';
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
+import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
 import { DEFAULT_CONNECTOR_TIMEOUT_MS } from '.';
 import { preCreateDefaultAdhocAttackDiscoveryIndex } from './lib/attack_discovery/pre_create_default_adhoc_index';
 import { logStartupHealthCheck } from './lib/startup_health_check';
-import { workflowExecutor } from './lib/schedules/workflow_executor';
+import { createAttackDiscoveryWorkflowExecutor } from './lib/schedules/workflow_executor/create_attack_discovery_workflow_executor';
 import { registerRoutes } from './routes';
 import { createAttackDiscoveryAttachmentType } from './agent_builder/attachments/attack_discovery';
 import { createAttackDiscoveryVerdictAttachmentType } from './agent_builder/attachments/attack_discovery_verdict';
@@ -64,54 +61,6 @@ interface DiscoveriesConfig {
   langSmithApiKey?: string;
   langSmithProject?: string;
 }
-
-/**
- * Extracts authorization headers from the alerting framework's pre-authenticated
- * scoped cluster client for use in the workflow execution engine's fake request.
- *
- * The alerting framework authenticates rule executors via the rule's stored
- * API key, but only exposes pre-scoped clients — not the authenticated
- * KibanaRequest. The workflow execution engine needs an authenticated
- * KibanaRequest to create its own scoped services, so this function bridges
- * the gap by extracting the authorization header from the scoped client's
- * transport layer.
- */
-const createWorkflowAuthHeaders = async ({
-  executionId,
-  logger,
-  scopedClusterClient,
-}: {
-  executionId: string;
-  logger: Logger;
-  scopedClusterClient: IScopedClusterClient;
-}): Promise<Record<string, string>> => {
-  try {
-    const esClient = scopedClusterClient.asCurrentUser;
-
-    // The scoped ES client's transport stores the authorization header that
-    // the alerting framework derived from the rule's stored API key. We extract
-    // it directly instead of creating a derived API key, which avoids the
-    // "illegal_argument_exception: creating derived api keys requires an
-    // explicit role descriptor" limitation.
-    const transportHeaders: Record<string, string> =
-      (esClient.transport as unknown as { headers: Record<string, string> }).headers ?? {};
-
-    if (transportHeaders.authorization) {
-      return { authorization: transportHeaders.authorization };
-    }
-
-    logger.warn(
-      () => `No authorization header found in scoped client transport for execution ${executionId}`
-    );
-    return {};
-  } catch (error) {
-    logger.warn(
-      () => `Failed to extract auth headers for workflow execution ${executionId}: ${error.message}`
-    );
-
-    return {};
-  }
-};
 
 export class DiscoveriesPlugin
   implements
@@ -346,56 +295,31 @@ export class DiscoveriesPlugin
       const publicBaseUrl = core.http.basePath.publicBaseUrl;
 
       plugins.elasticAssistant.registerAttackDiscoveryWorkflowExecutor(async (options) => {
-        // Kill-switch: when the feature flag is OFF, skip the scheduled AD 2.0 run
-        // as a no-op so the rule stays healthy (no error, no LLM/alert work). Only
-        // schedules carrying a `workflowConfig` reach this factory, so the legacy
-        // (non-AD-2.0) scheduled path is unaffected.
-        const { coreStart } = await getStartServices();
-        if (!(await isWorkflowsEnabled(coreStart.featureFlags))) {
-          logger.debug(
-            () =>
-              `Attack Discovery workflows disabled; skipping scheduled execution ${options.executionId}`
-          );
-          return { state: {} };
-        }
-
-        // The alerting framework authenticates via the rule's stored API key but
-        // only exposes pre-scoped clients — NOT the authenticated KibanaRequest.
-        // The workflow execution engine needs an authenticated KibanaRequest to
-        // create its own scoped services (ES client, actions client, etc.), so we
-        // derive a short-lived API key from the alerting framework's scoped client.
-        const authHeaders = await createWorkflowAuthHeaders({
-          executionId: options.executionId,
-          logger,
-          scopedClusterClient: options.services.scopedClusterClient,
-        });
-
-        // Scope the synthetic request to the rule's space (the alerting
-        // framework's authoritative `options.spaceId`). `CoreKibanaRequest`
-        // reads `FakeRawRequest.spaceId`, so the single `getSpaceId({ request })`
-        // path inside `executeGenerationWorkflow` resolves the correct space for
-        // the authorization guard, anonymization, integrity check, and event log.
-        const fakeRawRequest: FakeRawRequest = {
-          headers: authHeaders,
-          path: '/',
-          spaceId: asSpaceId(options.spaceId),
-        };
-        const request = kibanaRequestFactory(fakeRawRequest);
-
-        return workflowExecutor({
-          deps: {
-            analytics: this.analytics,
-            getEventLogIndex,
-            getEventLogger,
-            getStartServices,
-            logger,
-            publicBaseUrl,
-            request,
-            workflowsExtensions: this.workflowsExtensionsStart,
-            workflowsManagementApi,
+        // The executor is built from explicit dependencies, the way the task process of the rule
+        // type builds it from its host.
+        const { coreStart, pluginsStart } = await getStartServices();
+        return createAttackDiscoveryWorkflowExecutor({
+          analytics: this.analytics,
+          apiKeys: coreStart.security.authc.apiKeys,
+          authz: pluginsStart.security.authz,
+          basePath: coreStart.http.basePath,
+          elasticsearch: coreStart.elasticsearch.client,
+          featureFlags: coreStart.featureFlags,
+          getEventLogIndex,
+          getEventLogger,
+          getSpaceId: (request) =>
+            getSpaceId({ request, spaces: pluginsStart.spaces?.spacesService }),
+          // `inference` is optional in the plugin; the generation needs it to resolve connectors.
+          inference: pluginsStart.inference ?? {
+            getConnectorById: async () => {
+              throw new Error('Attack Discovery workflows need the inference plugin');
+            },
           },
-          options,
-        });
+          logger,
+          publicBaseUrl,
+          workflowsExtensions: this.workflowsExtensionsStart,
+          workflowsManagementApi,
+        })(options);
       });
 
       logger.debug(() => 'Registered workflow executor with elastic_assistant');

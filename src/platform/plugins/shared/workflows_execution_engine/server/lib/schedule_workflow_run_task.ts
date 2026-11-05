@@ -14,7 +14,7 @@ import type { WorkflowExecutionRepository } from '../repositories/workflow_execu
 import type { StartWorkflowExecutionParams } from '../workflow_task_manager/types';
 
 export interface ScheduleWorkflowRunTaskDeps {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'schedule' | 'bulkSchedule' | 'bulkGet'>;
   workflowExecutionRepository: WorkflowExecutionRepository;
   logger: Logger;
 }
