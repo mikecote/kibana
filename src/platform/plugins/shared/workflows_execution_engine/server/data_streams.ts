@@ -7,7 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import type { ElasticsearchClient, Logger } from '@kbn/core/server';
 import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
+import { DataStreamClient } from '@kbn/data-streams';
 import type { DataStreamDefinition } from '@kbn/data-streams';
 import type { MappingsDefinition } from '@kbn/es-mappings';
 import type { ExecutionStorageSource } from './repositories/data_access_layer';
@@ -67,5 +69,27 @@ export const registerWorkflowDataStreams = (
 ): void => {
   for (const definition of Object.values(getWorkflowDataStreamDefinitions(storage))) {
     core.dataStreams.registerDataStream(definition);
+  }
+};
+
+/**
+ * Installs the templates of the data streams of the engine, as Kibana does at startup. For tests
+ * that need what Kibana installs before a task process runs against Elasticsearch.
+ */
+export const installWorkflowDataStreamTemplates = async ({
+  esClient,
+  logger,
+  storage,
+}: {
+  esClient: ElasticsearchClient;
+  logger: Logger;
+  storage: WorkflowDataStreamsStorage;
+}): Promise<void> => {
+  for (const dataStream of Object.values(getWorkflowDataStreamDefinitions(storage))) {
+    await DataStreamClient.initializeTemplate({
+      dataStream,
+      elasticsearchClient: esClient,
+      logger,
+    });
   }
 };

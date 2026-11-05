@@ -21,6 +21,11 @@
       "server/task_types/threshold.task.ts",
       "server/task_types/notifications.task.ts"
     ],
+    "taskTypeContributions": {
+      "workflow-steps": [
+        "server/task_types/workflow_steps_contribution.ts"
+      ]
+    },
     "configPath": [
       "xpack",
       "securitySolution"

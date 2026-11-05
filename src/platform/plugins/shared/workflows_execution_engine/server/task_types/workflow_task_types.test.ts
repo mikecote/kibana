@@ -98,3 +98,44 @@ describe('workflow task type modules', () => {
     expect(cancel).toHaveBeenCalled();
   });
 });
+
+describe('workflow task type modules with contributions', () => {
+  const contribution = {
+    declares: {
+      savedObjectTypes: [{ name: 'contributed-type' }],
+      encryptedSavedObjectTypes: [
+        { type: 'contributed-encrypted', attributesToEncrypt: new Set() },
+      ],
+      settings: ['contributedPlugin'],
+      uiSettings: [{ 'contributed:setting': { schema: {}, value: 1 } }],
+      featureFlags: { 'contributed.flag': true },
+    },
+    register: () => {},
+  };
+
+  it.each([runTaskType, resumeTaskType, scheduledTaskType].map((m) => [m.type, m] as const))(
+    'merges what the contributions of %s declare',
+    (_type, module) => {
+      expect(module.contributions?.keys).toContain('workflow-steps');
+      const applied = module.contributions!.apply!({
+        'workflow-steps': [contribution, {}],
+      } as never);
+      expect(applied.type).toBe(module.type);
+      expect(applied.savedObjectTypes?.map(({ name }) => name)).toEqual(
+        expect.arrayContaining(['action', 'contributed-type'])
+      );
+      expect(applied.encryptedSavedObjectTypes?.map(({ type }) => type)).toEqual(
+        expect.arrayContaining(['action', 'task', 'contributed-encrypted'])
+      );
+      expect(applied.settings).toEqual(expect.arrayContaining(['security', 'contributedPlugin']));
+      expect(applied.uiSettings?.defaults).toEqual(contribution.declares.uiSettings);
+      expect(applied.featureFlags).toEqual({
+        [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false,
+        'contributed.flag': true,
+      });
+      // Without declarations nothing is added.
+      expect(module.uiSettings).toBeUndefined();
+      expect(module.settings).not.toContain('contributedPlugin');
+    }
+  );
+});

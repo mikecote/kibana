@@ -36,6 +36,9 @@
     ],
     "optionalPlugins": ["alerting", "serverless", "cloud", "inbox"],
     "runtimePluginDependencies": ["agentBuilder"],
-    "extraPublicDirs": ["common"]
+    "extraPublicDirs": ["common"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    }
   }
 }

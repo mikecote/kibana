@@ -7,6 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import type { SavedObjectsType } from '@kbn/core/server';
+import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
+import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { Logger } from '@kbn/logging';
 import { ServerStepRegistry } from './step_registry/step_registry';
 import { registerInternalStepDefinitions } from './steps';
@@ -68,6 +71,18 @@ export const createServerStepRegistry = (
  * `taskTypeContributions` in the plugin's `kibana.jsonc`.
  */
 export interface WorkflowStepsContribution {
+  /**
+   * What the steps and triggers read besides Core's: merged by the workflow task types into what a
+   * task process registers (saved object types, encrypted types, ui settings defaults, the configs of
+   * the plugins listed in `settings` and the feature flags with their fallbacks).
+   */
+  declares?: {
+    savedObjectTypes?: SavedObjectsType[];
+    encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
+    settings?: string[];
+    uiSettings?: Array<Record<string, UiSettingsParams>>;
+    featureFlags?: Record<string, boolean | string | number>;
+  };
   register(
     registry: WorkflowStepsRegistry,
     context: WorkflowStepsContributionContext

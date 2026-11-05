@@ -19,6 +19,7 @@ import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '@kbn/task-manage
 import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import { defineTaskType } from '@kbn/task-manager-plugin/server/task_type_module';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
+import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import {
   RULE_RUN_CONTRIBUTIONS_KEY,
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
@@ -73,14 +74,19 @@ export const defineWorkflowTaskType = (
     | 'paramsSchema'
     | 'allowPriorityOverride'
   >,
-  pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction
+  pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction,
+  stepContributions: WorkflowStepsContribution[] = []
 ): TaskTypeModule => {
+  const declared = stepContributions.map((contribution) => contribution.declares ?? {});
   const taskType = defineTaskType({
     ...definition,
     // Reads and schedules the `workflow:*` tasks (and the `actions:*` tasks that run connectors).
     taskManager: { schedulableTypes: [/^workflow:/, /^actions:/] },
     licensing: true,
-    featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false },
+    featureFlags: Object.assign(
+      { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false },
+      ...declared.map(({ featureFlags }) => featureFlags ?? {})
+    ),
     eventLog: {
       providers: [
         { provider: ACTIONS_EVENT_LOG_PROVIDER, actions: Object.values(ACTIONS_EVENT_LOG_ACTIONS) },
@@ -95,10 +101,24 @@ export const defineWorkflowTaskType = (
       'security',
       'actions',
       'taskManager',
+      ...new Set(declared.flatMap(({ settings }) => settings ?? [])),
     ],
+    // Only when contributions declare some: it gives the runner `host.uiSettings`.
+    ...(declared.some(({ uiSettings }) => uiSettings?.length)
+      ? { uiSettings: { defaults: declared.flatMap(({ uiSettings }) => uiSettings ?? []) } }
+      : {}),
     // `alerting-rule-run`: the connector types of the plugins that own them. `workflow-steps`: the
     // steps and triggers of the plugins that register them.
-    contributions: { keys: [RULE_RUN_CONTRIBUTIONS_KEY, WORKFLOW_STEPS_CONTRIBUTIONS_KEY] },
+    contributions: {
+      keys: [RULE_RUN_CONTRIBUTIONS_KEY, WORKFLOW_STEPS_CONTRIBUTIONS_KEY],
+      // A task process hands over what plugins contribute; the module is built again with it.
+      apply: (contributed) =>
+        defineWorkflowTaskType(
+          definition,
+          pick,
+          (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ?? []) as WorkflowStepsContribution[]
+        ),
+    },
     taskPlugins: [
       createSecurityTaskPlugin(kibanaPackageJson.version),
       createWorkflowsEngineTaskPlugin(kibanaPackageJson.version),
@@ -122,9 +142,9 @@ export const defineWorkflowTaskType = (
     savedObjectTypes: {
       enumerable: true,
       get: () =>
-        getDeclarations().savedObjectTypes.filter((type) =>
-          ACTION_SAVED_OBJECT_TYPES.has(type.name)
-        ),
+        getDeclarations()
+          .savedObjectTypes.filter((type) => ACTION_SAVED_OBJECT_TYPES.has(type.name))
+          .concat(declared.flatMap(({ savedObjectTypes }) => savedObjectTypes ?? [])),
     },
     encryptedSavedObjectTypes: {
       enumerable: true,
@@ -133,6 +153,7 @@ export const defineWorkflowTaskType = (
           ACTION_SAVED_OBJECT_TYPES.has(registration.type)
         ),
         ...TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS,
+        ...declared.flatMap(({ encryptedSavedObjectTypes }) => encryptedSavedObjectTypes ?? []),
       ],
     },
   });
