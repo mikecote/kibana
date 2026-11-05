@@ -59,6 +59,7 @@ export type RuleRunActionsStart = Pick<
   | 'isActionExecutable'
   | 'renderActionParameterTemplates'
   | 'isSystemActionConnector'
+  | 'isActionTypeEnabled'
 >;
 
 /** The part of the actions setup contract that connector types are registered through. */
@@ -266,6 +267,8 @@ export const createRuleRunActions = (
           encryptedSavedObjectsClient,
         } as ConstructorParameters<typeof ActionsClient>[0]);
       },
+      isActionTypeEnabled: (id, options = { notifyUsage: false }) =>
+        actionTypeRegistry.isActionTypeEnabled(id, options),
       isActionExecutable: (actionId, actionTypeId, options) =>
         actionTypeRegistry.isActionExecutable(actionId, actionTypeId, options),
       renderActionParameterTemplates: (...args) =>

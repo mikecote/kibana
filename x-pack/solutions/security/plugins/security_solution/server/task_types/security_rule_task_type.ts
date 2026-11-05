@@ -137,56 +137,6 @@ export const createSecurityRuleRunServicesFromHost = (
 };
 
 /**
- * Gives a module what the detection rule types read that the generic rule task type does not
- * declare: the event log provider of the rule execution events, the settings of the plugin and
- * the encrypted saved objects of Fleet. The options of the generic seam cover the saved object types.
- */
-const withSecurityRuleRun = (module: RuleTaskTypeModule): RuleTaskTypeModule => {
-  const descriptors = Object.getOwnPropertyDescriptors(module);
-  const { eventLog, settings, contributions } = module;
-  if (!eventLog || !descriptors.encryptedSavedObjectTypes?.get || !contributions?.apply) {
-    throw new Error(
-      'A rule task type module declares an event log, encrypted saved objects and contributions'
-    );
-  }
-  const getEncryptedTypes = descriptors.encryptedSavedObjectTypes.get;
-  const applyContributions = contributions.apply;
-  return Object.defineProperties(
-    {},
-    {
-      ...descriptors,
-      eventLog: {
-        enumerable: true,
-        value: {
-          ...eventLog,
-          providers: [
-            ...eventLog.providers,
-            { provider: RULE_EXECUTION_LOG_PROVIDER, actions: RuleExecutionEventType.options },
-          ],
-        },
-      },
-      settings: { enumerable: true, value: [...(settings ?? []), ...SETTINGS] },
-      // What Fleet registers for the response actions, which read its encrypted saved objects.
-      encryptedSavedObjectTypes: {
-        enumerable: true,
-        get: () => [
-          ...(getEncryptedTypes.call(module) ?? []),
-          ...getFleetRunEncryptedSavedObjectTypes(),
-        ],
-      },
-      contributions: {
-        enumerable: true,
-        value: {
-          ...contributions,
-          apply: (contributed: Record<string, unknown[]>) =>
-            withSecurityRuleRun(applyContributions(contributed) as RuleTaskTypeModule),
-        },
-      },
-    }
-  ) as RuleTaskTypeModule;
-};
-
-/**
  * The task type of a detection rule type: `createRuleType` receives the wrapper that makes a security
  * rule type of an executor (the same one the plugin registers them with) and the deps of the module,
  * and returns the rule type.
@@ -196,21 +146,25 @@ export const createSecurityRuleTaskType = (
   createRuleType: (wrap: SecurityRuleTypeWrapper, deps: RuleTypeModuleDeps) => unknown,
   { savedObjectTypes = [] }: { savedObjectTypes?: SavedObjectsType[] } = {}
 ): RuleTaskTypeModule =>
-  withSecurityRuleRun(
-    createRuleTaskType(
-      {
-        ruleTypeId,
-        getRuleType: (deps) =>
-          createRuleType(
-            createSecurityRuleTypeWrapper(createSecurityRuleRunServicesFromHost(deps)),
-            deps
-          ) as UntypedRuleType,
-      },
-      {
-        savedObjectTypes: [...SAVED_OBJECT_TYPES, ...savedObjectTypes],
-        uiSettings: getSecurityRuleRunUiSettings(),
-        // Core's security delegate and the authorization of the plugin, `host.plugins.security`.
-        taskPlugins: [createSecurityTaskPlugin(kibanaPackageJson.version)],
-      }
-    )
+  createRuleTaskType(
+    {
+      ruleTypeId,
+      getRuleType: (deps) =>
+        createRuleType(
+          createSecurityRuleTypeWrapper(createSecurityRuleRunServicesFromHost(deps)),
+          deps
+        ) as UntypedRuleType,
+    },
+    {
+      savedObjectTypes: [...SAVED_OBJECT_TYPES, ...savedObjectTypes],
+      uiSettings: getSecurityRuleRunUiSettings(),
+      // Core's security delegate and the authorization of the plugin, `host.plugins.security`.
+      taskPlugins: [createSecurityTaskPlugin(kibanaPackageJson.version)],
+      // The rule execution events, the plugin's settings and what Fleet encrypts for response actions.
+      eventLogProviders: [
+        { provider: RULE_EXECUTION_LOG_PROVIDER, actions: RuleExecutionEventType.options },
+      ],
+      settings: SETTINGS,
+      encryptedSavedObjectTypes: getFleetRunEncryptedSavedObjectTypes(),
+    }
   );

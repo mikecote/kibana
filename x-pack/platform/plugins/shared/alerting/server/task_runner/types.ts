@@ -247,6 +247,7 @@ export interface RuleRunRuntime {
     | 'isActionExecutable'
     | 'renderActionParameterTemplates'
     | 'isSystemActionConnector'
+    | 'isActionTypeEnabled'
   >;
   alertsService: AlertsService | null;
   auditService?: AuditServiceSetup;

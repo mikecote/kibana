@@ -24,6 +24,7 @@ import {
   EVENT_LOG_ACTIONS as ACTIONS_EVENT_LOG_ACTIONS,
   EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER,
 } from '@kbn/actions-plugin/server/constants/event_log';
+import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
@@ -77,6 +78,12 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  /** A task process only: encrypted saved objects the executor reads, besides what every rule run reads. */
+  encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
+  /** A task process only: event log providers the executor writes with, besides alerting's own. */
+  eventLogProviders?: Array<{ provider: string; actions: string[] }>;
+  /** A task process only: ids of plugins whose config the executor reads, besides alerting and actions. */
+  settings?: string[];
   /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
   uiSettings?: Array<Record<string, UiSettingsParams>>;
   /**
@@ -287,12 +294,13 @@ export function createRuleTaskType(
                     },
                   ]
                 : []),
+              ...(options.eventLogProviders ?? []),
             ],
             create: createStandaloneEventLog,
           },
           taskManager: { schedulableTypes: [/^actions:/, ...(options.schedulableTaskTypes ?? [])] },
           licensing: true as const,
-          settings: ['alerting', 'actions'],
+          settings: ['alerting', 'actions', ...(options.settings ?? [])],
         }),
     createTaskRunner: (context, host): CancellableTask => {
       const runner = prepare(host).then(async (services) => {
@@ -333,6 +341,7 @@ export function createRuleTaskType(
         enumerable: true,
         get: () => [
           ...getDeclarations().encryptedSavedObjectTypes,
+          ...(options.encryptedSavedObjectTypes ?? []),
           ...contributions.flatMap(
             (contribution) => contribution.declares?.encryptedSavedObjectTypes ?? []
           ),
