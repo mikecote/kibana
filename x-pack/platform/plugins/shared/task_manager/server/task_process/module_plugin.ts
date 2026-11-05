@@ -146,6 +146,9 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
                 apiKeyType: taskManagerSettings.api_key_type as never,
                 grantUiamApiKeys: taskManagerSettings.grant_uiam_api_keys === true,
                 canEncrypt: encryption?.canEncrypt ?? false,
+                encryptedSavedObjects: deps.encryptedSavedObjects
+                  ? { getClient: deps.encryptedSavedObjects.getClient }
+                  : undefined,
               }
             : undefined,
           allowedTypes: new RegExp(

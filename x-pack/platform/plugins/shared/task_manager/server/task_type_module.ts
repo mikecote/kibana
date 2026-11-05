@@ -24,7 +24,7 @@ import type {
   EncryptedSavedObjectsClient,
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
-import type { TaskManagerStartContract } from './plugin';
+import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
 
 export interface TaskHostEventLog {
@@ -113,7 +113,7 @@ export interface TaskHost {
    */
   eventLog?: TaskHostEventLog;
   /** Declared with `taskManager`. */
-  taskManager?: Pick<TaskManagerStartContract, 'schedule' | 'bulkSchedule' | 'aggregate'>;
+  taskManager?: HostTaskManager;
   /** Declared with `uiSettings`. */
   uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   /** Declared with `licensing`. */
