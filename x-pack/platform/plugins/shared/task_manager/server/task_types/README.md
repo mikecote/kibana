@@ -641,14 +641,37 @@ the hooks run workflows through `scheduleWorkflow`), and the SML types of visual
 workflows. Product documentation counts as installed from the status saved objects (an installation in flight is
 not looked at; Security Labs is not available).
 
+Also contributing since: streams (the scoped clients of `createStreamsRunServices`: the streams client over its
+storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata
+service started with the streams extractor; the rules client of alerting that the attachment client uses and the
+encrypted saved objects client exist only in Kibana and throw when used, integration fields from Fleet are not
+served, and the space solution that gates the tools in Kibana is not known to a process, so the tools are available in
+every space of a project type that registers them, which Kibana decides) and evals_skills (the dataset service and the
+evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
+service and the privileges of the security task plugin; saving an experiment needs Kibana's workflows service and fails
+with "only available in Kibana", running one goes through `scheduleWorkflow`).
+
+**Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
+`agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
+feature flag flips on). A contribution adds `registerAtStart(start, context)`, which calls the function the plugin
+calls with `start` (`AgentBuilderContributionStart`: `skills.register` and `agents.ensure`). Kibana decides the
+current set and sends it as settings with each dispatch (`registerSettings(id, () => current)`, evaluated at every
+dispatch), the process runs `registerAtStart` with these settings, so it registers exactly that set and skills
+registered at start count in the `agentBuilder.skills` parity. `agents.ensure` in a process only keeps the
+availability and visibility of the agent in memory (`setAgentAvailability`): Kibana persisted the agent, a process
+does not write it. An availability that holds a callback is sent as data (the result Kibana evaluated for this
+dispatch) and rebuilt by the registration as a handler that answers it, or is the process-side equivalent built by the
+same factory. Test it with `collectRegisteredIds`, which runs `registerAtStart` too.
+
 Not yet, with what each needs: alerting_v2 (its rules, action policy and episodes clients are built per request by an
-inversify container with about a dozen bindings, and its skills use the workflows service), evals_skills (the evals
-start contract: dataset and score services, the evaluator registry other plugins fill in their setup), and the hard
-tier: streams, security_solution, discoveries, alertzero, agentic_investigations, observability_agent_builder (which
-infra, slo and synthetics register data providers with), significant_events and nightshift_investigations. The
-registrations made after start (`agents.ensure` with its availability map, `skills.register` of the start contract:
-significant_events, alertzero, nightshift_investigations) need Kibana to send the current set per dispatch; no plugin of the
-medium tier makes them.
+inversify container with about a dozen bindings: the task manager start, the user and API key services over security,
+the spaces service, the event publishers, the artifact type registry; the container has to be built in the process
+from the same module graph, and its skills use the workflows service), and the hard tier: security_solution,
+discoveries, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
+ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
+registry that has to be fed through the same mechanism), significant_events (its scoped clients over the knowledge
+indicator, source catalog, run quota, detections and relay services, and the registrations after start above) and
+nightshift_investigations.
 
 ### What stays in Kibana
 

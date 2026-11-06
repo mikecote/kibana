@@ -32,6 +32,8 @@ const STREAMS_WORKFLOW_ID = 'streams-agent-workflow';
 const ILM_POLICY = 'agent-streams-policy';
 const INSPECT_TOOL = 'platform.streams.inspect_streams';
 const ILM_TOOL = 'platform.streams.list_ilm_policies';
+const EVALS_WORKFLOW_ID = 'evals-agent-workflow';
+const LIST_DATASETS_TOOL = 'platform.evals.datasets.list_datasets';
 
 /**
  * Runs workflows with an `ai.agent` step from the real `workflow:scheduled` bundle in a real task
@@ -69,6 +71,18 @@ describe('agent builder tools of the hard tier served from the workflow:schedule
 
     harness = await startWorkflowProcessHarness({
       workflows: {
+        [EVALS_WORKFLOW_ID]: {
+          steps: [
+            {
+              name: 'agent',
+              type: 'ai.agent',
+              'connector-id': CONNECTOR_ID,
+              with: {
+                message: withSkill('eval-dataset-management', call(LIST_DATASETS_TOOL, {})),
+              },
+            },
+          ],
+        },
         [STREAMS_WORKFLOW_ID]: {
           steps: [
             {
@@ -171,5 +185,21 @@ describe('agent builder tools of the hard tier served from the workflow:schedule
     expect(results).toContain(ILM_POLICY);
     // The streams client over its storage answered: there are no streams.
     expect(results).toContain('No streams found.');
+  });
+
+  it('lists the evaluation datasets with the evals skill, with the services of the process', async () => {
+    const fallback = jest.fn();
+    const from = llm.requests.length;
+    await harness.run(EVALS_WORKFLOW_ID, fallback as never);
+
+    expect(fallback).not.toHaveBeenCalled();
+    const [execution] = await harness.executionsOf(EVALS_WORKFLOW_ID);
+    expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
+    const agent = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'agent')!;
+    expect(outputOf(agent).message).toBe(FINAL_ANSWER);
+
+    // The dataset service answered over the cluster: there are no datasets.
+    const results = llm.toolResultsSince(from);
+    expect(results).toMatch(/total\W+0\W+datasets\W+\[\]/);
   });
 });
