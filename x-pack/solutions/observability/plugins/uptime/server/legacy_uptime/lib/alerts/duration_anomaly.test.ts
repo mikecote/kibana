@@ -187,7 +187,7 @@ describe('duration anomaly alert', () => {
         [],
         [],
         'auto',
-        options.params.severity,
+        [{ min: options.params.severity }],
         1620907417000,
         1620909217000,
         'UTC',
