@@ -427,4 +427,27 @@ successful `execute` event, and equals the same rule run in the test process (`r
 | security solution | `security_rules_task_process` (`server/task_types/integration_tests`) | query (with exceptions and a response action that schedules the isolation of an Elastic Defend host), saved query, EQL, ES\|QL, threshold, new terms, indicator match, ML, legacy notifications |
 | elastic assistant | `attack_discovery_task_process` | attack discovery |
 
+### Running in a real Kibana (Scout)
+
+The jest tests above do not boot the Kibana plugins. Three Scout config sets (stateful, API tests only) do,
+with `xpack.task_manager.task_execution.mode: child_process`, `bundle_dir` set to bundles built when the config
+loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_REBUILD=true` builds them again)
+and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
+records, with Task Manager at debug, so the tests can see where each run happened.
+
+| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`) | Proves |
+| --- | --- | --- |
+| `task_processes` | `scout_task_processes` | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
+| `task_processes_unknown_connector` | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`) |
+| `task_processes_es_tls` | `scout_task_processes_es_tls` | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster |
+
+```
+node scripts/scout.js start-server --arch stateful --domain classic --serverConfigSet task_processes
+node scripts/playwright test --config x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/playwright.config.ts --project local
+```
+
+Not covered: a service account token to Elasticsearch (`elasticsearch.serviceAccountToken`; the token has to
+exist before Kibana starts), serverless (no serverless config set for it yet), and a Kibana that is killed while a
+process is running (the jest tests of the supervisor cover it).
+
 The distributable builds the bundles into `task_bundles/`.
