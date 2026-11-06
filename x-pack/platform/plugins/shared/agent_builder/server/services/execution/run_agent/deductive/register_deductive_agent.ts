@@ -26,7 +26,7 @@ import { DEDUCTIVE_AGENT_ID, DEDUCTIVE_AVATAR_ICON } from './config';
  * `deductiveEnabled` is the runtime kill switch; `deductiveEndpoint` / `deductiveApiKey`
  * are per-deployment configuration.
  */
-const DEDUCTIVE_UI_SETTINGS: Record<string, UiSettingsParams> = {
+export const DEDUCTIVE_UI_SETTINGS: Record<string, UiSettingsParams> = {
   [AGENT_BUILDER_DEDUCTIVE_ENABLED_SETTING_ID]: {
     description: i18n.translate('xpack.agentBuilder.uiSettings.deductiveEnabled.description', {
       defaultMessage:

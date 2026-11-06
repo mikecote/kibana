@@ -13,6 +13,7 @@ import type {
   ContextEngineAgentBuilderStartDependencies,
 } from './types';
 import { registerContextEngineAgentBuilderIntegration } from './register_agent_builder_integration';
+import { CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { registerContextEngineInferenceFeatures } from './register_inference_features';
 
 export class ContextEngineAgentBuilderPlugin
@@ -33,6 +34,11 @@ export class ContextEngineAgentBuilderPlugin
     >,
     setupDeps: ContextEngineAgentBuilderSetupDependencies
   ): ContextEngineAgentBuilderPluginSetup {
+    // What a task process needs to register what this Kibana registers: the plugin is enabled.
+    setupDeps.agentBuilder.taskProcess?.registerSettings(
+      CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID,
+      () => ({})
+    );
     registerContextEngineAgentBuilderIntegration({
       coreSetup,
       agentBuilder: setupDeps.agentBuilder,

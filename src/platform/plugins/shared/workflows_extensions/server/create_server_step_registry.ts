@@ -81,6 +81,8 @@ export interface WorkflowStepsContribution {
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
     settings?: string[];
     uiSettings?: Array<Record<string, UiSettingsParams>>;
+    /** Global ui settings the steps read, as `registerGlobal` takes them (read with `host.uiSettings.globalAsScopedToClient`). */
+    globalUiSettings?: Array<Record<string, UiSettingsParams>>;
     featureFlags?: Record<string, boolean | string | number>;
     /** Event log providers (and their actions) the steps write events with. */
     eventLogProviders?: Array<{ provider: string; actions: string[] }>;

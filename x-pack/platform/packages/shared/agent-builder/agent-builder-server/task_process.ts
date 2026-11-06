@@ -30,6 +30,8 @@ export interface AgentBuilderContributionDeclares {
   settings?: string[];
   /** Ui settings the registrations read, as `core.uiSettings.register` takes them. */
   uiSettings?: Array<Record<string, UiSettingsParams>>;
+  /** Global ui settings the registrations read, as `registerGlobal` takes them (`host.uiSettings.globalAsScopedToClient`). */
+  globalUiSettings?: Array<Record<string, UiSettingsParams>>;
   /** Feature flags the registrations read, with their fallbacks. */
   featureFlags?: Record<string, boolean | string | number>;
   /** Analytics event types the registrations report, which Core requires to be registered. */
@@ -52,6 +54,24 @@ export interface AgentBuilderContributionServices {
   getActionsStart: () => Promise<unknown>;
   /** The actions client of a request: the one of the connectors the process runs. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
+  /**
+   * The workflows management API as a process serves it (`workflowsManagement.management` in Kibana),
+   * cast it to `WorkflowsServerPluginSetup['management']`: reading and running saved workflows; what
+   * needs Kibana's workflows service (creating, updating, listing, validating, resuming, cancelling,
+   * inline YAML runs) throws "only available in Kibana" when called.
+   */
+  getWorkflowsManagement: () => unknown;
+  /**
+   * Emits a workflow trigger event, as `workflowsExtensions.getClient(request).emitEvent` does in
+   * Kibana: the workflows it matches are scheduled by this run's process. A tool that makes changes
+   * other workflows trigger on (a case created) emits through it, and the run waits for the emissions
+   * before it ends.
+   */
+  emitEvent: (params: {
+    triggerId: string;
+    payload: Record<string, unknown>;
+    request: KibanaRequest;
+  }) => Promise<void>;
   /** Agent builder's own start contract, as other plugins read it from their start dependencies. */
   getAgentBuilderStart: () => AgentBuilderPluginStart;
 }

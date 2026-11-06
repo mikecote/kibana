@@ -1,6 +1,20 @@
 {
   "tools": [
     "custom_content_update_panel",
+    "platform.context_engine.describe_ai_index",
+    "platform.context_engine.forget",
+    "platform.context_engine.install_automation_template",
+    "platform.context_engine.list_ai_indices",
+    "platform.context_engine.query_ai_indices",
+    "platform.context_engine.remember",
+    "platform.context_engine.run_automation",
+    "platform.context_engine.save_automation",
+    "platform.core.cases",
+    "platform.core.cases.find_templates",
+    "platform.core.cases.get_attachments",
+    "platform.core.cases.manage",
+    "platform.core.cases.manage_attachments",
+    "platform.core.cases.observables",
     "platform.core.create_discover_session",
     "platform.core.create_visualization",
     "platform.core.execute_connector_sub_action",
@@ -12,15 +26,21 @@
     "platform.core.integration_knowledge",
     "platform.core.list_indices",
     "platform.core.list_inference_endpoints",
-    "platform.core.search"
+    "platform.core.search",
+    "platform.proposals.revise",
+    "proposals.create"
   ],
-  "agents": [],
+  "agents": [
+    "platform.context_engine.setup"
+  ],
   "agentTypes": [],
   "skills": [
     "agent-builder-traces",
     "ai-index-automations",
     "ai-index-sources",
     "analyze-and-improve",
+    "cases-analytics",
+    "cases-management",
     "connector-authoring",
     "connector-discovery",
     "context-engine-signals",
@@ -28,8 +48,10 @@
     "discover-session",
     "graph-creation",
     "ki-retrieval",
+    "ml.anomaly-detection",
     "observability.investigate-service-map",
     "observability.service-map",
+    "proposal-management",
     "search.catalog-ecommerce",
     "search.elasticsearch-onboarding",
     "search.elasticsearch-tutorial",
@@ -41,15 +63,22 @@
     "visualization-creation"
   ],
   "attachmentTypes": [
+    "case",
+    "cases",
     "connector",
     "connector_setup",
     "discover.session",
     "esql",
     "esql.query_results",
     "graph",
+    "ml.anomaly_charts",
+    "ml.anomaly_swimlane",
+    "ml.single_metric_viewer",
     "observability.service-map",
     "observability.service-map-context",
+    "platform.context_engine.ai_index",
     "platform.custom_content.panel_context",
+    "platform.proposal",
     "screen_context",
     "skill",
     "text",
@@ -64,8 +93,12 @@
   ],
   "renderers": [],
   "hooks": [
+    "after-execution-workflows",
+    "before-agent-workflows",
     "skill-tools-loader"
   ],
   "plugins": [],
-  "aiIndexResolvers": []
+  "aiIndexResolvers": [
+    "resolver"
+  ]
 }

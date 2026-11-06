@@ -12,6 +12,7 @@ import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { REPO_ROOT } from '@kbn/repo-info';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import { collectRegisteredIds } from '../run_services/collect_registered_ids';
+import { getExampleContributionSettings } from './example_contribution_settings';
 import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
 
 /**
@@ -33,13 +34,10 @@ const NOT_YET_CONTRIBUTED: Record<string, string> = {
   'x-pack/platform/plugins/shared/agent_builder_dashboards':
     'the dashboard client (the dashboard state schema registry) and the embeddable plugin',
   'x-pack/platform/plugins/shared/agent_builder_workflows':
-    'the workflows management API (and the SML types)',
-  'x-pack/platform/plugins/shared/cases': 'the cases client, the rule registry and files',
-  'x-pack/platform/plugins/shared/ml': 'the ML services (createMlRunServices)',
+    'the SML type, and the workflows service of Kibana (validation, step and trigger definitions, connectors, execute step, resume, list, generate), which the process API does not serve',
   'x-pack/platform/plugins/shared/alerting_v2': 'the v2 rules services',
-  'x-pack/platform/plugins/shared/evals_skills': 'the evals task providers registry',
-  'x-pack/platform/plugins/shared/proposals': 'the proposals client',
-  'x-pack/platform/plugins/shared/context_engine_agent_builder': 'the context engine client',
+  'x-pack/platform/plugins/shared/evals_skills':
+    'the evals task providers registry, and the workflows service of Kibana (save and cancel experiments)',
   // Hard: services that only exist in Kibana, or many registrations that read them.
   'x-pack/platform/plugins/shared/streams': 'the streams client and its asset services',
   'x-pack/solutions/security/plugins/security_solution':
@@ -93,9 +91,7 @@ describe('the agent-builder contributions', () => {
 
   it('registers the ids that are checked in', async () => {
     // Every plugin is enabled: what Kibana sends is whatever each contribution declares it reads.
-    const settings = Object.fromEntries(
-      contributions.flatMap(({ declares }) => (declares?.settings ?? []).map((id) => [id, {}]))
-    );
+    const settings = getExampleContributionSettings(contributions);
     const ids = await collectRegisteredIds({ contributions, settings, logger });
 
     if (process.env.UPDATE_AGENT_BUILDER_CONTRIBUTION_IDS) {

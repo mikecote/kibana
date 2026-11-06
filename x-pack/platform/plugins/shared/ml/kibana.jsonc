@@ -13,6 +13,9 @@
       "server/task_types/anomaly_detection_alert.task.ts",
       "server/task_types/anomaly_detection_jobs_health.task.ts"
     ],
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "configPath": ["xpack", "ml"],
     "requiredPlugins": [
       "aiops",

@@ -584,8 +584,31 @@ plugin that contributes but is disabled in this Kibana). The steps that read the
 warning that names the ids, and Kibana runs the workflow; every other step is served as before. This is not
 `TaskTypeModule.parity`, which declines every run of the process: most workflows do not use agents, and they keep
 running in a process while contributions are still being added. The parity is `host.parity`, compared with
-`findMissingParity`. In Kibana today the hooks that run an agent's workflows need the workflows management API,
-which a process does not have, so `ai.agent` is declined until that and the plugins listed below contribute.
+`findMissingParity`. In Kibana today `ai.agent` is still declined, until the plugins listed below as not yet
+contribute.
+
+**The workflows management API.** The hooks that run an agent's workflows, the `workflow` tool type and the tools of
+the plugins that run workflows read `workflowsManagement.management`. A process serves it as far as it can:
+`createWorkflowsProcessManagementApi` (`workflows_management/server/api`) is built over the same read API the
+workflow steps use (`createWorkflowsReadApi`: `getWorkflow`, `getWorkflowExecution`, `getWorkflowExecutionStatuses`,
+`assertWorkflowAccess`) and the engine's `scheduleWorkflow`: `executeWorkflow` of a saved workflow checks that the
+request may execute it, schedules a `workflow:run` task (it runs under its own task, in a process of its own when
+it can be, or in Kibana) and waits for the execution as the management API does; `runWorkflow` and
+`scheduleWorkflow` schedule. Everything that needs the workflows service of Kibana (creating, updating, listing,
+validating, resuming and cancelling workflows, inline YAML runs, step and trigger definitions) throws "only
+available in Kibana": a tool that needs it registers and fails when called in a process (the contributions say
+which). A contribution reads it as `services.getWorkflowsManagement()`, lazily.
+
+**Global ui settings.** `declares.globalUiSettings` (of an `agent-builder` or `workflow-steps` contribution) are
+registered with `registerGlobal` in the process (`TaskTypeModule.uiSettings.globalDefaults`) and read with
+`host.uiSettings.globalAsScopedToClient`; a key several contributions declare is registered once. The Deductive
+agent's settings and the context engine's memory setting are declared this way, so the Deductive agent no longer
+declines runs.
+
+**Services a tool reads.** Build them from explicit dependencies in a function the plugin's `setup()`/`start()` and
+the contribution share (`createContextEngineRunServices`, `createCasesRunServices`, `createProposalsRunServices`)
+and create them lazily: the contribution registers (also with the stub host of `collectRegisteredIds`) before the
+services can be built from the host.
 
 A checked-in list of the ids the contributions register (`agent_builder_contribution_ids.json`) and a test that
 every plugin that takes `AgentBuilderPluginSetup` either contributes or is listed as not yet (with what it needs)
@@ -595,10 +618,17 @@ fail when a plugin registers something new without a contribution. Test a contri
 connector).
 
 Who contributes: discover, elasticsearch_home, search_getting_started, apm (service map), custom_content,
-agent_builder_visualizations and agent_builder_platform (tools, attachment types, skills, templates, event types).
-Not yet: agent_builder_dashboards (the dashboard client and the embeddable schemas), agent_builder_workflows,
-cases, ml, alerting_v2, evals_skills, proposals, context_engine_agent_builder (each needs one more service built
-from explicit dependencies), and streams, security_solution, discoveries, alertzero, agentic_investigations,
+agent_builder_visualizations and agent_builder_platform (tools, attachment types, skills, templates, event types),
+proposals (the services over the plugin's storage, and agent builder's attachments), context_engine_agent_builder
+(the AI index services, the signals and improvements stores), cases (the cases client of `createCasesRunServices`,
+with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
+capabilities of a request are resolved from its `ui:ml/*` privileges and the license, there being no Core
+capabilities service in a process). Differences from Kibana are in the comment of each contribution (the AI
+indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
+data views of ML recognizers).
+Not yet: agent_builder_dashboards (the dashboard client and the embeddable schemas), agent_builder_workflows
+(the SML type and the workflow tools that need the workflows service), alerting_v2 (the v2 rules services),
+evals_skills (the evals task providers), and streams, security_solution, discoveries, alertzero, agentic_investigations,
 observability_agent_builder (which infra, slo and synthetics register data providers with), significant_events and
 nightshift_investigations. The SML types (`agentBuilderSml.registerType`) are another registry, not yet served: the
 SML tools are not registered in a process, so a Kibana that has them is not at parity.

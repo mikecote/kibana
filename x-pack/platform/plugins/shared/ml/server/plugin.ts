@@ -61,6 +61,8 @@ import {
   ML_TASK_PROCESS_SETTINGS_ID,
   type MlTaskProcessSettings,
 } from './task_types/ml_task_process_services';
+import { ML_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import type { MlAgentBuilderSettings } from './task_types/agent_builder_contribution';
 import { setupCapabilitiesSwitcher } from './lib/capabilities';
 import { registerKibanaSettings } from './lib/register_settings';
 import { trainedModelsRoutes } from './routes/trained_models';
@@ -329,6 +331,16 @@ export class MlServerPlugin
     }
 
     if (plugins.agentBuilder && this.enabledFeatures.ad) {
+      // What a task process needs to register what this Kibana registers.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        ML_AGENT_BUILDER_SETTINGS_ID,
+        (): MlAgentBuilderSettings => ({
+          enabledFeatures: this.enabledFeatures,
+          compatibleModuleType: this.compatibleModuleType,
+          spacesEnabled: this.spacesPlugin !== undefined,
+          cpsEnabled: this.serverless.cpsEnabled,
+        })
+      );
       registerAnomalyDetectionAgentBuilder({
         agentBuilder: plugins.agentBuilder,
         resolveMlCapabilities,

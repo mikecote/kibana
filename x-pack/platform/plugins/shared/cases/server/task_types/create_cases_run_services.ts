@@ -94,9 +94,17 @@ export interface CasesRunServicesDeps {
   publicBaseUrl?: string;
   /** The bus the client emits its events on: the caller bridges it to the workflow triggers. */
   casesEventBus: CasesEventBus;
+  /** What the client records as its source: `workflow` for the steps, `agent_builder` for the tools. */
+  clientSource?: CasesClientSource;
+  /** The attachment types to use, with the internal ones registered by the caller (a new registry with them when not given). */
+  unifiedAttachmentTypeRegistry?: UnifiedAttachmentTypeRegistry;
 }
 
 export interface CasesRunServices {
+  /** The attachment types of the process: the internal ones; solutions register theirs in Kibana. */
+  unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
+  /** The space of a request, as the spaces plugin gives it: `undefined` when spaces are disabled. */
+  getActiveSpace?: (request: KibanaRequest) => Promise<Space>;
   getCasesClient: (request: KibanaRequest, options?: GetCasesClientOptions) => Promise<CasesClient>;
 }
 
@@ -123,9 +131,11 @@ export const createCasesRunServices = ({
   usageCounter,
   publicBaseUrl,
   casesEventBus,
+  clientSource = 'workflow',
+  unifiedAttachmentTypeRegistry: providedRegistry,
 }: CasesRunServicesDeps): CasesRunServices => {
-  const unifiedAttachmentTypeRegistry = new UnifiedAttachmentTypeRegistry();
-  registerInternalAttachments(unifiedAttachmentTypeRegistry);
+  const unifiedAttachmentTypeRegistry = providedRegistry ?? new UnifiedAttachmentTypeRegistry();
+  if (!providedRegistry) registerInternalAttachments(unifiedAttachmentTypeRegistry);
 
   // The authorization mode of the security plugin, from the same license logic.
   const securityLicense = new SecurityLicenseService().setup({
@@ -156,6 +166,19 @@ export const createCasesRunServices = ({
         attachmentsWriter: V2_NOOP_ATTACHMENTS_WRITER,
       };
 
+  const spacesService = spacesEnabled
+    ? {
+        getSpaceId: (request: KibanaRequest) => request.spaceId ?? DEFAULT_SPACE_ID,
+        getActiveSpace: async (request: KibanaRequest) => {
+          const { id, attributes } = await spaceRepository.get<Omit<Space, 'id'>>(
+            SPACE_SAVED_OBJECT_TYPE,
+            request.spaceId ?? DEFAULT_SPACE_ID
+          );
+          return { id, ...attributes } as Space;
+        },
+      }
+    : undefined;
+
   const factory = new CasesClientFactory(logger);
   factory.initialize({
     securityPluginSetup: { audit: security.audit },
@@ -164,20 +187,7 @@ export const createCasesRunServices = ({
       userProfiles: userProfile,
     },
     securityServiceStart: securityService,
-    spacesPluginStart: spacesEnabled
-      ? {
-          spacesService: {
-            getSpaceId: (request) => request.spaceId ?? DEFAULT_SPACE_ID,
-            getActiveSpace: async (request) => {
-              const { id, attributes } = await spaceRepository.get<Omit<Space, 'id'>>(
-                SPACE_SAVED_OBJECT_TYPE,
-                request.spaceId ?? DEFAULT_SPACE_ID
-              );
-              return { id, ...attributes } as Space;
-            },
-          },
-        }
-      : undefined,
+    spacesPluginStart: spacesService ? { spacesService } : undefined,
     featuresPluginStart: {
       getKibanaFeatures: () => settings.featureCaseOwners,
     },
@@ -237,12 +247,14 @@ export const createCasesRunServices = ({
   };
 
   return {
+    unifiedAttachmentTypeRegistry,
+    getActiveSpace: spacesService?.getActiveSpace,
     getCasesClient: (request, options) =>
       factory.create({
         request,
         scopedClusterClient: elasticsearch.asScoped(request).asCurrentUser,
         savedObjectsService,
-        clientSource: 'workflow' satisfies CasesClientSource,
+        clientSource,
         actionSource: options?.actionSource,
       }),
   };

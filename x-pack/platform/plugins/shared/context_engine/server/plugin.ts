@@ -15,8 +15,6 @@ import type {
 } from '@kbn/core/server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
-import { schema } from '@kbn/config-schema';
-import { i18n } from '@kbn/i18n';
 import { CONTEXT_ENGINE_MEMORY_ENABLED_SETTING_ID } from '@kbn/management-settings-ids';
 import { WorkflowsManagementOperationPrivileges } from '@kbn/workflows';
 import { CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID } from '../common/constants';
@@ -37,12 +35,13 @@ import type {
   WorkflowEnablementApi,
 } from './feedback_analysis/schedule';
 import { createFeedbackAnalysisScheduleService } from './feedback_analysis/schedule';
-import { AiIndexDataReadService } from './ai_indices/data_read_service';
-import { AiIndexService } from './ai_indices/service';
+import type { AiIndexDataReadServiceApi } from './ai_indices/data_read_service';
+import type { ImprovementsServiceApi } from './improvements/service';
+import type { AiIndexService } from './ai_indices/service';
 import { AiIndexRegistry } from './ai_indices/registry';
-import { ImprovementsService } from './improvements/service';
 import { installImprovementsIndexTemplate } from './improvements/storage';
-import { SignalsService } from './signals/service';
+import { contextEngineGlobalUiSettings } from './ui_settings';
+import { createContextEngineRunServices } from './run_services/create_context_engine_run_services';
 import type { SignalsServiceApi } from './signals/service';
 import { registerSignalGeneratorTaskDefinition, scheduleSignalGenerator } from './tasks';
 import { createVerifyKi } from './step_types/verify_ki';
@@ -66,14 +65,14 @@ export class ContextEnginePlugin
 {
   private logger: Logger;
   private aiIndexService?: AiIndexService;
-  private signalsService?: SignalsService;
+  private signalsService?: SignalsServiceApi;
   private createImprovementsService?: (
     esClient: ElasticsearchClient,
     spaceId: string
-  ) => ImprovementsService;
+  ) => ImprovementsServiceApi;
   private createAiIndexDataReadService?: (
     params: GetAiIndexDataReadServiceParams
-  ) => AiIndexDataReadService;
+  ) => AiIndexDataReadServiceApi;
   private esClient?: ElasticsearchClient;
   private scheduleService?: FeedbackAnalysisScheduleService;
   /** Captured at setup because the schedule service, built at start, enables workflows with it. */
@@ -126,35 +125,7 @@ export class ContextEnginePlugin
       logger: this.logger.get('context_steps'),
     });
 
-    coreSetup.uiSettings.registerGlobal({
-      [CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID]: {
-        name: i18n.translate('xpack.contextEngine.uiSettings.feedbackLoop.name', {
-          defaultMessage: 'Context Engine feedback loop',
-        }),
-        description: i18n.translate('xpack.contextEngine.uiSettings.feedbackLoop.description', {
-          defaultMessage:
-            'Generates classified signals from Agent Builder traces to power the Context Engine feedback loop.',
-        }),
-        schema: schema.boolean(),
-        value: false,
-        experimental: true,
-        requiresPageReload: false,
-        readonly: false,
-      },
-      [CONTEXT_ENGINE_MEMORY_ENABLED_SETTING_ID]: {
-        name: i18n.translate('xpack.contextEngine.uiSettings.memory.name', {
-          defaultMessage: 'Context Engine memory',
-        }),
-        description: i18n.translate('xpack.contextEngine.uiSettings.memory.description', {
-          defaultMessage: 'Enables memory capabilities for Context Engine AI indices.',
-        }),
-        schema: schema.boolean(),
-        value: false,
-        experimental: true,
-        requiresPageReload: false,
-        readonly: false,
-      },
-    });
+    coreSetup.uiSettings.registerGlobal(contextEngineGlobalUiSettings);
 
     registerSignalGeneratorTaskDefinition({
       taskManager: setupDeps.taskManager,
@@ -330,9 +301,13 @@ export class ContextEnginePlugin
       return true;
     };
 
-    this.aiIndexService = new AiIndexService({
+    const runServices = createContextEngineRunServices({
       esClient: this.esClient,
-      logger: aiIndexLogger,
+      logger: this.logger,
+      savedObjects: coreStart.savedObjects,
+      uiSettings: coreStart.uiSettings,
+      audit: coreStart.security.audit,
+      getSpaceId: (request) => resolveSpaceId(startDeps.spaces, request),
       managedBootstrap: {
         isManaged: (id) => this.aiIndexRegistry.has(id),
         getManagedIds: () => this.aiIndexRegistry.getManagedIds(),
@@ -340,35 +315,12 @@ export class ContextEnginePlugin
         ensure: ensureAiIndex,
       },
     });
-    const aiIndexService = this.aiIndexService;
-
-    this.signalsService = new SignalsService({
-      esClient: this.esClient,
-      logger: this.logger.get('signals'),
-    });
-    const signalsService = this.signalsService;
+    this.aiIndexService = runServices.aiIndexService;
+    this.signalsService = runServices.getSignalsService();
+    this.createImprovementsService = runServices.getImprovementsService;
+    this.createAiIndexDataReadService = runServices.getAiIndexDataReadService;
 
     const improvementsLogger = this.logger.get('improvements');
-    this.createImprovementsService = (esClient: ElasticsearchClient, spaceId: string) =>
-      new ImprovementsService({ esClient, logger: improvementsLogger, space: spaceId });
-    const createImprovementsService = this.createImprovementsService;
-
-    this.createAiIndexDataReadService = ({ esClient, request }) =>
-      new AiIndexDataReadService({
-        esClient,
-        spaceId: resolveSpaceId(startDeps.spaces, request),
-        auditLogger: coreStart.security.audit.asScoped(request),
-        aiIndexService,
-        logger: this.logger,
-        isMemoryEnabled: async () => {
-          const savedObjectsClient = coreStart.savedObjects.getScopedClient(request);
-          const globalUiSettings = coreStart.uiSettings.globalAsScopedToClient(savedObjectsClient);
-          return (
-            (await globalUiSettings.get<boolean>(CONTEXT_ENGINE_MEMORY_ENABLED_SETTING_ID)) ?? false
-          );
-        },
-      });
-    const createAiIndexDataReadService = this.createAiIndexDataReadService;
 
     // Installed as Kibana, with the cluster privilege it already holds. The index is left for the
     // first user write to create from it, so the store needs no grant on the internal user.
@@ -410,9 +362,9 @@ export class ContextEnginePlugin
         }
         return this.aiIndexService;
       },
-      getAiIndexDataReadService: (params) => createAiIndexDataReadService(params),
-      getSignalsService: () => signalsService,
-      getImprovementsService: (esClient, spaceId) => createImprovementsService(esClient, spaceId),
+      getAiIndexDataReadService: runServices.getAiIndexDataReadService,
+      getSignalsService: runServices.getSignalsService,
+      getImprovementsService: runServices.getImprovementsService,
     };
   }
 

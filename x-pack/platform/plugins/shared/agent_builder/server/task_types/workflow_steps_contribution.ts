@@ -10,6 +10,12 @@ import { agentBuilderServerEbtEvents } from '@kbn/agent-builder-common';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { normalizeConnectorFeatureIds } from '@kbn/search-inference-endpoints/server/lib/resolve_connector_id_from_features';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
+import type { CoreStart } from '@kbn/core/server';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
+import { createWorkflowsReadApi } from '@kbn/workflows-management-plugin/server/api/workflows_read_api';
+import { createWorkflowsProcessManagementApi } from '@kbn/workflows-management-plugin/server/api/workflows_process_management_api';
+import type { WorkflowAccessCore } from '@kbn/workflows-management-plugin/server/services/workflow_access_control';
+import { DEDUCTIVE_UI_SETTINGS } from '../services/execution/run_agent/deductive/register_deductive_agent';
 import { agentBuilderSpaceSettingsType } from '../saved_objects';
 import { registerUISettings } from '../ui_settings';
 import { registerAgentBuilderProcessWorkflowDefinitions } from '../workflows';
@@ -76,6 +82,8 @@ export const contribution: WorkflowStepsContribution = {
     savedObjectTypes: [agentBuilderSpaceSettingsType],
     settings: [AGENT_BUILDER_RUN_SETTINGS_ID],
     uiSettings: getAgentBuilderUiSettings(),
+    // The global settings of the Deductive agent (registered when Kibana's config opts in).
+    globalUiSettings: [DEDUCTIVE_UI_SETTINGS],
     analyticsEventTypes: agentBuilderServerEbtEvents,
   },
   register: async (registry, context) => {
@@ -102,6 +110,35 @@ export const contribution: WorkflowStepsContribution = {
         settings: context.settings,
       },
       getActionsClientWithRequest: services.getActionsClientWithRequest as never,
+      emitEvent: services.emitEvent,
+      // The workflows management API as far as a process serves it: reads over the engine's storage
+      // and runs of saved workflows, scheduled as tasks.
+      getWorkflowsManagement: () => {
+        const { userProfile } = host as TaskHost & { userProfile?: CoreStart['userProfile'] };
+        const authz = (host.plugins?.security as SecurityTaskPluginStart | undefined)?.authz;
+        const readApi = createWorkflowsReadApi({
+          logger: context.logger.get('workflowsManagement'),
+          esClient: host.elasticsearch.asInternalUser,
+          core: {
+            security: host.security,
+            userProfile,
+            elasticsearch: { client: host.elasticsearch },
+          } as unknown as WorkflowAccessCore,
+          authz: authz as never,
+          workflowExecutionsDataClient:
+            services.executionDataClients.createWorkflowDataClient() as never,
+          stepExecutionsDataClient: services.executionDataClients.createStepDataClient() as never,
+        });
+        return createWorkflowsProcessManagementApi({
+          readApi,
+          scheduleWorkflow: (workflow, workflowContext, request) => {
+            if (!services.scheduleWorkflow) {
+              throw new Error('The workflows task process did not give the engine services');
+            }
+            return services.scheduleWorkflow(workflow, workflowContext, request);
+          },
+        });
+      },
     });
     if (!processServices) return;
 
@@ -159,9 +196,6 @@ export const contribution: WorkflowStepsContribution = {
         const missing = getGap();
         if (missing)
           return `the agent builder registrations of the process differ from Kibana's: the process ${missing}`;
-        if (processServices.deductiveRegistered) {
-          return 'the Deductive agent is registered: its settings are only available in Kibana';
-        }
         if (step.type === 'ai.agent') {
           return checkConnectorFeatures(step.config, (featureId) =>
             processServices.inferenceFeatureIds().includes(featureId)

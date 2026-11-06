@@ -77,6 +77,8 @@ import {
 } from './cases_analytics_v2';
 import { CasesEventBus } from './events/event_bus';
 import { registerCaseWorkflowSteps } from './workflows';
+import { CASES_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import type { CasesAgentBuilderSettings } from './task_types/agent_builder_contribution';
 import { registerCasesAgentBuilderTools } from './agent_builder';
 import { registerCaseWorkflowTriggers } from './workflows/triggers';
 import { registerCasesWorkflowEventBridge } from './workflows/triggers/event_bridge';
@@ -346,6 +348,11 @@ export class CasePlugin
       (!!serverlessProjectType && SERVERLESS_PROJECT_TYPES.includes(serverlessProjectType));
 
     if (plugins.agentBuilder && isCasesAgentBuilderAllowed) {
+      // What a task process needs to register what this Kibana registers (absent until Kibana starts).
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        CASES_AGENT_BUILDER_SETTINGS_ID,
+        (): CasesAgentBuilderSettings => ({ workflows: this.getWorkflowsProcessSettings() })
+      );
       registerCasesAgentBuilderTools(
         plugins.agentBuilder,
         getCasesClient('agent_builder'),

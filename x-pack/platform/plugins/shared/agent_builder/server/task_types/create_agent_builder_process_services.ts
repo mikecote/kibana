@@ -19,6 +19,7 @@ import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import { InferenceFeatureRegistry } from '@kbn/search-inference-endpoints/server/inference_feature_registry';
 import { createSearchInferenceEndpointsStart } from '@kbn/search-inference-endpoints/server/create_search_inference_endpoints_start';
+import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import { AGENTBUILDER_USAGE_DOMAIN } from '../telemetry/usage_counters';
@@ -67,6 +68,8 @@ export const createAgentBuilderProcessServices = async ({
   contributions,
   context: baseContext,
   getActionsClientWithRequest,
+  getWorkflowsManagement,
+  emitEvent,
 }: {
   host: TaskHost;
   logger: Logger;
@@ -75,6 +78,10 @@ export const createAgentBuilderProcessServices = async ({
   context: Omit<AgentBuilderContributionContext, 'services'>;
   /** The actions client of a request, from the engine's runtime. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
+  /** The workflows management API of the process (`createWorkflowsProcessManagementApi`). */
+  getWorkflowsManagement: () => WorkflowsServerPluginSetup['management'];
+  /** Emits a workflow trigger event through the engine's runtime. */
+  emitEvent: AgentBuilderContributionServices['emitEvent'];
 }): Promise<AgentBuilderProcessServices | undefined> => {
   const runSettings = settings[AGENT_BUILDER_RUN_SETTINGS_ID] as
     | AgentBuilderRunSettings
@@ -87,6 +94,7 @@ export const createAgentBuilderProcessServices = async ({
   if (!licensing) throw new Error('The workflows task module did not get the license');
 
   const config = toAgentBuilderConfig(runSettings.config);
+  const workflowsManagement = getWorkflowsManagement();
   const core = { elasticsearch, savedObjects, uiSettings };
 
   // The inference services, as the inference workflows contribution builds them, with the features
@@ -137,9 +145,9 @@ export const createAgentBuilderProcessServices = async ({
   const run = createAgentBuilderRunServices({
     config,
     logger,
-    // The workflows management API only exists in Kibana: the hooks that run an agent's workflows
-    // and the workflow tool type are not registered, and the parity guard says so.
-    workflowsManagement: undefined,
+    // The hooks that run an agent's workflows and the workflow tool type read the management API as
+    // far as a process serves it (reading and running saved workflows).
+    workflowsManagement: { management: workflowsManagement } as WorkflowsServerPluginSetup,
     trackingService,
     analyticsService,
     actions: {
@@ -162,6 +170,8 @@ export const createAgentBuilderProcessServices = async ({
       getCoreStart,
       getActionsStart: async () => actionsStart,
       getActionsClientWithRequest,
+      getWorkflowsManagement: () => workflowsManagement,
+      emitEvent,
       getAgentBuilderStart: () => {
         if (!startContract) throw new Error('Agent builder is not started in this process yet');
         return startContract;

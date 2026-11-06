@@ -41,6 +41,8 @@ export const collectRegisteredIds = async ({
   const services = createAgentBuilderRunServices({
     config: configSchema.validate({}, { dev: false }),
     logger,
+    // As in a process: the management API is there (its methods throw when used).
+    workflowsManagement: { management: {} } as never,
     actions: {} as never,
     getActionsStart: unavailable('The actions plugin') as never,
     getInferenceStart: unavailable('The inference plugin') as never,
@@ -51,6 +53,8 @@ export const collectRegisteredIds = async ({
     getCoreStart: unavailable('Core') as never,
     getActionsStart: unavailable('The actions plugin') as never,
     getActionsClientWithRequest: unavailable('The actions client') as never,
+    emitEvent: unavailable('Emitting workflow events') as never,
+    getWorkflowsManagement: unavailable('The workflows management API') as never,
     getAgentBuilderStart: unavailable('The agent builder start contract') as never,
   };
   for (const contribution of contributions) {

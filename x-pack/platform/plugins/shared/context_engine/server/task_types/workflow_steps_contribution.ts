@@ -5,9 +5,7 @@
  * 2.0.
  */
 
-import { schema } from '@kbn/config-schema';
-import type { AnalyticsServiceSetup, UiSettingsParams } from '@kbn/core/server';
-import { CONTEXT_ENGINE_ENABLED_SETTING_ID } from '@kbn/management-settings-ids';
+import type { AnalyticsServiceSetup } from '@kbn/core/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
@@ -19,18 +17,8 @@ import { ContextEngineAnalyticsService } from '../telemetry';
 import { contextEngineServerEbtEvents } from '../telemetry/events';
 import { createPrivilegeChecks } from '../utils/create_privilege_checks';
 import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
+import { contextEngineSpaceUiSettings } from '../ui_settings';
 import { checkContextEngineStep } from './context_engine_workflow_run_checks';
-
-/**
- * The per-space switch every step reads (registered by the Agent Builder SML plugin, whose
- * definition this mirrors for the process: the default is what a space that never set it has).
- */
-const contextEngineEnabledSetting: UiSettingsParams<boolean> = {
-  name: 'Context Engine',
-  type: 'boolean',
-  value: false,
-  schema: schema.boolean(),
-};
 
 /**
  * The Context Engine steps in the task process of the workflow task types. Listed under
@@ -54,7 +42,7 @@ const contextEngineEnabledSetting: UiSettingsParams<boolean> = {
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
-    uiSettings: [{ [CONTEXT_ENGINE_ENABLED_SETTING_ID]: contextEngineEnabledSetting }],
+    uiSettings: [contextEngineSpaceUiSettings],
     // The events of the analytics service; the process ships them itself.
     analyticsEventTypes: contextEngineServerEbtEvents,
   },

@@ -185,11 +185,6 @@ describe('agent_builder workflow-steps contribution with the services of a proce
     );
   });
 
-  it('declines them when the Deductive agent is registered', async () => {
-    const { check } = await register({ deductiveRegistered: true });
-    expect(check('ai.agent')).toContain('Deductive');
-  });
-
   it('registers nothing that reads the registries when Kibana sent no settings for agent builder', async () => {
     const registry = createServerStepRegistry(loggerMock.create());
     await contribution.register(registry, {

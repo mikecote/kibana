@@ -17,6 +17,7 @@ import { join } from 'path';
 import { collectRegisteredIds } from '../../run_services/collect_registered_ids';
 import { getAgentBuilderRunSettings } from '../../run_services/run_settings';
 import { AGENT_BUILDER_RUN_SETTINGS_ID } from '../../run_services/run_settings';
+import { getExampleContributionSettings } from '../example_contribution_settings';
 import { agentBuilderSpaceSettingsType } from '../../saved_objects';
 import { configSchema as agentBuilderConfigSchema } from '../../config';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
@@ -145,9 +146,7 @@ describe('ai.agent served from the workflow:scheduled bundle', () => {
     const contributions: AgentBuilderContribution[] = getContributionFiles('agent-builder').map(
       (file: string) => require(file).contribution
     );
-    const contributionSettings = Object.fromEntries(
-      contributions.flatMap(({ declares }) => (declares?.settings ?? []).map((id) => [id, {}]))
-    );
+    const contributionSettings = getExampleContributionSettings(contributions);
     const settings = {
       ...contributionSettings,
       [AGENT_BUILDER_RUN_SETTINGS_ID]: getAgentBuilderRunSettings({

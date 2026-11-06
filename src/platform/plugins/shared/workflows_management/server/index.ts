@@ -27,5 +27,6 @@ export type {
 export type { WorkflowsManagementClient } from './api/workflows_management_client';
 
 export { createWorkflowsReadApi, scheduleWorkflowWithEngine } from './api/workflows_read_api';
+export { createWorkflowsProcessManagementApi } from './api/workflows_process_management_api';
 export type { WorkflowsReadApi, WorkflowsReadApiDeps } from './api/workflows_read_api';
 export type { WorkflowAccessCore } from './services/workflow_access_control';

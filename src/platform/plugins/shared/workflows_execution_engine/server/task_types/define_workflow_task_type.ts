@@ -62,6 +62,22 @@ const getRuntime = async (host: TaskHost): Promise<WorkflowRuntime> => {
   return (await processRuntime).runtime;
 };
 
+/**
+ * Contributions of different plugins may declare the same setting (the steps and the tools of a plugin
+ * read it): Core refuses to register a key twice, so the first definition of a key is the one kept.
+ */
+const dedupeUiSettings = <T extends Record<string, unknown>>(list: T[]): T[] => {
+  const seen = new Set<string>();
+  return list
+    .map(
+      (settings) =>
+        Object.fromEntries(
+          Object.entries(settings).filter(([key]) => !seen.has(key) && seen.add(key))
+        ) as T
+    )
+    .filter((settings) => Object.keys(settings).length > 0);
+};
+
 /** What an `agent-builder` contribution adds to the module: the part of its `declares` the engine reads. */
 export type AgentBuilderContributionDeclares = Pick<
   NonNullable<WorkflowStepsContribution['declares']>,
@@ -69,6 +85,7 @@ export type AgentBuilderContributionDeclares = Pick<
   | 'encryptedSavedObjectTypes'
   | 'settings'
   | 'uiSettings'
+  | 'globalUiSettings'
   | 'featureFlags'
   | 'analyticsEventTypes'
 >;
@@ -138,8 +155,17 @@ export const defineWorkflowTaskType = (
     // registers nothing, so these are not required.
     optionalSettings: [...new Set(declared.flatMap(({ settings }) => settings ?? []))],
     // Only when contributions declare some: it gives the runner `host.uiSettings`.
-    ...(declared.some(({ uiSettings }) => uiSettings?.length)
-      ? { uiSettings: { defaults: declared.flatMap(({ uiSettings }) => uiSettings ?? []) } }
+    ...(declared.some(
+      ({ uiSettings, globalUiSettings }) => uiSettings?.length || globalUiSettings?.length
+    )
+      ? {
+          uiSettings: {
+            defaults: dedupeUiSettings(declared.flatMap(({ uiSettings }) => uiSettings ?? [])),
+            globalDefaults: dedupeUiSettings(
+              declared.flatMap(({ globalUiSettings }) => globalUiSettings ?? [])
+            ),
+          },
+        }
       : {}),
     // `alerting-rule-run`: the connector types of the plugins that own them. `workflow-steps`: the
     // steps and triggers of the plugins that register them. `agent-builder`: the tools, agents, skills
