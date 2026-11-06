@@ -29,7 +29,11 @@ export type {
 
 export { serializeCounterKey, USAGE_COUNTERS_SAVED_OBJECT_TYPE } from './usage_counters';
 
-export type { UsageCollectionSetup, UsageCollectionStart } from './plugin';
+export type {
+  UsageCollectionSetup,
+  UsageCollectionStart,
+  UsageCollectionTaskProcessSettings,
+} from './plugin';
 export { config } from './config';
 export const plugin = async (initializerContext: PluginInitializerContext) => {
   const { UsageCollectionPlugin } = await import('./plugin');

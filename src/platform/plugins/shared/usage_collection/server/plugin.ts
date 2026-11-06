@@ -23,7 +23,18 @@ import { CollectorSet } from './collector';
 import { UsageCountersService } from './usage_counters';
 
 /** Plugin's setup API **/
-export type UsageCollectionSetup = ICollectorSet & UsageCountersServiceSetup;
+export type UsageCollectionSetup = ICollectorSet &
+  UsageCountersServiceSetup & {
+    /**
+     * What a task process needs to count and store usage as Kibana does, read when a process starts.
+     */
+    getTaskProcessSettings: () => UsageCollectionTaskProcessSettings;
+  };
+
+/** The usage collection config a task process is sent, as plain data. */
+export interface UsageCollectionTaskProcessSettings {
+  usageCounters: { enabled: boolean; retryCount: number; bufferDurationMs: number };
+}
 
 /** Plugin's start API **/
 export type UsageCollectionStart = UsageCountersServiceStart;
@@ -74,6 +85,13 @@ export class UsageCollectionPlugin implements Plugin<UsageCollectionSetup, Usage
     });
 
     return {
+      getTaskProcessSettings: () => ({
+        usageCounters: {
+          enabled: config.usageCounters.enabled,
+          retryCount: config.usageCounters.retryCount,
+          bufferDurationMs: config.usageCounters.bufferDuration.asMilliseconds(),
+        },
+      }),
       // usage counters methods
       createUsageCounter: usageCountersSetup.createUsageCounter,
       getUsageCounterByDomainId: usageCountersSetup.getUsageCounterByDomainId,
