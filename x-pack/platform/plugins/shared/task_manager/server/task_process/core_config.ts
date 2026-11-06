@@ -118,6 +118,9 @@ export const buildCoreConfig = (
         },
       },
       root: { appenders: ['console'], level: process.env.TASK_PROCESS_LOG_LEVEL ?? 'warn' },
+      // Services report themselves unavailable while they start (the security plugin's status at
+      // error), which Kibana already logs for itself; a process that lives for one run says it every run.
+      loggers: [{ name: 'status', level: 'off' }],
     },
     ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings
       ? {

@@ -105,6 +105,9 @@ describe('buildCoreConfig', () => {
     try {
       const forked = buildCoreConfig(init(), {});
       expect((forked.settings.logging as Logging).appenders.console.layout.type).toBe('json');
+      expect((forked.settings.logging as { loggers: unknown }).loggers).toEqual([
+        { name: 'status', level: 'off' },
+      ]);
       forked.cleanup();
     } finally {
       delete process.env.TASK_PROCESS_LOG_LAYOUT;
