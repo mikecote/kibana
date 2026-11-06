@@ -15,6 +15,7 @@ import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/
 import type { ConcreteTaskInstance, RunResult } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
+import type { TaskProcessParity } from './parity';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -36,8 +37,15 @@ export interface TaskProcessInit {
   server?: TaskProcessServerInfo;
   /** Only when the module declares encrypted saved object types. */
   encryptedSavedObjects?: { encryptionKey?: string; decryptionOnlyKeys: string[] };
-  /** Core's `uiSettings.overrides`, only when the module declares ui settings. */
+  /** Kibana's `uiSettings.overrides`, only when the module declares ui settings. */
   uiSettingsOverrides?: Record<string, unknown>;
+  /** Kibana's `uiSettings.globalOverrides`, only when the module declares ui settings. */
+  uiSettingsGlobalOverrides?: Record<string, unknown>;
+  /**
+   * What Kibana has registered, which the process compares with what it registered itself before it
+   * runs anything (see `TaskTypeModule.parity`). Absent for a remote process.
+   */
+  parity?: TaskProcessParity;
   /** Plugin configs by plugin id in `serializeSettings` format; only the ids the module declares. */
   settings?: Record<string, SerializedValue>;
 }
@@ -45,8 +53,17 @@ export interface TaskProcessInit {
 export interface TaskProcessServerInfo {
   uuid: string;
   buildNum: number;
+  /**
+   * Kibana's `server.publicBaseUrl` as Core has it: absent when Kibana has none, so the links a run
+   * builds are empty exactly when Kibana's are. Never the address a process reaches Kibana at.
+   */
   publicBaseUrl?: string;
   isServerless: boolean;
+  /**
+   * Kibana's `server.basePath`, which Core requires a `publicBaseUrl` with a path to contain; the
+   * process serves nothing, so it is only there for that validation.
+   */
+  basePath?: string;
   /** Kibana runs from source, which loosens a few of Core's config checks. */
   isDev?: boolean;
 }

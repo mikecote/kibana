@@ -124,6 +124,7 @@ import { UnsecuredActionsClient } from './unsecured_actions_client/unsecured_act
 import { createBulkUnsecuredExecutionEnqueuerFunction } from './create_unsecured_execute_function';
 import { createSystemConnectors } from './create_system_actions';
 import { renderActionParameterTemplates } from './lib/render_action_parameter_templates';
+import type { ActionsTaskProcessSettings } from './task_types/task_process_settings';
 import { getInMemoryConnectorsFromConfig } from './lib/get_in_memory_connectors_from_config';
 import { ConnectorUsageReportingTask } from './usage/connector_usage_reporting_task';
 import { ConnectorRateLimiter } from './lib/connector_rate_limiter';
@@ -181,6 +182,12 @@ export interface PluginSetupContract {
    * sent it; it holds the secrets of preconfigured connectors, so never log it.
    */
   getConfig: () => ActionsConfig;
+  /**
+   * Only for Task Manager's task type modules: Kibana's final in-memory connectors, read when a run
+   * is dispatched, and the ids of the connector types registered so far. It holds the secrets of
+   * preconfigured connectors, so never log it.
+   */
+  getTaskProcessSettings: () => ActionsTaskProcessSettings & { connectorTypes: string[] };
   getRelayClient: () => RelayClientContract | undefined;
   setEnabledConnectorTypes: (connectorTypes: EnabledConnectorTypes) => void;
 
@@ -571,6 +578,10 @@ export class ActionsPlugin
       },
       getActionsConfigurationUtilities: () => actionsConfigUtils,
       getConfig: () => this.actionsConfig,
+      getTaskProcessSettings: () => ({
+        inMemoryConnectors: this.inMemoryConnectors,
+        connectorTypes: this.actionTypeRegistry?.getAllTypes() ?? [],
+      }),
       getRelayClient: () => this.relayClient,
       setEnabledConnectorTypes: (connectorTypes) => {
         if (

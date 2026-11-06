@@ -31,6 +31,7 @@ import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
 import { createHostFeatureFlags } from './run_context';
+import { createParityGuard } from './parity';
 import type { TaskProcessTaskManagerSetup } from './task_manager_task_plugin';
 
 interface SetupDeps {
@@ -84,6 +85,9 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
         );
       }
       (module.uiSettings?.defaults ?? []).forEach((defaults) => core.uiSettings.register(defaults));
+      (module.uiSettings?.globalDefaults ?? []).forEach((defaults) =>
+        core.uiSettings.registerGlobal(defaults)
+      );
 
       // The event types the runner reports; Core's analytics refuses an event it does not know.
       const eventTypes = new Set<string>();
@@ -110,8 +114,15 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
           new StandaloneSpacesExtension((request as { spaceId?: string })?.spaceId ?? 'default')
       );
 
+      // Before its first run the process proves it registered what Kibana did, or declines the run.
+      const parityGuard = createParityGuard({
+        hooks: module.parity,
+        expected: init.parity,
+        logger,
+        taskType: module.type,
+      });
       deps.taskManager.registerTaskDefinitions({
-        [module.type]: toTaskDefinition(module, () => hostPromise),
+        [module.type]: toTaskDefinition(module, () => hostPromise, parityGuard),
       });
     },
 

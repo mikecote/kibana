@@ -10,6 +10,7 @@ import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
+import { CONNECTOR_TYPES_PARITY_KIND } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
 import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
 import type { RunContext } from '@kbn/task-manager-plugin/server';
@@ -43,6 +44,7 @@ import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
 import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
+import { CONNECTOR_ADAPTERS_PARITY_KIND } from './parity_kinds';
 import type { RuleRunContribution } from './rule_run_contribution';
 
 export { ruleTaskParamsSchema };
@@ -118,6 +120,13 @@ export type RuleTypeSource =
   | { ruleType: UntypedNormalizedRuleType }
   /** A task process: how to build the rule type from the host, and its id without building it. */
   | { ruleTypeId: string; getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType };
+
+interface PreparedRuleRun {
+  runtime: RuleRunRuntime;
+  unsupportedActionTypes?: (ids: string[]) => string[];
+  connectorTypeIds?: () => string[];
+  connectorAdapterIds?: () => string[];
+}
 
 const createUrlService = (
   host: Pick<TaskHost, 'server'>,
@@ -202,13 +211,11 @@ export function createRuleTaskType(
     }
     return ruleType;
   };
-  let prepared:
-    | Promise<{ runtime: RuleRunRuntime; unsupportedActionTypes?: (ids: string[]) => string[] }>
-    | undefined;
+  let prepared: Promise<PreparedRuleRun> | undefined;
 
-  const prepare = (host: TaskHost) =>
+  const prepare = (host: TaskHost): Promise<PreparedRuleRun> =>
     (prepared ??= options.getRuntime
-      ? options.getRuntime().then((runtime) => ({ runtime }))
+      ? options.getRuntime().then((runtime): PreparedRuleRun => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
           ({ createStandaloneRuleRunRuntime }) => {
             urlService ??= createUrlService(host, options.locators, options.registerLocators);
@@ -231,16 +238,19 @@ export function createRuleTaskType(
             return {
               runtime: standalone.runtime,
               unsupportedActionTypes: standalone.getUnsupportedActionTypes,
+              connectorTypeIds: standalone.getRegisteredConnectorTypeIds,
+              connectorAdapterIds: standalone.getRegisteredConnectorAdapterIds,
             };
           }
         ));
 
   /**
    * A rule that uses a connector type or connector adapter this process does not know cannot be
-   * served here; saying so before anything is written lets Kibana run the rule instead.
+   * served here; saying so before anything is written lets Kibana run the rule instead. This is the
+   * check of one rule; `parity` below is the check, once per process, of everything Kibana has.
    */
   const declineIfUnsupported = async (
-    { runtime, unsupportedActionTypes }: Awaited<NonNullable<typeof prepared>>,
+    { runtime, unsupportedActionTypes }: PreparedRuleRun,
     context: RunContext
   ) => {
     if (!unsupportedActionTypes) return;
@@ -320,6 +330,18 @@ export function createRuleTaskType(
           licensing: true as const,
           usageCounters: true as const,
           settings: [...new Set(['alerting', 'actions', 'security', ...(options.settings ?? [])])],
+          // Kibana sends the connector types and adapters it registered; the process must have
+          // registered the same, or it declines the run: a rule would otherwise behave differently.
+          parity: [
+            {
+              kind: CONNECTOR_TYPES_PARITY_KIND,
+              getIds: async (host: TaskHost) => (await prepare(host)).connectorTypeIds?.() ?? [],
+            },
+            {
+              kind: CONNECTOR_ADAPTERS_PARITY_KIND,
+              getIds: async (host: TaskHost) => (await prepare(host)).connectorAdapterIds?.() ?? [],
+            },
+          ],
         }),
     createTaskRunner: (context, host): CancellableTask => {
       const runner = prepare(host).then(async (services) => {

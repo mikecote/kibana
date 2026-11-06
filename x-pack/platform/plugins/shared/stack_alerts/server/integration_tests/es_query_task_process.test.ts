@@ -32,6 +32,8 @@ import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/s
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import { createSystemConnectors } from '@kbn/actions-plugin/server/create_system_actions';
+import registeredConnectorIds from '@kbn/alerting-plugin/server/task_types/rule_run_connector_type_ids.json';
 import { taskType } from '../task_types/es_query.task';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -50,6 +52,20 @@ const RULE_ID = 'rule-1';
 const CASES_RULE_ID = 'rule-with-cases';
 const UNKNOWN_RULE_ID = 'rule-with-unknown-action';
 const CONNECTOR_ID = 'server-log-1';
+const DYNAMIC_CONNECTOR_ID = 'elastic-apps-slack';
+const DYNAMIC_RULE_ID = 'rule-with-dynamic-connector';
+const DYNAMIC_CONNECTOR = {
+  id: DYNAMIC_CONNECTOR_ID,
+  name: 'Elastic apps',
+  actionTypeId: '.server-log',
+  config: {},
+  secrets: {},
+  isDeprecated: false,
+  isConnectorTypeDeprecated: false,
+  isPreconfigured: true,
+  isSystemAction: false,
+  isDynamic: true,
+};
 const ALERTS_INDEX = '.alerts-stack.alerts-default';
 
 /**
@@ -68,6 +84,16 @@ describe('the .es-query rule type served from a bundle', () => {
     actions: actionsConfigSchema.validate({}),
     // What Kibana sends for the cases system action, which cases contributes to every rule run.
     cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
+    // Kibana's final in-memory connectors: its system connectors and one that a plugin registered
+    // while Kibana ran, which the config of the process does not have.
+    actionsConnectors: {
+      inMemoryConnectors: [
+        ...createSystemConnectors([
+          { id: '.cases', name: 'Cases', isSystemActionType: true } as never,
+        ]),
+        DYNAMIC_CONNECTOR,
+      ],
+    },
     // The security plugin's task plugin, which every rule run brings for the privileges of connectors.
     security: getSecurityTaskProcessSettings({
       config: createSecurityConfig(
@@ -80,12 +106,24 @@ describe('the .es-query rule type served from a bundle', () => {
     }),
   });
 
+  // Connector types Kibana registered that this process does not: set by a test to see the run declined.
+  let unregisteredConnectorTypes: string[] = [];
+
   const initFor = () => ({
     server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false },
     encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
     settings: Object.fromEntries(
       Object.entries(settings()).map(([id, config]) => [id, serializeSettings(config)])
     ) as never,
+    // What Kibana registered, which the process must have registered too (the list that plugins
+    // register is checked in next to the rule task type).
+    parity: [
+      {
+        kind: 'connectorTypes',
+        ids: [...registeredConnectorIds.connectorTypes, ...unregisteredConnectorTypes],
+      },
+      { kind: 'connectorAdapters', ids: registeredConnectorIds.connectorAdapters },
+    ],
   });
 
   const run = (ruleId: string, fallback?: jest.Mock) =>
@@ -211,7 +249,12 @@ describe('the .es-query rule type served from a bundle', () => {
       },
       { id: CONNECTOR_ID }
     );
-    const rule = (actionTypeId: string, params: Record<string, unknown>) => ({
+    const rule = (
+      actionTypeId: string,
+      params: Record<string, unknown>,
+      // An in-memory connector is not a saved object: the rule refers to it by its id, without a reference.
+      connector: Record<string, unknown> = { actionRef: 'action_0' }
+    ) => ({
       name: 'es query rule',
       tags: [],
       alertTypeId: '.es-query',
@@ -222,7 +265,7 @@ describe('the .es-query rule type served from a bundle', () => {
       actions: [
         {
           group: 'query matched',
-          actionRef: 'action_0',
+          ...connector,
           actionTypeId,
           params,
           uuid: 'action-uuid-1',
@@ -277,6 +320,15 @@ describe('the .es-query rule type served from a bundle', () => {
       'alert',
       rule('.cases', { subAction: 'run', subActionParams: {} }) as never,
       { id: CASES_RULE_ID, references }
+    );
+    await client.create(
+      'alert',
+      rule(
+        '.server-log',
+        { level: 'info', message: 'dynamic {{context.title}}' },
+        { actionRef: `preconfigured:${DYNAMIC_CONNECTOR_ID}` }
+      ) as never,
+      { id: DYNAMIC_RULE_ID, references: [] }
     );
     await client.create('alert', rule('.does-not-exist', {}) as never, {
       id: UNKNOWN_RULE_ID,
@@ -378,6 +430,35 @@ describe('the .es-query rule type served from a bundle', () => {
     const fallback = jest.fn();
     await run(CASES_RULE_ID, fallback);
     expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('enqueues the action of a connector that Kibana registered while it ran, as sent, not rebuilt from config', async () => {
+    const fallback = jest.fn();
+    await run(DYNAMIC_RULE_ID, fallback);
+    expect(fallback).not.toHaveBeenCalled();
+
+    await es.indices.refresh({ index: '.kibana_alerting_cases' });
+    const params = await es.search<{ action_task_params: { actionId: string } }>({
+      index: '.kibana_alerting_cases',
+      query: { term: { type: 'action_task_params' } },
+      size: 50,
+    });
+    expect(
+      params.hits.hits.filter(
+        (hit) => hit._source?.action_task_params.actionId === DYNAMIC_CONNECTOR_ID
+      )
+    ).toHaveLength(1);
+  });
+
+  it('declines every run, before anything is written, when Kibana registered a connector type the process lacks', async () => {
+    unregisteredConnectorTypes = ['.registered-after-the-bundle-was-built'];
+    try {
+      const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
+      await expect(run(RULE_ID, fallback)).resolves.toEqual({ state: { local: true } });
+      expect(fallback).toHaveBeenCalledTimes(1);
+    } finally {
+      unregisteredConnectorTypes = [];
+    }
   });
 
   it('declines a rule that uses an action type it does not know, so Kibana runs it', async () => {

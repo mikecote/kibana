@@ -102,7 +102,7 @@ task type hands over its own service for the same capability.
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects` | the real encrypted saved objects plugin, with the keys the process is sent | `hostExtensions.encryptedSavedObjects` |
 | `eventLog` | `eventLog` | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit | `hostExtensions.eventLog` |
 | `taskManager` | `taskManager` | writes `task` saved objects, only for `schedulableTypes` | Task Manager's start contract |
-| `uiSettings` | `uiSettings` | Core's, with the module's defaults registered | Core |
+| `uiSettings` | `uiSettings` | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core |
 | `licensing` | `licensing` | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares | the licensing plugin |
 | `usageCounters` | `usageCounters` | the usage collection plugin's own counters service, stored when the run ends | the usage collection plugin |
 | `settings: ['pluginId']` | `settings.pluginId` | the validated config Kibana sends | the getter passed to `registerTaskType` |
@@ -158,16 +158,40 @@ implementation and no copy to drift. Where something cannot exist in a process i
 A runner may throw `DeclinedRunError` when it cannot serve this run, such as a rule that uses a
 connector type the process does not know. The process answers `422`, and Kibana runs the task itself,
 as it does for a `404`. Decide before the run has side effects. It is a safety net: the contributions
-below register every connector type Kibana has, so it should not fire.
+below register every connector type Kibana has, and the parity guard below proves it, so it should not
+fire. Kibana logs every fallback with its reason (`TaskProcessFallbackCounter`, which also counts them in
+Task Manager's usage counter as `taskProcessFallback:<reason>:<taskType>`), so a decline can be alarmed on.
+
+### Parity with Kibana
+
+A module can prove that its process registered what Kibana did. `parity: [{ kind, getIds(host) }]` on the
+module says which ids the process registered for a kind (rule modules have `connectorTypes` and
+`connectorAdapters`); `parity: { kind: () => ids }` in the options of `registerTaskType` says which ids Kibana
+has. Kibana reads its side for every dispatch (a plugin can register a connector type at any time) and sends it
+in `init.parity`; the process compares once, before its first run, and when Kibana has ids it lacks it logs a
+warning that names them and declines every run. The per-rule check of `declineIfUnsupported` stays: it only
+looks at the connector types the rule uses.
+
+### Settings Kibana sends for every dispatch
+
+Besides the plugin configs in `settings`, Kibana reads at each dispatch what changes while it runs: its final
+in-memory connectors (`settings.actionsConnectors`: preconfigured connectors that did not conflict with a saved
+one, dynamic ones other plugins registered, system connectors, with their flags; it holds secrets, so never log
+it), its `uiSettings.overrides` and `uiSettings.globalOverrides` (read from Core's ui settings client, which
+reports the overridden settings) and its `server.publicBaseUrl` exactly as Core has it, with `server.basePath`
+only so that Core accepts a public base URL with a path. A process that has no public base URL builds no links,
+as Kibana does not.
 
 ### Remote processes
 
 A remote process reads the same things from its environment: `ES_URL` with `ES_API_KEY` or
 `ES_USERNAME` and `ES_PASSWORD`, `PORT`, `TASK_PROCESS_TOKEN`, `ESO_ENCRYPTION_KEY` and
 `ESO_DECRYPTION_ONLY_KEYS` (comma separated), `KIBANA_SERVER_UUID`, `KIBANA_BUILD_NUM`,
-`KIBANA_PUBLIC_BASE_URL`, `KIBANA_SERVERLESS`, `KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a
-JSON file `{ "settings": { "<pluginId>": <config> }, "uiSettingsOverrides": {} }` whose configs use the
-format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`).
+`KIBANA_PUBLIC_BASE_URL` (leave it unset when Kibana has none), `KIBANA_BASE_PATH`, `KIBANA_SERVERLESS`,
+`KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a JSON file `{ "settings": { "<pluginId>": <config> },
+"uiSettingsOverrides": {}, "uiSettingsGlobalOverrides": {}, "parity": [{ "kind": "...", "ids": [] }] }` whose
+configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`). A remote
+process is not sent the settings Kibana reads per dispatch, so it skips the parity check unless the file has `parity`.
 
 ## Bundles
 

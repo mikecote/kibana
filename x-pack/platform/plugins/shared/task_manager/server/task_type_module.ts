@@ -25,6 +25,7 @@ import type {
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
 import type { TaskManagerStartContract } from './plugin';
+import type { TaskTypeParityHook } from './task_process/parity';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
 
 export interface TaskHostEventLog {
@@ -110,7 +111,7 @@ export interface TaskHost {
   /** Declared with `taskManager`. */
   taskManager?: Pick<TaskManagerStartContract, 'schedule' | 'bulkSchedule' | 'aggregate'>;
   /** Declared with `uiSettings`. */
-  uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
+  uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient' | 'globalAsScopedToClient'>;
   /** Declared with `licensing`. */
   licensing?: {
     license$: Observable<ILicense>;
@@ -155,8 +156,15 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * (default: the `actions:` tasks that enqueue connectors).
    */
   taskManager?: true | { schedulableTypes?: RegExp[] };
-  /** Gives the runner `host.uiSettings`, with these defaults registered in a task process. */
-  uiSettings?: { defaults?: Array<Record<string, UiSettingsParams>> };
+  /**
+   * Gives the runner `host.uiSettings`, with these defaults registered in a task process: `defaults`
+   * as `core.uiSettings.register` takes them, `globalDefaults` as `registerGlobal` does (read with
+   * `host.uiSettings.globalAsScopedToClient`).
+   */
+  uiSettings?: {
+    defaults?: Array<Record<string, UiSettingsParams>>;
+    globalDefaults?: Array<Record<string, UiSettingsParams>>;
+  };
   /**
    * The analytics event types the runner reports, which Core's analytics requires to be registered
    * before an event is reported. A task process registers them; Kibana's plugins already have.
@@ -193,6 +201,13 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
     keys: string[];
     apply?: (contributions: Record<string, unknown[]>) => TaskTypeModule;
   };
+  /**
+   * How a task process proves it registered what Kibana did (connector types, say): for each kind,
+   * the ids it registered. Kibana sends what it has registered with every dispatch, and a process
+   * that lacks any id declines its runs (`DeclinedRunError`) with a warning that names them, instead
+   * of behaving differently. Kibana ignores it.
+   */
+  parity?: TaskTypeParityHook[];
   createTaskRunner: (context: RunContext, host: TaskHost) => CancellableTask;
 }
 
@@ -220,6 +235,11 @@ export interface TaskTypeRegistrationOptions {
    * the task process of this task type; the module it runs reads the ones it lists in `settings`.
    */
   settings?: Record<string, () => unknown>;
+  /**
+   * What this Kibana has registered, by kind, read when a run is dispatched to a process; the
+   * process compares it with what the module's `parity` hooks say it registered.
+   */
+  parity?: Record<string, () => string[]>;
 }
 
 /** Throws when a declared capability has no real service to hand to the module in Kibana. */
@@ -255,7 +275,9 @@ export const defineTaskType = (module: TaskTypeModule): TaskTypeModule => module
  */
 export const toTaskDefinition = (
   module: TaskTypeModule,
-  getHost: () => Promise<TaskHost>
+  getHost: () => Promise<TaskHost>,
+  /** Runs before every run, with the host; throwing (a `DeclinedRunError`, say) stops the run. */
+  beforeRun?: (host: TaskHost) => Promise<void>
 ): TaskRegisterDefinition => {
   const {
     type,
@@ -271,6 +293,7 @@ export const toTaskDefinition = (
     contributions,
     taskPlugins,
     featureFlags,
+    parity,
     createTaskRunner,
     ...definition
   } = module;
@@ -281,7 +304,9 @@ export const toTaskDefinition = (
       let cancelled = false;
       return {
         run: async () => {
-          created = createTaskRunner(context, await getHost());
+          const host = await getHost();
+          await beforeRun?.(host);
+          created = createTaskRunner(context, host);
           // Cancelled while the host was resolving: the run never starts.
           if (cancelled) await created.cancel?.();
           return created.run();

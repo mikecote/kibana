@@ -87,6 +87,7 @@ describe('createRuleTaskType', () => {
       expect(taskType.savedObjectTypes).toBeUndefined();
       expect(taskType.eventLog).toBeUndefined();
       expect(taskType.settings).toBeUndefined();
+      expect(taskType.parity).toBeUndefined();
     });
 
     it('runs the task runner with the runtime of the plugin', async () => {
@@ -116,6 +117,34 @@ describe('createRuleTaskType', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
       expect(taskType.type).toBe('alerting:test.rule');
       expect(getRuleType).not.toHaveBeenCalled();
+    });
+
+    it('says which connector types and adapters the process registered, for Kibana to compare', async () => {
+      const standalone = jest
+        .spyOn(
+          jest.requireActual('./standalone/create_standalone_rule_run_runtime'),
+          'createStandaloneRuleRunRuntime'
+        )
+        .mockReturnValue({
+          runtime: { alertsService: null },
+          fieldFormats: {},
+          getUnsupportedActionTypes: () => [],
+          getRegisteredConnectorTypeIds: () => ['.email', '.slack'],
+          getRegisteredConnectorAdapterIds: () => ['.cases'],
+          stop: jest.fn(),
+        } as never);
+      const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
+      const host = {
+        ...createRuleTypeHostMock(),
+        licensing: { license$: {} },
+      } as never;
+      const hooks = Object.fromEntries((taskType.parity ?? []).map((hook) => [hook.kind, hook]));
+      expect(Object.keys(hooks).sort()).toEqual(['connectorAdapters', 'connectorTypes']);
+      await expect(hooks.connectorTypes.getIds(host)).resolves.toEqual(['.email', '.slack']);
+      await expect(hooks.connectorAdapters.getIds(host)).resolves.toEqual(['.cases']);
+      // The runtime is built once for the process, however many things ask.
+      expect(standalone).toHaveBeenCalledTimes(1);
+      standalone.mockRestore();
     });
 
     it('declares what a rule run needs from the host', () => {

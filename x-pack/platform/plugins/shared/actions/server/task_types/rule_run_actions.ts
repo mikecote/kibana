@@ -37,6 +37,7 @@ import {
   ALERT_SAVED_OBJECT_TYPE,
 } from '../constants/saved_objects';
 import { createBulkExecutionEnqueuerFunction } from '../create_execute_function';
+import type { InMemoryConnector } from '../types';
 import { createSystemConnectors } from '../create_system_actions';
 import { ensureSufficientLicense } from '../lib/ensure_sufficient_license';
 import { getInMemoryConnectorsFromConfig } from '../lib/get_in_memory_connectors_from_config';
@@ -80,6 +81,13 @@ export interface RuleRunActionsDeps {
   logger: Logger;
   /** The validated actions config, as Kibana has it. */
   config: ActionsConfig;
+  /**
+   * Kibana's final in-memory connectors (see `ActionsTaskProcessSettings`). Without them, which only
+   * a process that was sent none has, they are rebuilt from the config, which cannot know what
+   * Kibana learned after it read it: conflicts with saved connectors and connectors other plugins
+   * registered.
+   */
+  inMemoryConnectors?: InMemoryConnector[];
   license$: Observable<ILicense>;
   elasticsearch: Pick<IClusterClient, 'asScoped' | 'asInternalUser'>;
   savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
@@ -129,6 +137,8 @@ export const createRuleRunActions = (
 ): {
   actionsPlugin: RuleRunActionsStart;
   hasActionType: (id: string) => boolean;
+  /** The ids of the connector types registered, for comparing with Kibana's. */
+  getActionTypeIds: () => string[];
   stop: () => void;
 } => {
   const { logger, config } = deps;
@@ -136,7 +146,11 @@ export const createRuleRunActions = (
   const licenseState = new LicenseState(deps.license$);
   // As the actions plugin does at start: using a licensed connector type is recorded.
   if (deps.featureUsage) licenseState.setNotifyUsage(deps.featureUsage.notifyUsage);
-  const inMemoryConnectors = getInMemoryConnectorsFromConfig(config, logger);
+  const sentConnectors = deps.inMemoryConnectors;
+  // A copy: connector types the process registers must not change what Kibana sent.
+  const inMemoryConnectors = sentConnectors
+    ? [...sentConnectors]
+    : getInMemoryConnectorsFromConfig(config, logger);
 
   const actionTypeRegistry = new ActionTypeRegistry({
     licensing: {
@@ -171,7 +185,9 @@ export const createRuleRunActions = (
     getClientLeasePool: () => clientLeasePool,
   };
   deps.registerConnectorTypes(setup, { publicBaseUrl: deps.publicBaseUrl });
-  inMemoryConnectors.push(...createSystemConnectors(actionTypeRegistry.list()));
+  // Kibana's list already holds its system connectors.
+  if (!sentConnectors)
+    inMemoryConnectors.push(...createSystemConnectors(actionTypeRegistry.list()));
 
   const authTypeRegistry = new AuthTypeRegistry();
   registerAuthTypes(authTypeRegistry);
@@ -286,6 +302,7 @@ export const createRuleRunActions = (
         ),
     },
     hasActionType: (id) => actionTypeRegistry.has(id),
+    getActionTypeIds: () => actionTypeRegistry.getAllTypes(),
     stop: () => {
       licenseState.clean();
       clientLeasePool.stop();

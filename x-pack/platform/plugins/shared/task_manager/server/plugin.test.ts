@@ -369,6 +369,103 @@ describe('TaskManagerPlugin', () => {
     });
   });
 
+  describe('what a task process is sent', () => {
+    const setupWithModule = (startServices: Record<string, unknown>) => {
+      const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
+        ...pluginInitializerContextParams,
+        task_execution: { mode: 'child_process' },
+      } as TaskManagerConfig);
+      pluginInitializerContext.node.roles.backgroundTasks = true;
+      const core = coreMock.createSetup();
+      (core.elasticsearch.legacy as { config$: unknown }).config$ = of({
+        hosts: ['http://es:9200'],
+        customHeaders: {},
+        requestHeadersWhitelist: [],
+        idleSocketTimeout: moment.duration(1000),
+        dnsCacheTtl: moment.duration(1000),
+        requestTimeout: moment.duration(1000),
+        sniffInterval: false,
+        ssl: { verificationMode: 'full' },
+      });
+      core.getStartServices.mockResolvedValue([
+        { ...coreStart, ...startServices },
+        {},
+        {},
+      ] as never);
+      (core.http.basePath as { publicBaseUrl?: string }).publicBaseUrl = undefined;
+      let connectorTypes = ['.email'];
+      const plugin = new TaskManagerPlugin(pluginInitializerContext);
+      const setup = plugin.setup(core, { usageCollection: undefined });
+      setup.registerTaskType(
+        defineTaskType({
+          type: 'test:module',
+          createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+        }),
+        {
+          settings: { connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }) },
+          parity: { connectorTypes: () => connectorTypes },
+        }
+      );
+      plugin.start(coreStart, {
+        cloud: cloudMock.createStart(),
+        licensing: licensingMock.createStart(),
+      });
+      const { getInitFor } = (TaskProcessSupervisor as unknown as jest.Mock).mock.calls.at(-1)[0]
+        .settings;
+      return { getInitFor, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
+    };
+
+    const uiSettingsStart = (
+      overrides: Record<string, unknown>,
+      globalOverrides: Record<string, unknown>
+    ) => {
+      const scoped = (values: Record<string, unknown>) => ({
+        getUserProvided: jest.fn().mockResolvedValue({
+          // Overrides, a null override, and a value a user saved that is not an override.
+          ...Object.fromEntries(
+            Object.entries(values).map(([key, value]) => [
+              key,
+              value === null ? { isOverridden: true } : { isOverridden: true, userValue: value },
+            ])
+          ),
+          saved: { userValue: 'from the saved object' },
+        }),
+      });
+      return {
+        uiSettings: {
+          asScopedToClient: jest.fn().mockReturnValue(scoped(overrides)),
+          globalAsScopedToClient: jest.fn().mockReturnValue(scoped(globalOverrides)),
+        },
+      };
+    };
+
+    test("sends Kibana's ui settings overrides and what it registered, read for each run", async () => {
+      const { getInitFor, setConnectorTypes } = setupWithModule(
+        uiSettingsStart({ 'dateFormat:tz': 'UTC', removed: null }, { 'global:flag': true })
+      );
+
+      const first = await getInitFor('test:module');
+      expect(first.uiSettingsOverrides).toEqual({ 'dateFormat:tz': 'UTC', removed: null });
+      expect(first.uiSettingsGlobalOverrides).toEqual({ 'global:flag': true });
+      expect(first.parity).toEqual([{ kind: 'connectorTypes', ids: ['.email'] }]);
+      expect(first.settings.connectors).toEqual({
+        list: [{ id: 'dynamic', secrets: { token: 't' } }],
+      });
+
+      // A connector type registered later is in the next run's parity.
+      setConnectorTypes(['.email', '.later']);
+      expect((await getInitFor('test:module')).parity).toEqual([
+        { kind: 'connectorTypes', ids: ['.email', '.later'] },
+      ]);
+    });
+
+    test('sends the public base URL as Core has it: none when Kibana has none', async () => {
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}));
+      const init = await getInitFor('test:module');
+      expect(init.server.publicBaseUrl).toBeUndefined();
+    });
+  });
+
   describe('start', () => {
     test('should initialize task polling lifecycle if node.roles.backgroundTasks is true', async () => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>(

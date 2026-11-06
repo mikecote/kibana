@@ -44,6 +44,25 @@ describe('toTaskDefinition', () => {
     expect(createTaskRunner).toHaveBeenCalledWith(context, resolved);
   });
 
+  it('does not hand the parity hooks to the definition, and stops a run the guard refuses', async () => {
+    const createTaskRunner = jest.fn().mockReturnValue({ run: async () => undefined });
+    const definition = toTaskDefinition(
+      defineTaskType({
+        type: 'test:one',
+        title: 'One',
+        parity: [{ kind: 'connectorTypes', getIds: () => [] }],
+        createTaskRunner,
+      }),
+      async () => host(),
+      async () => {
+        throw new Error('declined');
+      }
+    );
+    expect(definition).not.toHaveProperty('parity');
+    await expect(definition.createTaskRunner(context).run()).rejects.toThrow('declined');
+    expect(createTaskRunner).not.toHaveBeenCalled();
+  });
+
   it('cancels a run that was cancelled before the host resolved', async () => {
     const cancel = jest.fn();
     const run = jest.fn();

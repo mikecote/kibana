@@ -8,6 +8,7 @@
 import { Agent } from 'undici';
 import type { CancellableTask, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
+import type { TaskProcessFallbackReason } from './fallback_counter';
 import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 
@@ -36,6 +37,8 @@ export interface TaskProcessDispatch {
   kibanaVersion: string;
   /** The values of the feature flags a task type declares, for the run being dispatched. */
   getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
+  /** Called when Kibana runs a task itself because its process could not (see `TaskProcessFallbackCounter`). */
+  onFallback?: (taskType: string, reason: TaskProcessFallbackReason, detail?: string) => void;
 }
 
 const authHeaders = (address: TaskProcessAddress): Record<string, string> =>
@@ -91,6 +94,8 @@ export class RemoteTaskRunner implements CancellableTask {
        * example a connector type that needs privileges only Kibana can check.
        */
       fallback?: () => CancellableTask;
+      /** Told when the fallback runs, and why. */
+      onFallback?: TaskProcessDispatch['onFallback'];
       fetchFn?: typeof fetch;
     }
   ) {}
@@ -110,6 +115,11 @@ export class RemoteTaskRunner implements CancellableTask {
       } catch (error) {
         // The process cannot be started: Kibana runs the task itself, as it always can.
         if (this.params.fallback) {
+          this.params.onFallback?.(
+            request.taskType,
+            'unavailable',
+            `the process could not be started: ${(error as Error).message}`
+          );
           this.local = this.params.fallback();
           return await this.local.run();
         }
@@ -143,13 +153,26 @@ export class RemoteTaskRunner implements CancellableTask {
         );
       }
       if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined);
+        // A process that declines says why, which is what to alarm on.
+        let reason: string | undefined;
+        if (response.status === DECLINED_STATUS) {
+          reason = (
+            (await response.json().catch(() => undefined)) as { reason?: string } | undefined
+          )?.reason;
+        } else {
+          await response.body?.cancel().catch(() => undefined);
+        }
         const message = `Task process ${address.url} responded ${response.status} to /run`;
         // The process does not serve this task type: run it here when we can.
         if (
           (response.status === 404 || response.status === DECLINED_STATUS) &&
           this.params.fallback
         ) {
+          this.params.onFallback?.(
+            request.taskType,
+            response.status === DECLINED_STATUS ? 'declined' : 'not_served',
+            reason
+          );
           this.local = this.params.fallback();
           return await this.local.run();
         }

@@ -113,6 +113,40 @@ describe('TaskProcessSupervisor', () => {
     );
   });
 
+  it('reads what Kibana has now before it starts the process, and starts none when that fails', async () => {
+    const getInitFor = jest
+      .fn()
+      .mockResolvedValueOnce({ parity: [{ kind: 'connectorTypes', ids: ['.email'] }] })
+      .mockRejectedValueOnce(new Error('cannot read the overrides'));
+    const forkFn = jest.fn(() => new FakeChild());
+    const supervisor = new TaskProcessSupervisor({
+      settings: {
+        bundle_dir: createBundleDir(),
+        kibanaVersion: '9.9.9',
+        getElasticsearchConfig: () => ({ hosts: ['http://es:9200'] } as never),
+        getInitFor,
+      },
+      logger: loggingSystemMock.createLogger(),
+      forkFn: forkFn as never,
+    });
+    supervisor.start();
+    const route = supervisor.getRoute('alerting_v2:cleanup') as {
+      acquire: () => Promise<TaskProcessLease>;
+    };
+
+    const first = route.acquire();
+    await new Promise((resolve) => setImmediate(resolve));
+    const child = forkFn.mock.results[0].value as FakeChild;
+    expect(child.send).toHaveBeenCalledWith(
+      expect.objectContaining({ parity: [{ kind: 'connectorTypes', ids: ['.email'] }] })
+    );
+    child.emit('message', { kind: 'ready', port: 1 });
+    await first;
+
+    await expect(route.acquire()).rejects.toThrow('cannot read the overrides');
+    expect(forkFn).toHaveBeenCalledTimes(1);
+  });
+
   it('gives each run a process of its own and stops it when the run ends', async () => {
     const { supervisor, children, forkFn, acquire, ready } = setup();
     supervisor.start();

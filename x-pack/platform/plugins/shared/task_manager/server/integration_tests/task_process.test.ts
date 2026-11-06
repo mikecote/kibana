@@ -22,12 +22,20 @@ import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import type { Client } from '@elastic/elasticsearch';
 import { elasticsearchConfigFromEnv } from '../task_process/es_config';
 import { RemoteTaskRunner } from '../task_process/remote_task_runner';
+import type { TaskProcessLease } from '../task_process/remote_task_runner';
 import { TaskProcessSupervisor } from '../task_process/supervisor';
 import { backgroundTaskNodeMapping, taskMappings } from '../saved_objects/mappings';
 import {
   BACKGROUND_TASK_NODE_SO_NAME,
   backgroundTaskNodeType,
 } from '../saved_objects/background_task_node_type';
+import type { TaskProcessInit } from '../task_process/wire';
+import {
+  GLOBAL_UI_SETTING,
+  PLUMBING_PARITY_KIND,
+  PLUMBING_TASK_TYPE,
+  UI_SETTING,
+} from './fixtures/settings_plumbing.task';
 import { retry } from './lib';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -199,5 +207,139 @@ describe('task types served from bundles', () => {
     await expect(
       es.exists({ index: INDEX, id: `${BACKGROUND_TASK_NODE_SO_NAME}:active` })
     ).resolves.toBe(true);
+  });
+
+  describe('what Kibana sends a process besides the run', () => {
+    type Init = Partial<
+      Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>
+    >;
+    let plumbing: TaskProcessSupervisor;
+    // What Kibana would send for the next run: it reads it for each one.
+    let init: Init = {};
+    const server = {
+      uuid: '5b2de169-2785-441b-ae8c-186a1936b17d',
+      buildNum: 1,
+      isServerless: false,
+    };
+
+    beforeAll(async () => {
+      // The config saved objects the ui settings client reads; Kibana's migrator creates them.
+      await es.indices.create({
+        index: `.kibana_${KIBANA_VERSION}_001`,
+        aliases: { '.kibana': {}, [`.kibana_${KIBANA_VERSION}`]: {} },
+        mappings: { dynamic: false, properties: { type: { type: 'keyword' } } },
+      });
+      const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+      const built = await buildTaskBundle({
+        entry: {
+          pluginId: 'taskManager',
+          name: 'taskManager__settings_plumbing',
+          file: join(__dirname, 'fixtures/settings_plumbing.task.ts'),
+        },
+        outDir: bundleDir,
+      });
+      writeFileSync(
+        join(bundleDir, 'manifest.json'),
+        JSON.stringify({
+          bundles: { [built.name]: { file: `${built.name}.js`, taskType: PLUMBING_TASK_TYPE } },
+        })
+      );
+      plumbing = new TaskProcessSupervisor({
+        settings: {
+          bundle_dir: bundleDir,
+          kibanaVersion: KIBANA_VERSION,
+          getElasticsearchConfig: () =>
+            elasticsearchConfigFromEnv({
+              ES_URL: esServer.hosts[0],
+              ES_USERNAME: esServer.username,
+              ES_PASSWORD: esServer.password,
+            }),
+          getInitFor: async () => init,
+        },
+        logger: loggingSystemMock.createLogger(),
+      });
+      plumbing.start();
+    });
+
+    afterAll(async () => {
+      await plumbing?.stop();
+    });
+
+    const runPlumbing = async () => {
+      const route = plumbing.getRoute(PLUMBING_TASK_TYPE) as {
+        acquire: () => Promise<TaskProcessLease>;
+      };
+      const lease = await route.acquire();
+      try {
+        const response = await undiciFetch(`${lease.url}/run`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${lease.token}` },
+          body: JSON.stringify({
+            taskType: PLUMBING_TASK_TYPE,
+            taskInstance: { id: 'plumbing', taskType: PLUMBING_TASK_TYPE, params: {}, state: {} },
+            executionUuid: `plumbing-${Date.now()}`,
+            kibanaVersion: KIBANA_VERSION,
+          }),
+        });
+        return {
+          status: response.status,
+          body: (await response.json()) as { result: { state: Record<string, unknown> } } & Record<
+            string,
+            unknown
+          >,
+        };
+      } finally {
+        lease.release();
+      }
+    };
+
+    it('registers the defaults of a ui setting and a global ui setting for the module', async () => {
+      init = { server };
+      const { status, body } = await runPlumbing();
+      expect(status).toBe(200);
+      expect(body.result.state).toEqual({
+        setting: 'default',
+        globalSetting: 'global default',
+        // Kibana has no public base URL, so the process has none: links are empty exactly as in Kibana.
+        publicBaseUrl: null,
+      });
+    });
+
+    it('gives the module the ui settings overrides and global overrides of Kibana', async () => {
+      init = {
+        server,
+        uiSettingsOverrides: { [UI_SETTING]: 'overridden' },
+        uiSettingsGlobalOverrides: { [GLOBAL_UI_SETTING]: 'globally overridden' },
+      };
+      const { status, body } = await runPlumbing();
+      expect(status).toBe(200);
+      expect(body.result.state).toEqual(
+        expect.objectContaining({ setting: 'overridden', globalSetting: 'globally overridden' })
+      );
+    });
+
+    it('has the public base URL Kibana has, as it has it', async () => {
+      init = {
+        // A path in the public base URL needs Kibana's base path, which Core validates it against.
+        server: { ...server, publicBaseUrl: 'https://kibana.example.com/kbn', basePath: '/kbn' },
+      };
+      const { body } = await runPlumbing();
+      expect(body.result.state.publicBaseUrl).toBe('https://kibana.example.com/kbn');
+    });
+
+    it('runs when the process registered everything Kibana did', async () => {
+      init = { server, parity: [{ kind: PLUMBING_PARITY_KIND, ids: ['a'] }] };
+      expect((await runPlumbing()).status).toBe(200);
+    });
+
+    it('declines the run, naming what is missing, when Kibana has registered more', async () => {
+      init = { server, parity: [{ kind: PLUMBING_PARITY_KIND, ids: ['a', 'registered-later'] }] };
+      const { status, body } = await runPlumbing();
+      expect(status).toBe(422);
+      expect(body).toEqual({
+        kind: 'declined',
+        reason: expect.stringContaining(`${PLUMBING_PARITY_KIND} [registered-later]`),
+      });
+    });
   });
 });

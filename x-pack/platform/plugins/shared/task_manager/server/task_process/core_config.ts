@@ -100,6 +100,7 @@ export const buildCoreConfig = (
       autoListen: false,
       port: 0,
       ...(init.server?.uuid ? { uuid: init.server.uuid } : {}),
+      ...(init.server?.basePath ? { basePath: init.server.basePath } : {}),
       ...(init.server?.publicBaseUrl ? { publicBaseUrl: init.server.publicBaseUrl } : {}),
     },
     // Kibana owns the saved object indices and the data streams; a run only reads and writes documents.
@@ -111,8 +112,13 @@ export const buildCoreConfig = (
       appenders: { console: { type: 'console', layout: { type: 'pattern' } } },
       root: { appenders: ['console'], level: process.env.TASK_PROCESS_LOG_LEVEL ?? 'warn' },
     },
-    ...(init.uiSettingsOverrides || module.uiSettings
-      ? { uiSettings: { overrides: init.uiSettingsOverrides ?? {} } }
+    ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings
+      ? {
+          uiSettings: {
+            overrides: init.uiSettingsOverrides ?? {},
+            globalOverrides: init.uiSettingsGlobalOverrides ?? {},
+          },
+        }
       : {}),
     ...(keys || uiam
       ? {

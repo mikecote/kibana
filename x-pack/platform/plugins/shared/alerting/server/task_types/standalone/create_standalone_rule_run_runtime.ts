@@ -20,6 +20,10 @@ import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import { ACTIONS_FEATURE_ID } from '@kbn/actions-plugin/common';
 import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import { EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER } from '@kbn/actions-plugin/server/constants/event_log';
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  type ActionsTaskProcessSettings,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
 import { AlertsService } from '../../alerts_service/alerts_service';
 import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
@@ -79,6 +83,9 @@ export const createStandaloneRuleRunRuntime = ({
   fieldFormats: ReturnType<typeof createStandaloneFieldFormats>;
   /** The action types a rule would use that this process cannot enqueue. */
   getUnsupportedActionTypes: (actionTypeIds: string[]) => string[];
+  /** The ids of the connector types and connector adapters this process registered. */
+  getRegisteredConnectorTypeIds: () => string[];
+  getRegisteredConnectorAdapterIds: () => string[];
   stop: () => void;
 } => {
   const settings = host.settings ?? {};
@@ -145,9 +152,14 @@ export const createStandaloneRuleRunRuntime = ({
   const connectorAdapterRegistry = new ConnectorAdapterRegistry();
   connectorAdapters.forEach((adapter) => connectorAdapterRegistry.register(adapter));
 
-  const { actionsPlugin, hasActionType, stop } = createRuleRunActions({
+  // Kibana's connectors as it has them now, not rebuilt from the config.
+  const sentConnectors = settings[ACTIONS_CONNECTORS_SETTINGS_ID] as
+    | ActionsTaskProcessSettings
+    | undefined;
+  const { actionsPlugin, hasActionType, getActionTypeIds, stop } = createRuleRunActions({
     logger: host.logger.get('plugins', 'actions'),
     config: actionsConfig,
+    inMemoryConnectors: sentConnectors?.inMemoryConnectors,
     license$: host.licensing!.license$,
     usageCounter: actionsUsageCounter,
     featureUsage: host.licensing!.featureUsage,
@@ -248,6 +260,8 @@ export const createStandaloneRuleRunRuntime = ({
   return {
     runtime,
     fieldFormats,
+    getRegisteredConnectorTypeIds: getActionTypeIds,
+    getRegisteredConnectorAdapterIds: () => connectorAdapterRegistry.getIds(),
     getUnsupportedActionTypes: (actionTypeIds) =>
       actionTypeIds.filter((id) => !hasActionType(id) && !connectorAdapterRegistry.has(id)),
     stop: () => {

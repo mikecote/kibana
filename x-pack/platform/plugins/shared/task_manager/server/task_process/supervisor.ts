@@ -28,7 +28,9 @@ export interface TaskProcessSettings {
   /** What else a task type's process needs, such as the keys and plugin settings it declared. */
   getInitFor?: (
     taskType: string
-  ) => Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>;
+  ) =>
+    | Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>
+    | Promise<Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>>;
 }
 
 const READY_TIMEOUT_MS = 30_000;
@@ -96,6 +98,12 @@ export class TaskProcessSupervisor {
   private async acquire(bundle: Bundle): Promise<TaskProcessLease> {
     if (this.stopping) throw new Error('Kibana is shutting down');
     const { settings, logger, forkFn = fork } = this.params;
+    // What Kibana has right now (its connectors, say), read before the process exists, so a failure
+    // to read it leaves nothing running.
+    const initOrPromise = settings.getInitFor?.(bundle.taskType);
+    // Only what is asynchronous waits, so a process of settings known now starts at once.
+    const init = initOrPromise instanceof Promise ? await initOrPromise : initOrPromise;
+    if (this.stopping) throw new Error('Kibana is shutting down');
     const child = forkFn(bundle.file, [], {
       env: { ...process.env, PORT: '0' },
       // Logs go straight to Kibana's console; the fork channel carries the settings and readiness.
@@ -122,7 +130,7 @@ export class TaskProcessSupervisor {
       });
       child.send({
         kind: 'init',
-        ...settings.getInitFor?.(bundle.taskType),
+        ...init,
         elasticsearch: settings.getElasticsearchConfig(),
         kibanaVersion: settings.kibanaVersion,
         authToken: this.token,

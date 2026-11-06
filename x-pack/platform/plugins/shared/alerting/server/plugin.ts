@@ -48,6 +48,11 @@ import type {
   PluginSetupContract as ActionsPluginSetupContract,
   PluginStartContract as ActionsPluginStartContract,
 } from '@kbn/actions-plugin/server';
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  CONNECTOR_TYPES_PARITY_KIND,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
+import type { ActionsTaskProcessSettings } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type {
   IEventLogger,
   IEventLogService,
@@ -63,6 +68,7 @@ import type {
   WorkflowsExtensionsServerPluginSetup,
   WorkflowsExtensionsServerPluginStart,
 } from '@kbn/workflows-extensions/server';
+import { CONNECTOR_ADAPTERS_PARITY_KIND } from './task_types/parity_kinds';
 import { ApiKeyType } from './task_runner/types';
 import { AsyncDomainEventBus } from './lib/events/event_bus';
 import type {
@@ -271,6 +277,16 @@ export class AlertingPlugin {
   private readonly taskProcessSettings: Record<string, () => unknown> = {
     alerting: () => this.config,
     actions: () => this.actionsSetup!.getConfig(),
+    // Kibana's final connectors, rather than the process rebuilding them from the config.
+    [ACTIONS_CONNECTORS_SETTINGS_ID]: (): ActionsTaskProcessSettings => ({
+      inMemoryConnectors: this.actionsSetup!.getTaskProcessSettings().inMemoryConnectors,
+    }),
+  };
+  /** What this Kibana has registered, which a task process of a rule type must have registered too. */
+  private readonly taskProcessParity: Record<string, () => string[]> = {
+    [CONNECTOR_TYPES_PARITY_KIND]: () =>
+      this.actionsSetup?.getTaskProcessSettings().connectorTypes ?? [],
+    [CONNECTOR_ADAPTERS_PARITY_KIND]: () => this.connectorAdapterRegistry.getIds(),
   };
   private actionsSetup?: AlertingPluginsSetup['actions'];
   private alertsService: AlertsService | null;
@@ -451,6 +467,7 @@ export class AlertingPlugin {
           getEncryptionKeys: () => plugins.encryptedSavedObjects.getKeysForTaskProcesses(),
         },
         settings: this.taskProcessSettings,
+        parity: this.taskProcessParity,
       },
     });
     this.ruleTypeRegistry = ruleTypeRegistry;

@@ -572,6 +572,7 @@ export class TaskManagerRunner implements TaskRunner {
               // A process that cannot be started, or does not serve this type, leaves the run to
               // this process.
               fallback: runInThisProcess,
+              onFallback: this.taskProcessDispatch.onFallback,
             });
           } else {
             this.task = runInThisProcess();

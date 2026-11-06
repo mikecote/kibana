@@ -10,7 +10,7 @@ import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
 import type { ILicense } from '@kbn/licensing-types';
-import type { ActionType } from '../types';
+import type { ActionType, InMemoryConnector } from '../types';
 import { configSchema } from '../config';
 import { createRuleRunActions } from './rule_run_actions';
 
@@ -88,6 +88,58 @@ describe('createRuleRunActions', () => {
     });
     expect(actionsPlugin.isSystemActionConnector('my-log')).toBe(false);
     expect(actionsPlugin.isSystemActionConnector('nothing')).toBe(false);
+    stop();
+  });
+
+  describe('the in-memory connectors Kibana sent', () => {
+    const dynamic: InMemoryConnector = {
+      id: 'elastic-apps-slack',
+      name: 'Elastic apps',
+      actionTypeId: '.server-log',
+      config: {},
+      secrets: {},
+      isPreconfigured: true,
+      isDeprecated: false,
+      isConnectorTypeDeprecated: false,
+      isSystemAction: false,
+      isDynamic: true,
+    };
+
+    it('uses a connector another plugin registered in Kibana, which the config does not have', () => {
+      // `.server-log` is not enabled, so only a preconfigured connector may use it.
+      const config = { enabledActionTypes: ['.index'] };
+      const fromConfig = create(config);
+      expect(fromConfig.actionsPlugin.isActionExecutable('elastic-apps-slack', '.server-log')).toBe(
+        false
+      );
+      fromConfig.stop();
+
+      const sent = create(config, { inMemoryConnectors: [dynamic] });
+      expect(sent.actionsPlugin.isActionExecutable('elastic-apps-slack', '.server-log')).toBe(true);
+      expect(sent.actionsPlugin.isActionExecutable('another', '.server-log')).toBe(false);
+      sent.stop();
+    });
+
+    it('takes the list as it is: neither the config nor the system actions are added to it', () => {
+      const { actionsPlugin, stop } = create(
+        { preconfigured: { 'my-log': { name: 'log', actionTypeId: '.server-log' } } },
+        { inMemoryConnectors: [{ ...dynamic, isSystemAction: true, isPreconfigured: false }] }
+      );
+      expect(actionsPlugin.isSystemActionConnector('elastic-apps-slack')).toBe(true);
+      expect(actionsPlugin.isActionExecutable('my-log', '.server-log')).toBe(true);
+      stop();
+    });
+
+    it('does not change the list it was given when it registers connector types', () => {
+      const sent = [dynamic];
+      create({}, { inMemoryConnectors: sent }).stop();
+      expect(sent).toEqual([dynamic]);
+    });
+  });
+
+  it('lists the ids of the connector types it registered', () => {
+    const { getActionTypeIds, stop } = create();
+    expect(getActionTypeIds()).toEqual(['.server-log']);
     stop();
   });
 

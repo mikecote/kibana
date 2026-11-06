@@ -43,6 +43,7 @@ const createSetupMock = () => {
     getActionsHealth: jest.fn(),
     getActionsConfigurationUtilities: jest.fn().mockReturnValue(actionsConfigMock.create()),
     getConfig: jest.fn(),
+    getTaskProcessSettings: jest.fn(),
     getRelayClient: jest.fn(),
     setEnabledConnectorTypes: jest.fn(),
     isActionTypeEnabled: jest.fn(),
