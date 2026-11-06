@@ -35,6 +35,9 @@ export const createUsageCollectionSetupMock = () => {
   const usageCollectionSetupMock: jest.Mocked<UsageCollectionSetup> = lazyObject({
     createUsageCounter,
     getUsageCounterByDomainId,
+    getTaskProcessSettings: jest.fn().mockReturnValue({
+      usageCounters: { enabled: true, retryCount: 3, bufferDurationMs: 5000 },
+    }),
     bulkFetch: jest.fn().mockImplementation(collectorSet.bulkFetch),
     getCollectorByType: jest.fn().mockImplementation(collectorSet.getCollectorByType),
     toApiFieldNames: jest.fn().mockImplementation(collectorSet.toApiFieldNames),

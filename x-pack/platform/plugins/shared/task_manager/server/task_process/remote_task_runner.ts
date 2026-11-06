@@ -6,10 +6,12 @@
  */
 
 import { Agent } from 'undici';
-import type { CancellableTask, RunResult } from '../task';
+import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
+import { TaskProcessAcquireError } from './acquire_error';
+import type { TaskProcessFallbackReason } from './fallback_counter';
 import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
-import type { TaskProcessRunRequest, TaskProcessRunResponse, TaskProcessTelemetry } from './wire';
+import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 
 /** Where a run goes: its address, and the bearer token the process requires. */
 export interface TaskProcessAddress {
@@ -26,7 +28,9 @@ export interface TaskProcessLease extends TaskProcessAddress {
  * A remote process Kibana reaches at a fixed address, or a process Kibana starts when a run needs it:
  * `acquire` starts it if it is not running, and rejects if it cannot be started.
  */
-export type TaskProcessRoute = TaskProcessAddress | { acquire: () => Promise<TaskProcessLease> };
+export type TaskProcessRoute =
+  | TaskProcessAddress
+  | { acquire: (context?: { executionUuid?: string }) => Promise<TaskProcessLease> };
 
 /** Where a task type runs when it is not run in this process. */
 export interface TaskProcessDispatch {
@@ -36,8 +40,8 @@ export interface TaskProcessDispatch {
   kibanaVersion: string;
   /** The values of the feature flags a task type declares, for the run being dispatched. */
   getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
-  /** Sends on what a run reported that only this Kibana can send: analytics, feature usage, plugin channels. */
-  reportTelemetry?: (telemetry: TaskProcessTelemetry) => void;
+  /** Called when Kibana runs a task itself because its process could not (see `TaskProcessFallbackCounter`). */
+  onFallback?: (taskType: string, reason: TaskProcessFallbackReason, detail?: string) => void;
 }
 
 const authHeaders = (address: TaskProcessAddress): Record<string, string> =>
@@ -88,17 +92,20 @@ export class RemoteTaskRunner implements CancellableTask {
       /** Aborted when Task Manager cancels the run. */
       signal?: AbortSignal;
       setCustomTaskRunEventFields: (fields: Record<string, unknown>) => void;
-      /** Receives what the run reported, whether it returned or threw. */
-      reportTelemetry?: (telemetry: TaskProcessTelemetry) => void;
       /**
        * Runs the task in this process instead. Used when the process does not serve the task type, for
        * example a connector type that needs privileges only Kibana can check.
        */
       fallback?: () => CancellableTask;
+      /** Told when the fallback runs, and why. */
+      onFallback?: TaskProcessDispatch['onFallback'];
+      /** What the task type counts in Kibana's memory of the runs a process served. */
+      observer?: RemoteRunObserver;
       fetchFn?: typeof fetch;
     }
   ) {}
 
+  private cancelled = false;
   private local?: CancellableTask;
   private target?: TaskProcessAddress;
 
@@ -110,10 +117,15 @@ export class RemoteTaskRunner implements CancellableTask {
     let address: TaskProcessAddress;
     if ('acquire' in route) {
       try {
-        lease = await route.acquire();
+        lease = await route.acquire({ executionUuid: request.executionUuid });
       } catch (error) {
         // The process cannot be started: Kibana runs the task itself, as it always can.
         if (this.params.fallback) {
+          this.params.onFallback?.(
+            request.taskType,
+            error instanceof TaskProcessAcquireError ? error.reason : 'unavailable',
+            `the process could not be started: ${(error as Error).message}`
+          );
           this.local = this.params.fallback();
           return await this.local.run();
         }
@@ -147,13 +159,26 @@ export class RemoteTaskRunner implements CancellableTask {
         );
       }
       if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined);
+        // A process that declines says why, which is what to alarm on.
+        let reason: string | undefined;
+        if (response.status === DECLINED_STATUS) {
+          reason = (
+            (await response.json().catch(() => undefined)) as { reason?: string } | undefined
+          )?.reason;
+        } else {
+          await response.body?.cancel().catch(() => undefined);
+        }
         const message = `Task process ${address.url} responded ${response.status} to /run`;
         // The process does not serve this task type: run it here when we can.
         if (
           (response.status === 404 || response.status === DECLINED_STATUS) &&
           this.params.fallback
         ) {
+          this.params.onFallback?.(
+            request.taskType,
+            response.status === DECLINED_STATUS ? 'declined' : 'not_served',
+            reason
+          );
           this.local = this.params.fallback();
           return await this.local.run();
         }
@@ -170,20 +195,25 @@ export class RemoteTaskRunner implements CancellableTask {
       if (body.customTaskRunEventFields) {
         setCustomTaskRunEventFields(body.customTaskRunEventFields);
       }
-      if (body.telemetry) {
-        try {
-          this.params.reportTelemetry?.(body.telemetry);
-        } catch {
-          // Telemetry never changes the outcome of a run.
-        }
-      }
       if (body.kind === 'thrown') {
         throw deserializeTaskRunError(body.error);
       }
-      return deserializeRunResult(body.result);
+      const result = deserializeRunResult(body.result);
+      // A run Kibana cancelled is not counted as run, as when Kibana runs it itself.
+      if (!this.cancelled) this.observe((observer) => observer.onResult?.(result));
+      return result;
     } finally {
       dispose();
       lease?.release();
+    }
+  }
+
+  /** What the type counts must never fail a run. */
+  private observe(call: (observer: RemoteRunObserver) => void) {
+    try {
+      if (this.params.observer) call(this.params.observer);
+    } catch (error) {
+      // Counting is best effort.
     }
   }
 
@@ -195,6 +225,10 @@ export class RemoteTaskRunner implements CancellableTask {
     const address = this.target;
     // Not started yet: nothing to cancel.
     if (!address) return;
+    if (!this.cancelled) {
+      this.cancelled = true;
+      this.observe((observer) => observer.onCancel?.());
+    }
     const fetchFn = this.params.fetchFn ?? fetch;
     try {
       const { signal, dispose } = abortAfter(DEADLINE_GRACE_MS);

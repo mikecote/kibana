@@ -31,6 +31,7 @@ const createSetupMock = () => {
   const mock: jest.Mocked<AlertingServerSetup> = lazyObject({
     registerType: jest.fn(),
     registerTaskProcessSettings: jest.fn(),
+    registerTaskProcessFeatureFlags: jest.fn(),
     getSecurityHealth: jest.fn(),
     getConfig: jest.fn(),
     frameworkAlerts: lazyObject({

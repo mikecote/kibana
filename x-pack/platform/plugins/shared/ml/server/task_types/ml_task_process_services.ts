@@ -11,7 +11,7 @@ import type { CoreAuditService } from '@kbn/core-security-server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { RuleTypeModuleDeps } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { ML_JOB_SAVED_OBJECT_TYPE } from '@kbn/ml-common-types/saved_objects';
-import type { MlFeatures } from '../../common/constants/app';
+import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
 import { MlLicense } from '../../common/license';
 import { createMlRunServices } from '../ml_run_services';
 import { getMlSavedObjectTypes } from '../saved_objects';
@@ -19,6 +19,10 @@ import { getMlSavedObjectTypes } from '../saved_objects';
 /** What the plugin registers with `registerTaskProcessSettings('ml', ...)`. */
 export interface MlTaskProcessSettings {
   cpsEnabled: boolean;
+  /** The features this Kibana has enabled (`xpack.ml.ad`, `dfa` and `nlp`). */
+  enabledFeatures?: MlFeatures;
+  /** `xpack.ml.compatibleModuleType`. */
+  compatibleModuleType?: CompatibleModule | null;
 }
 
 export const ML_TASK_PROCESS_SETTINGS_ID = 'ml';
@@ -27,7 +31,8 @@ export const ML_TASK_PROCESS_SETTINGS_ID = 'ml';
 export const getMlTaskProcessSavedObjectTypes = () =>
   getMlSavedObjectTypes().filter(({ name }) => name === ML_JOB_SAVED_OBJECT_TYPE);
 
-const ENABLED_FEATURES: MlFeatures = Object.freeze({ ad: true, dfa: true, nlp: true });
+// What a process falls back to when it is not sent the features (a remote process without settings).
+const DEFAULT_ENABLED_FEATURES: MlFeatures = Object.freeze({ ad: true, dfa: true, nlp: true });
 
 const kibanaOnly = (what: string) => () => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);
@@ -57,8 +62,8 @@ export const createMlTaskProcessServices = (
     getAuditService: () => deps.host.security.audit as CoreAuditService,
     // A task process has no startup to wait for: the job saved objects are Kibana's to initialize.
     isMlReady: () => Promise.resolve(),
-    compatibleModuleType: null,
-    enabledFeatures: ENABLED_FEATURES,
+    compatibleModuleType: settings?.compatibleModuleType ?? null,
+    enabledFeatures: settings?.enabledFeatures ?? DEFAULT_ENABLED_FEATURES,
     serverless: { isServerless: deps.isServerless, cpsEnabled: settings?.cpsEnabled ?? false },
     // A process runs for a space with the user of a fake request; the spaces plugin is Kibana's.
     getSpaces: kibanaOnly('The spaces plugin'),

@@ -19,7 +19,6 @@ const createSetupMock = () => {
     registerTaskType: jest.fn(),
     registerCanEncryptedSavedObjects: jest.fn(),
     registerTaskEventLogger: jest.fn(),
-    registerTaskProcessTelemetrySink: jest.fn(),
   });
 
   return mock;
@@ -42,6 +41,7 @@ const createStartMock = () => {
     bulkDisable: jest.fn(),
     bulkEnable: jest.fn(),
     getRegisteredTypes: jest.fn(),
+    getTaskProcessStats: jest.fn(),
     bulkUpdateState: jest.fn(),
     registerEncryptedSavedObjectsClient: jest.fn(),
     registerApiKeyInvalidateFn: jest.fn(),

@@ -104,6 +104,8 @@ export class Plugin implements PluginType {
       getSyntheticsTaskProcessSettings({
         config,
         isCpsEnabled: plugins.cps?.getCpsEnabled() ?? false,
+        // As Kibana has them now: the sync task refreshes them while Kibana runs.
+        serviceManagedLocations: this.serviceManagedLocations,
       })
     );
 

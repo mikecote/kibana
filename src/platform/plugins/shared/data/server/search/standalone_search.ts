@@ -22,6 +22,7 @@ import type {
 import type { SharedGlobalConfig } from '@kbn/core/server';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
+import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type {
   IEsSearchRequest,
   IKibanaSearchRequest,
@@ -64,6 +65,10 @@ export interface StandaloneSearchDeps {
   /** The shard and request timeouts of the Elasticsearch connection, which searches use. */
   elasticsearchTimeouts?: { shardTimeout?: number; requestTimeout?: number };
   isServerless?: boolean;
+  /** Whether the rollup plugin enabled rollup searches in Kibana (`search.enableRollups`). */
+  rollupsEnabled?: boolean;
+  /** The license, which ES|QL searches read to allow approximation. */
+  licensing?: Pick<LicensingPluginStart, 'getLicense'>;
 }
 
 /**
@@ -130,7 +135,8 @@ export const createStandaloneSearch = (
       esClient: scopedEsClient(request, opts),
       uiSettingsClient: uiSettings.asScopedToClient(savedObjectsClient),
       request,
-      rollupsEnabled: false,
+      rollupsEnabled: deps.rollupsEnabled ?? false,
+      licensing: deps.licensing,
       // Rule runs do not use search sessions.
       searchSessionsClient: undefined,
     } as unknown as SearchStrategyDependencies;

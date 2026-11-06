@@ -28,7 +28,7 @@ export function registerFeatureUsageRoute(
       const [, , { featureUsage }] = await getStartServices();
       return response.ok({
         body: {
-          features: featureUsage.getLastUsages().map((usage) => ({
+          features: (await featureUsage.getLastUsages()).map((usage) => ({
             id: usage.id,
             last_used: usage.lastUsed,
             license_level: usage.licenseType,

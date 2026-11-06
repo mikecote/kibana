@@ -11,6 +11,11 @@ import { BehaviorSubject, ReplaySubject, map, distinctUntilChanged } from 'rxjs'
 import { pick } from 'lodash';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type { SecurityPluginSetup, SecurityPluginStart } from '@kbn/security-plugin/server';
+import type {
+  TelemetryPluginSetup,
+  TelemetryTaskProcessSettings,
+} from '@kbn/telemetry-plugin/server';
+import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { PluginSetup as DataPluginSetup } from '@kbn/data-plugin/server';
 import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
 import type {
@@ -43,6 +48,11 @@ import type {
   PluginSetupContract as ActionsPluginSetupContract,
   PluginStartContract as ActionsPluginStartContract,
 } from '@kbn/actions-plugin/server';
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  CONNECTOR_TYPES_PARITY_KIND,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
+import type { ActionsTaskProcessSettings } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type {
   IEventLogger,
   IEventLogService,
@@ -58,6 +68,7 @@ import type {
   WorkflowsExtensionsServerPluginSetup,
   WorkflowsExtensionsServerPluginStart,
 } from '@kbn/workflows-extensions/server';
+import { CONNECTOR_ADAPTERS_PARITY_KIND } from './task_types/parity_kinds';
 import { ApiKeyType } from './task_runner/types';
 import { AsyncDomainEventBus } from './lib/events/event_bus';
 import type {
@@ -65,6 +76,11 @@ import type {
   AlertingPublisherContext,
 } from './lib/workflow_extensions/events';
 import { registerTriggerDefinitions } from './lib/workflow_extensions/register_trigger_definitions';
+import {
+  ALERTING_RUN_SETTINGS_ID,
+  DEFAULT_ALERTING_RUN_SETTINGS,
+} from './task_types/rule_run_settings';
+import type { AlertingRunSettings } from './task_types/rule_run_settings';
 import type { AlertStatusChangedOptIn } from './lib/workflow_extensions/alert_status_changed_opt_in';
 import { AlertStatusChangedWorkflowSubscriber } from './lib/workflow_extensions/alert_status_changed_subscriber';
 import { RuleTypeRegistry } from './rule_type_registry';
@@ -151,6 +167,12 @@ export interface AlertingServerSetup {
    * `host.settings[pluginId]`. The config is sent to the task process, so it may hold secrets.
    */
   registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
+  /**
+   * Lets the rule types of a plugin read feature flags in a task process (`host.featureFlags`, with a
+   * module that declares the same flags). Kibana evaluates them for every run it dispatches and sends
+   * the values, so a flag flipped between runs reaches the next one.
+   */
+  registerTaskProcessFeatureFlags(flags: Record<string, boolean | string | number>): void;
   registerType<
     Params extends RuleTypeParams = RuleTypeParams,
     ExtractedParams extends RuleTypeParams = RuleTypeParams,
@@ -211,6 +233,8 @@ export interface AlertingServerStart {
 
 export interface AlertingPluginsSetup {
   security?: SecurityPluginSetup;
+  telemetry?: TelemetryPluginSetup;
+  cloud?: CloudSetup;
   taskManager: TaskManagerSetupContract;
   actions: ActionsPluginSetupContract;
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
@@ -264,6 +288,21 @@ export class AlertingPlugin {
   private readonly taskProcessSettings: Record<string, () => unknown> = {
     alerting: () => this.config,
     actions: () => this.actionsSetup!.getConfig(),
+    // Kibana's final connectors, rather than the process rebuilding them from the config.
+    [ACTIONS_CONNECTORS_SETTINGS_ID]: (): ActionsTaskProcessSettings => ({
+      inMemoryConnectors: this.actionsSetup!.getTaskProcessSettings().inMemoryConnectors,
+    }),
+    // What differs by the plugins around alerting: maintenance windows, data views and search.
+    [ALERTING_RUN_SETTINGS_ID]: (): AlertingRunSettings =>
+      this.getRunSettings?.() ?? DEFAULT_ALERTING_RUN_SETTINGS,
+  };
+  private getRunSettings?: () => AlertingRunSettings;
+  private readonly taskProcessFeatureFlags: Record<string, boolean | string | number> = {};
+  /** What this Kibana has registered, which a task process of a rule type must have registered too. */
+  private readonly taskProcessParity: Record<string, () => string[]> = {
+    [CONNECTOR_TYPES_PARITY_KIND]: () =>
+      this.actionsSetup?.getTaskProcessSettings().connectorTypes ?? [],
+    [CONNECTOR_ADAPTERS_PARITY_KIND]: () => this.connectorAdapterRegistry.getIds(),
   };
   private actionsSetup?: AlertingPluginsSetup['actions'];
   private alertsService: AlertsService | null;
@@ -317,6 +356,28 @@ export class AlertingPlugin {
     const securitySetup = plugins.security;
     if (securitySetup?.getTaskProcessSettings) {
       this.taskProcessSettings.security = () => securitySetup.getTaskProcessSettings();
+    }
+
+    // The analytics context a task process puts on the events it ships, as this Kibana has it: the
+    // telemetry plugin's settings and the license and cloud deployment, which it cannot read.
+    const telemetrySetup = plugins.telemetry;
+    if (telemetrySetup?.getTaskProcessSettings) {
+      let license: TelemetryTaskProcessSettings['license'];
+      plugins.licensing.license$.subscribe((next) => {
+        license = { uid: next.uid, status: next.status, type: next.type };
+      });
+      this.taskProcessSettings.telemetry = () => ({
+        ...telemetrySetup.getTaskProcessSettings(),
+        license,
+        cloud: plugins.cloud?.analyticsMetadata,
+      });
+    }
+
+    // How a task process counts and stores usage, as the usage collection plugin does here.
+    const usageCollectionSetup = plugins.usageCollection;
+    if (usageCollectionSetup?.getTaskProcessSettings) {
+      this.taskProcessSettings.usageCollection = () =>
+        usageCollectionSetup.getTaskProcessSettings();
     }
 
     const elasticsearchAndSOAvailability$ = getElasticsearchAndSOAvailability(core.status.core$);
@@ -422,6 +483,14 @@ export class AlertingPlugin {
           getEncryptionKeys: () => plugins.encryptedSavedObjects.getKeysForTaskProcesses(),
         },
         settings: this.taskProcessSettings,
+        parity: this.taskProcessParity,
+        // The flags the opt-ins of `alert.status.changed` read, which a process cannot ask for itself.
+        featureFlags: () =>
+          Object.assign(
+            {},
+            this.taskProcessFeatureFlags,
+            ...this.alertStatusChangedOptIns.map((optIn) => optIn.featureFlags)
+          ),
       },
     });
     this.ruleTypeRegistry = ruleTypeRegistry;
@@ -549,6 +618,9 @@ export class AlertingPlugin {
         adapter: ConnectorAdapter<RuleActionParams, ConnectorParams>
       ) => {
         this.connectorAdapterRegistry.register(adapter);
+      },
+      registerTaskProcessFeatureFlags: (flags) => {
+        Object.assign(this.taskProcessFeatureFlags, flags);
       },
       registerTaskProcessSettings: (pluginId, getSettings) => {
         this.taskProcessSettings[pluginId] = getSettings;
@@ -681,6 +753,11 @@ export class AlertingPlugin {
       licenseState,
     } = this;
     licenseState?.setNotifyUsage(plugins.licensing.featureUsage.notifyUsage);
+    this.getRunSettings = () => ({
+      maintenanceWindowsEnabled: !!plugins.maintenanceWindows,
+      dataViews: { scriptedFieldsEnabled: plugins.dataViews.getScriptedFieldsEnabled() },
+      search: plugins.data.search.getTaskProcessSettings?.(),
+    });
 
     const shouldGrantUiam = this.getShouldGrantUiam(core);
 

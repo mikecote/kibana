@@ -18,6 +18,7 @@ import { createIndexPatternsStartMock } from '@kbn/data-views-plugin/server/mock
 import type { SearchServiceSetupDependencies } from './search_service';
 import { SearchService } from './search_service';
 import { lastValueFrom, of } from 'rxjs';
+import moment from 'moment';
 
 import type {
   IScopedSearchClient,
@@ -88,6 +89,38 @@ describe('Search service', () => {
       });
       expect(start).toHaveProperty('aggs');
       expect(start).toHaveProperty('getSearchStrategy');
+    });
+
+    it('tells a task process how it searches: the config, the timeouts and the rollups', () => {
+      const context = coreMock.createPluginInitializerContext({});
+      const search = {
+        aggs: { shardDelay: { enabled: false } },
+        asyncSearch: { waitForCompletion: 1 },
+      };
+      context.config.create = jest.fn().mockReturnValue(of({ search }));
+      context.config.get = jest.fn().mockReturnValue({ search });
+      (context.config.legacy as any).globalConfig$ = of({
+        elasticsearch: {
+          shardTimeout: moment.duration(7, 'seconds'),
+          requestTimeout: moment.duration(9, 'seconds'),
+        },
+      });
+      const service = new SearchService(context, context.logger.get());
+      const setup = service.setup(mockCoreSetup, {
+        expressions: expressionsPluginMock.createSetupContract(),
+      });
+      setup.enableRollups();
+
+      const start = service.start(mockCoreStart, {
+        fieldFormats: createFieldFormatsStartMock(),
+        indexPatterns: createIndexPatternsStartMock(),
+      });
+
+      expect(start.getTaskProcessSettings!()).toEqual({
+        searchConfig: search,
+        elasticsearchTimeouts: { shardTimeout: 7000, requestTimeout: 9000 },
+        rollupsEnabled: true,
+      });
     });
   });
 

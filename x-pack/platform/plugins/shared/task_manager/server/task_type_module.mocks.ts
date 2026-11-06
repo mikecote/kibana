@@ -19,7 +19,6 @@ export const createTaskHostMock = (overrides: Partial<TaskHost> = {}): TaskHost 
   security: { authc: { getCurrentUser: () => null }, audit: {} } as unknown as TaskHost['security'],
   analytics: { reportEvent: jest.fn() },
   http: {} as TaskHost['http'],
-  telemetry: { report: jest.fn() },
   server: { uuid: 'test-uuid', version: '9.9.9', buildNum: 1, isServerless: false },
   ...overrides,
 });

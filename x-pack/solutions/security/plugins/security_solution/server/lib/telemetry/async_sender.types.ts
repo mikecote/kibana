@@ -26,6 +26,8 @@ export interface IAsyncTelemetryEventsSender {
   ) => void;
   start: (telemetryStart?: TelemetryPluginStart) => void;
   stop: () => Promise<void>;
+  /** Sends the buffered events now and resolves when every event has been sent or has failed. */
+  flush: () => Promise<void>;
   send: (channel: TelemetryChannel, events: unknown[]) => void;
   simulateSend: (channel: TelemetryChannel, events: unknown[]) => string[];
   updateQueueConfig: (channel: TelemetryChannel, config: QueueConfig) => void;

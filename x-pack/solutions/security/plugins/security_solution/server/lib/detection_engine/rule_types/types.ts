@@ -44,7 +44,7 @@ import type { RuleResponseAction } from '../../../../common/api/detection_engine
 import type { ConfigType, SecurityRuleRunConfig } from '../../../config';
 import type { CompleteRule, RuleParams } from '../rule_schema';
 import type { ExperimentalFeatures } from '../../../../common/experimental_features';
-import type { RuleRunTelemetrySender } from '../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../telemetry/rule_run_events_sender';
 import type { IRuleExecutionLogForExecutors, IRuleMonitoringService } from '../rule_monitoring';
 import type { RefreshTypes } from '../types';
 

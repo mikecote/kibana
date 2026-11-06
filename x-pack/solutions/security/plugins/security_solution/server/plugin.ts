@@ -114,10 +114,7 @@ import {
   createSecurityRuleRunServices,
   getSecurityRuleDataServiceOptions,
 } from './lib/detection_engine/rule_types/create_security_rule_run_services';
-import {
-  createRuleRunTelemetrySink,
-  RULE_RUN_TELEMETRY_KIND,
-} from './lib/telemetry/rule_run_telemetry_sender';
+import { getRuleRunTelemetrySettings } from './lib/telemetry/rule_run_events_sender';
 import type { CreateSecurityRuleTypeWrapperProps } from './lib/detection_engine/rule_types/types';
 import { calculateRulesAuthz } from './lib/detection_engine/rule_management/authz';
 
@@ -618,11 +615,13 @@ export class Plugin implements ISecuritySolutionPlugin {
     // What a task process that runs a detection rule reads of the configuration of this plugin, and
     // where it reports the telemetry that only this plugin can send.
     plugins.alerting.registerTaskProcessSettings(TASK_PROCESS_SETTINGS_ID, () =>
-      getTaskProcessSettings(config)
-    );
-    plugins.taskManager?.registerTaskProcessTelemetrySink(
-      RULE_RUN_TELEMETRY_KIND,
-      createRuleRunTelemetrySink(() => this.telemetryEventsSender)
+      getTaskProcessSettings(
+        config,
+        getRuleRunTelemetrySettings({
+          telemetry: plugins.telemetry,
+          receiver: this.telemetryReceiver,
+        })
+      )
     );
 
     const securityRuleTypeOptions = createSecurityRuleRunServices({

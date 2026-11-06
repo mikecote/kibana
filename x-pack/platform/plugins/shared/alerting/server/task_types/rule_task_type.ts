@@ -8,6 +8,11 @@
 import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
+import { kibanaPackageJson } from '@kbn/repo-info';
+import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
+import { CONNECTOR_TYPES_PARITY_KIND } from '@kbn/actions-plugin/server/task_types/task_process_settings';
+import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
+import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
 import type { RunContext } from '@kbn/task-manager-plugin/server';
 import { DeclinedRunError } from '@kbn/task-manager-plugin/server/task_running/errors';
 import {
@@ -39,6 +44,9 @@ import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
 import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
+import { CONNECTOR_ADAPTERS_PARITY_KIND } from './parity_kinds';
+import { ALERTING_RUN_SETTINGS_ID } from './rule_run_settings';
+import { observeRemoteRuleRun } from './remote_run_metrics';
 import type { RuleRunContribution } from './rule_run_contribution';
 
 export { ruleTaskParamsSchema };
@@ -82,6 +90,11 @@ export interface RuleTaskTypeOptions {
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** A task process only: event log providers the executor writes with, besides alerting's own. */
   eventLogProviders?: Array<{ provider: string; actions: string[] }>;
+  /**
+   * A task process only: analytics event types the executor reports, which Core's analytics requires
+   * to be registered (the plugin that owns the rule type registers them in Kibana).
+   */
+  analyticsEventTypes?: TaskTypeModule['analyticsEventTypes'];
   /** A task process only: ids of plugins whose config the executor reads, besides alerting and actions. */
   settings?: string[];
   /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
@@ -98,6 +111,15 @@ export interface RuleTaskTypeOptions {
    */
   schedulableTaskTypes?: RegExp[];
   /**
+   * A task process only: says why this process cannot serve this rule, so Kibana runs it instead
+   * (`DeclinedRunError`, before the run has side effects). It reads the settings Kibana sent and the
+   * rule's parameters; a string is the reason, nothing means the process serves the rule.
+   */
+  declineRun?: (info: {
+    settings: Record<string, unknown>;
+    ruleParams: Record<string, unknown>;
+  }) => string | undefined;
+  /**
    * A task process only: plugins that run next to Core, such as the security plugin that registers
    * the security delegate. The factory of the rule type reads what they return as `host.plugins[id]`.
    */
@@ -109,6 +131,13 @@ export type RuleTypeSource =
   | { ruleType: UntypedNormalizedRuleType }
   /** A task process: how to build the rule type from the host, and its id without building it. */
   | { ruleTypeId: string; getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType };
+
+interface PreparedRuleRun {
+  runtime: RuleRunRuntime;
+  unsupportedActionTypes?: (ids: string[]) => string[];
+  connectorTypeIds?: () => string[];
+  connectorAdapterIds?: () => string[];
+}
 
 const createUrlService = (
   host: Pick<TaskHost, 'server'>,
@@ -193,13 +222,11 @@ export function createRuleTaskType(
     }
     return ruleType;
   };
-  let prepared:
-    | Promise<{ runtime: RuleRunRuntime; unsupportedActionTypes?: (ids: string[]) => string[] }>
-    | undefined;
+  let prepared: Promise<PreparedRuleRun> | undefined;
 
-  const prepare = (host: TaskHost) =>
+  const prepare = (host: TaskHost): Promise<PreparedRuleRun> =>
     (prepared ??= options.getRuntime
-      ? options.getRuntime().then((runtime) => ({ runtime }))
+      ? options.getRuntime().then((runtime): PreparedRuleRun => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
           ({ createStandaloneRuleRunRuntime }) => {
             urlService ??= createUrlService(host, options.locators, options.registerLocators);
@@ -222,40 +249,52 @@ export function createRuleTaskType(
             return {
               runtime: standalone.runtime,
               unsupportedActionTypes: standalone.getUnsupportedActionTypes,
+              connectorTypeIds: standalone.getRegisteredConnectorTypeIds,
+              connectorAdapterIds: standalone.getRegisteredConnectorAdapterIds,
             };
           }
         ));
 
   /**
    * A rule that uses a connector type or connector adapter this process does not know cannot be
-   * served here; saying so before anything is written lets Kibana run the rule instead.
+   * served here; saying so before anything is written lets Kibana run the rule instead. This is the
+   * check of one rule; `parity` below is the check, once per process, of everything Kibana has.
    */
   const declineIfUnsupported = async (
-    { runtime, unsupportedActionTypes }: Awaited<NonNullable<typeof prepared>>,
-    context: RunContext
+    { runtime, unsupportedActionTypes }: PreparedRuleRun,
+    context: RunContext,
+    host: TaskHost
   ) => {
-    if (!unsupportedActionTypes) return;
+    if (!unsupportedActionTypes && !options.declineRun) return;
     const { alertId, spaceId } = context.taskInstance.params as {
       alertId: string;
       spaceId: string;
     };
     let actionTypeIds: string[] = [];
+    let ruleParams: Record<string, unknown> = {};
     try {
       const rule = await runtime.savedObjects
         .createInternalRepository([RULE_SAVED_OBJECT_TYPE])
-        .get<{ actions?: Array<{ actionTypeId?: string }> }>(RULE_SAVED_OBJECT_TYPE, alertId, {
-          namespace: runtime.spaceIdToNamespace(spaceId),
-        });
+        .get<{ actions?: Array<{ actionTypeId?: string }>; params?: Record<string, unknown> }>(
+          RULE_SAVED_OBJECT_TYPE,
+          alertId,
+          { namespace: runtime.spaceIdToNamespace(spaceId) }
+        );
       actionTypeIds = [
         ...new Set(
           (rule.attributes.actions ?? []).flatMap((a) => (a.actionTypeId ? [a.actionTypeId] : []))
         ),
       ];
+      ruleParams = rule.attributes.params ?? {};
     } catch (error) {
       // A rule that cannot be read is reported by the run itself.
       return;
     }
-    const unsupported = unsupportedActionTypes(actionTypeIds);
+    const reason = options.declineRun?.({ settings: host.settings ?? {}, ruleParams });
+    if (reason) {
+      throw new DeclinedRunError(`Rule ${alertId} cannot run in this task process: ${reason}`);
+    }
+    const unsupported = unsupportedActionTypes?.(actionTypeIds) ?? [];
     if (unsupported.length) {
       throw new DeclinedRunError(
         `Rule ${alertId} uses action types this task process cannot enqueue: ${unsupported.join(
@@ -276,7 +315,23 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
-    ...(options.taskPlugins ? { taskPlugins: options.taskPlugins } : {}),
+    // When a task process serves the run, Kibana still counts it for the `node_rules` usage collector.
+    ...(kibanaRuleType && options.getRuntime
+      ? {
+          observeRemoteRun: () =>
+            observeRemoteRuleRun(async () => (await options.getRuntime!()).inMemoryMetrics),
+        }
+      : {}),
+    // Every rule run enqueues actions as its user: the privileges of the connector are checked by the
+    // security plugin's own authorization, so the process always has it (and Core's security delegate).
+    // Every rule run may report analytics events, which the process ships itself before it answers.
+    taskPlugins: [
+      ...(options.taskPlugins ?? []).filter(
+        ({ manifest }) => manifest.id !== 'security' && manifest.id !== 'telemetry'
+      ),
+      createSecurityTaskPlugin(kibanaPackageJson.version),
+      createTelemetryTaskPlugin(kibanaPackageJson.version),
+    ],
     taskTypeGroup: TaskTypeGroup.Alerting,
     paramsSchema: ruleTaskParamsSchema,
     // What a task process needs; Kibana has all of it already, so only the process's module says so.
@@ -300,11 +355,32 @@ export function createRuleTaskType(
           },
           taskManager: { schedulableTypes: [/^actions:/, ...(options.schedulableTaskTypes ?? [])] },
           licensing: true as const,
-          settings: ['alerting', 'actions', ...(options.settings ?? [])],
+          usageCounters: true as const,
+          settings: [
+            ...new Set([
+              'alerting',
+              'actions',
+              'security',
+              ALERTING_RUN_SETTINGS_ID,
+              ...(options.settings ?? []),
+            ]),
+          ],
+          // Kibana sends the connector types and adapters it registered; the process must have
+          // registered the same, or it declines the run: a rule would otherwise behave differently.
+          parity: [
+            {
+              kind: CONNECTOR_TYPES_PARITY_KIND,
+              getIds: async (host: TaskHost) => (await prepare(host)).connectorTypeIds?.() ?? [],
+            },
+            {
+              kind: CONNECTOR_ADAPTERS_PARITY_KIND,
+              getIds: async (host: TaskHost) => (await prepare(host)).connectorAdapterIds?.() ?? [],
+            },
+          ],
         }),
     createTaskRunner: (context, host): CancellableTask => {
       const runner = prepare(host).then(async (services) => {
-        await declineIfUnsupported(services, context);
+        await declineIfUnsupported(services, context, host);
         const { runtime } = services;
         return new TaskRunner({
           context: runtime,
@@ -350,6 +426,27 @@ export function createRuleTaskType(
       uiSettings: {
         enumerable: true,
         get: () => ({ defaults: [...getRuleRunUiSettings(), ...(options.uiSettings ?? [])] }),
+      },
+      // The flags the contributions read (the opt-ins of `alert.status.changed`, say), which Kibana
+      // evaluates for each dispatch.
+      featureFlags: {
+        enumerable: true,
+        configurable: true,
+        get: () => {
+          const flags = Object.assign(
+            {},
+            ...contributions.map((contribution) => contribution.declares?.featureFlags)
+          ) as Record<string, boolean | string | number>;
+          return Object.keys(flags).length ? flags : undefined;
+        },
+      },
+      analyticsEventTypes: {
+        enumerable: true,
+        get: () => [
+          // What the connectors a rule executes itself (such as a model's) report.
+          ...(options.executeConnectors ? actionsEventTypes : []),
+          ...(options.analyticsEventTypes ?? []),
+        ],
       },
     });
   }

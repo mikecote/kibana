@@ -6,7 +6,9 @@
  */
 
 import { isDate } from 'lodash';
+import type { Logger } from '@kbn/core/server';
 import type { LicenseType } from '@kbn/licensing-types';
+import type { FeatureUsageStore } from './feature_usage_store';
 
 /** @public */
 export interface FeatureUsageServiceSetup {
@@ -32,14 +34,17 @@ export interface FeatureUsageServiceStart {
    */
   notifyUsage(featureId: string, usedAt?: Date | number): void;
   /**
-   * Return a map containing last usage timestamp for all features.
-   * Features that were not used yet do not appear in the map.
+   * Returns the last usage timestamp of every registered feature, whichever node or task process
+   * used it: what was stored by all of them, merged with what this node used and did not store yet.
+   * Features that were not used yet have a `lastUsed` of `null`.
    */
-  getLastUsages(): LastFeatureUsage[];
+  getLastUsages(): Promise<LastFeatureUsage[]>;
 }
 
 export class FeatureUsageService {
   private readonly lastUsages = new Map<string, LastFeatureUsage>();
+  private store?: FeatureUsageStore;
+  private flushTimer?: NodeJS.Timeout;
 
   public setup(): FeatureUsageServiceSetup {
     return {
@@ -62,7 +67,28 @@ export class FeatureUsageService {
     };
   }
 
-  public start(): FeatureUsageServiceStart {
+  /**
+   * @param options.store where usages are kept for every node and process to see; without it they
+   * are kept in this node's memory, as before.
+   * @param options.flushIntervalMs how often the usages of this node reach the store.
+   */
+  public start({
+    store,
+    flushIntervalMs = 10_000,
+    logger,
+  }: {
+    store?: FeatureUsageStore;
+    flushIntervalMs?: number;
+    logger?: Logger;
+  } = {}): FeatureUsageServiceStart {
+    this.store = store;
+    if (store) {
+      this.flushTimer = setInterval(() => {
+        store.flush().catch((error) => logger?.warn(`Failed to flush feature usages: ${error}`));
+      }, flushIntervalMs);
+      // The timer must not keep a process alive.
+      this.flushTimer.unref?.();
+    }
     return {
       notifyUsage: (featureId, usedAt = Date.now()) => {
         const usage = this.lastUsages.get(featureId);
@@ -74,8 +100,26 @@ export class FeatureUsageService {
         if (usage.lastUsed == null || lastUsed > usage.lastUsed) {
           usage.lastUsed = lastUsed;
         }
+        store?.record(featureId, lastUsed);
       },
-      getLastUsages: () => Array.from(this.lastUsages.values()),
+      getLastUsages: async () => {
+        const stored = (await store?.read()) ?? new Map<string, Date>();
+        return Array.from(this.lastUsages.values()).map((usage) => {
+          const storedAt = stored.get(usage.id);
+          const lastUsed =
+            storedAt && (usage.lastUsed == null || storedAt > usage.lastUsed)
+              ? storedAt
+              : usage.lastUsed;
+          return { ...usage, lastUsed };
+        });
+      },
     };
+  }
+
+  /** Writes what is left to the store, once, when the node stops. */
+  public async stop() {
+    if (this.flushTimer) clearInterval(this.flushTimer);
+    this.flushTimer = undefined;
+    await this.store?.flush();
   }
 }

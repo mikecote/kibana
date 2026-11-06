@@ -25,17 +25,30 @@ describe('task process server', () => {
   let server: Server;
   let url: string;
   const cleanup = jest.fn();
+  const flush = jest.fn();
+  const order: string[] = [];
   let createTask: () => CancellableTask;
 
   beforeEach(async () => {
     cleanup.mockReset();
-    createTask = () => ({ run: async () => ({ state: { ran: true } }), cleanup });
+    order.length = 0;
+    flush.mockReset().mockImplementation(async () => {
+      order.push('flush');
+    });
+    createTask = () => ({
+      run: async () => {
+        order.push('run');
+        return { state: { ran: true } };
+      },
+      cleanup,
+    });
     server = startTaskProcessServer({
       taskDefinitions: new Map([[TYPE, { createTaskRunner: () => createTask() }]]),
       port: 0,
       logger: loggingSystemMock.createLogger(),
       kibanaVersion: '9.9.9',
       authToken: TOKEN,
+      flush,
     });
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -43,6 +56,19 @@ describe('task process server', () => {
 
   afterEach(() => {
     server.close();
+  });
+
+  it('listens on the loopback address only when given a host', async () => {
+    const loopback = startTaskProcessServer({
+      taskDefinitions: new Map(),
+      port: 0,
+      host: '127.0.0.1',
+      logger: loggingSystemMock.createLogger(),
+      kibanaVersion: '9.9.9',
+    });
+    await new Promise<void>((resolve) => loopback.once('listening', () => resolve()));
+    expect((loopback.address() as { address: string }).address).toBe('127.0.0.1');
+    loopback.close();
   });
 
   const runner = (overrides: Partial<{ taskType: string; token: string; version: string }> = {}) =>
@@ -67,6 +93,39 @@ describe('task process server', () => {
   it('runs a task and returns its result, then cleans it up', async () => {
     await expect(runner().run()).resolves.toEqual({ state: { ran: true } });
     expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes what the run left to do before it answers, and answers with the result alone', async () => {
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-flush',
+        kibanaVersion: '9.9.9',
+      }),
+    });
+
+    expect(order).toEqual(['run', 'flush']);
+    expect(await response.json()).toEqual({ kind: 'result', result: { state: { ran: true } } });
+  });
+
+  it('finishes what the run left to do when it throws too', async () => {
+    createTask = () => ({
+      run: async () => {
+        throw new Error('boom');
+      },
+    });
+
+    await expect(runner().run()).rejects.toThrow('boom');
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers even when finishing fails', async () => {
+    flush.mockRejectedValue(new Error('endpoint down'));
+
+    await expect(runner().run()).resolves.toEqual({ state: { ran: true } });
   });
 
   it('returns the error of a task that throws, keeping its retry decoration', async () => {

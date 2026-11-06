@@ -15,6 +15,8 @@ import { createApiKeys } from './authentication/api_keys/create_api_keys';
 import type { InternalAuthenticationServiceStart } from './authentication/authentication_service';
 import { checkPrivilegesFactory } from './authorization/check_privileges';
 import { checkPrivilegesDynamicallyWithRequestFactory } from './authorization/check_privileges_dynamically';
+import { checkSavedObjectsPrivilegesWithRequestFactory } from './authorization/check_saved_objects_privileges';
+import { authorizationModeFactory } from './authorization/mode';
 import type { UiamConfigType } from './config';
 import type { SpacesService } from './plugin';
 import { UiamService } from './uiam/uiam_service';
@@ -53,6 +55,15 @@ export interface RunTimeSecurity {
     >;
     actions: Actions;
     applicationName: string;
+    /** Whether the privileges of a request are checked, which the license decides. */
+    mode: ReturnType<typeof authorizationModeFactory>;
+    checkSavedObjectsPrivilegesWithRequest: ReturnType<
+      typeof checkSavedObjectsPrivilegesWithRequestFactory
+    >;
+    /** Checks the privileges of a request in its own space, as the actions plugin does for connectors. */
+    checkPrivilegesDynamicallyWithRequest: ReturnType<
+      typeof checkPrivilegesDynamicallyWithRequestFactory
+    >;
   };
   audit: AuditServiceSetup;
 }
@@ -95,21 +106,29 @@ export const createRunTimeSecurity = ({
   const actions = new Actions();
   const privileges = checkPrivilegesFactory(actions, async () => clusterClient, applicationName);
 
+  // Spaces are always on in a task process, and a namespace is the id of its space but for the default.
+  const spacesService = {
+    namespaceToSpaceId: (namespace?: string) => namespace ?? 'default',
+    // The space of a run is the one its fake request names.
+    getSpaceId: (request: KibanaRequest) =>
+      (request as unknown as { spaceId?: string }).spaceId ?? 'default',
+  } as unknown as SpacesService;
+
   return {
     authc: { apiKeys, getCurrentUser },
     authz: {
       ...privileges,
-      // A process has no spaces plugin: the space is the one the run's request carries.
-      checkPrivilegesDynamicallyWithRequest: checkPrivilegesDynamicallyWithRequestFactory(
-        privileges.checkPrivilegesWithRequest,
-        () =>
-          ({
-            getSpaceId: (request: KibanaRequest) =>
-              (request as { spaceId?: string }).spaceId ?? 'default',
-          } as SpacesService)
-      ),
       actions,
       applicationName,
+      mode: authorizationModeFactory(license),
+      checkSavedObjectsPrivilegesWithRequest: checkSavedObjectsPrivilegesWithRequestFactory(
+        privileges.checkPrivilegesWithRequest,
+        () => spacesService
+      ),
+      checkPrivilegesDynamicallyWithRequest: checkPrivilegesDynamicallyWithRequestFactory(
+        privileges.checkPrivilegesWithRequest,
+        () => spacesService
+      ),
     },
     audit,
   };

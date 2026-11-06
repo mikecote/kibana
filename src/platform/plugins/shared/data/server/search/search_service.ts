@@ -21,7 +21,7 @@ import type {
   SharedGlobalConfig,
   StartServicesAccessor,
 } from '@kbn/core/server';
-import { catchError, map, switchMap, tap } from 'rxjs';
+import { catchError, map, Subject, switchMap, takeUntil, tap } from 'rxjs';
 import type {
   IKibanaSearchResponse,
   IKibanaSearchRequest,
@@ -42,6 +42,7 @@ import type {
   IScopedSearchClient,
   ISearchSetup,
   ISearchStart,
+  SearchTaskProcessSettings,
   ISearchStrategy,
   SearchStrategyDependencies,
 } from './types';
@@ -130,6 +131,7 @@ export interface SearchRouteDependencies {
 }
 
 export class SearchService {
+  private readonly stop$ = new Subject<void>();
   private readonly aggsService = new AggsService();
   private readonly searchSourceService = new SearchSourceService();
   private searchStrategies: StrategyMap = new Map();
@@ -288,7 +290,24 @@ export class SearchService {
     });
 
     this.asScoped = this.asScopedProvider(core, this.rollupsEnabled, licensing);
+
+    // The Elasticsearch timeouts searches use, as Kibana has them now.
+    let elasticsearchTimeouts: SearchTaskProcessSettings['elasticsearchTimeouts'];
+    this.initializerContext.config.legacy.globalConfig$
+      .pipe(takeUntil(this.stop$))
+      .subscribe(({ elasticsearch: es }) => {
+        elasticsearchTimeouts = {
+          shardTimeout: es.shardTimeout.asMilliseconds(),
+          requestTimeout: es.requestTimeout.asMilliseconds(),
+        };
+      });
+    const rollupsEnabled = this.rollupsEnabled;
     return {
+      getTaskProcessSettings: () => ({
+        searchConfig: this.initializerContext.config.get().search,
+        elasticsearchTimeouts,
+        rollupsEnabled,
+      }),
       aggs,
       searchAsInternalUser: this.searchAsInternalUser,
       getSearchStrategy: this.getSearchStrategy,
@@ -331,6 +350,8 @@ export class SearchService {
   }
 
   public stop() {
+    this.stop$.next();
+    this.stop$.complete();
     this.aggsService.stop();
   }
 

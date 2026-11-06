@@ -8,10 +8,15 @@
 import { SLO_BURN_RATE_RULE_TYPE_ID } from '@kbn/rule-data-utils';
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import { sloBurnRateRuleType } from '../lib/rules/slo_burn_rate/register';
+import { slo } from '../saved_objects';
 
 /** The SLO burn rate rule type, which a task process can run. */
-export const taskType = createRuleTaskType({
-  ruleTypeId: SLO_BURN_RATE_RULE_TYPE_ID,
-  // The executor only reads the public base URL of the base path.
-  getRuleType: ({ publicBaseUrl }) => sloBurnRateRuleType({ publicBaseUrl } as never) as never,
-});
+export const taskType = createRuleTaskType(
+  {
+    ruleTypeId: SLO_BURN_RATE_RULE_TYPE_ID,
+    // The executor only reads the public base URL of the base path.
+    getRuleType: ({ publicBaseUrl }) => sloBurnRateRuleType({ publicBaseUrl } as never) as never,
+  },
+  // The executor loads the SLO definition of the rule, which a task process only knows if it registers its type.
+  { savedObjectTypes: [slo] }
+);

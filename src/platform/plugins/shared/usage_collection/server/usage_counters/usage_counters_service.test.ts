@@ -291,4 +291,69 @@ describe('UsageCountersService', () => {
       ]
     `);
   });
+
+  describe('flush', () => {
+    const startService = (bufferMs = 60_000) => {
+      const service = new UsageCountersService({ logger, retryCount, bufferDurationMs: bufferMs });
+      const repository = coreStart.savedObjects.createInternalRepository();
+      const incrementCounter = jest.fn().mockResolvedValue({});
+      repository.incrementCounter = incrementCounter;
+      coreStart.savedObjects.createInternalRepository.mockReturnValue(repository);
+      const { createUsageCounter } = service.setup(coreSetup);
+      return { service, incrementCounter, createUsageCounter };
+    };
+
+    it('stores the counters right away instead of waiting for the buffer interval', async () => {
+      const { service, incrementCounter, createUsageCounter } = startService();
+      const usageCounter = createUsageCounter('test-counter');
+      service.start({ ...coreStart, skipRollups: true });
+
+      usageCounter.incrementCounter({ counterName: 'counterA' });
+      usageCounter.incrementCounter({ counterName: 'counterA', incrementBy: 2 });
+      await service.flush();
+
+      expect(incrementCounter).toHaveBeenCalledTimes(1);
+      expect(incrementCounter).toHaveBeenCalledWith(
+        'usage-counter',
+        'test-counter:counterA:count:server:20210409',
+        [{ fieldName: 'count', incrementBy: 3 }],
+        expect.objectContaining({
+          upsertAttributes: expect.objectContaining({ domainId: 'test-counter' }),
+        })
+      );
+      service.stop();
+    });
+
+    it('resolves at once when there is nothing to store', async () => {
+      const { service, incrementCounter } = startService();
+      service.start({ ...coreStart, skipRollups: true });
+
+      await service.flush();
+
+      expect(incrementCounter).not.toHaveBeenCalled();
+      service.stop();
+    });
+
+    it('does not start the clean-up of expired counters when asked to skip it', () => {
+      registerUsageCountersRollupsMock.mockClear();
+      const { service } = startService();
+
+      service.start({ ...coreStart, skipRollups: true });
+      expect(registerUsageCountersRollupsMock).not.toHaveBeenCalled();
+      service.stop();
+
+      const other = startService().service;
+      other.start(coreStart);
+      expect(registerUsageCountersRollupsMock).toHaveBeenCalledTimes(1);
+      other.stop();
+    });
+
+    it('does not wait once the service is stopped', async () => {
+      const { service } = startService();
+      service.start({ ...coreStart, skipRollups: true });
+      service.stop();
+
+      await expect(service.flush()).resolves.toBeUndefined();
+    });
+  });
 });

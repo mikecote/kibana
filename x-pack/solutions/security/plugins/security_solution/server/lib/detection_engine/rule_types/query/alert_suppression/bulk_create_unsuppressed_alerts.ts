@@ -16,7 +16,7 @@ import type { UnifiedQueryRuleParams } from '../../../rule_schema';
 
 import type { BuildReasonMessage } from '../../utils/reason_formatters';
 import { searchAfterAndBulkCreate } from '../../utils/search_after_bulk_create';
-import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_events_sender';
 
 type BulkCreateUnsuppressedAlerts = (params: {
   sharedParams: SecuritySharedParams<UnifiedQueryRuleParams>;

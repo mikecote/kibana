@@ -187,7 +187,7 @@ describe('duration anomaly alert', () => {
         [],
         [],
         'auto',
-        options.params.severity,
+        [{ min: options.params.severity }],
         1620907417000,
         1620909217000,
         'UTC',
@@ -270,7 +270,7 @@ Response times as high as ${slowestResponse} ms have been detected from location
               "slowestAnomalyResponse": "200 ms",
               "viewInAppUrl": "http://localhost:5601/hfe/app/uptime/monitor/eHBhY2sudXB0aW1lLmFsZXJ0cy5hY3Rpb25Hcm91cHMuZHVyYXRpb25Bbm9tYWx5MA==?dateRangeEnd=now&dateRangeStart=date",
             },
-            "id": "xpack.uptime.alerts.actionGroups.durationAnomaly",
+            "id": "xpack.uptime.alerts.actionGroups.durationAnomaly0",
           },
         ]
       `);
@@ -292,7 +292,7 @@ Response times as high as ${slowestResponse} ms have been detected from location
               "slowestAnomalyResponse": "300 ms",
               "viewInAppUrl": "http://localhost:5601/hfe/app/uptime/monitor/eHBhY2sudXB0aW1lLmFsZXJ0cy5hY3Rpb25Hcm91cHMuZHVyYXRpb25Bbm9tYWx5MQ==?dateRangeEnd=now&dateRangeStart=date",
             },
-            "id": "xpack.uptime.alerts.actionGroups.durationAnomaly",
+            "id": "xpack.uptime.alerts.actionGroups.durationAnomaly1",
           },
         ]
       `);

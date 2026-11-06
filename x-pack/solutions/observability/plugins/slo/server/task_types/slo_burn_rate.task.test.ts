@@ -16,4 +16,8 @@ describe('SLO burn rate task type module', () => {
       sloBurnRateRuleType({ publicBaseUrl: 'https://kibana.test' } as never)
     );
   });
+
+  it('registers the saved object type of the SLO definitions the executor reads', () => {
+    expect(taskType.savedObjectTypes?.map(({ name }) => name)).toContain('slo');
+  });
 });

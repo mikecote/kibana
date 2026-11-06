@@ -58,6 +58,46 @@ xpack.task_manager.task_execution:
 
 Build the bundles with `node scripts/task_bundle` (the distributable builds them for you).
 
+```yaml
+xpack.task_manager.task_execution:
+  max_concurrent_processes: 8       # default: xpack.task_manager.max_workers
+  child_max_old_space_mb: 512       # optional
+```
+
+### Running processes in production
+
+- **Loopback only.** A forked process listens on `127.0.0.1` and on a port the OS picks. Everything
+  secret (the Elasticsearch credentials, the encryption keys, the security settings) goes over the
+  fork channel (IPC), which no other process can read. Over HTTP go only the run request (the task,
+  and the fake request credentials of this run) and the bearer token the supervisor generated at
+  startup and sent over IPC; `/run` and `/cancel` refuse any other caller, and `/health` is the only
+  open route. A remote process, which has to be reachable, listens on `HOST` (default: all addresses).
+- **It ends with Kibana.** A process exits when the fork channel disconnects (Kibana was killed) and,
+  as a backstop, when its parent pid changes, closing Core first (bounded to 5 s). No orphans remain
+  after a `SIGKILL` of Kibana.
+- **Flags.** A process does not inherit `--inspect*`/`--debug*` (the port would clash with Kibana's) or
+  heap sizing flags (`--max-old-space-size` and friends, which are sized for Kibana) from `execArgv` or
+  `NODE_OPTIONS`. `child_max_old_space_mb` sets the heap of each process explicitly.
+- **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
+  `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
+  not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
+  process costs about 500 MB resident for a rule bundle (measured on `es_query`). Every spawn and exit logs the number of live processes at debug.
+- **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
+  stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
+- **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
+  `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
+  process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the
+  configured layout, appenders and level filters apply, and labels each line with `task_type`, `run_id` (the
+  execution id) and `child_logger` (the context inside the process, such as `plugins.alerting`). A line that
+  is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
+  copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
+- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns the fallbacks by task type
+  and reason (`declined` for a 422, `not_served` for a 404, `capacity`, `spawn_failed`, `spawn_timeout`,
+  `unavailable`) and the supervisor's numbers (`live`, `active`, `max`, `spawned`, `spawnFailures`,
+  `spawnTimeouts`, `capacityRejections`). Fallbacks are also in the `taskManager` usage counter as
+  `taskProcessFallback:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
+  response schema is public; that would be its own change.
+
 **`remote`.** Runs go to a task process you start yourself from the same bundle, so it can live on
 another host. It serves the one task type of its bundle and answers 404 for any other, which then
 runs in Kibana.
@@ -102,19 +142,36 @@ task type hands over its own service for the same capability.
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects` | the real encrypted saved objects plugin, with the keys the process is sent | `hostExtensions.encryptedSavedObjects` |
 | `eventLog` | `eventLog` | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit | `hostExtensions.eventLog` |
 | `taskManager` | `taskManager` | writes `task` saved objects, only for `schedulableTypes` | Task Manager's start contract |
-| `uiSettings` | `uiSettings` | Core's, with the module's defaults registered | Core |
-| `licensing` | `licensing` | the license read from Elasticsearch once, and feature usage | the licensing plugin |
+| `uiSettings` | `uiSettings` | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core |
+| `licensing` | `licensing` | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares | the licensing plugin |
+| `usageCounters` | `usageCounters` | the usage collection plugin's own counters service, stored when the run ends | the usage collection plugin |
 | `settings: ['pluginId']` | `settings.pluginId` | the validated config Kibana sends | the getter passed to `registerTaskType` |
 | `featureFlags` | `featureFlags` | the values Kibana evaluated for this run | Core |
 | `contributions` | `contributions[key]` | what plugins export for the key | the plugins themselves |
 | `taskPlugins` | `plugins[id]` | the `start` contract of each plugin | the real plugins |
 
-`host.analytics`, `host.telemetry`, `host.security` and `host.elasticsearch` are always there.
+`host.analytics`, `host.security`, `host.elasticsearch` and `host.onRunEnd` (in a process) are always there.
 
-**Telemetry is returned, not sent.** A run reports analytics events, feature usage and plugin
-channels through the host. The process keeps them for that run and returns them with the result, and
-the Kibana that dispatched the run reports them with its own analytics, licensing and the sinks
-plugins register with `registerTaskProcessTelemetrySink(kind, sink)`.
+**A process does every side effect itself.** Kibana does nothing with a run but reschedule it, so
+nothing a run produces comes back in the response, and the process finishes it before it answers (bounded
+by a few seconds, so a slow endpoint cannot hold the run; a warning is logged on timeout):
+
+- **Analytics events.** A module that lists the telemetry plugin's task plugin in `taskPlugins` (rule
+  modules always do) gets Core's analytics client with the real `ElasticV3ServerShipper`, opted in as
+  Kibana is, with the labels, license and cloud context Kibana's events carry. The telemetry plugin
+  sends the opt-in, `sendUsageTo` and labels (`getTaskProcessSettings`); alerting adds the license and
+  the cloud deployment. If Kibana has no opt-in, nothing ships, exactly as in Kibana. Events leave
+  through the shipper's `flush`, and Core's shutdown flushes the rest.
+- **Usage counters.** `host.usageCounters.getUsageCounter(domainId)` is the usage collection plugin's
+  `UsageCountersService`: the same `usage-counter` saved objects, one per counter and day, stored at
+  the end of the run instead of on the interval. The daily clean-up stays with Kibana.
+- **Feature usage.** The licensing plugin keeps when each feature was last used in a hidden saved
+  object (`licensing-feature-usage`, one per feature) that every node and process writes, and
+  `/api/licensing/feature_usage` and `getLastUsages()` read it merged with the node's memory.
+  `host.licensing.featureUsage.notifyUsage` writes through the same store.
+- **Anything else with a queue.** `host.onRunEnd(flusher)` registers what has to finish before the
+  process answers. Security telemetry builds its own sender from a snapshot of Kibana's telemetry
+  settings (opt-in, endpoint, cluster and license) and flushes its queue there.
 
 **Config over the wire.** Kibana sends its Elasticsearch connection, the encryption keys, the
 `security` settings (which carry UIAM) and the plugin configs the task type registered. Core
@@ -141,16 +198,40 @@ implementation and no copy to drift. Where something cannot exist in a process i
 A runner may throw `DeclinedRunError` when it cannot serve this run, such as a rule that uses a
 connector type the process does not know. The process answers `422`, and Kibana runs the task itself,
 as it does for a `404`. Decide before the run has side effects. It is a safety net: the contributions
-below register every connector type Kibana has, so it should not fire.
+below register every connector type Kibana has, and the parity guard below proves it, so it should not
+fire. Kibana logs every fallback with its reason (`TaskProcessFallbackCounter`, which also counts them in
+Task Manager's usage counter as `taskProcessFallback:<reason>:<taskType>`), so a decline can be alarmed on.
+
+### Parity with Kibana
+
+A module can prove that its process registered what Kibana did. `parity: [{ kind, getIds(host) }]` on the
+module says which ids the process registered for a kind (rule modules have `connectorTypes` and
+`connectorAdapters`); `parity: { kind: () => ids }` in the options of `registerTaskType` says which ids Kibana
+has. Kibana reads its side for every dispatch (a plugin can register a connector type at any time) and sends it
+in `init.parity`; the process compares once, before its first run, and when Kibana has ids it lacks it logs a
+warning that names them and declines every run. The per-rule check of `declineIfUnsupported` stays: it only
+looks at the connector types the rule uses.
+
+### Settings Kibana sends for every dispatch
+
+Besides the plugin configs in `settings`, Kibana reads at each dispatch what changes while it runs: its final
+in-memory connectors (`settings.actionsConnectors`: preconfigured connectors that did not conflict with a saved
+one, dynamic ones other plugins registered, system connectors, with their flags; it holds secrets, so never log
+it), its `uiSettings.overrides` and `uiSettings.globalOverrides` (read from Core's ui settings client, which
+reports the overridden settings) and its `server.publicBaseUrl` exactly as Core has it, with `server.basePath`
+only so that Core accepts a public base URL with a path. A process that has no public base URL builds no links,
+as Kibana does not.
 
 ### Remote processes
 
 A remote process reads the same things from its environment: `ES_URL` with `ES_API_KEY` or
 `ES_USERNAME` and `ES_PASSWORD`, `PORT`, `TASK_PROCESS_TOKEN`, `ESO_ENCRYPTION_KEY` and
 `ESO_DECRYPTION_ONLY_KEYS` (comma separated), `KIBANA_SERVER_UUID`, `KIBANA_BUILD_NUM`,
-`KIBANA_PUBLIC_BASE_URL`, `KIBANA_SERVERLESS`, `KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a
-JSON file `{ "settings": { "<pluginId>": <config> }, "uiSettingsOverrides": {} }` whose configs use the
-format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`).
+`KIBANA_PUBLIC_BASE_URL` (leave it unset when Kibana has none), `KIBANA_BASE_PATH`, `KIBANA_SERVERLESS`,
+`KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a JSON file `{ "settings": { "<pluginId>": <config> },
+"uiSettingsOverrides": {}, "uiSettingsGlobalOverrides": {}, "parity": [{ "kind": "...", "ids": [] }] }` whose
+configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`). A remote
+process is not sent the settings Kibana reads per dispatch, so it skips the parity check unless the file has `parity`.
 
 ## Bundles
 
@@ -159,6 +240,35 @@ and the module. Workspace source is treated as free of import-time side effects,
 what is used from it. Two traps: import leaf files (a cycle through an `export *` barrel leaves names
 undefined in a bundle), and a module that reaches a plugin class through a barrel still pays for it.
 Bundle size and memory are not optimized yet (about 25 to 45 MB per bundle).
+
+### Distributable
+
+The `BuildTaskBundles` task of `node scripts/build` (after `BuildBundles`, before `InstallDependencies`) writes one
+bundle per `plugin.taskTypes` entry and `manifest.json` to `<build>/task_bundles`, and the archive copy
+step carries the directory into every platform folder. In a distributable `bundle_dir` defaults to
+`<install dir>/task_bundles` (`REPO_ROOT` is the install dir there; from a repository checkout it is
+`target/task_bundles`, which is where `node scripts/task_bundle` writes), and the manifest has
+`{ kibanaVersion, bundles: { <name>: { file, taskType, bytes } } }`, which is what the supervisor reads.
+
+Verified by running the task function against a temporary build directory (48 bundles, 1.4 GB, 29 minutes
+with four builds at a time) and booting the `es_query` bundle, copied alone with its manifest to a directory
+outside the repository, with the supervisor against a real Elasticsearch: Core and the module started and
+`/health` served `alerting:.es-query`.
+
+- **Externals.** `re2` and `canvas` are external. `re2` is no longer a dependency of Kibana (`re2js` is
+  JavaScript, so it is bundled) and no bundle requires it. No bundle needs a native module: `lmdb`, `sharp`
+  and `@parcel/watcher` are not in any bundle, and the `.node` files that are referenced
+  (`zstd`, `kerberos`, `snappy`) are optional requires inside `try`/`catch` of MongoDB and AWS clients that
+  Kibana's own `node_modules` would serve. If a native module is ever needed, add it to `EXTERNALS` and it
+  resolves from the distributable's `node_modules`, since a bundle sits at `<install dir>/task_bundles`.
+- **Nothing reads the source tree.** `@kbn/repo-info` is replaced with a stub that answers with the working
+  directory, so a bundle never walks up to find a repository; a task process does not read the paths
+  `@kbn/utils` derives from it. The remaining `__dirname` and `readFileSync` uses are libraries' own
+  (pino worker threads, `source-map`'s `mappings.wasm`) and are on paths a run does not take.
+- **Cost.** Every bundle carries Core and the plugins it needs: 28 to 31 MB each, so 1.4 GB for all 48 task
+  types, and a build of about half an hour. Bundle splitting (one shared Core) is the way to cut both, and
+  is not done.
+- **Not covered here.** The full archive build (`node scripts/build`), and Windows.
 
 ### Contributions
 
@@ -209,10 +319,11 @@ from explicit inputs. These are the steps, in the order most plugins need them.
    shape in the consuming plugin, add a key to the task type's `contributions` and have contributing
    plugins list a file under `plugin.taskTypeContributions` in their `kibana.jsonc` that exports
    `contribution`. Rule runs use `alerting-rule-run` (see `RuleRunContribution`).
-8. **Report through the host.** Use `host.analytics.reportEvent`, `host.telemetry.report(kind, payload)`
-   and `host.licensing.featureUsage` rather than the service directly: the process returns them with the
-   run and Kibana reports them. A plugin with a channel of its own registers a sink with
-   `registerTaskProcessTelemetrySink(kind, sink)`.
+8. **Do the side effects in the run.** Use `host.analytics.reportEvent`, `host.usageCounters` and
+   `host.licensing.featureUsage` rather than the services directly: in a process they are the real
+   shipper, counters and store, and the process flushes them before it answers. A plugin with a queue
+   of its own builds it from explicit dependencies and a snapshot of what it reads from Kibana (send the
+   snapshot as a setting) and registers its flush with `host.onRunEnd`. Nothing is returned to Kibana.
 9. **Keep the bundle clean.** Import leaf files, not barrels. A cycle through an `export *` barrel
    leaves names undefined inside a bundle. Do not import a plugin class (`server/plugin.ts`); use
    `node scripts/task_bundle --name <bundle>` and the bundle hygiene test (`es_query_bundle.test.ts`)
@@ -251,11 +362,93 @@ Options: `locators`, `savedObjectTypes`, `encryptedSavedObjectTypes`, `uiSetting
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
-Not the same in a process: no `alert.status.changed` workflow events, usage counters or in-memory
-metrics; connector authorization of the enqueue is not checked until Kibana runs the connector task;
-a rule that uses a connector type or adapter the process does not know is declined; and each run is a
-fresh process, so it pays for the encryption service, the license and the alerts resource checks every
-time.
+A run in a process does what it does in Kibana; Kibana starts it and processes its end result (the
+reschedule, the task state, the retries). What differs, and why:
+
+- **`alert.status.changed` workflow events.** The batch is built by the same functions as in Kibana
+  (`alert_status_changed_emitter.ts`), before the action scheduler clears the snapshot of the alerts, and is
+  sent by the process before it answers, with the workflows client built from the request of the run. A
+  plugin that wants the events contributes to `alerting-rule-run`: `register` calls
+  `alerting.enableAlertStatusChanged({ isEnabled, featureFlags })` as the plugin does in Kibana (the flags it
+  reads go in `declares.featureFlags`; Kibana evaluates them for each dispatch and sends them as
+  `host.featureFlags`), and `getWorkflowsClient(request, context)` returns what `workflowsExtensions.getClient`
+  returns. Without a contribution that provides the client, a run sends no events. This branch has no such
+  contribution: the workflows plugins have to add it.
+- **In-memory metrics.** The `node_rules` collector reads Kibana's counters, so Kibana counts what its processes
+  served from the end of the run (`observeRemoteRun`): a result is an execution, a result with a
+  `taskRunError` is also a failure (it is the same condition as the outcome of `TaskRunner`), a run Kibana
+  cancels for its timeout is a timeout and no execution. A run Kibana serves itself (a fallback) counts itself.
+- **Settings Kibana decides.** `settings.alertingRun` carries what alerting learns from the plugins around
+  it: whether the maintenance windows plugin is enabled (without it no window applies), the data views'
+  `scriptedFieldsEnabled` (off by default in serverless), and the `data.search` config, the Elasticsearch
+  timeouts and whether rollups are enabled. ES|QL searches read the license, as in Kibana. A plugin that
+  reads feature flags in a run registers them with `alerting.registerTaskProcessFeatureFlags`.
+- **License feature usage** is reported by the process for the rule types and connector types that need a
+  license, to the store every node shares.
+- **Not reproduced.** OpenTelemetry counters (`kibana.alerting.rule_run.count`, the connector counters): a
+  process has no meter provider, Kibana's is created by its command line from `telemetry.metrics`, and a
+  short-lived process cannot export the same series (cumulative counters of one resource from many
+  processes overwrite each other, and Prometheus cannot scrape them). A rule that uses a connector type or
+  adapter the process does not know, or a workflow rule whose executions are stored where the process cannot
+  store them, is declined, and each run is a fresh process, so it pays for the encryption service, the license
+  and the alerts resource checks every time.
+
+### Testing a rule type in a process
+
+`alerting/server/task_types/testing/rule_process_harness.ts` is the harness of every real run of a rule
+type (`*_task_process.test.ts` next to the plugin that owns the rule type). `startRuleProcessHarness({ rules:
+[{ taskType, bundle }] })` boots a test Elasticsearch with a trial license, builds the bundles once (four at a
+time), sends the process every setting Kibana sends (alerting, actions, security with the license, `alertingRun`,
+`cases`, `stackConnectors`, the final connectors and the parity lists; more with `settings`), and seeds rules,
+connectors and API keys as Kibana stores them. `run(ruleId, ruleTypeId)` goes through `RemoteTaskRunner` and fails
+when the run was declined; `runInProcess` runs the same rule in the test process, as Kibana's runtime does,
+and `runBoth` compares the two. `createUserWithPrivileges` registers Kibana privileges in Elasticsearch, which a
+process does not, so a rule can be created by a user who may or may not execute connectors or read a data view.
+`rule_process_parity.test.ts` (stack alerts) holds the behaviour tests: enqueue authorization, saved object
+privileges of the executor, timeout and cancel (and the in-memory metrics observer), a forked run against one in
+the test process, and `alert.status.changed` with a fake workflows client contribution.
+
+Every `alerting:*` task type has a real run in the test of its plugin. Each test seeds what
+its executor reads (indices and documents, saved objects such as data views, SLOs, monitors and exception lists, machine
+learning jobs and results), asserts that the run was served by the process (never declined), wrote its alerts and a
+successful `execute` event, and equals the same rule run in the test process (`runBoth`: alerts, events, state):
+
+| Plugin | Test (`server/integration_tests/`) | Rule types |
+| --- | --- | --- |
+| stack alerts | `es_query_task_process`, `stack_alerts_task_process`, `rule_process_parity` | es query, index threshold, tracking containment |
+| stack monitoring | `monitoring_rules_task_process` | the 14 monitoring rule types |
+| transform, data quality | `transform_health_task_process`, `degraded_docs_task_process` | transform health, degraded docs |
+| ML | `anomaly_detection_alert_task_process`, `anomaly_detection_jobs_health_task_process` | anomaly detection, jobs health |
+| APM | `apm_rules_task_process` | error count, transaction duration, transaction error rate, anomaly |
+| infra | `infra_rules_task_process` | metric threshold, inventory, log threshold |
+| observability | `custom_threshold_task_process` | custom threshold |
+| SLO | `slo_burn_rate_task_process` | burn rate |
+| Synthetics, uptime | `synthetics_rules_task_process`, `uptime_rules_task_process` | monitor status and TLS of both, uptime TLS legacy and duration anomaly |
+| security solution | `security_rules_task_process` (`server/task_types/integration_tests`) | query (with exceptions and a response action that schedules the isolation of an Elastic Defend host), saved query, EQL, ES\|QL, threshold, new terms, indicator match, ML, legacy notifications |
+| elastic assistant | `attack_discovery_task_process` | attack discovery |
+
+### Running in a real Kibana (Scout)
+
+The jest tests above do not boot the Kibana plugins. Three Scout config sets (stateful, API tests only) do,
+with `xpack.task_manager.task_execution.mode: child_process`, `bundle_dir` set to bundles built when the config
+loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_REBUILD=true` builds them again)
+and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
+records, with Task Manager at debug, so the tests can see where each run happened.
+
+| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`) | Proves |
+| --- | --- | --- |
+| `task_processes` | `scout_task_processes` | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
+| `task_processes_unknown_connector` | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`) |
+| `task_processes_es_tls` | `scout_task_processes_es_tls` | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster |
+
+```
+node scripts/scout.js start-server --arch stateful --domain classic --serverConfigSet task_processes
+node scripts/playwright test --config x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/playwright.config.ts --project local
+```
+
+Not covered: a service account token to Elasticsearch (`elasticsearch.serviceAccountToken`; the token has to
+exist before Kibana starts), serverless (no serverless config set for it yet), and a Kibana that is killed while a
+process is running (the jest tests of the supervisor cover it).
 
 The distributable builds the bundles into `task_bundles/`.
 

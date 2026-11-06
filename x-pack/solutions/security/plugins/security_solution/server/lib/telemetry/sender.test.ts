@@ -488,6 +488,7 @@ describe('TelemetryEventsSender', () => {
         isOptedIn$: of(true),
       };
       sender['telemetrySetup'] = {
+        getTaskProcessSettings: jest.fn(),
         getTelemetryUrl: jest.fn(async () => new URL('https://telemetry.elastic.co')),
       };
       sender['isTelemetryServicesReachable'] = jest.fn(async () => true);

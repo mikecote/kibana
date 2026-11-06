@@ -96,6 +96,9 @@ fileGroups:
     - test/scout_service_accounts/**/*
     - test/scout_uiam_local/**/*
     - test/scout_task_manager_claim_nudge/**/*
+    - test/scout_task_processes/**/*
+    - test/scout_task_processes_es_tls/**/*
+    - test/scout_task_processes_unknown_connector/**/*
     - '!target/**/*'
   jest-config:
     - jest.config.js

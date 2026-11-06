@@ -86,7 +86,8 @@ const getAnomalies = async (
     [],
     [],
     'auto',
-    params.severity,
+    // The severity the rule stores is a score: the results service takes bands of severity.
+    [{ min: params.severity }],
     // Lookback window will be 2x Bucket time span, for uptime job, for now bucket
     // timespan will always be 15minute
     moment(lastCheckedAt).subtract(30, 'minute').valueOf(),
@@ -202,7 +203,7 @@ export const durationAnomalyAlertFactory: UptimeAlertTypeFactory<ActionGroupIds>
         });
 
         alertsClient.setAlertData({
-          id: DURATION_ANOMALY.id,
+          id: alertId,
           context: {
             [ALERT_DETAILS_URL]: await getAlertUrl(
               uuid,

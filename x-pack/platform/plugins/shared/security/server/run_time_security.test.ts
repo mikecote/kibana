@@ -217,5 +217,38 @@ describe('createRunTimeSecurity', () => {
         })
       );
     });
+
+    it('checks privileges dynamically in the space of the request, which connector authorization needs', async () => {
+      const { authz } = create();
+      scoped.asCurrentUser.security.hasPrivileges.mockImplementation((async (body: any) => {
+        const [{ application, resources, privileges }] = body.application;
+        return {
+          username: 'u',
+          has_all_requested: false,
+          cluster: {},
+          index: {},
+          application: {
+            [application]: Object.fromEntries(
+              resources.map((resource: string) => [
+                resource,
+                Object.fromEntries(privileges.map((privilege: string) => [privilege, false])),
+              ])
+            ),
+          },
+        };
+      }) as never);
+      const request = Object.assign(httpServerMock.createKibanaRequest(), { spaceId: 'other' });
+
+      const { hasAllRequested } = await authz.checkPrivilegesDynamicallyWithRequest(request)({
+        kibana: ['saved_object:action/get'],
+      });
+
+      expect(hasAllRequested).toBe(false);
+      expect(scoped.asCurrentUser.security.hasPrivileges).toHaveBeenCalledWith(
+        expect.objectContaining({
+          application: [expect.objectContaining({ resources: ['space:other'] })],
+        })
+      );
+    });
   });
 });

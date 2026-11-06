@@ -144,12 +144,15 @@ const pureWorkspacePlugin = {
 const peggyPlugin = {
   name: 'peggy',
   setup(b) {
-    const peggy = require('peggy');
+    // The grammar's own config (`<grammar>.config.json`, such as the KQL grammar's extra start rule)
+    // is part of how it is generated, as it is for every other bundler of Kibana.
+    const { getJsSourceSync } = require('@kbn/peggy');
     b.onLoad({ filter: /\.peggy$/ }, (args) => ({
-      contents: peggy.generate(fs.readFileSync(args.path, 'utf8'), {
-        output: 'source',
+      contents: getJsSourceSync({
+        path: args.path,
+        content: fs.readFileSync(args.path, 'utf8'),
         format: 'commonjs',
-      }),
+      }).source,
       loader: 'js',
     }));
   },

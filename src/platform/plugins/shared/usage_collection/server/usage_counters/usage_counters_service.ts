@@ -53,6 +53,11 @@ export interface UsageCountersServiceSetupDeps {
 /* internal */
 export interface UsageCountersServiceStartDeps {
   savedObjects: SavedObjectsServiceStart;
+  /**
+   * Leaves the daily clean-up of expired counters, which Kibana runs, to Kibana. A task process
+   * that stores the counters of the runs it serves sets it.
+   */
+  skipRollups?: boolean;
 }
 
 export class UsageCountersService {
@@ -64,6 +69,10 @@ export class UsageCountersService {
   private readonly source$ = new Rx.Subject<UsageCounters.v1.CounterMetric>();
   private readonly counter$ = this.source$.pipe(Rx.multicast(new Rx.Subject()), Rx.refCount());
   private readonly flushCache$ = new Rx.Subject<void>();
+  /** Closes the buffer of counters right away instead of waiting for the next interval. */
+  private readonly flushBuffer$ = new Rx.Subject<void>();
+  /** Batches of counters that were taken out of the buffer and are not stored yet. */
+  private readonly batchesToStore$ = new Rx.BehaviorSubject<number>(0);
   private readonly stopCaching$ = new Rx.Subject<void>();
 
   private repository?: ISavedObjectsRepository;
@@ -111,13 +120,16 @@ export class UsageCountersService {
     };
   };
 
-  public start = ({ savedObjects }: UsageCountersServiceStartDeps): UsageCountersServiceStart => {
+  public start = ({
+    savedObjects,
+    skipRollups = false,
+  }: UsageCountersServiceStartDeps): UsageCountersServiceStart => {
     this.stopCaching$.next();
     this.repository = savedObjects.createInternalRepository();
     this.counter$
       .pipe(
-        /* buffer source events every ${bufferDurationMs} */
-        Rx.bufferTime(this.bufferDurationMs),
+        /* buffer source events every ${bufferDurationMs}, or when a flush is requested */
+        Rx.buffer(Rx.merge(Rx.interval(this.bufferDurationMs), this.flushBuffer$)),
         /**
          * bufferTime will trigger every ${bufferDurationMs}
          * regardless if source emitted anything or not.
@@ -125,10 +137,12 @@ export class UsageCountersService {
          */
         Rx.filter((counters) => Array.isArray(counters) && counters.length > 0),
         Rx.map((counters) => Object.values(this.mergeCounters(counters))),
+        Rx.tap(() => this.batchesToStore$.next(this.batchesToStore$.value + 1)),
         Rx.takeUntil(this.stop$),
         Rx.concatMap((counters) => this.storeDate$(counters, this.repository!))
       )
       .subscribe((results) => {
+        this.batchesToStore$.next(this.batchesToStore$.value - 1);
         this.logger.debug<UsageCountersLogMeta>('Store counters into savedObjects', {
           kibana: {
             usageCounters: { results },
@@ -139,16 +153,35 @@ export class UsageCountersService {
     this.flushCache$.next();
 
     // we start a regular, timer-based cleanup
-    registerUsageCountersRollups({
-      logger: this.logger,
-      getRegisteredUsageCounters: () => Array.from(this.counterSets.values()),
-      internalRepository: this.repository,
-      pluginStop$: this.stop$,
-    });
+    if (!skipRollups) {
+      registerUsageCountersRollups({
+        logger: this.logger,
+        getRegisteredUsageCounters: () => Array.from(this.counterSets.values()),
+        internalRepository: this.repository,
+        pluginStop$: this.stop$,
+      });
+    }
 
     return {
       search: this.search,
     };
+  };
+
+  /**
+   * Stores the counters that were incremented and waits until they are stored, instead of waiting
+   * for the buffer interval. A task process calls it before it answers a run, which is as long as
+   * it lives for what the run counted.
+   */
+  public flush = async (): Promise<void> => {
+    if (this.stop$.closed || this.stop$.isStopped) return;
+    this.flushBuffer$.next();
+    await Rx.firstValueFrom(
+      this.batchesToStore$.pipe(
+        Rx.filter((batches) => batches <= 0),
+        Rx.takeUntil(this.stop$)
+      ),
+      { defaultValue: undefined }
+    );
   };
 
   public stop = (): UsageCountersServiceStart => {

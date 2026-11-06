@@ -30,7 +30,10 @@ describe('resolveDefaultPolicyEnvironment', () => {
   } = {}) => {
     const service = new EndpointAppContextService();
     const setupContract = createMockEndpointAppContextServiceSetupContract();
-    setupContract.cloud = { ...setupContract.cloud, isCloudEnabled };
+    setupContract.cloud = {
+      ...setupContract.cloud,
+      isCloudEnabled,
+    } as typeof setupContract.cloud;
     const startContract = createMockEndpointAppContextServiceStartContract();
     startContract.licenseService.getLicenseInformation = jest.fn().mockReturnValue(license);
     startContract.licenseService.getLicenseType = jest.fn().mockReturnValue(licenseType);

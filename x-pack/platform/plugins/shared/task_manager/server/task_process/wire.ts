@@ -15,6 +15,7 @@ import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/
 import type { ConcreteTaskInstance, RunResult } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
+import type { TaskProcessParity } from './parity';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -36,8 +37,15 @@ export interface TaskProcessInit {
   server?: TaskProcessServerInfo;
   /** Only when the module declares encrypted saved object types. */
   encryptedSavedObjects?: { encryptionKey?: string; decryptionOnlyKeys: string[] };
-  /** Core's `uiSettings.overrides`, only when the module declares ui settings. */
+  /** Kibana's `uiSettings.overrides`, only when the module declares ui settings. */
   uiSettingsOverrides?: Record<string, unknown>;
+  /** Kibana's `uiSettings.globalOverrides`, only when the module declares ui settings. */
+  uiSettingsGlobalOverrides?: Record<string, unknown>;
+  /**
+   * What Kibana has registered, which the process compares with what it registered itself before it
+   * runs anything (see `TaskTypeModule.parity`). Absent for a remote process.
+   */
+  parity?: TaskProcessParity;
   /** Plugin configs by plugin id in `serializeSettings` format; only the ids the module declares. */
   settings?: Record<string, SerializedValue>;
 }
@@ -46,13 +54,22 @@ export interface TaskProcessServerInfo {
   uuid: string;
   buildNum: number;
   /**
-   * Where a process reaches this Kibana over HTTP: its public URL, or its own address when none is
-   * configured. Core's self client calls it with the run's credentials.
+   * Kibana's `server.publicBaseUrl` as Core has it: absent when Kibana has none, so the links a run
+   * builds are empty exactly when Kibana's are. Never the address a process reaches Kibana at.
    */
   publicBaseUrl?: string;
-  /** Kibana's `server.basePath`, which the self client prefixes to every path. */
-  basePath?: string;
+  /**
+   * Where a process reaches this Kibana over HTTP: its public URL, or its own address when none is
+   * configured. Core's self client calls it with the run's credentials (it is the `publicBaseUrl` of
+   * the process's Core, which a run never reads for links: those use `publicBaseUrl` above).
+   */
+  kibanaUrl?: string;
   isServerless: boolean;
+  /**
+   * Kibana's `server.basePath`, which the self client prefixes to every path and which Core requires
+   * a `publicBaseUrl` with a path to contain.
+   */
+  basePath?: string;
   /** Kibana runs from source, which loosens a few of Core's config checks. */
   isDev?: boolean;
 }
@@ -96,21 +113,10 @@ export interface SerializedRunResult {
   taskRunError?: SerializedTaskRunError;
 }
 
-/**
- * What a run reports that only Kibana can send on: analytics events through Core, feature usage
- * through licensing, and payloads that a plugin sends through a channel of its own, such as security
- * telemetry. The process returns them with the run, and the Kibana that dispatched the run reports them.
- */
-export interface TaskProcessTelemetry {
-  events: Array<{ eventType: string; data: unknown }>;
-  featureUsages: Array<{ featureName: string; lastUsed?: string }>;
-  custom: Array<{ kind: string; payload: unknown }>;
-}
-
 export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }
-) & { customTaskRunEventFields?: Record<string, unknown>; telemetry?: TaskProcessTelemetry };
+) & { customTaskRunEventFields?: Record<string, unknown> };
 
 const TASK_INSTANCE_DATE_FIELDS = ['scheduledAt', 'startedAt', 'retryAt', 'runAt'] as const;
 

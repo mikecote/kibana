@@ -68,6 +68,7 @@ describe('TelemetryEventsSender', () => {
         isOptedIn$: new Observable<boolean>(),
       };
       sender['telemetrySetup'] = {
+        getTaskProcessSettings: jest.fn(),
         getTelemetryUrl: jest.fn(
           async () => new URL('https://telemetry-staging.elastic.co/v3/send/snapshot')
         ),
@@ -122,6 +123,7 @@ describe('TelemetryEventsSender', () => {
         isOptedIn$: new Observable<boolean>(),
       };
       sender['telemetrySetup'] = {
+        getTaskProcessSettings: jest.fn(),
         getTelemetryUrl: jest.fn(
           async () => new URL('https://telemetry.elastic.co/v3/send/snapshot')
         ),

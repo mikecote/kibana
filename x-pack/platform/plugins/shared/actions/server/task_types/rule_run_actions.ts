@@ -18,6 +18,8 @@ import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
+import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
+import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
@@ -35,6 +37,7 @@ import {
   ALERT_SAVED_OBJECT_TYPE,
 } from '../constants/saved_objects';
 import { createBulkExecutionEnqueuerFunction } from '../create_execute_function';
+import type { InMemoryConnector } from '../types';
 import { createSystemConnectors } from '../create_system_actions';
 import { ensureSufficientLicense } from '../lib/ensure_sufficient_license';
 import { getInMemoryConnectorsFromConfig } from '../lib/get_in_memory_connectors_from_config';
@@ -78,6 +81,13 @@ export interface RuleRunActionsDeps {
   logger: Logger;
   /** The validated actions config, as Kibana has it. */
   config: ActionsConfig;
+  /**
+   * Kibana's final in-memory connectors (see `ActionsTaskProcessSettings`). Without them, which only
+   * a process that was sent none has, they are rebuilt from the config, which cannot know what
+   * Kibana learned after it read it: conflicts with saved connectors and connectors other plugins
+   * registered.
+   */
+  inMemoryConnectors?: InMemoryConnector[];
   license$: Observable<ILicense>;
   elasticsearch: Pick<IClusterClient, 'asScoped' | 'asInternalUser'>;
   savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
@@ -87,6 +97,11 @@ export interface RuleRunActionsDeps {
   taskManager: Pick<TaskManagerStartContract, 'bulkSchedule' | 'aggregate'>;
   publicBaseUrl?: string;
   /**
+   * The security plugin's authorization: the privileges of the connector are checked when a rule run
+   * enqueues it, as in Kibana. Without it (security is off) nothing is checked.
+   */
+  authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
+  /**
    * Set for rule types that execute connectors themselves in the process, such as attack discovery
    * calling a model connector: the executor is initialized as the actions plugin initializes it.
    * Without it nothing executes here, and the enqueued `actions:*` tasks are run by Kibana.
@@ -95,10 +110,12 @@ export interface RuleRunActionsDeps {
     security: SecurityServiceStart;
     eventLogger: IEventLogger;
     analyticsService: AnalyticsServiceStart;
-    /** The security plugin's authorization, when the process has one. */
-    authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
     createInternalRepository: SavedObjectsServiceStart['createInternalRepository'];
   };
+  /** The counter of the actions domain, which the actions client counts what it is asked to with. */
+  usageCounter?: IUsageCounter;
+  /** Records that a licensed connector type was used, as the licensing plugin does in Kibana. */
+  featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
   /** Registers the connector types a rule run may enqueue, such as stack_connectors'. */
   registerConnectorTypes: (
     actions: RuleRunActionsSetup,
@@ -120,12 +137,20 @@ export const createRuleRunActions = (
 ): {
   actionsPlugin: RuleRunActionsStart;
   hasActionType: (id: string) => boolean;
+  /** The ids of the connector types registered, for comparing with Kibana's. */
+  getActionTypeIds: () => string[];
   stop: () => void;
 } => {
   const { logger, config } = deps;
   const configurationUtilities = getActionsConfigurationUtilities(config);
   const licenseState = new LicenseState(deps.license$);
-  const inMemoryConnectors = getInMemoryConnectorsFromConfig(config, logger);
+  // As the actions plugin does at start: using a licensed connector type is recorded.
+  if (deps.featureUsage) licenseState.setNotifyUsage(deps.featureUsage.notifyUsage);
+  const sentConnectors = deps.inMemoryConnectors;
+  // A copy: connector types the process registers must not change what Kibana sent.
+  const inMemoryConnectors = sentConnectors
+    ? [...sentConnectors]
+    : getInMemoryConnectorsFromConfig(config, logger);
 
   const actionTypeRegistry = new ActionTypeRegistry({
     licensing: {
@@ -160,7 +185,9 @@ export const createRuleRunActions = (
     getClientLeasePool: () => clientLeasePool,
   };
   deps.registerConnectorTypes(setup, { publicBaseUrl: deps.publicBaseUrl });
-  inMemoryConnectors.push(...createSystemConnectors(actionTypeRegistry.list()));
+  // Kibana's list already holds its system connectors.
+  if (!sentConnectors)
+    inMemoryConnectors.push(...createSystemConnectors(actionTypeRegistry.list()));
 
   const authTypeRegistry = new AuthTypeRegistry();
   registerAuthTypes(authTypeRegistry);
@@ -220,7 +247,7 @@ export const createRuleRunActions = (
       actionTypeRegistry,
       inMemoryConnectors,
       getActionsAuthorizationWithRequest: (request: KibanaRequest) =>
-        new ActionsAuthorization({ request, authorization: executor.authorization }),
+        new ActionsAuthorization({ request, authorization: deps.authorization }),
       analyticsService: executor.analyticsService,
       getCurrentUserProfileIdFromAPIKey: getCurrentUserProfileIdFromAPIKeyFactory({
         logger,
@@ -247,14 +274,10 @@ export const createRuleRunActions = (
           scopedClusterClient: deps.elasticsearch.asScoped(request),
           inMemoryConnectors,
           request,
-          // Without the security plugin there is nothing to authorize against, as with security off;
-          // the enqueued connector task is checked again when Kibana runs it.
-          authorization: new ActionsAuthorization({
-            request,
-            authorization: deps.executor?.authorization,
-          }),
+          authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
           actionExecutor,
           bulkExecutionEnqueuer,
+          usageCounter: deps.usageCounter as UsageCounter | undefined,
           connectorTokenClient: new ConnectorTokenClient({
             unsecuredSavedObjectsClient,
             encryptedSavedObjectsClient,
@@ -279,6 +302,7 @@ export const createRuleRunActions = (
         ),
     },
     hasActionType: (id) => actionTypeRegistry.has(id),
+    getActionTypeIds: () => actionTypeRegistry.getAllTypes(),
     stop: () => {
       licenseState.clean();
       clientLeasePool.stop();

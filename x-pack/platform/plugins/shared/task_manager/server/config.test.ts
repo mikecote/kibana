@@ -360,6 +360,27 @@ describe('config validation', () => {
     );
   });
 
+  test('validates the child process limits', () => {
+    expect(
+      configSchema.validate({
+        task_execution: {
+          mode: 'child_process',
+          max_concurrent_processes: 4,
+          child_max_old_space_mb: 512,
+        },
+      }).task_execution
+    ).toMatchObject({ max_concurrent_processes: 4, child_max_old_space_mb: 512 });
+    expect(
+      configSchema.validate({ task_execution: { mode: 'child_process' } }).task_execution
+    ).toEqual({ mode: 'child_process' });
+    expect(() =>
+      configSchema.validate({ task_execution: { max_concurrent_processes: 0 } })
+    ).toThrow();
+    expect(() =>
+      configSchema.validate({ task_execution: { child_max_old_space_mb: 8 } })
+    ).toThrow();
+  });
+
   test('rejects an unknown mode', () => {
     expect(() => configSchema.validate({ task_execution: { mode: 'lambda' } })).toThrow();
   });

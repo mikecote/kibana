@@ -347,6 +347,60 @@ describe('TaskManagerPlugin', () => {
       expect(TaskProcessSupervisor).not.toHaveBeenCalled();
     });
 
+    test('evaluates the feature flags a module declares and the ones the registration adds, per dispatch', async () => {
+      const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
+        ...pluginInitializerContextParams,
+        task_execution: { mode: 'remote', remote: { url: 'http://pod:4100' } },
+      } as TaskManagerConfig);
+      pluginInitializerContext.node.roles.backgroundTasks = true;
+      const core = coreMock.createSetup();
+      (core.elasticsearch.legacy as { config$: unknown }).config$ = of({
+        hosts: ['http://es:9200'],
+        customHeaders: {},
+        requestHeadersWhitelist: [],
+        idleSocketTimeout: moment.duration(1000),
+        dnsCacheTtl: moment.duration(1000),
+        requestTimeout: moment.duration(1000),
+        sniffInterval: false,
+        ssl: { verificationMode: 'full' },
+      });
+      const plugin = new TaskManagerPlugin(pluginInitializerContext);
+      const setup = plugin.setup(core, { usageCollection: undefined });
+      let added: Record<string, boolean> = { 'added.flag': false };
+      setup.registerTaskType(
+        defineTaskType({
+          type: 'test:flags',
+          featureFlags: { 'declared.flag': false },
+          createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+        }),
+        { featureFlags: () => added }
+      );
+      const start = coreMock.createStart();
+      const values: Record<string, boolean> = { 'declared.flag': true, 'added.flag': true };
+      start.featureFlags.getBooleanValue$ = jest.fn((name: string, fallback: boolean) =>
+        of(values[name] ?? fallback)
+      ) as never;
+      plugin.start(start, {
+        cloud: cloudMock.createStart(),
+        licensing: licensingMock.createStart(),
+      });
+      const { taskProcessDispatch } = (TaskPollingLifecycle as jest.Mock).mock.calls.at(-1)[0];
+
+      await expect(taskProcessDispatch.getFeatureFlags('test:flags')).resolves.toEqual({
+        'declared.flag': true,
+        'added.flag': true,
+      });
+      // Read again for the next dispatch: what a plugin registered since is sent too.
+      added = { 'added.flag': false, 'later.flag': false };
+      values['later.flag'] = true;
+      await expect(taskProcessDispatch.getFeatureFlags('test:flags')).resolves.toEqual({
+        'declared.flag': true,
+        'added.flag': true,
+        'later.flag': true,
+      });
+      await expect(taskProcessDispatch.getFeatureFlags('test:unknown')).resolves.toBeUndefined();
+    });
+
     test('starts the supervisor with the Kibana Elasticsearch connection and stops it', async () => {
       mockSupervisor.getRoute.mockReturnValue({ acquire: jest.fn() });
       const { plugin, taskProcessDispatch } = create({ mode: 'child_process' });
@@ -366,6 +420,103 @@ describe('TaskManagerPlugin', () => {
       await plugin.stop();
       expect(mockSupervisor.stop).toHaveBeenCalledTimes(1);
       deleteCurrentNodeSpy.mockClear();
+    });
+  });
+
+  describe('what a task process is sent', () => {
+    const setupWithModule = (startServices: Record<string, unknown>) => {
+      const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
+        ...pluginInitializerContextParams,
+        task_execution: { mode: 'child_process' },
+      } as TaskManagerConfig);
+      pluginInitializerContext.node.roles.backgroundTasks = true;
+      const core = coreMock.createSetup();
+      (core.elasticsearch.legacy as { config$: unknown }).config$ = of({
+        hosts: ['http://es:9200'],
+        customHeaders: {},
+        requestHeadersWhitelist: [],
+        idleSocketTimeout: moment.duration(1000),
+        dnsCacheTtl: moment.duration(1000),
+        requestTimeout: moment.duration(1000),
+        sniffInterval: false,
+        ssl: { verificationMode: 'full' },
+      });
+      core.getStartServices.mockResolvedValue([
+        { ...coreStart, ...startServices },
+        {},
+        {},
+      ] as never);
+      (core.http.basePath as { publicBaseUrl?: string }).publicBaseUrl = undefined;
+      let connectorTypes = ['.email'];
+      const plugin = new TaskManagerPlugin(pluginInitializerContext);
+      const setup = plugin.setup(core, { usageCollection: undefined });
+      setup.registerTaskType(
+        defineTaskType({
+          type: 'test:module',
+          createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+        }),
+        {
+          settings: { connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }) },
+          parity: { connectorTypes: () => connectorTypes },
+        }
+      );
+      plugin.start(coreStart, {
+        cloud: cloudMock.createStart(),
+        licensing: licensingMock.createStart(),
+      });
+      const { getInitFor } = (TaskProcessSupervisor as unknown as jest.Mock).mock.calls.at(-1)[0]
+        .settings;
+      return { getInitFor, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
+    };
+
+    const uiSettingsStart = (
+      overrides: Record<string, unknown>,
+      globalOverrides: Record<string, unknown>
+    ) => {
+      const scoped = (values: Record<string, unknown>) => ({
+        getUserProvided: jest.fn().mockResolvedValue({
+          // Overrides, a null override, and a value a user saved that is not an override.
+          ...Object.fromEntries(
+            Object.entries(values).map(([key, value]) => [
+              key,
+              value === null ? { isOverridden: true } : { isOverridden: true, userValue: value },
+            ])
+          ),
+          saved: { userValue: 'from the saved object' },
+        }),
+      });
+      return {
+        uiSettings: {
+          asScopedToClient: jest.fn().mockReturnValue(scoped(overrides)),
+          globalAsScopedToClient: jest.fn().mockReturnValue(scoped(globalOverrides)),
+        },
+      };
+    };
+
+    test("sends Kibana's ui settings overrides and what it registered, read for each run", async () => {
+      const { getInitFor, setConnectorTypes } = setupWithModule(
+        uiSettingsStart({ 'dateFormat:tz': 'UTC', removed: null }, { 'global:flag': true })
+      );
+
+      const first = await getInitFor('test:module');
+      expect(first.uiSettingsOverrides).toEqual({ 'dateFormat:tz': 'UTC', removed: null });
+      expect(first.uiSettingsGlobalOverrides).toEqual({ 'global:flag': true });
+      expect(first.parity).toEqual([{ kind: 'connectorTypes', ids: ['.email'] }]);
+      expect(first.settings.connectors).toEqual({
+        list: [{ id: 'dynamic', secrets: { token: 't' } }],
+      });
+
+      // A connector type registered later is in the next run's parity.
+      setConnectorTypes(['.email', '.later']);
+      expect((await getInitFor('test:module')).parity).toEqual([
+        { kind: 'connectorTypes', ids: ['.email', '.later'] },
+      ]);
+    });
+
+    test('sends the public base URL as Core has it: none when Kibana has none', async () => {
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}));
+      const init = await getInitFor('test:module');
+      expect(init.server.publicBaseUrl).toBeUndefined();
     });
   });
 

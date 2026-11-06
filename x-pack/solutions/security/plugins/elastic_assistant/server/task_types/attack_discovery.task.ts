@@ -64,6 +64,34 @@ const getBasePath = (publicBaseUrl?: string): string => {
   }
 };
 
+/**
+ * Why a process cannot store workflow executions as Kibana does: only plain indices are implemented
+ * here, so a rule that schedules workflows runs in Kibana when the engine stores them elsewhere (a
+ * data stream implementation comes with the workflows plugins).
+ */
+export const getUnsupportedStorage = (
+  engineConfig: Pick<WorkflowsExecutionEngineConfig, 'storage'> | undefined
+): string | undefined =>
+  engineConfig && engineConfig.storage.source !== 'plain_index'
+    ? `Workflow executions stored in "${engineConfig.storage.source}" are only available in Kibana`
+    : undefined;
+
+/** Declines a rule that schedules workflows when the process cannot store their executions as Kibana does. */
+export const declineUnsupportedWorkflowStorage = ({
+  settings,
+  ruleParams,
+}: {
+  settings: Record<string, unknown>;
+  ruleParams: Record<string, unknown>;
+}): string | undefined =>
+  ruleParams.workflowConfig != null
+    ? getUnsupportedStorage(
+        settings[WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID] as
+          | WorkflowsExecutionEngineConfig
+          | undefined
+      )
+    : undefined;
+
 /** What the module reads of the host besides `TaskHost`: the services Core owns that a process lends it. */
 type RunHost = TaskHost & {
   /** Core's user profile service: needed when a workflow is private to its owner. */
@@ -124,11 +152,9 @@ const getWorkflowExecutorFactory = (
     const engineConfig = deps.settings[
       WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID
     ] as WorkflowsExecutionEngineConfig;
-    if (engineConfig.storage.source !== 'plain_index') {
-      throw new Error(
-        `Workflow executions stored in "${engineConfig.storage.source}" are only available in Kibana`
-      );
-    }
+    // Declined before the run starts (see `declineRun`); this is the safety net.
+    const unsupportedStorage = getUnsupportedStorage(engineConfig);
+    if (unsupportedStorage) throw new Error(unsupportedStorage);
 
     const esClient = host.elasticsearch.asInternalUser;
     const dataClients = createPlainIndexDataClients({ esClient, logger });
@@ -240,7 +266,8 @@ const withFeatureFlagsAndContribution = (module: RuleTaskTypeModule): RuleTaskTy
     enumerable: true,
     configurable: true,
     writable: true,
-    value: { [ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG]: true },
+    // Next to the flags the contributions of other plugins declare.
+    value: { ...module.featureFlags, [ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG]: true },
   });
   if (module.contributions) {
     const { apply } = module.contributions;
@@ -289,6 +316,8 @@ export const taskType = withFeatureFlagsAndContribution(
     {
       // The connector of the rule is executed with the actions executor of the process.
       executeConnectors: true,
+      // A rule that schedules workflows needs the storage Kibana's workflow engine has, before it has side effects.
+      declineRun: declineUnsupportedWorkflowStorage,
       // The attack discovery event log provider, and the encrypted `task` type its workflow tasks use.
       eventLogProviders: [
         {

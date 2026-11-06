@@ -17,6 +17,11 @@ export class ConnectorAdapterRegistry {
     return this.connectorAdapters.has(connectorTypeId);
   }
 
+  /** The ids of the connector types that have an adapter. */
+  public getIds(): string[] {
+    return [...this.connectorAdapters.keys()];
+  }
+
   public register<
     RuleActionParams extends ConnectorAdapterParams = ConnectorAdapterParams,
     ConnectorParams extends ConnectorAdapterParams = ConnectorAdapterParams

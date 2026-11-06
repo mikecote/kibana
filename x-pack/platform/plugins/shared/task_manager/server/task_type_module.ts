@@ -11,7 +11,7 @@ import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
+import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { HttpServiceStart } from '@kbn/core-http-server';
@@ -19,12 +19,14 @@ import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
+import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type {
   EncryptedSavedObjectTypeRegistration,
   EncryptedSavedObjectsClient,
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
 import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
+import type { TaskTypeParityHook } from './task_process/parity';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
 
 export interface TaskHostEventLog {
@@ -77,16 +79,10 @@ export interface TaskHost {
   };
 
   /**
-   * Core's analytics in Kibana. In a task process the events are returned with the run, and the
-   * Kibana that dispatched it reports them.
+   * Core's analytics. In a task process the events are shipped from the process itself, before the
+   * run answers, when the module lists the telemetry task plugin in `taskPlugins`.
    */
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
-  /**
-   * A channel of a plugin, such as security telemetry, that only Kibana can send on: a task process
-   * returns the payloads with the run and Kibana hands them to the sink the plugin registered with
-   * `registerTaskProcessTelemetrySink`; in Kibana the sink is called directly.
-   */
-  telemetry: { report: (kind: string, payload: unknown) => void };
 
   /**
    * Core's HTTP contract for calling Kibana itself. In a task process there is no listener: the self
@@ -95,6 +91,12 @@ export interface TaskHost {
   http: Pick<HttpServiceStart, 'selfClient' | 'basePath' | 'getServerInfo'>;
   /** Core's user profile service; in a task process the security task plugin's delegate answers. */
   userProfile?: UserProfileServiceStart;
+  /**
+   * A task process only: registers what has to finish before the process answers a run, such as
+   * sending a queue of events. Bounded by a timeout, so a slow endpoint cannot hold the run. In
+   * Kibana nothing answers for a run, and what a plugin queues is sent by its own lifecycle.
+   */
+  onRunEnd?: (flusher: () => Promise<void>) => void;
   /** Declared with `featureFlags`. */
   featureFlags?: Pick<
     FeatureFlagsStart,
@@ -115,12 +117,20 @@ export interface TaskHost {
   /** Declared with `taskManager`. */
   taskManager?: HostTaskManager;
   /** Declared with `uiSettings`. */
-  uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
+  uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient' | 'globalAsScopedToClient'>;
   /** Declared with `licensing`. */
   licensing?: {
     license$: Observable<ILicense>;
-    /** Records that a licensed feature was used; reported by Kibana when a task process returns. */
+    /** Records that a licensed feature was used, durably, for every node and process to see. */
     featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
+  };
+  /**
+   * Declared with `usageCounters`. The counter of a domain (such as `alerting`), made once and counting
+   * from then on: in Kibana it is the usage collection plugin's, in a task process the counts are
+   * stored when the run ends, in the same saved objects.
+   */
+  usageCounters?: {
+    getUsageCounter: (domainId: string, params?: { retentionPeriodDays?: number }) => IUsageCounter;
   };
   /** Validated plugin configs by plugin id, for the ids listed in `settings`. */
   settings?: Record<string, unknown>;
@@ -152,10 +162,25 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * (default: the `actions:` tasks that enqueue connectors).
    */
   taskManager?: true | { schedulableTypes?: RegExp[] };
-  /** Gives the runner `host.uiSettings`, with these defaults registered in a task process. */
-  uiSettings?: { defaults?: Array<Record<string, UiSettingsParams>> };
+  /**
+   * Gives the runner `host.uiSettings`, with these defaults registered in a task process: `defaults`
+   * as `core.uiSettings.register` takes them, `globalDefaults` as `registerGlobal` does (read with
+   * `host.uiSettings.globalAsScopedToClient`).
+   */
+  uiSettings?: {
+    defaults?: Array<Record<string, UiSettingsParams>>;
+    globalDefaults?: Array<Record<string, UiSettingsParams>>;
+  };
+  /**
+   * The analytics event types the runner reports, which Core's analytics requires to be registered
+   * before an event is reported. A task process registers them; Kibana's plugins already have.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  analyticsEventTypes?: Array<EventTypeOpts<any>>;
   /** Gives the runner `host.licensing`. */
   licensing?: true;
+  /** Gives the runner `host.usageCounters`. */
+  usageCounters?: true;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
   /**
@@ -188,6 +213,13 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
     keys: string[];
     apply?: (contributions: Record<string, unknown[]>) => TaskTypeModule;
   };
+  /**
+   * How a task process proves it registered what Kibana did (connector types, say): for each kind,
+   * the ids it registered. Kibana sends what it has registered with every dispatch, and a process
+   * that lacks any id declines its runs (`DeclinedRunError`) with a warning that names them, instead
+   * of behaving differently. Kibana ignores it.
+   */
+  parity?: TaskTypeParityHook[];
   createTaskRunner: (context: RunContext, host: TaskHost) => CancellableTask;
 }
 
@@ -221,6 +253,17 @@ export interface TaskTypeRegistrationOptions {
    * the task process of this task type; the module it runs reads the ones it lists in `settings`.
    */
   settings?: Record<string, () => unknown>;
+  /**
+   * What this Kibana has registered, by kind, read when a run is dispatched to a process; the
+   * process compares it with what the module's `parity` hooks say it registered.
+   */
+  parity?: Record<string, () => string[]>;
+  /**
+   * Feature flags besides the ones the module declares, read when a run is dispatched to a process
+   * (with their fallbacks). For a module Kibana registers without the flags the module a process
+   * runs declares, such as the opt-ins of plugins that other plugins register with Kibana.
+   */
+  featureFlags?: () => Record<string, boolean | string | number>;
 }
 
 /** Throws when a declared capability has no real service to hand to the module in Kibana. */
@@ -256,7 +299,9 @@ export const defineTaskType = (module: TaskTypeModule): TaskTypeModule => module
  */
 export const toTaskDefinition = (
   module: TaskTypeModule,
-  getHost: () => Promise<TaskHost>
+  getHost: () => Promise<TaskHost>,
+  /** Runs before every run, with the host; throwing (a `DeclinedRunError`, say) stops the run. */
+  beforeRun?: (host: TaskHost) => Promise<void>
 ): TaskRegisterDefinition => {
   const {
     type,
@@ -266,11 +311,14 @@ export const toTaskDefinition = (
     taskManager,
     uiSettings,
     licensing,
+    analyticsEventTypes,
+    usageCounters,
     settings,
     contributions,
     taskPlugins,
     featureFlags,
     optionalSettings,
+    parity,
     createTaskRunner,
     ...definition
   } = module;
@@ -281,7 +329,9 @@ export const toTaskDefinition = (
       let cancelled = false;
       return {
         run: async () => {
-          created = createTaskRunner(context, await getHost());
+          const host = await getHost();
+          await beforeRun?.(host);
+          created = createTaskRunner(context, host);
           // Cancelled while the host was resolving: the run never starts.
           if (cancelled) await created.cancel?.();
           return created.run();

@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { of, Subject } from 'rxjs';
+import { firstValueFrom, of, Subject } from 'rxjs';
 import type { Logger, SavedObjectsServiceStart, SecurityServiceStart } from '@kbn/core/server';
 import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
@@ -16,8 +16,14 @@ import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
+import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
+import { ACTIONS_FEATURE_ID } from '@kbn/actions-plugin/common';
 import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import { EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER } from '@kbn/actions-plugin/server/constants/event_log';
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  type ActionsTaskProcessSettings,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
 import { AlertsService } from '../../alerts_service/alerts_service';
 import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
@@ -27,15 +33,20 @@ import type { ConnectorAdapter } from '../../connector_adapters/types';
 import { EVENT_LOG_PROVIDER } from '../../constants/event_log';
 import { getActionsConfigMap } from '../../lib/get_actions_config_map';
 import { LicenseState } from '../../lib/license_state';
+import type { AlertStatusChangedOptIn } from '../../lib/workflow_extensions/alert_status_changed_opt_in';
+import { createWorkflowsAlertStatusChangedEmitter } from '../../lib/workflow_extensions/alert_status_changed_emitter';
 import { InMemoryMetrics } from '../../monitoring/in_memory_metrics';
 import { RulesSettingsClientFactory } from '../../rules_settings/rules_settings_client_factory';
 import { RulesSettingsService } from '../../rules_settings/rules_settings_service';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';
 import { MaintenanceWindowsService } from '../../task_runner/maintenance_windows/maintenance_windows_service';
+import { ALERTING_FEATURE_ID } from '../../types';
 import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
 import type { RuleRunContribution } from '../rule_run_contribution';
+import { ALERTING_RUN_SETTINGS_ID, DEFAULT_ALERTING_RUN_SETTINGS } from '../rule_run_settings';
+import type { AlertingRunSettings } from '../rule_run_settings';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 import { createStandaloneFieldFormats } from './field_formats';
 
@@ -54,14 +65,26 @@ export interface StandaloneRuleRunOptions {
   executeConnectors?: boolean;
 }
 
+/**
+ * What a data view service reads of the capabilities, only to know whether a request may save: a
+ * process never resolves them, so nothing may be saved through the data views of a run.
+ */
+const noCapabilities = {
+  resolveCapabilities: async () => ({
+    indexPatterns: { save: false },
+    advancedSettings: { save: false },
+  }),
+} as never;
+
 const spaceIdToNamespace = (spaceId?: string) =>
   spaceId ? SavedObjectsUtils.namespaceStringToId(spaceId) : undefined;
 
 /**
  * The services of a rule run, built from the task host instead of the alerting plugin and the
  * plugins it uses. Everything is the plugin's own class over the host's services, except what
- * cannot exist in a process, which is `undefined` here and listed in the task types README: usage
- * counters, the `alert.status.changed` event bus, and the backfill and event log read clients.
+ * cannot exist in a process, which is `undefined` here and listed in the task types README: the
+ * backfill and event log read clients. `alert.status.changed` events go out through the workflows
+ * client a contribution provides (`getWorkflowsClient`), and nothing without one.
  */
 export const createStandaloneRuleRunRuntime = ({
   host,
@@ -76,6 +99,9 @@ export const createStandaloneRuleRunRuntime = ({
   fieldFormats: ReturnType<typeof createStandaloneFieldFormats>;
   /** The action types a rule would use that this process cannot enqueue. */
   getUnsupportedActionTypes: (actionTypeIds: string[]) => string[];
+  /** The ids of the connector types and connector adapters this process registered. */
+  getRegisteredConnectorTypeIds: () => string[];
+  getRegisteredConnectorAdapterIds: () => string[];
   stop: () => void;
 } => {
   const settings = host.settings ?? {};
@@ -87,6 +113,16 @@ export const createStandaloneRuleRunRuntime = ({
   const uiSettings = host.uiSettings as UiSettingsServiceStart;
 
   const licenseState = new LicenseState(host.licensing!.license$);
+  // As in Kibana, a rule type that needs a license reports its use, to the store every node shares.
+  if (host.licensing!.featureUsage) {
+    licenseState.setNotifyUsage(host.licensing!.featureUsage.notifyUsage);
+  }
+
+  // The counters of the domains Kibana counts rule runs under, stored when the run ends.
+  const usageCounter = host.usageCounters?.getUsageCounter(ALERTING_FEATURE_ID) as
+    | UsageCounter
+    | undefined;
+  const actionsUsageCounter = host.usageCounters?.getUsageCounter(ACTIONS_FEATURE_ID);
 
   const rulesSettingsClientFactory = new RulesSettingsClientFactory();
   rulesSettingsClientFactory.initialize({
@@ -102,6 +138,11 @@ export const createStandaloneRuleRunRuntime = ({
     logger,
   });
 
+  // What Kibana decided while it started from the plugins around alerting.
+  const runSettings =
+    (settings[ALERTING_RUN_SETTINGS_ID] as AlertingRunSettings | undefined) ??
+    DEFAULT_ALERTING_RUN_SETTINGS;
+
   const maintenanceWindowClientFactory = new MaintenanceWindowClientFactory();
   maintenanceWindowClientFactory.initialize({
     logger,
@@ -112,8 +153,11 @@ export const createStandaloneRuleRunRuntime = ({
   const maintenanceWindowsService = new MaintenanceWindowsService({
     cacheInterval: config.rulesSettings.cacheInterval,
     logger,
+    // As in Kibana: without the maintenance windows plugin no window applies to a run.
     getMaintenanceWindowClient: (request) =>
-      maintenanceWindowClientFactory.createWithoutAuthorization(request),
+      runSettings.maintenanceWindowsEnabled
+        ? maintenanceWindowClientFactory.createWithoutAuthorization(request)
+        : undefined,
   });
 
   // Kibana installs the alerts resources and keeps them up to date; the process only needs the
@@ -136,15 +180,33 @@ export const createStandaloneRuleRunRuntime = ({
   const connectorAdapterRegistry = new ConnectorAdapterRegistry();
   connectorAdapters.forEach((adapter) => connectorAdapterRegistry.register(adapter));
 
-  const { actionsPlugin, hasActionType, stop } = createRuleRunActions({
+  // Kibana's connectors as it has them now, not rebuilt from the config.
+  const sentConnectors = settings[ACTIONS_CONNECTORS_SETTINGS_ID] as
+    | ActionsTaskProcessSettings
+    | undefined;
+  // The opt-ins of `alert.status.changed` the contributions register, as plugins do in Kibana.
+  const alertStatusChangedOptIns: AlertStatusChangedOptIn[] = [];
+  const contributionContext = {
+    logger,
+    isServerless,
+    kibanaVersion,
+    publicBaseUrl,
+    settings,
+    host,
+  };
+  const { actionsPlugin, hasActionType, getActionTypeIds, stop } = createRuleRunActions({
     logger: host.logger.get('plugins', 'actions'),
     config: actionsConfig,
+    inMemoryConnectors: sentConnectors?.inMemoryConnectors,
     license$: host.licensing!.license$,
+    usageCounter: actionsUsageCounter,
+    featureUsage: host.licensing!.featureUsage,
     elasticsearch: host.elasticsearch,
     savedObjects,
     getEncryptedSavedObjectsClient: host.encryptedSavedObjects!.getClient,
     taskManager: host.taskManager!,
     publicBaseUrl,
+    authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
     executor: executeConnectors
       ? {
           security: host.security as SecurityServiceStart,
@@ -152,7 +214,6 @@ export const createStandaloneRuleRunRuntime = ({
             event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
           }) as IEventLogger,
           analyticsService: host.analytics as never,
-          authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
           createInternalRepository: host.savedObjects.createInternalRepository,
         }
       : undefined,
@@ -162,16 +223,13 @@ export const createStandaloneRuleRunRuntime = ({
         alerting: {
           registerConnectorAdapter: (adapter: unknown) =>
             connectorAdapterRegistry.register(adapter as ConnectorAdapter),
+          enableAlertStatusChanged: (optIn: AlertStatusChangedOptIn) => {
+            alertStatusChangedOptIns.push(optIn);
+          },
         },
       };
       contributions.forEach((contribution) =>
-        contribution.register?.(registries, {
-          logger,
-          isServerless,
-          kibanaVersion,
-          publicBaseUrl,
-          settings,
-        })
+        contribution.register?.(registries, contributionContext)
       );
     },
   });
@@ -182,9 +240,11 @@ export const createStandaloneRuleRunRuntime = ({
       logger,
       uiSettings,
       fieldFormats,
-      capabilities: {} as never,
-      scriptedFieldsEnabled: true,
-      rollupsEnabled: false,
+      // A rule run never saves a data view, which is all Kibana reads capabilities for: it asks with
+      // a request, and the user of a rule can save none through a data view service of its run.
+      capabilities: noCapabilities,
+      scriptedFieldsEnabled: runSettings.dataViews.scriptedFieldsEnabled,
+      rollupsEnabled: runSettings.search?.rollupsEnabled ?? false,
     }),
   };
   const data = {
@@ -196,10 +256,27 @@ export const createStandaloneRuleRunRuntime = ({
       dataViews: dataViews as never,
       fieldFormats,
       isServerless,
+      searchConfig: runSettings.search?.searchConfig,
+      elasticsearchTimeouts: runSettings.search?.elasticsearchTimeouts,
+      rollupsEnabled: runSettings.search?.rollupsEnabled,
+      // ES|QL searches read the license to allow approximation, as they do in Kibana.
+      licensing: { getLicense: () => firstValueFrom(host.licensing!.license$) as never },
     }),
   };
 
+  // Events go out with the workflows client the workflows plugins contribute; without one nothing is sent.
+  const workflowsContribution = contributions.find(({ getWorkflowsClient }) => getWorkflowsClient);
+  const alertStatusChanged = workflowsContribution
+    ? createWorkflowsAlertStatusChangedEmitter({
+        getClient: (request) =>
+          workflowsContribution.getWorkflowsClient!(request, contributionContext),
+        optIns: alertStatusChangedOptIns,
+        logger,
+      })
+    : undefined;
+
   const runtime: RuleRunRuntime = {
+    alertStatusChanged,
     actionsConfigMap: getActionsConfigMap(config.rules.run.actions),
     actionsPlugin,
     alertsService,
@@ -228,14 +305,17 @@ export const createStandaloneRuleRunRuntime = ({
     share: { url: urlService } as unknown as SharePluginStart,
     spaceIdToNamespace,
     uiSettings,
+    usageCounter,
     isServerless,
-    // A process has no UIAM key to grant: see the task types README.
-    shouldGrantUiam: false,
+    // As in Kibana: UIAM API keys are used when Core's security exposes them (serverless with UIAM).
+    shouldGrantUiam: !!host.security.authc.apiKeys.uiam,
   };
 
   return {
     runtime,
     fieldFormats,
+    getRegisteredConnectorTypeIds: getActionTypeIds,
+    getRegisteredConnectorAdapterIds: () => connectorAdapterRegistry.getIds(),
     getUnsupportedActionTypes: (actionTypeIds) =>
       actionTypeIds.filter((id) => !hasActionType(id) && !connectorAdapterRegistry.has(id)),
     stop: () => {

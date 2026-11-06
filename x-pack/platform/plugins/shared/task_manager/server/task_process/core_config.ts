@@ -101,19 +101,37 @@ export const buildCoreConfig = (
       port: 0,
       ...(init.server?.uuid ? { uuid: init.server.uuid } : {}),
       ...(init.server?.basePath ? { basePath: init.server.basePath } : {}),
-      ...(init.server?.publicBaseUrl ? { publicBaseUrl: init.server.publicBaseUrl } : {}),
+      // Core's self client calls Kibana at this URL; what a run builds links with is `host.server`.
+      ...(init.server?.kibanaUrl ?? init.server?.publicBaseUrl
+        ? { publicBaseUrl: init.server?.kibanaUrl ?? init.server?.publicBaseUrl }
+        : {}),
     },
     // Kibana owns the saved object indices and the data streams; a run only reads and writes documents.
     migrations: { skip: true },
     plugins: { initialize: true },
     // No translation files: nothing in a run is rendered for a person.
     i18n: { locales: [] },
+    // A forked process writes Kibana's JSON layout, which Kibana reads and logs with its own logger;
+    // a remote process, which nobody reads for, keeps the readable pattern.
     logging: {
-      appenders: { console: { type: 'console', layout: { type: 'pattern' } } },
+      appenders: {
+        console: {
+          type: 'console',
+          layout: { type: process.env.TASK_PROCESS_LOG_LAYOUT === 'json' ? 'json' : 'pattern' },
+        },
+      },
       root: { appenders: ['console'], level: process.env.TASK_PROCESS_LOG_LEVEL ?? 'warn' },
+      // Services report themselves unavailable while they start (the security plugin's status at
+      // error), which Kibana already logs for itself; a process that lives for one run says it every run.
+      loggers: [{ name: 'status', level: 'off' }],
     },
-    ...(init.uiSettingsOverrides || module.uiSettings
-      ? { uiSettings: { overrides: init.uiSettingsOverrides ?? {} } }
+    ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings
+      ? {
+          uiSettings: {
+            overrides: init.uiSettingsOverrides ?? {},
+            globalOverrides: init.uiSettingsGlobalOverrides ?? {},
+          },
+        }
       : {}),
     ...(keys || uiam
       ? {

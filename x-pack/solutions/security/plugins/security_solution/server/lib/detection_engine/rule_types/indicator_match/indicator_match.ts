@@ -12,7 +12,7 @@ import type {
   SecurityRuleServices,
 } from '../types';
 
-import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_events_sender';
 import { createThreatSignals } from './threat_mapping/create_threat_signals';
 import type { ThreatRuleParams } from '../../rule_schema';
 import { withSecuritySpan } from '../../../../utils/with_security_span';

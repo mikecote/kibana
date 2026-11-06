@@ -249,6 +249,48 @@ describe('AsyncTelemetryEventsSender', () => {
     });
   });
 
+  describe('flush', () => {
+    it('sends the buffered events at once and resolves when they were sent', async () => {
+      service.setup(DEFAULT_RETRY_CONFIG, DEFAULT_QUEUE_CONFIG, receiver, telemetryPluginSetup);
+      service.start(telemetryPluginStart);
+
+      service.send(ch1, ['e1', 'e2']);
+      service.send(ch2, ['e3']);
+      // Nowhere near the buffer time of the queues.
+      await service.flush();
+
+      expect(mockedAxiosPost).toHaveBeenCalledTimes(2);
+      expect(mockedAxiosPost.mock.calls.map(([, body]) => body).sort()).toEqual([
+        '"e1"\n"e2"',
+        '"e3"',
+      ]);
+    });
+
+    it('resolves also when the events could not be sent', async () => {
+      mockedAxiosPost.mockResolvedValue({ status: 500 });
+      service.setup(
+        { retryCount: 1, retryDelayMillis: 1 },
+        DEFAULT_QUEUE_CONFIG,
+        receiver,
+        telemetryPluginSetup
+      );
+      service.start(telemetryPluginStart);
+
+      service.send(ch1, ['e1']);
+
+      await expect(service.flush()).resolves.toBeUndefined();
+    });
+
+    it('resolves at once when there is nothing to send, or the service is not started', async () => {
+      service.setup(DEFAULT_RETRY_CONFIG, DEFAULT_QUEUE_CONFIG, receiver, telemetryPluginSetup);
+      await expect(service.flush()).resolves.toBeUndefined();
+
+      service.start(telemetryPluginStart);
+      await expect(service.flush()).resolves.toBeUndefined();
+      expect(mockedAxiosPost).not.toHaveBeenCalled();
+    });
+  });
+
   describe('error handling', () => {
     it('retries when the backend fails', async () => {
       mockedAxiosPost
