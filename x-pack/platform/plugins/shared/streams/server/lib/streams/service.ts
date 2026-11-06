@@ -5,17 +5,17 @@
  * 2.0.
  */
 
-import type { CoreSetup, IUiSettingsClient, ElasticsearchClient, Logger } from '@kbn/core/server';
+import type { IUiSettingsClient, ElasticsearchClient, Logger } from '@kbn/core/server';
 import { LockManagerService } from '@kbn/lock-manager';
 import { OBSERVABILITY_STREAMS_ENABLE_WIRED_STREAM_VIEWS } from '@kbn/management-settings-ids';
-import type { StreamsPluginStartDependencies } from '../../types';
+import type { StreamsStartServicesAccess } from '../../start_services_access';
 import { createStreamsStorageClient } from './storage/streams_storage_client';
 import { StreamsClient } from './client';
 import type { AttachmentClient } from './attachments/attachment_client';
 
 export class StreamsService {
   constructor(
-    private readonly coreSetup: CoreSetup<StreamsPluginStartDependencies>,
+    private readonly coreSetup: StreamsStartServicesAccess,
     private readonly logger: Logger,
     private readonly isDev: boolean
   ) {}
@@ -47,7 +47,7 @@ export class StreamsService {
       logger,
       esClient,
       esClientAsInternalUser,
-      lockManager: new LockManagerService(this.coreSetup, logger),
+      lockManager: new LockManagerService(this.coreSetup as never, logger),
       storageClient: createStreamsStorageClient(esClientAsInternalUser, logger),
       isServerless,
       isSecurityEnabled,

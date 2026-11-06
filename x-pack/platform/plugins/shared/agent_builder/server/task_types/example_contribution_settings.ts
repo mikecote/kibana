@@ -28,6 +28,13 @@ const EXAMPLES: Record<string, unknown> = {
       closeReasonOwners: [],
     },
   },
+  streamsAgentBuilder: {
+    isDev: false,
+    canvasEnabled: false,
+    canEncrypt: false,
+    isServerless: false,
+  },
+  evalsSkillsAgentBuilder: { serverBasePath: '', isServerless: false },
   mlAgentBuilder: {
     enabledFeatures: { ad: true, dfa: true, nlp: true },
     compatibleModuleType: null,

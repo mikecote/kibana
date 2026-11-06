@@ -5,43 +5,33 @@
  * 2.0.
  */
 
-import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
-import type { CoreSetup, Logger } from '@kbn/core/server';
-import type { StreamsPluginStartDependencies, StreamsServer } from '../types';
+import type { AgentBuilderPluginSetup, ToolAvailabilityConfig } from '@kbn/agent-builder-server';
+import type { Logger } from '@kbn/core/server';
+import type { StreamsServer } from '../types';
 import type { GetScopedClients } from '../routes/types';
-import type { EbtTelemetryClient } from '../lib/telemetry/ebt';
 
 import { registerAgentBuilderTools } from './tools/register_tools';
 import { registerAgentBuilderSkills } from './skills/register_skills';
-import { createStreamsToolAvailability } from './utils/get_streams_tool_availability';
 
-export const registerStreamsAgentBuilder = async ({
-  agentBuilder,
-  getScopedClients,
-  server,
-  logger,
-  telemetry,
-  core,
-}: {
-  agentBuilder: AgentBuilderPluginSetup;
-  getScopedClients: GetScopedClients;
-  server: StreamsServer;
-  logger: Logger;
-  telemetry: EbtTelemetryClient;
-  core: CoreSetup<StreamsPluginStartDependencies>;
-}): Promise<void> => {
-  const availability = createStreamsToolAvailability(core, logger);
-
-  registerAgentBuilderTools({
-    agentBuilder,
+/**
+ * What streams registers with agent builder: its tools and skills. Called by `setup()` and by the
+ * task process contribution, with the scoped clients of `createStreamsRunServices` and the
+ * availability each of them builds from its own services.
+ */
+export const registerStreamsAgentBuilder = async (
+  agentBuilder: AgentBuilderPluginSetup,
+  {
     getScopedClients,
     server,
     logger,
-    telemetry,
     availability,
-  });
-  registerAgentBuilderSkills({
-    agentBuilder,
-    availability,
-  });
+  }: {
+    getScopedClients: GetScopedClients;
+    server: Pick<StreamsServer, 'isServerless'>;
+    logger: Logger;
+    availability: ToolAvailabilityConfig;
+  }
+): Promise<void> => {
+  registerAgentBuilderTools({ agentBuilder, getScopedClients, server, logger, availability });
+  registerAgentBuilderSkills({ agentBuilder, availability });
 };

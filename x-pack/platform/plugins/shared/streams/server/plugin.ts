@@ -26,20 +26,21 @@ import type { StreamsClient } from './lib/streams/client';
 import type { StreamsConfig } from '../common/config';
 import {
   STREAMS_API_PRIVILEGES,
-  STREAMS_CONFIGURATION_SAVED_OBJECT_TYPE,
   STREAMS_FEATURE_ID,
   STREAMS_SETTINGS_DOCUMENT_ID,
   STREAMS_TIERED_FEATURES,
   STREAMS_UI_PRIVILEGES,
-  STREAMS_UI_METADATA_SAVED_OBJECT_TYPE,
 } from '../common/constants';
 import { registerFeatureFlags } from './feature_flags';
-import { ContentService } from './lib/content/content_service';
-import { AttachmentService } from './lib/streams/attachments/attachment_service';
-import { StreamsService } from './lib/streams/service';
+import type { AttachmentService } from './lib/streams/attachments/attachment_service';
+import type { StreamsService } from './lib/streams/service';
+import { createStreamsToolAvailability } from './agent_builder/utils/get_streams_tool_availability';
+import type { StreamsAgentBuilderSettings } from './task_types/agent_builder_contribution';
+import { STREAMS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import { createStreamsRunServices } from './create_streams_run_services';
 import { EbtTelemetryService, StatsTelemetryService } from './lib/telemetry';
 import { streamsRouteRepository } from './routes';
-import type { GetScopedClients, RouteHandlerScopedClients } from './routes/types';
+import type { GetScopedClients } from './routes/types';
 import type {
   StreamsPluginSetupDependencies,
   StreamsPluginStartDependencies,
@@ -142,80 +143,16 @@ export class StreamsPlugin
       this.logger.get('inference-features')
     );
 
-    const attachmentService = new AttachmentService(core, this.logger);
+    const { attachmentService, streamsService, getScopedClients } = createStreamsRunServices({
+      core,
+      logger: this.logger,
+      isDev: this.isDev,
+      canvasEnabled: this.config.canvas.enabled,
+      canEncrypt: this.canEncrypt,
+    });
     this.attachmentService = attachmentService;
-    const streamsService = new StreamsService(core, this.logger, this.isDev);
     this.streamsService = streamsService;
-    const contentService = new ContentService(core, this.logger);
-
-    this.streamsGetScopedClients = async ({
-      request,
-      rulesClientOptions,
-    }: {
-      request: KibanaRequest;
-      rulesClientOptions?: RulesClientCreateOptions;
-    }): Promise<RouteHandlerScopedClients> => {
-      const [coreStart, pluginsStart] = await core.getStartServices();
-
-      const scopedSoClient = coreStart.savedObjects.getScopedClient(request, {
-        includedHiddenTypes: this.config.canvas.enabled
-          ? [STREAMS_CONFIGURATION_SAVED_OBJECT_TYPE, STREAMS_UI_METADATA_SAVED_OBJECT_TYPE]
-          : [],
-      });
-      const encryptedSavedObjectsClient = pluginsStart.encryptedSavedObjects.getClient({
-        includedHiddenTypes: this.config.canvas.enabled
-          ? [STREAMS_CONFIGURATION_SAVED_OBJECT_TYPE]
-          : [],
-      });
-      const uiSettingsClient = coreStart.uiSettings.asScopedToClient(scopedSoClient);
-      const globalUiSettingsClient = coreStart.uiSettings.globalAsScopedToClient(scopedSoClient);
-
-      const scopedClusterClient = coreStart.elasticsearch.client.asScoped(request);
-      const soClient = scopedSoClient;
-      const inferenceClient = pluginsStart.inference.getClient({ request });
-      const licensing = pluginsStart.licensing;
-      const fieldsMetadataClient = await pluginsStart.fieldsMetadata.getClient(request);
-      const [attachmentClient, contentClient] = await Promise.all([
-        attachmentService.getClient({
-          soClient,
-          rulesClient: await pluginsStart.alerting.getRulesClientWithRequest(request),
-        }),
-        contentService.getClient(),
-      ]);
-
-      const license = await licensing.getLicense();
-      const isSecurityEnabled = license.getFeature('security').isEnabled;
-
-      const streamsClient = await streamsService.getClient({
-        attachmentClient,
-        esClient: scopedClusterClient.asCurrentUser,
-        esClientAsInternalUser: coreStart.elasticsearch.client.asInternalUser,
-        uiSettingsClient,
-        isSecurityEnabled,
-      });
-
-      const streamsSettingsStorageClient = createStreamsSettingsStorageClient(
-        coreStart.elasticsearch.client.asInternalUser,
-        this.logger
-      );
-
-      return {
-        scopedClusterClient,
-        soClient,
-        encryptedSavedObjectsClient,
-        canEncrypt: this.canEncrypt,
-        attachmentClient,
-        streamsClient,
-        inferenceClient,
-        contentClient,
-        fieldsMetadataClient,
-        licensing,
-        uiSettingsClient,
-        globalUiSettingsClient,
-        streamsSettingsStorageClient,
-        isSecurityEnabled,
-      };
-    };
+    this.streamsGetScopedClients = getScopedClients;
 
     const telemetryClient = this.ebtTelemetryService.getClient();
 
@@ -228,19 +165,27 @@ export class StreamsPlugin
       (!!serverlessProjectType && STREAMS_ALLOWED_PROJECT_TYPES.includes(serverlessProjectType));
 
     if (plugins.agentBuilder && isStreamsAgentBuilderAllowed) {
+      // What a task process needs to register what this Kibana registers.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        STREAMS_AGENT_BUILDER_SETTINGS_ID,
+        (): StreamsAgentBuilderSettings => ({
+          isDev: this.isDev,
+          canvasEnabled: this.config.canvas.enabled,
+          canEncrypt: this.canEncrypt,
+          isServerless: this.isServerless,
+        })
+      );
       void core
         .getStartServices()
         .then(async ([]) => {
           const { streamsGetScopedClients, server } = this;
           if (!streamsGetScopedClients || !server) return;
 
-          await registerStreamsAgentBuilder({
-            agentBuilder: plugins.agentBuilder!,
+          await registerStreamsAgentBuilder(plugins.agentBuilder!, {
             getScopedClients: streamsGetScopedClients,
             server,
             logger: this.logger,
-            telemetry: telemetryClient,
-            core,
+            availability: createStreamsToolAvailability(core, this.logger),
           });
         })
         .catch((err) => {

@@ -33,10 +33,7 @@ const NOT_YET_CONTRIBUTED: Record<string, string> = {
   // Medium: one more service, built from explicit dependencies, or a registry of its own.
   'x-pack/platform/plugins/shared/alerting_v2':
     'the rules, action policy and episodes clients, which are built by its dependency injection container (the task manager start, the event publishers, the artifact registry) per request, and the workflows service of Kibana for its skills',
-  'x-pack/platform/plugins/shared/evals_skills':
-    'the evals start contract (the dataset and score services over the data streams, the evaluator registry other plugins fill in their setup, the model connectors) and the workflows service of Kibana (save and cancel experiments)',
   // Hard: services that only exist in Kibana, or many registrations that read them.
-  'x-pack/platform/plugins/shared/streams': 'the streams client and its asset services',
   'x-pack/solutions/security/plugins/security_solution':
     'endpoint, detections and entity analytics services',
   'x-pack/solutions/security/plugins/discoveries': 'attack discovery services',

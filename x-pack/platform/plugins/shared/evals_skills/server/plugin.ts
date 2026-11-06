@@ -13,8 +13,8 @@ import type {
   EvalsSkillsPluginSetup,
   EvalsSkillsPluginStart,
 } from './types';
-import { createEvalDatasetManagementSkill } from './skills/eval_dataset_management/skill';
-import { createEvalExperimentsSkill } from './skills/eval_experiments/skill';
+import { registerEvalsSkillsAgentBuilder } from './register_agent_builder';
+import { EVALS_SKILLS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import type { EvalExperimentsToolDeps } from './skills/eval_experiments/tools/deps';
 
 /**
@@ -33,9 +33,11 @@ export class EvalsSkillsPlugin
     >
 {
   private readonly logger: Logger;
+  private readonly isServerless: boolean;
 
   constructor(context: PluginInitializerContext) {
     this.logger = context.logger.get();
+    this.isServerless = context.env.packageInfo.buildFlavor === 'serverless';
   }
 
   setup(
@@ -59,13 +61,12 @@ export class EvalsSkillsPlugin
       getStartDependencies,
     };
 
-    agentBuilder.skills.register(createEvalExperimentsSkill(toolDeps));
-    agentBuilder.skills.register(
-      createEvalDatasetManagementSkill({
-        logger: this.logger,
-        getStartDependencies,
-      })
-    );
+    // What a task process needs to register what this Kibana registers: the evals feature is enabled.
+    agentBuilder.taskProcess?.registerSettings(EVALS_SKILLS_AGENT_BUILDER_SETTINGS_ID, () => ({
+      serverBasePath: toolDeps.serverBasePath,
+      isServerless: this.isServerless,
+    }));
+    registerEvalsSkillsAgentBuilder(agentBuilder, toolDeps);
     this.logger.debug('Registered evals Agent Builder skill(s).');
 
     return {};
