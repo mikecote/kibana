@@ -319,7 +319,7 @@ export class RuleProcessHarness {
         authToken: '',
         ...this.getInit(),
       },
-      module: options.rules[0].taskType,
+      module: this.getSeederModule(),
       contributions: this.loadContributions(),
     });
     this.seederClient = this.seeder.host.savedObjects.getUnsafeInternalClient({
@@ -355,6 +355,40 @@ export class RuleProcessHarness {
     await this.supervisor?.stop();
     await this.seeder?.stop();
     await this.esServer?.stop();
+  }
+
+  /**
+   * The module the seeder boots with: the first one, with the saved object types, ui settings and
+   * settings of every rule type the test serves, so a run in this process (`runInProcess`) of any of
+   * them finds what a process of its own bundle would register.
+   */
+  private getSeederModule(): TaskTypeModule {
+    const contributions = this.loadContributions();
+    // With what plugins contribute applied, as a process applies it to its own module.
+    const modules = this.options.rules.map(
+      ({ taskType }) => taskType.contributions?.apply?.(contributions) ?? taskType
+    );
+    const [first] = modules;
+    const savedObjectTypes = new Map(
+      modules.flatMap((module) => module.savedObjectTypes ?? []).map((t) => [t.name, t])
+    );
+    const encryptedSavedObjectTypes = new Map(
+      modules.flatMap((module) => module.encryptedSavedObjectTypes ?? []).map((t) => [t.type, t])
+    );
+    // One record: the settings every rule run registers are in each module and register once.
+    const defaults = [
+      Object.assign({}, ...modules.flatMap((module) => module.uiSettings?.defaults ?? [])),
+    ];
+    const settings = [...new Set(modules.flatMap((module) => module.settings ?? []))];
+    return {
+      ...first,
+      // Applied already: the core of the seeder must not build the module again.
+      contributions: undefined,
+      savedObjectTypes: [...savedObjectTypes.values()],
+      encryptedSavedObjectTypes: [...encryptedSavedObjectTypes.values()],
+      settings,
+      ...(first.uiSettings ? { uiSettings: { ...first.uiSettings, defaults } } : {}),
+    };
   }
 
   /** What plugins contribute to rule runs, which the bundle builder imports into each bundle. */
@@ -812,7 +846,7 @@ export const startRuleProcessHarness = async (options: RuleProcessHarnessOptions
 
 /** What changes from run to run: ids, times and durations, by the last segment of the key. */
 const VOLATILE_KEY =
-  /^(@timestamp|event.start|uuid|id|date|datestart|dateend|start|end|duration|timestamp|created|executionid|execution_id|previousstartedat|lastexecutiondate|us|ms|ns|time_range|workflow_status_updated_at|space_ids|version|apikey|schedule_id)$/i;
+  /^(@timestamp|event.start|uuid|id|date|datestart|dateend|start|end|duration|timestamp|created|executionid|execution_id|previousstartedat|lastruntimestamp|lastexecutiondate|us|ms|ns|time_range|workflow_status_updated_at|space_ids|version|apikey|schedule_id)$/i;
 
 /** Drops what changes from run to run (ids, times, durations) so two runs can be compared. */
 export const stripVolatile = (value: unknown): unknown => {
