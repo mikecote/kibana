@@ -86,7 +86,7 @@ xpack.task_manager.task_execution:
 - **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
   `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
   not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
-  process costs about 500 MB resident for a rule bundle (measured on `es_query`). Every spawn and exit logs the number of live processes at debug.
+  process costs about 299 MB resident idle for a rule bundle (`es_query`; security rules 411 MB, the Task Manager types 199 MB, measured on macOS with `node scripts/task_bundle_bench`). Every spawn and exit logs the number of live processes at debug.
 - **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
   stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
