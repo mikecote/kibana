@@ -367,9 +367,17 @@ describe('config validation', () => {
           mode: 'child_process',
           max_concurrent_processes: 4,
           child_max_old_space_mb: 512,
+          child_max_semi_space_mb: 4,
         },
       }).task_execution
-    ).toMatchObject({ max_concurrent_processes: 4, child_max_old_space_mb: 512 });
+    ).toMatchObject({
+      max_concurrent_processes: 4,
+      child_max_old_space_mb: 512,
+      child_max_semi_space_mb: 4,
+    });
+    expect(() =>
+      configSchema.validate({ task_execution: { child_max_semi_space_mb: 0 } })
+    ).toThrow();
     expect(
       configSchema.validate({ task_execution: { mode: 'child_process' } }).task_execution
     ).toEqual({ mode: 'child_process' });

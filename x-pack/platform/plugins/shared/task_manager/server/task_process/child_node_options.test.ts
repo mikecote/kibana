@@ -5,7 +5,12 @@
  * 2.0.
  */
 
-import { filterNodeArgs, filterNodeOptions, getChildNodeOptions } from './child_node_options';
+import {
+  DEFAULT_CHILD_MAX_SEMI_SPACE_MB,
+  filterNodeArgs,
+  filterNodeOptions,
+  getChildNodeOptions,
+} from './child_node_options';
 
 describe('child node options', () => {
   it('drops the inspector flags in every form', () => {
@@ -55,8 +60,21 @@ describe('child node options', () => {
         maxOldSpaceMb: 512,
       })
     ).toEqual({
-      execArgv: ['--trace-warnings', '--max-old-space-size=512'],
+      execArgv: ['--trace-warnings', '--max-old-space-size=512', '--max-semi-space-size=2'],
       nodeOptions: undefined,
     });
+  });
+
+  it('starts a process with a small young generation, and leaves what Kibana was started with out', () => {
+    expect(
+      getChildNodeOptions({ execArgv: ['--max-semi-space-size=64'], nodeOptions: '' })
+    ).toEqual({ execArgv: ['--max-semi-space-size=2'], nodeOptions: undefined });
+    expect(DEFAULT_CHILD_MAX_SEMI_SPACE_MB).toBe(2);
+  });
+
+  it('uses the configured young generation', () => {
+    expect(
+      getChildNodeOptions({ execArgv: [], nodeOptions: '', maxSemiSpaceMb: 8 }).execArgv
+    ).toEqual(['--max-semi-space-size=8']);
   });
 });

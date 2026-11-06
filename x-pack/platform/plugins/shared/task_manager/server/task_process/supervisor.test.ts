@@ -264,7 +264,11 @@ describe('TaskProcessSupervisor', () => {
       supervisor.start();
       acquire('alerting_v2:cleanup').catch(() => undefined);
       await new Promise((resolve) => setImmediate(resolve));
-      expect(children[0].execArgv).toEqual(['--no-warnings', '--max-old-space-size=256']);
+      expect(children[0].execArgv).toEqual([
+        '--no-warnings',
+        '--max-old-space-size=256',
+        '--max-semi-space-size=2',
+      ]);
       expect(children[0].env.NODE_OPTIONS).toBe('--enable-source-maps');
       expect(children[0].env.TASK_PROCESS_LOG_LAYOUT).toBe('json');
       expect(children[0].env.TASK_PROCESS_LOG_LEVEL).toBeDefined();

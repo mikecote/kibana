@@ -840,6 +840,7 @@ export class TaskManagerPlugin
       bundle_dir: bundleDir,
       max_concurrent_processes: maxConcurrentProcesses,
       child_max_old_space_mb: childMaxOldSpaceMb,
+      child_max_semi_space_mb: childMaxSemiSpaceMb,
     } = this.config.task_execution ?? {};
     if (mode !== 'child_process') return;
     try {
@@ -854,6 +855,7 @@ export class TaskManagerPlugin
           kibanaVersion: this.kibanaVersion,
           maxConcurrentProcesses: maxConcurrentProcesses ?? this.config.max_workers,
           childMaxOldSpaceMb,
+          childMaxSemiSpaceMb,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },

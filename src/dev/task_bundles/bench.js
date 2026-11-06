@@ -14,9 +14,14 @@ const { OUT_DIR } = require('./build');
 const {
   elasticsearchConfigFromEnv,
 } = require('@kbn/task-manager-plugin/server/task_process/es_config');
+const {
+  getChildNodeOptions,
+} = require('@kbn/task-manager-plugin/server/task_process/child_node_options');
 
 // node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
-//   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>]
+//   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>] [--node-defaults]
+// Processes start with the Node flags Kibana's supervisor gives them (a small young generation);
+// `--node-defaults` starts them with Node's own, to compare.
 // For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
 // the time until the process says it is ready to serve (Core booted, plugins started) and its resident
 // memory once idle, before it has served a task. Needs a running Elasticsearch, since Core connects.
@@ -28,6 +33,10 @@ const nameFilter = getArg('--name');
 const runs = Number(getArg('--runs', 3));
 const settleMs = Number(getArg('--settle', 1500));
 const readyTimeoutMs = 60000;
+// The flags of a process as the supervisor starts it, without Kibana's own.
+const childOptions = args.includes('--node-defaults')
+  ? { execArgv: [], nodeOptions: undefined }
+  : getChildNodeOptions({ execArgv: [], nodeOptions: undefined });
 
 const esConfig = elasticsearchConfigFromEnv({
   ES_URL: getArg('--es-url', 'http://localhost:9200'),
@@ -75,8 +84,12 @@ const rssMb = (pid) =>
 const measureOnce = (file, settingIds) =>
   new Promise((resolve) => {
     const started = process.hrtime.bigint();
+    const env = { ...process.env, PORT: '0' };
+    if (childOptions.nodeOptions) env.NODE_OPTIONS = childOptions.nodeOptions;
+    else delete env.NODE_OPTIONS;
     const child = fork(file, [], {
-      env: { ...process.env, PORT: '0' },
+      env,
+      execArgv: childOptions.execArgv,
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     });
     let stderr = '';

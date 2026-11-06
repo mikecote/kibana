@@ -482,6 +482,8 @@ describe('task types served from bundles', () => {
         const command = execSync(`ps eww -o command= -p ${pid}`, { encoding: 'utf8' });
         expect(command).toContain('--max-old-space-size=321');
         expect(command).not.toContain('--max-old-space-size=123');
+        // The young generation of a process is small, whatever Kibana's own is.
+        expect(command).toContain('--max-semi-space-size=2');
         expect(command).not.toContain('--inspect');
         expect(command).toContain('NODE_OPTIONS=--no-warnings');
       } finally {

@@ -33,6 +33,8 @@ export interface TaskProcessSettings {
   maxConcurrentProcesses?: number;
   /** `--max-old-space-size` of each process, in MB. Without it a process uses Node's default, not Kibana's heap flags. */
   childMaxOldSpaceMb?: number;
+  /** `--max-semi-space-size` of each process, in MB (its young generation). Defaults to 2. */
+  childMaxSemiSpaceMb?: number;
   /** How long `stop` lets runs in flight finish before it kills their processes. */
   drainTimeoutMs?: number;
   getInitFor?: (
@@ -212,6 +214,7 @@ export class TaskProcessSupervisor {
     if (this.stopping) throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
     const { execArgv, nodeOptions } = getChildNodeOptions({
       maxOldSpaceMb: settings.childMaxOldSpaceMb,
+      maxSemiSpaceMb: settings.childMaxSemiSpaceMb,
     });
     const env: NodeJS.ProcessEnv = {
       ...process.env,
