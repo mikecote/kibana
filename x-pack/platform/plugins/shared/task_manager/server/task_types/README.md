@@ -58,6 +58,28 @@ xpack.task_manager.task_execution:
 
 Build the bundles with `node scripts/task_bundle` (the distributable builds them for you).
 
+For the PoC, process reuse is opt-in. Each child still runs one task at a time, but may serve
+subsequent runs of the same task type after successful completion, flushing, and cleanup:
+
+```yaml
+xpack.task_manager.task_execution:
+  mode: child_process
+  reuse:
+    enabled: true # default: false
+    idle_timeout_ms: 30000 # retain a child for up to 30 seconds between runs
+    max_age_ms: 300000 # retire after five minutes; does not interrupt an active run
+    max_runs: 100 # retire after this many executions
+    max_idle_processes: 10 # global cap across all task types, in addition to active processes
+```
+
+Omitting `reuse` retains a fresh process per run. Reuse requires rebuilt bundles: older bundles do
+not report successful cleanup and are retired after each run. Changes to startup settings (including
+Elasticsearch credentials and encryption keys) retire incompatible idle children before dispatch.
+Run credentials, feature flags, and task state are supplied for each execution. Cancellation sends
+`SIGKILL` immediately, and failed runs or failed cleanup retire the process. Process memory and module
+state can survive between successful runs; this mode preserves isolation from Kibana but not a clean
+process for every execution. Reused children log `Reusing process <pid> for task <type>` at info.
+
 ```yaml
 xpack.task_manager.task_execution:
   max_concurrent_processes: 8 # default: xpack.task_manager.max_workers
@@ -90,6 +112,8 @@ xpack.task_manager.task_execution:
   idle memory and the first real task. Every spawn and exit logs the number of live processes at debug.
 - **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
   stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
+- **Cancellation.** Cancelling a child-process run sends `SIGKILL` immediately, including when its
+  event loop is blocked. The child cannot run cleanup hooks; normal completion still uses `SIGTERM`.
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
   `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
   process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the

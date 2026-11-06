@@ -617,6 +617,7 @@ export class TaskManagerPlugin
     core: CoreStart,
     { cloud, licensing }: TaskManagerPluginsStart
   ): TaskManagerStartContract {
+    this.logger.info(`Task Manager is starting in Kibana process ${process.pid}`);
     const { savedObjects, elasticsearch, executionContext, security } = core;
     this.featureFlagsService = core.featureFlags;
     const enrichFakeRequest = this.enrichFakeRequest;
@@ -841,6 +842,7 @@ export class TaskManagerPlugin
       max_concurrent_processes: maxConcurrentProcesses,
       child_max_old_space_mb: childMaxOldSpaceMb,
       child_max_semi_space_mb: childMaxSemiSpaceMb,
+      reuse,
     } = this.config.task_execution ?? {};
     if (mode !== 'child_process') return;
     try {
@@ -856,6 +858,14 @@ export class TaskManagerPlugin
           maxConcurrentProcesses: maxConcurrentProcesses ?? this.config.max_workers,
           childMaxOldSpaceMb,
           childMaxSemiSpaceMb,
+          reuse: reuse?.enabled
+            ? {
+                idleTimeoutMs: reuse.idle_timeout_ms,
+                maxAgeMs: reuse.max_age_ms,
+                maxRuns: reuse.max_runs,
+                maxIdleProcesses: reuse.max_idle_processes,
+              }
+            : undefined,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },

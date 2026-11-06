@@ -116,7 +116,11 @@ export interface SerializedRunResult {
 export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }
-) & { customTaskRunEventFields?: Record<string, unknown> };
+) & {
+  customTaskRunEventFields?: Record<string, unknown>;
+  /** True only when this process supports reuse and the run's cleanup and flush succeeded. */
+  reusable?: boolean;
+};
 
 const TASK_INSTANCE_DATE_FIELDS = ['scheduledAt', 'startedAt', 'retryAt', 'runAt'] as const;
 

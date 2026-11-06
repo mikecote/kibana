@@ -11,7 +11,7 @@ import { lastValueFrom } from 'rxjs';
 import { i18n } from '@kbn/i18n';
 import { FormattedMessage } from '@kbn/i18n-react';
 
-import { EuiFormRow, EuiLink, EuiSpacer } from '@elastic/eui';
+import { EuiFormRow, EuiLink, EuiSpacer, EuiSwitch } from '@elastic/eui';
 
 import { XJson } from '@kbn/es-ui-shared-plugin/public';
 import { CodeEditor } from '@kbn/code-editor';
@@ -209,6 +209,22 @@ export const EsQueryExpression: React.FC<
 
   return (
     <Fragment>
+      <EuiFormRow fullWidth>
+        <EuiSwitch
+          data-test-subj="esQueryProcessIsolationDemo"
+          label={i18n.translate('xpack.stackAlerts.esQuery.ui.processIsolationDemoLabel', {
+            defaultMessage: 'Process isolation demo: allocate 1.5 GiB and block for 5 minutes',
+          })}
+          checked={Boolean(currentRuleParams.processIsolationDemo)}
+          onChange={(event) =>
+            setParam(
+              'processIsolationDemo',
+              event.target.checked ? { blockEventLoopSeconds: 300, memoryMb: 1536 } : undefined
+            )
+          }
+        />
+      </EuiFormRow>
+      <EuiSpacer />
       <EuiFormRow
         fullWidth
         data-test-subj="indexSelectPopover"

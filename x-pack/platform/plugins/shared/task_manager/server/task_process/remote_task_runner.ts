@@ -19,9 +19,9 @@ export interface TaskProcessAddress {
   token?: string;
 }
 
-/** An address held for the length of a run; releasing it stops a process Kibana started. */
+/** An address held for one run; releasing it retires the child or returns it to the idle pool. */
 export interface TaskProcessLease extends TaskProcessAddress {
-  release(): void;
+  release(options?: { force?: boolean; reusable?: boolean }): void;
 }
 
 /**
@@ -107,7 +107,7 @@ export class RemoteTaskRunner implements CancellableTask {
 
   private cancelled = false;
   private local?: CancellableTask;
-  private target?: TaskProcessAddress;
+  private target?: TaskProcessAddress | TaskProcessLease;
 
   public async run(): Promise<RunResult | undefined | void> {
     const { route, request, timeoutMs, signal, setCustomTaskRunEventFields } = this.params;
@@ -138,6 +138,7 @@ export class RemoteTaskRunner implements CancellableTask {
     this.target = address;
     const deadline = new Date(Date.now() + timeoutMs);
     const { signal: abort, dispose } = abortAfter(timeoutMs + DEADLINE_GRACE_MS, signal);
+    let reusable = false;
     try {
       let response: Response;
       try {
@@ -199,12 +200,14 @@ export class RemoteTaskRunner implements CancellableTask {
         throw deserializeTaskRunError(body.error);
       }
       const result = deserializeRunResult(body.result);
+      reusable = body.reusable === true && !body.result?.error && !body.result?.taskRunError;
       // A run Kibana cancelled is not counted as run, as when Kibana runs it itself.
       if (!this.cancelled) this.observe((observer) => observer.onResult?.(result));
       return result;
     } finally {
       dispose();
-      lease?.release();
+      if (abort.aborted || this.cancelled) lease?.release({ force: true });
+      else lease?.release({ reusable });
     }
   }
 
@@ -228,6 +231,10 @@ export class RemoteTaskRunner implements CancellableTask {
     if (!this.cancelled) {
       this.cancelled = true;
       this.observe((observer) => observer.onCancel?.());
+    }
+    if ('release' in address) {
+      address.release({ force: true });
+      return;
     }
     const fetchFn = this.params.fetchFn ?? fetch;
     try {

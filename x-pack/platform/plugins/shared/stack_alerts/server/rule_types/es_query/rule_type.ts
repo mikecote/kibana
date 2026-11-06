@@ -220,6 +220,7 @@ export function getRuleType(
       },
     },
     minimumLicenseRequired: 'basic',
+    ruleTaskTimeout: '1m',
     isExportable: true,
     executor: async (options: ExecutorOptions<EsQueryRuleParams>) => {
       return await executor(options, sourceFields);

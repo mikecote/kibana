@@ -141,6 +141,8 @@ export const startTaskProcessServer = ({
       setCustomTaskRunEventFields: (fields: Record<string, unknown>) => customFields.push(fields),
     });
     inFlight.set(body.executionUuid, { abortController, task });
+    let response: TaskProcessRunResponse | undefined;
+    let flushed = true;
     try {
       const { value, error } = await runInRunContext(async () => task.run(), {
         featureFlags: body.featureFlags,
@@ -150,6 +152,7 @@ export const startTaskProcessServer = ({
       try {
         await flush?.();
       } catch (flushError) {
+        flushed = false;
         logger.warn(`Flushing after ${body.taskType} failed: ${(flushError as Error).message}`);
       }
       if (error !== undefined) {
@@ -162,17 +165,20 @@ export const startTaskProcessServer = ({
           customTaskRunEventFields: customFields.at(-1),
         } as TaskProcessRunResponse;
       }
-      return {
+      response = {
         kind: 'result',
         result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
+        reusable: flushed && !abortController.signal.aborted,
       } as TaskProcessRunResponse;
+      return response;
     } finally {
       clearTimeout(deadlineTimer);
       inFlight.delete(body.executionUuid);
       try {
         await task.cleanup?.();
       } catch (error) {
+        if (response) response.reusable = false;
         logger.warn(`Cleanup of ${body.taskType} failed: ${(error as Error).message}`);
       }
     }

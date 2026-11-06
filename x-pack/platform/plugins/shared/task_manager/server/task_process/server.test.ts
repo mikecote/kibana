@@ -108,7 +108,11 @@ describe('task process server', () => {
     });
 
     expect(order).toEqual(['run', 'flush']);
-    expect(await response.json()).toEqual({ kind: 'result', result: { state: { ran: true } } });
+    expect(await response.json()).toEqual({
+      kind: 'result',
+      result: { state: { ran: true } },
+      reusable: true,
+    });
   });
 
   it('finishes what the run left to do when it throws too', async () => {
@@ -126,6 +130,25 @@ describe('task process server', () => {
     flush.mockRejectedValue(new Error('endpoint down'));
 
     await expect(runner().run()).resolves.toEqual({ state: { ran: true } });
+  });
+
+  it.each(['cleanup', 'flush'])('marks a child non-reusable when %s fails', async (operation) => {
+    (operation === 'cleanup' ? cleanup : flush).mockRejectedValue(new Error('failed'));
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-cleanup',
+        kibanaVersion: '9.9.9',
+      }),
+    });
+    expect(await response.json()).toEqual({
+      kind: 'result',
+      result: { state: { ran: true } },
+      reusable: false,
+    });
   });
 
   it('returns the error of a task that throws, keeping its retry decoration', async () => {

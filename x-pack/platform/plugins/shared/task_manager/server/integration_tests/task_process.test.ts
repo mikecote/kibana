@@ -70,8 +70,8 @@ describe('task types served from bundles', () => {
       ES_PASSWORD: esServer.password,
     });
 
-  const run = async (taskType: string, id: string) => {
-    const pod = supervisor.getRoute(taskType)!;
+  const run = async (taskType: string, id: string, host = supervisor) => {
+    const pod = host.getRoute(taskType)!;
     expect(pod).toBeDefined();
     return new RemoteTaskRunner({
       route: pod,
@@ -187,6 +187,28 @@ describe('task types served from bundles', () => {
     await run(DELETE_NODES, 'delete_inactive_background_task_nodes');
     await retry(async () => expect(children()).toBe(''));
     await expect(run(DELETE_NODES, 'delete_inactive_background_task_nodes')).resolves.toBeDefined();
+  });
+
+  it('reuses a real Core process for sequential tasks when enabled and stops it on shutdown', async () => {
+    const pooled = new TaskProcessSupervisor({
+      settings: {
+        bundle_dir: bundleDir,
+        kibanaVersion: KIBANA_VERSION,
+        getElasticsearchConfig: esConfig,
+        reuse: { idleTimeoutMs: 30000, maxAgeMs: 300000, maxRuns: 100, maxIdleProcesses: 2 },
+      },
+      logger: loggingSystemMock.createLogger(),
+    });
+    pooled.start();
+    try {
+      for (let index = 0; index < 3; index++) {
+        await expect(run(DELETE_NODES, `reused-${index}`, pooled)).resolves.toBeDefined();
+      }
+      expect(pooled.getStats()).toMatchObject({ spawned: 1, live: 1, active: 0 });
+    } finally {
+      await pooled.stop();
+    }
+    expect(pooled.getStats().live).toBe(0);
   });
 
   it('deletes inactive nodes through saved objects from a task process', async () => {

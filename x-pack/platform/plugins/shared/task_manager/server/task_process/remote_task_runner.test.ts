@@ -26,6 +26,43 @@ describe('RemoteTaskRunner fallbacks', () => {
     return { runner, local, onFallback };
   };
 
+  it('force-releases a child on cancellation without waiting for its HTTP response', async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    const fetchFn = jest.fn(() => new Promise((resolve) => (finish = resolve)));
+    const release = jest.fn();
+    const { runner } = create(fetchFn, {
+      route: { acquire: async () => ({ url: 'http://child', release }) },
+    });
+    const run = runner.run();
+    await new Promise((resolve) => setImmediate(resolve));
+    await runner.cancel();
+    expect(release).toHaveBeenCalledWith({ force: true });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    finish({
+      ok: true,
+      status: 200,
+      json: async () => ({ kind: 'result', result: { state: {} } }),
+    });
+    await run;
+  });
+
+  it.each([true, false, undefined])(
+    'retains a child only with an explicit reusable response (%s)',
+    async (reusable) => {
+      const release = jest.fn();
+      const { runner } = create(
+        jest.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ kind: 'result', result: { state: {} }, reusable }),
+        }),
+        { route: { acquire: async () => ({ url: 'http://child', release }) } }
+      );
+      await runner.run();
+      expect(release).toHaveBeenCalledWith({ reusable: reusable === true });
+    }
+  );
+
   it('runs the task in Kibana and reports why when the process declines it', async () => {
     const fetchFn = jest.fn().mockResolvedValue({
       ok: false,
