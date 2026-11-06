@@ -33,6 +33,7 @@ function createSetupMock() {
       mode: mockAuthz.mode,
     }),
     license: licenseMock.create(),
+    getTaskProcessSettings: jest.fn(),
     privilegeDeprecationsService: lazyObject({
       getKibanaRolesByFeatureId: jest.fn(),
     }),

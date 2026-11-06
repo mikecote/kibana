@@ -29,6 +29,14 @@ export class EndpointAppContentServicesNotStartedError extends EndpointError {
   }
 }
 
+export class EndpointAppContentServicesKibanaOnlyError extends EndpointError {
+  constructor(service: string) {
+    super(
+      `EndpointAppContextService [${service}] is available in Kibana only: it is not provided to a task process`
+    );
+  }
+}
+
 export class EndpointAuthorizationError extends EndpointError {
   constructor(meta?: unknown) {
     super(ENDPOINT_AUTHZ_ERROR_MESSAGE, meta);

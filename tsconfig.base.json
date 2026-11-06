@@ -1221,6 +1221,8 @@
       "@kbn/ebt-click/*": ["./src/platform/packages/shared/kbn-ebt-click/*"],
       "@kbn/ebt-tools": ["./src/platform/packages/shared/kbn-ebt-tools"],
       "@kbn/ebt-tools/*": ["./src/platform/packages/shared/kbn-ebt-tools/*"],
+      "@kbn/ebt-tools-common": ["./src/platform/packages/shared/kbn-ebt-tools-common"],
+      "@kbn/ebt-tools-common/*": ["./src/platform/packages/shared/kbn-ebt-tools-common/*"],
       "@kbn/ecs-data-quality-dashboard": ["./x-pack/solutions/security/packages/ecs-data-quality-dashboard"],
       "@kbn/ecs-data-quality-dashboard/*": ["./x-pack/solutions/security/packages/ecs-data-quality-dashboard/*"],
       "@kbn/ecs-data-quality-dashboard-plugin": ["./x-pack/solutions/security/plugins/ecs_data_quality_dashboard"],

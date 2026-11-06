@@ -20,11 +20,16 @@ import type {
   RuleTaskRunResult,
   RunRuleResult,
   RunRuleParams,
-  TaskRunnerContext,
+  RuleRunRuntime,
 } from './types';
 import { getDeleteRuleTaskRunResult } from './types';
 import { getExecutorServices } from './get_executor_services';
-import { isAlertStatusChangedEnabled } from '../lib/workflow_extensions/alert_status_changed_opt_in';
+import {
+  buildAlertStatusChangedEvents,
+  createBusAlertStatusChangedEmitter,
+  snapshotNewAlertActionGroups,
+} from '../lib/workflow_extensions/alert_status_changed_emitter';
+import type { AlertStatusChangedEmitter } from '../lib/workflow_extensions/alert_status_changed_emitter';
 import { getNextRun, isRuleSnoozed, ruleExecutionStatusToRaw } from '../lib';
 import type {
   IntervalSchedule,
@@ -32,7 +37,6 @@ import type {
   RawRuleLastRun,
   RawRuleMonitoring,
   RuleExecutionStatus,
-  RuleTypeRegistry,
 } from '../types';
 import type { RawRuleSnoozedInstance } from '../saved_objects/schemas/raw_rule';
 import { RuleExecutionStatusErrorReasons } from '../types';
@@ -86,8 +90,6 @@ import {
   isOutdatedTaskVersionError,
   OUTDATED_TASK_VERSION,
 } from '../lib/error_with_type';
-import type { AlertStatusChangedV1Payload } from '../../common/workflows/triggers';
-import { ALERT_STATUS_CHANGED_EVENT_TYPE } from '../lib/workflow_extensions/events';
 
 const FALLBACK_RETRY_INTERVAL = '5m';
 
@@ -101,7 +103,7 @@ interface TaskRunnerConstructorParams<
   RecoveryActionGroupId extends string,
   AlertData extends RuleAlertData
 > {
-  context: TaskRunnerContext;
+  context: RuleRunRuntime;
   inMemoryMetrics: InMemoryMetrics;
   internalSavedObjectsRepository: ISavedObjectsRepository;
   ruleType: NormalizedRuleType<
@@ -128,7 +130,7 @@ export class TaskRunner<
   RecoveryActionGroupId extends string,
   AlertData extends RuleAlertData
 > {
-  private context: TaskRunnerContext;
+  private context: RuleRunRuntime;
   private logger: Logger;
   private taskInstance: RuleTaskInstance;
   private ruleConsumer: string | null;
@@ -143,7 +145,7 @@ export class TaskRunner<
     AlertData
   >;
   private readonly executionId: string;
-  private readonly ruleTypeRegistry: RuleTypeRegistry;
+  private readonly ruleTypeRegistry: RuleRunRuntime['ruleTypeRegistry'];
   private readonly inMemoryMetrics: InMemoryMetrics;
   private readonly internalSavedObjectsRepository: ISavedObjectsRepository;
   private timer: TaskRunnerTimer;
@@ -151,6 +153,7 @@ export class TaskRunner<
   private usageCounter?: UsageCounter;
   private searchAbortController: AbortController;
   private cancelled: boolean;
+  private busEmitter?: AlertStatusChangedEmitter;
   private stackTraceLog: RuleRunnerErrorStackTraceLog | null;
   private ruleMonitoring: RuleMonitoringService;
   private ruleRunning: RuleRunningHandler;
@@ -529,20 +532,11 @@ export class TaskRunner<
     // (id -> group) now so the alertStatusChanged payload can still report it afterwards.
     // Only done when the batch could be built, which needs at least one opt-in. The opt-ins
     // themselves are asked later, once there is something to emit.
-    const hasAlertStatusChangedOptIns = (this.context.alertStatusChangedOptIns?.length ?? 0) > 0;
-    const newAlertActionGroups = new Map<string, string>();
-    if (
-      !this.cancelled &&
-      this.ruleType.autoRecoverAlerts &&
-      this.context.alertingEventBus &&
-      hasAlertStatusChangedOptIns
-    ) {
-      for (const [id, alert] of Object.entries(alertsClient.getProcessedAlerts('new'))) {
-        const actionGroup = alert.getScheduledActionOptions()?.actionGroup;
-        if (actionGroup != null) {
-          newAlertActionGroups.set(id, actionGroup);
-        }
-      }
+    const alertStatusChanged = this.getAlertStatusChangedEmitter();
+    const hasAlertStatusChangedOptIns = alertStatusChanged?.hasOptIns() ?? false;
+    let newAlertActionGroups = new Map<string, string>();
+    if (!this.cancelled && this.ruleType.autoRecoverAlerts && hasAlertStatusChangedOptIns) {
+      newAlertActionGroups = snapshotNewAlertActionGroups(alertsClient.getProcessedAlerts('new'));
     }
 
     await withAlertingSpan('alerting:schedule-actions', () =>
@@ -605,59 +599,35 @@ export class TaskRunner<
     if (
       !this.cancelled &&
       this.ruleType.autoRecoverAlerts &&
-      this.context.alertingEventBus &&
+      alertStatusChanged &&
       hasAlertStatusChangedOptIns
     ) {
       const newAlerts = alertsClient.getProcessedAlerts('new');
       const recoveredAlerts = alertsClient.getProcessedAlerts('recovered');
-      const newEntries = Object.entries(newAlerts);
-      const recoveredEntries = Object.entries(recoveredAlerts);
 
       // The opt-ins are asked only when there is something to emit, and after the executor has
       // finished, with the rule's own request so the answer can differ per space. When none of
       // them is enabled, nothing is built or published.
       if (
-        (newEntries.length > 0 || recoveredEntries.length > 0) &&
-        (await isAlertStatusChangedEnabled({
-          optIns: this.context.alertStatusChangedOptIns ?? [],
-          request: fakeRequest,
-          logger: this.logger,
-        }))
+        (Object.keys(newAlerts).length > 0 || Object.keys(recoveredAlerts).length > 0) &&
+        (await alertStatusChanged.isEnabled(fakeRequest))
       ) {
-        const rulePayload: AlertStatusChangedV1Payload['rule'] = {
-          id: ruleId,
-          name: rule.name,
-          spaceId,
-          consumer: rule.consumer,
-          ruleTypeId: this.ruleType.id,
-          tags: rule.tags,
-          ruleTypeName: this.ruleType.name,
-        };
-
         alertStatusChangedBatch = {
           request: fakeRequest,
-          events: [
-            ...newEntries.map(([id, alert]) => ({
-              rule: rulePayload,
-              alert: {
-                id: alert.getId(),
-                uuid: alert.getUuid(),
-                status: 'active' as const,
-                actionGroup: newAlertActionGroups.get(id) ?? null,
-                start: alert.getStart(),
-              },
-            })),
-            ...recoveredEntries.map(([, alert]) => ({
-              rule: rulePayload,
-              alert: {
-                id: alert.getId(),
-                uuid: alert.getUuid(),
-                status: 'recovered' as const,
-                actionGroup: alert.getLastScheduledActions()?.group ?? null,
-                start: alert.getStart(),
-              },
-            })),
-          ],
+          events: buildAlertStatusChangedEvents({
+            rule: {
+              id: ruleId,
+              name: rule.name,
+              spaceId,
+              consumer: rule.consumer,
+              ruleTypeId: this.ruleType.id,
+              tags: rule.tags,
+              ruleTypeName: this.ruleType.name,
+            },
+            newAlerts,
+            recoveredAlerts,
+            newAlertActionGroups,
+          }),
         };
       }
     }
@@ -1025,16 +995,11 @@ export class TaskRunner<
     //   state is persisted and its actions are scheduled, so the events are published too.
     //   Holding them back would lose them, because the next run sees those alerts as ongoing.
     // - A run cancelled for timeout publishes nothing.
-    if (isOk(runRuleResult) && !this.cancelled && this.context.alertingEventBus) {
+    if (isOk(runRuleResult) && !this.cancelled) {
       const batch = runRuleResult.value.alertStatusChangedBatch;
       if (batch) {
-        const bus = this.context.alertingEventBus;
-        for (const payload of batch.events) {
-          bus.publish(
-            { type: ALERT_STATUS_CHANGED_EVENT_TYPE, payload },
-            { request: batch.request }
-          );
-        }
+        // In Kibana this only publishes on the bus; a task process sends the events before it answers.
+        await this.getAlertStatusChangedEmitter()?.emit(batch);
       }
     }
 
@@ -1066,6 +1031,19 @@ export class TaskRunner<
       // added this way so we don't add shouldDisableTask: false explicitly
       ...(shouldDisableTask ? { shouldDisableTask } : {}),
     };
+  }
+
+  /** Kibana publishes on the bus of the workflows subscriber; a process brings its own emitter. */
+  private getAlertStatusChangedEmitter(): AlertStatusChangedEmitter | undefined {
+    if (this.context.alertStatusChanged) return this.context.alertStatusChanged;
+    if (this.context.alertingEventBus) {
+      return (this.busEmitter ??= createBusAlertStatusChangedEmitter({
+        bus: this.context.alertingEventBus,
+        optIns: this.context.alertStatusChangedOptIns ?? [],
+        logger: this.logger,
+      }));
+    }
+    return undefined;
   }
 
   async cancel(): Promise<void> {

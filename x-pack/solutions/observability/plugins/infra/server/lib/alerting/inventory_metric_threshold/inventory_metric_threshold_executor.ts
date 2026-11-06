@@ -39,7 +39,8 @@ import { createFormatter } from '../../../../common/formatters';
 import { getCustomMetricLabel } from '../../../../common/formatters/get_custom_metric_label';
 import { METRIC_FORMATTERS } from '../../../../common/formatters/snapshot_metric_formats';
 import { toMetricOpt } from '../../../../common/snapshot_metric_i18n';
-import type { InfraBackendLibs, InfraLocators } from '../../infra_types';
+import type { InfraLocators } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import {
   buildErrorAlertReason,
   buildFiredAlertReason,
@@ -80,7 +81,7 @@ export type InventoryMetricThresholdAlert = Omit<
 };
 
 export const createInventoryMetricThresholdExecutor =
-  (libs: InfraBackendLibs, { assetDetailsLocator, inventoryLocator }: InfraLocators) =>
+  (libs: InfraAlertingLibs, { assetDetailsLocator, inventoryLocator }: InfraLocators) =>
   async (
     options: RuleExecutorOptions<
       InventoryMetricThresholdParams & Record<string, unknown>,
@@ -165,13 +166,9 @@ export const createInventoryMetricThresholdExecutor =
     }
     const source = await libs.sources.getSourceConfiguration(savedObjectsClient, sourceId);
 
-    const [, { logsShared, logsDataAccess }] = await libs.getStartServices();
+    const logViewsClient = await libs.getLogViewsClient({ savedObjectsClient, esClient });
 
-    const logSourcesService =
-      logsDataAccess.services.logSourcesServiceFactory.getLogSourcesService(savedObjectsClient);
-
-    const logQueryFields: LogQueryFields | undefined = await logsShared.logViews
-      .getClient(savedObjectsClient, esClient, logSourcesService)
+    const logQueryFields: LogQueryFields | undefined = await logViewsClient
       .getResolvedLogView({
         type: 'log-view-reference',
         logViewId: sourceId,

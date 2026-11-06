@@ -21,7 +21,7 @@ interface ScheduleNotificationResponseActionsServiceParams {
 
 export type ScheduleNotificationResponseActionsService = (
   params: ScheduleNotificationActions
-) => void;
+) => Promise<unknown> | void;
 export const getScheduleNotificationResponseActionsService =
   ({
     osqueryCreateActionService,

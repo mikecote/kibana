@@ -27,7 +27,7 @@ type AccessControlAuditParams = {
 
 /** Records ACL changes and authorization decisions without entity contents. */
 export const logEntityAccessControl = (
-  core: { security: SecurityServiceStart },
+  core: { security: Pick<SecurityServiceStart, 'authc' | 'audit'> },
   request: KibanaRequest | undefined,
   params: AccessControlAuditParams
 ): void => {

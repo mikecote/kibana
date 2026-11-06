@@ -67,6 +67,15 @@ export type SharedServices = JobServiceProvider &
   MlAlertingServiceProvider &
   TrainedModelsProvider;
 
+/** What ML reads of the cluster client: the same in Kibana and in a task process. */
+export type MlClusterClient = Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
+
+/** What ML reads of the data views plugin. */
+export type MlDataViews = Pick<DataViewsPluginStart, 'dataViewsServiceFactory'>;
+
+/** What ML reads of the ui settings service. */
+export type MlUiSettings = Pick<UiSettingsServiceStart, 'asScopedToClient'>;
+
 export type MlServicesProviders = JobsHealthServiceProvider;
 
 interface Guards {
@@ -104,11 +113,11 @@ export function createSharedServices(
   cloud: CloudSetup,
   authorization: SecurityPluginSetup['authz'] | undefined,
   resolveMlCapabilities: ResolveMlCapabilities,
-  getClusterClient: () => IClusterClient | null,
+  getClusterClient: () => MlClusterClient | null,
   getInternalSavedObjectsClient: () => SavedObjectsClientContract | null,
-  getUiSettings: () => UiSettingsServiceStart | null,
+  getUiSettings: () => MlUiSettings | null,
   getFieldsFormat: () => FieldFormatsStart | null,
-  getDataViews: () => DataViewsPluginStart,
+  getDataViews: () => MlDataViews,
   getAuditService: () => CoreAuditService | null,
   isMlReady: () => Promise<void>,
   compatibleModuleType: CompatibleModule | null,
@@ -213,15 +222,15 @@ export function createSharedServices(
 
 function getRequestItemsProvider(
   resolveMlCapabilities: ResolveMlCapabilities,
-  getClusterClient: () => IClusterClient | null,
+  getClusterClient: () => MlClusterClient | null,
   savedObjectsClient: SavedObjectsClientContract,
   internalSavedObjectsClient: SavedObjectsClientContract,
   authorization: SecurityPluginSetup['authz'] | undefined,
   spaceEnabled: boolean,
   isMlReady: () => Promise<void>,
-  getUiSettings: () => UiSettingsServiceStart | null,
+  getUiSettings: () => MlUiSettings | null,
   getFieldsFormat: () => FieldFormatsStart | null,
-  getDataViews: () => DataViewsPluginStart,
+  getDataViews: () => MlDataViews,
   getAuditService: () => CoreAuditService | null,
   mlLicense: MlLicense,
   serverless: ServerlessInfo

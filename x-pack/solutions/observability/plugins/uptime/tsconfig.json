@@ -13,6 +13,7 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/stack-connectors-plugin",
     "@kbn/core",
     "@kbn/config-schema",
     "@kbn/i18n",

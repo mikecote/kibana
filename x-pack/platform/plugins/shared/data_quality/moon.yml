@@ -17,6 +17,9 @@ project:
   owner: '@elastic/kibana-management'
   sourceRoot: x-pack/platform/plugins/shared/data_quality
 dependsOn:
+  - '@kbn/alerting-plugin'
+  - '@kbn/stack-connectors-plugin'
+  - '@kbn/task-manager-plugin'
   - '@kbn/core'
   - '@kbn/dataset-quality-plugin'
   - '@kbn/i18n'

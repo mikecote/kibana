@@ -12,6 +12,7 @@ import { join } from 'path';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { TaskProcessLease } from './remote_task_runner';
 import { TaskProcessSupervisor } from './supervisor';
+import type { TaskProcessSettings } from './supervisor';
 
 const createBundleDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
@@ -40,18 +41,33 @@ class FakeChild extends EventEmitter {
 }
 
 describe('TaskProcessSupervisor', () => {
-  const setup = () => {
-    const children: Array<{ file: string; env: NodeJS.ProcessEnv; child: FakeChild }> = [];
-    const forkFn = jest.fn((file: string, _args: unknown, options: { env: NodeJS.ProcessEnv }) => {
-      const child = new FakeChild();
-      children.push({ file, env: options.env, child });
-      return child;
-    });
+  const setup = (overrides: Partial<TaskProcessSettings> = {}) => {
+    const children: Array<{
+      file: string;
+      env: NodeJS.ProcessEnv;
+      execArgv: string[];
+      child: FakeChild;
+    }> = [];
+    const forkFn = jest.fn(
+      (file: string, _args: unknown, options: { env: NodeJS.ProcessEnv; execArgv: string[] }) => {
+        const child = new FakeChild();
+        children.push({ file, env: options.env, execArgv: options.execArgv, child });
+        return child;
+      }
+    );
     const supervisor = new TaskProcessSupervisor({
       settings: {
         bundle_dir: createBundleDir(),
         kibanaVersion: '9.9.9',
+        ...overrides,
         getElasticsearchConfig: () => ({ hosts: ['http://es:9200'] } as never),
+        getInitFor: (taskType) =>
+          taskType === 'alerting_v2:cleanup'
+            ? {
+                server: { uuid: 'uuid', buildNum: 1, isServerless: false },
+                encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
+              }
+            : {},
       },
       logger: loggingSystemMock.createLogger(),
       forkFn: forkFn as never,
@@ -65,6 +81,7 @@ describe('TaskProcessSupervisor', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    delete process.env.NODE_OPTIONS;
   });
 
   it('routes the task types the bundles serve and starts no process', () => {
@@ -88,7 +105,15 @@ describe('TaskProcessSupervisor', () => {
       elasticsearch: { hosts: ['http://es:9200'] },
       kibanaVersion: '9.9.9',
       authToken: expect.stringMatching(/^[0-9a-f]{64}$/),
+      server: { uuid: 'uuid', buildNum: 1, isServerless: false },
+      encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
     });
+
+    // What another task type declared is not sent to this one.
+    const other = acquire('task_manager:nodes');
+    expect(children[1].child.send.mock.calls[0][0]).not.toHaveProperty('encryptedSavedObjects');
+    ready(1);
+    await other;
 
     ready(0);
     const { url, token } = await lease;
@@ -96,6 +121,40 @@ describe('TaskProcessSupervisor', () => {
     expect(token).toBe(
       (children[0].child.send.mock.calls[0][0] as { authToken: string }).authToken
     );
+  });
+
+  it('reads what Kibana has now before it starts the process, and starts none when that fails', async () => {
+    const getInitFor = jest
+      .fn()
+      .mockResolvedValueOnce({ parity: [{ kind: 'connectorTypes', ids: ['.email'] }] })
+      .mockRejectedValueOnce(new Error('cannot read the overrides'));
+    const forkFn = jest.fn(() => new FakeChild());
+    const supervisor = new TaskProcessSupervisor({
+      settings: {
+        bundle_dir: createBundleDir(),
+        kibanaVersion: '9.9.9',
+        getElasticsearchConfig: () => ({ hosts: ['http://es:9200'] } as never),
+        getInitFor,
+      },
+      logger: loggingSystemMock.createLogger(),
+      forkFn: forkFn as never,
+    });
+    supervisor.start();
+    const route = supervisor.getRoute('alerting_v2:cleanup') as {
+      acquire: () => Promise<TaskProcessLease>;
+    };
+
+    const first = route.acquire();
+    await new Promise((resolve) => setImmediate(resolve));
+    const child = forkFn.mock.results[0].value as FakeChild;
+    expect(child.send).toHaveBeenCalledWith(
+      expect.objectContaining({ parity: [{ kind: 'connectorTypes', ids: ['.email'] }] })
+    );
+    child.emit('message', { kind: 'ready', port: 1 });
+    await first;
+
+    await expect(route.acquire()).rejects.toThrow('cannot read the overrides');
+    expect(forkFn).toHaveBeenCalledTimes(1);
   });
 
   it('gives each run a process of its own and stops it when the run ends', async () => {
@@ -133,7 +192,7 @@ describe('TaskProcessSupervisor', () => {
   });
 
   it('stops routing and terminates the running processes on stop', async () => {
-    const { supervisor, children, acquire, ready } = setup();
+    const { supervisor, children, acquire, ready } = setup({ drainTimeoutMs: 10 });
     supervisor.start();
     const pending = acquire('alerting_v2:cleanup');
     ready(0);
@@ -141,6 +200,133 @@ describe('TaskProcessSupervisor', () => {
     await supervisor.stop();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
     expect(supervisor.getRoute('alerting_v2:cleanup')).toBeUndefined();
+  });
+
+  it('declines a run past max_concurrent_processes with the capacity reason, and takes it again when one is released', async () => {
+    const { supervisor, children, acquire, ready } = setup({ maxConcurrentProcesses: 2 });
+    supervisor.start();
+    const first = acquire('alerting_v2:cleanup');
+    const second = acquire('alerting_v2:cleanup');
+    // Held before they are ready, so runs that start together cannot pass the cap.
+    await expect(acquire('alerting_v2:cleanup')).rejects.toMatchObject({ reason: 'capacity' });
+    ready(0);
+    ready(1);
+    const [a] = await Promise.all([first, second]);
+    expect(supervisor.getStats()).toMatchObject({
+      live: 2,
+      active: 2,
+      max: 2,
+      spawned: 2,
+      capacityRejections: 1,
+    });
+
+    a.release();
+    const third = acquire('alerting_v2:cleanup');
+    ready(2);
+    await third;
+    expect(children).toHaveLength(3);
+    expect(supervisor.getStats().active).toBe(2);
+  });
+
+  it('frees its place when a process cannot be started, and reports why', async () => {
+    jest.useFakeTimers();
+    const { supervisor, children, acquire } = setup({ maxConcurrentProcesses: 1 });
+    supervisor.start();
+    const exited = acquire('alerting_v2:cleanup');
+    children[0].child.emit('exit', 1, null);
+    await expect(exited).rejects.toMatchObject({ reason: 'spawn_failed' });
+
+    const timedOut = acquire('alerting_v2:cleanup');
+    jest.advanceTimersByTime(30_000);
+    await expect(timedOut).rejects.toMatchObject({ reason: 'spawn_timeout' });
+    expect(supervisor.getStats()).toMatchObject({
+      active: 0,
+      spawnFailures: 1,
+      spawnTimeouts: 1,
+    });
+  });
+
+  it('reports a process that cannot be spawned instead of crashing on its error event', async () => {
+    const { supervisor, children, acquire } = setup();
+    supervisor.start();
+    const failed = acquire('alerting_v2:cleanup');
+    children[0].child.emit('error', new Error('spawn ENOENT'));
+    await expect(failed).rejects.toMatchObject({ reason: 'spawn_failed' });
+    // And a later error event has a listener.
+    expect(() => children[0].child.emit('error', new Error('again'))).not.toThrow();
+  });
+
+  it('starts a process without the inspector and heap flags of Kibana, and with the configured heap', async () => {
+    process.env.NODE_OPTIONS = '--max-old-space-size=8192 --enable-source-maps';
+    const argv = jest.replaceProperty(process, 'execArgv', ['--inspect=9229', '--no-warnings']);
+    try {
+      const { supervisor, children, acquire } = setup({ childMaxOldSpaceMb: 256 });
+      supervisor.start();
+      acquire('alerting_v2:cleanup').catch(() => undefined);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(children[0].execArgv).toEqual([
+        '--no-warnings',
+        '--max-old-space-size=256',
+        '--max-semi-space-size=2',
+      ]);
+      expect(children[0].env.NODE_OPTIONS).toBe('--enable-source-maps');
+      expect(children[0].env.TASK_PROCESS_LOG_LAYOUT).toBe('json');
+      expect(children[0].env.TASK_PROCESS_LOG_LEVEL).toBeDefined();
+    } finally {
+      argv.restore();
+    }
+  });
+
+  it('does not pass NODE_OPTIONS on when only heap flags were in it', async () => {
+    process.env.NODE_OPTIONS = '--max-old-space-size=8192';
+    const { supervisor, children, acquire } = setup();
+    supervisor.start();
+    acquire('alerting_v2:cleanup').catch(() => undefined);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(children[0].env).not.toHaveProperty('NODE_OPTIONS');
+  });
+
+  it('on stop rejects new runs, lets a run in flight finish, and kills nothing that finishes in time', async () => {
+    jest.useFakeTimers();
+    const { supervisor, children, ready } = setup({ drainTimeoutMs: 10_000 });
+    supervisor.start();
+    const route = supervisor.getRoute('alerting_v2:cleanup') as {
+      acquire: () => Promise<TaskProcessLease>;
+    };
+    const pending = route.acquire();
+    ready(0);
+    const lease = await pending;
+    const stopped = supervisor.stop();
+    await expect(route.acquire()).rejects.toMatchObject({ reason: 'unavailable' });
+    jest.advanceTimersByTime(5000);
+    expect(children[0].child.kill).not.toHaveBeenCalled();
+    lease.release();
+    await stopped;
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(children[0].child.kill).not.toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('on stop kills the processes that outlive the drain bound', async () => {
+    jest.useFakeTimers();
+    const { supervisor, children, acquire, ready } = setup({ drainTimeoutMs: 10_000 });
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0);
+    await pending;
+    // A process that ignores SIGTERM.
+    children[0].child.kill.mockImplementation((signal?: string) => {
+      if (signal === 'SIGKILL') {
+        children[0].child.exitCode = 0;
+        children[0].child.emit('exit', null, signal);
+      }
+      return true;
+    });
+    const stopped = supervisor.stop();
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    await jest.advanceTimersByTimeAsync(2_000);
+    await stopped;
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
   it('throws a clear error when the bundle directory has no manifest', () => {

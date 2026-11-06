@@ -23,11 +23,8 @@ import {
   GEN_AI_SETTINGS_TOKEN_USAGE_TRACKING,
 } from '@kbn/management-settings-ids';
 import { RegexWorkerService, getAnonymizationUiSettings } from '@kbn/ai-anonymization-server';
-import {
-  createClient as createInferenceClient,
-  createClientWithoutRequest,
-  createChatModel,
-} from './inference_client';
+import { createClient as createInferenceClient, createChatModel } from './inference_client';
+import { createInferenceRunServices } from './run_services';
 import { registerRoutes } from './routes';
 import type { InferenceConfig } from './config';
 import type {
@@ -40,7 +37,7 @@ import type {
 } from './types';
 import { getConnectorList } from './util/get_connector_list';
 import { loadDefaultConnector } from './util/load_default_connector';
-import { getConnectorById, getConnectorByIdWithoutClientRequest } from './util/get_connector_by_id';
+import { getConnectorById } from './util/get_connector_by_id';
 import { getInferenceEndpoints } from './util/get_inference_endpoints';
 import { getInferenceEndpointById } from './util/get_inference_endpoint_by_id';
 import { InferenceEndpointIdCache } from './util/inference_endpoint_id_cache';
@@ -194,10 +191,19 @@ export class InferencePlugin
       );
     }
 
-    this.regexWorker = new RegexWorkerService(
-      this.config.workers.anonymization,
-      this.logger.get('regex_worker')
-    );
+    // The services a rule run uses are built by the function a task process builds them with.
+    const runServices = createInferenceRunServices({
+      actions: pluginsStart.actions,
+      esClient: core.elasticsearch.client.asInternalUser,
+      logger: this.logger,
+      config: this.config,
+      regexWorker: new RegexWorkerService(
+        this.config.workers.anonymization,
+        this.logger.get('regex_worker')
+      ),
+      endpointIdCache: this.endpointIdCache,
+    });
+    this.regexWorker = runServices.regexWorker;
 
     const readLegacyAnonymizationSettings = (request: KibanaRequest): Promise<unknown> => {
       const scopedSavedObjectsClient = core.savedObjects.getScopedClient(request);
@@ -398,33 +404,9 @@ export class InferencePlugin
           logger: this.logger,
         });
       },
-      getConnectorById: async (id: string, request: KibanaRequest) => {
-        const esClient = core.elasticsearch.client.asInternalUser;
-        return getConnectorById({
-          connectorId: id,
-          actions: pluginsStart.actions,
-          request,
-          esClient,
-          logger: this.logger,
-        });
-      },
-      getClientWithoutRequest: (actionsClient, esClient) => {
-        return createClientWithoutRequest({
-          actionsClient,
-          logger: this.logger,
-          regexWorker: this.regexWorker!,
-          esClient,
-          endpointIdCache: this.endpointIdCache,
-        });
-      },
-      getConnectorByIdWithoutClientRequest: async (id, actionsClient, esClient) => {
-        return getConnectorByIdWithoutClientRequest({
-          connectorId: id,
-          actionsClient,
-          esClient,
-          logger: this.logger,
-        });
-      },
+      getConnectorById: runServices.getConnectorById,
+      getClientWithoutRequest: runServices.getClientWithoutRequest,
+      getConnectorByIdWithoutClientRequest: runServices.getConnectorByIdWithoutClientRequest,
       getInferenceEndpoints: async (taskType?: InferenceTaskType) => {
         const esClient = core.elasticsearch.client.asInternalUser;
         return getInferenceEndpoints({ esClient, taskType });

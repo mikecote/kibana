@@ -24,7 +24,6 @@ import {
   MicrosoftDefenderEndpointConfigSchema,
   MicrosoftDefenderEndpointSecretsSchema,
 } from '@kbn/connector-schemas/microsoft_defender_endpoint';
-import { MicrosoftDefenderEndpointConnector } from './microsoft_defender_endpoint';
 
 export const getMicrosoftDefenderEndpointConnectorType = (): SubActionConnectorType<
   MicrosoftDefenderEndpointConfig,
@@ -32,7 +31,10 @@ export const getMicrosoftDefenderEndpointConnectorType = (): SubActionConnectorT
 > => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new MicrosoftDefenderEndpointConnector(params),
+  getService: async (params) => {
+    const { MicrosoftDefenderEndpointConnector } = await import('./microsoft_defender_endpoint');
+    return new MicrosoftDefenderEndpointConnector(params);
+  },
   schema: {
     config: MicrosoftDefenderEndpointConfigSchema,
     secrets: MicrosoftDefenderEndpointSecretsSchema,

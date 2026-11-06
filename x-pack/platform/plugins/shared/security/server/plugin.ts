@@ -27,6 +27,7 @@ import type {
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { FeaturesPluginSetup, FeaturesPluginStart } from '@kbn/features-plugin/server';
 import type { LicensingPluginSetup, LicensingPluginStart } from '@kbn/licensing-plugin/server';
+import type { ILicense } from '@kbn/licensing-types';
 import type {
   AuditServiceSetup,
   AuthorizationServiceSetup,
@@ -69,6 +70,8 @@ import {
 import type { Session } from './session_management';
 import { SessionManagementService } from './session_management';
 import { setupSpacesClient } from './spaces';
+import { getTaskProcessSettings } from './task_plugin';
+import type { SecurityTaskProcessSettings } from './task_plugin';
 import { KIBANA_SOLUTION_TO_UIAM_PROJECT_TYPE, UiamService } from './uiam';
 import { registerSecurityUsageCollector } from './usage_collector';
 import { UserProfileService } from './user_profile';
@@ -85,6 +88,11 @@ export type SpacesService = Pick<
  * Describes public Security plugin contract returned at the `setup` stage.
  */
 export interface SecurityPluginSetup extends SecurityPluginSetupWithoutDeprecatedMembers {
+  /**
+   * The settings a task process needs of the security plugin, to be registered with Task Manager under
+   * the plugin id `security`. Read when a process starts, not before the plugin starts.
+   */
+  getTaskProcessSettings: () => SecurityTaskProcessSettings;
   /**
    * @deprecated Use `authc` methods from the `SecurityServiceStart` contract instead.
    */
@@ -125,6 +133,8 @@ export class SecurityPlugin
   private readonly logger: Logger;
   private authorizationSetup?: AuthorizationServiceSetupInternal;
   private auditSetup?: AuditServiceSetup;
+  private rawLicense?: ILicense;
+  private licenseSubscription?: Subscription;
 
   private configSubscription?: Subscription;
 
@@ -311,6 +321,9 @@ export class SecurityPlugin
       license$: licensing.license$,
     });
     this.securityLicense = license;
+    this.licenseSubscription = licensing.license$.subscribe((rawLicense) => {
+      this.rawLicense = rawLicense;
+    });
     const organizationId = cloud?.organizationId;
     const projectId = cloud?.serverless?.projectId;
     const projectType = cloud?.serverless?.projectType
@@ -458,6 +471,14 @@ export class SecurityPlugin
     });
 
     return Object.freeze<SecurityPluginSetup>({
+      getTaskProcessSettings: () =>
+        getTaskProcessSettings({
+          license: this.rawLicense,
+          config: this.getConfig(),
+          applicationName: this.authorizationSetup!.applicationName,
+          kibanaServerResourceURL: this.getKibanaServerResourceURL(core.http),
+          elasticsearchUrl: this.elasticsearchUrl,
+        }),
       audit: this.auditSetup,
       authc: {
         getCurrentUser,
@@ -525,11 +546,7 @@ export class SecurityPlugin
 
     const config = this.getConfig();
 
-    const { protocol, hostname, port } = core.http.getServerInfo();
-    const serverBaseUrl = `${protocol}://${hostname}:${port}`;
-
-    const kibanaServerResourceURL =
-      config.mcp?.oauth2?.metadata?.resource ?? core.http.basePath.publicBaseUrl ?? serverBaseUrl;
+    const kibanaServerResourceURL = this.getKibanaServerResourceURL(core.http);
 
     // Shared by every consumer below: constructing a second instance would re-read the
     // configured TLS material and create a second connection pool.
@@ -626,6 +643,9 @@ export class SecurityPlugin
       this.configSubscription = undefined;
     }
 
+    this.licenseSubscription?.unsubscribe();
+    this.licenseSubscription = undefined;
+
     if (this.featureUsageServiceStart) {
       this.featureUsageServiceStart = undefined;
     }
@@ -642,6 +662,16 @@ export class SecurityPlugin
     this.auditService.stop();
     this.authorizationService.stop();
     this.sessionManagementService.stop();
+  }
+
+  private getKibanaServerResourceURL(http: Pick<CoreStart['http'], 'getServerInfo' | 'basePath'>) {
+    const { protocol, hostname, port } = http.getServerInfo();
+    const serverBaseUrl = `${protocol}://${hostname}:${port}`;
+    return (
+      this.getConfig().mcp?.oauth2?.metadata?.resource ??
+      http.basePath.publicBaseUrl ??
+      serverBaseUrl
+    );
   }
 
   private registerDeprecations(core: CoreSetup, license: SecurityLicense) {

@@ -22,14 +22,16 @@ import {
 } from '@kbn/connector-schemas/crowdstrike';
 import type { CrowdstrikeConfig, CrowdstrikeSecrets } from '@kbn/connector-schemas/crowdstrike';
 import type { ExperimentalFeatures } from '../../../common/experimental_features';
-import { CrowdstrikeConnector } from './crowdstrike';
 
 export const getCrowdstrikeConnectorType = (
   experimentalFeatures: ExperimentalFeatures
 ): SubActionConnectorType<CrowdstrikeConfig, CrowdstrikeSecrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new CrowdstrikeConnector(params, experimentalFeatures),
+  getService: async (params) => {
+    const { CrowdstrikeConnector } = await import('./crowdstrike');
+    return new CrowdstrikeConnector(params, experimentalFeatures);
+  },
   schema: {
     config: CrowdstrikeConfigSchema,
     secrets: CrowdstrikeSecretsSchema,

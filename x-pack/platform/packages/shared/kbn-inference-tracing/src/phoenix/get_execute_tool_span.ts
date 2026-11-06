@@ -5,15 +5,15 @@
  * 2.0.
  */
 
+import { type ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import {
   INPUT_VALUE,
   OUTPUT_VALUE,
   SemanticConventions,
 } from '@arizeai/openinference-semantic-conventions';
-import type { tracing } from '@elastic/opentelemetry-node/sdk';
 import { GenAISemanticConventions } from '../types';
 
-export function getExecuteToolSpan(span: tracing.ReadableSpan) {
+export function getExecuteToolSpan(span: ReadableSpan) {
   span.attributes[SemanticConventions.TOOL_PARAMETERS] =
     span.attributes[GenAISemanticConventions.GenAIToolCallArguments];
   span.attributes[SemanticConventions.TOOL_DESCRIPTION] =

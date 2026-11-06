@@ -242,6 +242,8 @@ export const configSchema = schema.object({
   ),
 });
 
+import type { RuleRunTelemetrySettings } from './lib/telemetry/rule_run_events_sender';
+
 export type ConfigSchema = TypeOf<typeof configSchema>;
 
 export type ConfigType = Omit<ConfigSchema, 'offeringSettings'> & {
@@ -249,6 +251,40 @@ export type ConfigType = Omit<ConfigSchema, 'offeringSettings'> & {
   settings: ConfigSettings;
   enableUiSettingsValidations: boolean;
 };
+
+/**
+ * What a rule run reads of the config, which Kibana sends to a task process as the settings of
+ * `securitySolution` (the rest of the config is for Kibana's own tasks and routes).
+ */
+export type SecurityRuleRunConfig = Pick<
+  ConfigType,
+  | 'alertIgnoreFields'
+  | 'alertMergeStrategy'
+  | 'signalsIndex'
+  | 'experimentalFeatures'
+  | 'maxUploadResponseActionFileBytes'
+  | 'maxEndpointScriptFileSize'
+> & {
+  /** What the sender of the events of a run needs of Kibana's telemetry; see `RuleRunTelemetrySettings`. */
+  ruleRunTelemetry?: RuleRunTelemetrySettings;
+};
+
+/** The settings a task process receives: serializable, and only what a rule run reads. */
+export const getTaskProcessSettings = (
+  config: ConfigType,
+  telemetry?: RuleRunTelemetrySettings
+): SecurityRuleRunConfig => ({
+  ...(telemetry ? { ruleRunTelemetry: telemetry } : {}),
+  alertIgnoreFields: config.alertIgnoreFields,
+  alertMergeStrategy: config.alertMergeStrategy,
+  signalsIndex: config.signalsIndex,
+  experimentalFeatures: config.experimentalFeatures,
+  maxUploadResponseActionFileBytes: config.maxUploadResponseActionFileBytes,
+  maxEndpointScriptFileSize: config.maxEndpointScriptFileSize,
+});
+
+/** The id of the plugin's settings in a task process, `host.settings[id]`. */
+export const TASK_PROCESS_SETTINGS_ID = 'securitySolution';
 
 export const createConfig = (context: PluginInitializerContext): ConfigType => {
   const pluginConfig = context.config.get<TypeOf<typeof configSchema>>();

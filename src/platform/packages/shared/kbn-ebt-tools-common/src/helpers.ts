@@ -1,0 +1,31 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+
+import type { AnalyticsClient } from '@elastic/ebt/client';
+import { type PerformanceMetricEvent, METRIC_EVENT_SCHEMA } from './schema';
+
+const PERFORMANCE_METRIC_EVENT_TYPE = 'performance_metric';
+
+/** Registers Core's performance metric analytics event. */
+export function registerPerformanceMetricEventType(
+  analytics: Pick<AnalyticsClient, 'registerEventType'>
+): void {
+  analytics.registerEventType<PerformanceMetricEvent>({
+    eventType: PERFORMANCE_METRIC_EVENT_TYPE,
+    schema: METRIC_EVENT_SCHEMA,
+  });
+}
+
+/** Reports a performance metric through the supplied analytics client. */
+export function reportPerformanceMetricEvent(
+  analytics: Pick<AnalyticsClient, 'reportEvent'>,
+  eventData: PerformanceMetricEvent
+): void {
+  analytics.reportEvent(PERFORMANCE_METRIC_EVENT_TYPE, eventData);
+}

@@ -131,12 +131,18 @@ export interface EndpointFleetServicesFactoryInterface {
   ): EndpointInternalFleetServicesInterface;
 }
 
+/** The Fleet services Endpoint uses, which Kibana's Fleet and a task process both provide */
+export type EndpointFleetStartServices = Pick<
+  FleetStartContract,
+  'agentPolicyService' | 'packagePolicyService' | 'agentService' | 'packageService'
+>;
+
 /**
  * Provides centralized way to get all services for Fleet and access internal saved object clients
  */
 export class EndpointFleetServicesFactory implements EndpointFleetServicesFactoryInterface {
   constructor(
-    private readonly fleetDependencies: FleetStartContract,
+    private readonly fleetDependencies: EndpointFleetStartServices,
     private readonly savedObjects: SavedObjectsClientFactory,
     private readonly logger: Logger
   ) {}

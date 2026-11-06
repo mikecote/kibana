@@ -17,7 +17,7 @@ project:
   owner: '@elastic/kibana-core'
   sourceRoot: src/core/packages/analytics/server-internal
 dependsOn:
-  - '@kbn/ebt-tools'
+  - '@kbn/ebt-tools-common'
   - '@kbn/core-base-server-internal'
   - '@kbn/core-analytics-server'
   - '@kbn/config-mocks'

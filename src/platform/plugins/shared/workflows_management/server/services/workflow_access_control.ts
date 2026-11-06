@@ -58,8 +58,19 @@ const rolePrivileges = {
   ],
 } as const;
 
+/**
+ * What access decisions read: the current user and the audit log, the profile of the user, and the
+ * internal client for the execution filter. Core's start contract has all of it, and so does what a
+ * task process runs on.
+ */
+export interface WorkflowAccessCore {
+  security: Pick<CoreStart['security'], 'authc' | 'audit'>;
+  userProfile: Pick<CoreStart['userProfile'], 'getCurrentProfileId'>;
+  elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser'> };
+}
+
 export interface WorkflowAccessAuditContext {
-  core: Pick<CoreStart, 'security'>;
+  core: Pick<WorkflowAccessCore, 'security'>;
   request?: KibanaRequest;
   id: string;
   spaceId?: string;
@@ -109,11 +120,11 @@ export class WorkflowAccessControlService {
   >();
 
   constructor(
-    private readonly core: CoreStart,
-    private readonly crud: Pick<
-      WorkflowCrudService,
-      'getWorkflowDocumentWithVersion' | 'writeWorkflowDocumentWithOcc'
-    >,
+    private readonly core: WorkflowAccessCore,
+    /** Only changing the access control writes; a read-only caller, such as a task process, has none. */
+    private readonly crud:
+      | Pick<WorkflowCrudService, 'getWorkflowDocumentWithVersion' | 'writeWorkflowDocumentWithOcc'>
+      | undefined,
     private readonly authz?: SecurityPluginStart['authz']
   ) {}
 
@@ -318,7 +329,13 @@ export class WorkflowAccessControlService {
     const profileId = await this.getProfileId(request);
     const { access_mode, entries = [] } = input;
     const { authz } = this;
-    const stored = await this.crud.getWorkflowDocumentWithVersion(id, spaceId);
+    const crud = this.crud;
+    if (!crud) {
+      throw new Error(
+        'Updating the access control of a workflow is not available without storage writes.'
+      );
+    }
+    const stored = await crud.getWorkflowDocumentWithVersion(id, spaceId);
     if (!stored) throw new WorkflowNotFoundError(id);
     const { source: existing, seqNo, primaryTerm } = stored;
     const ownerId = existing.owner_id ?? (access_mode === 'private' ? profileId : undefined);
@@ -368,7 +385,7 @@ export class WorkflowAccessControlService {
       ownerId,
       previous: existing.access_control,
     });
-    const document = await this.crud.writeWorkflowDocumentWithOcc(id, spaceId, {
+    const document = await crud.writeWorkflowDocumentWithOcc(id, spaceId, {
       request,
       previousDocument: existing,
       ifSeqNo: seqNo,

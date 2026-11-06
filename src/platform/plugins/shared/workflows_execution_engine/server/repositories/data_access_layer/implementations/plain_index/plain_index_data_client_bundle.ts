@@ -26,6 +26,33 @@ import type {
   WorkflowExecutionsDataClient,
 } from '../../types';
 
+/**
+ * The clients of the plain execution indices. Nothing is installed here: the indices are created by
+ * the bundle's `initStart` (Kibana) before any client is used, so a task process, which never installs
+ * anything, builds its clients with this function over the indices Kibana installed.
+ */
+export const createPlainIndexDataClients = ({
+  esClient,
+  logger,
+}: {
+  esClient: ElasticsearchClient;
+  logger: Logger;
+}): {
+  workflowExecutionsDataClient: WorkflowExecutionsDataClient;
+  stepExecutionsDataClient: StepExecutionsDataClient;
+} => ({
+  workflowExecutionsDataClient: new PlainIndexDataClient<EsWorkflowExecution>({
+    esClient,
+    logger,
+    indexName: WORKFLOWS_EXECUTIONS_INDEX,
+  }),
+  stepExecutionsDataClient: new PlainIndexDataClient<EsWorkflowStepExecution>({
+    esClient,
+    logger,
+    indexName: WORKFLOWS_STEP_EXECUTIONS_INDEX,
+  }),
+});
+
 export class PlainIndexDataClientBundle implements DataClientBundle {
   private esClient!: ElasticsearchClient;
   private stopped = false;
@@ -47,19 +74,13 @@ export class PlainIndexDataClientBundle implements DataClientBundle {
   }
 
   createWorkflowDataClient(): WorkflowExecutionsDataClient {
-    return new PlainIndexDataClient<EsWorkflowExecution>({
-      esClient: this.esClient,
-      logger: this.deps.logger,
-      indexName: WORKFLOWS_EXECUTIONS_INDEX,
-    });
+    return createPlainIndexDataClients({ esClient: this.esClient, logger: this.deps.logger })
+      .workflowExecutionsDataClient;
   }
 
   createStepDataClient(): StepExecutionsDataClient {
-    return new PlainIndexDataClient<EsWorkflowStepExecution>({
-      esClient: this.esClient,
-      logger: this.deps.logger,
-      indexName: WORKFLOWS_STEP_EXECUTIONS_INDEX,
-    });
+    return createPlainIndexDataClients({ esClient: this.esClient, logger: this.deps.logger })
+      .stepExecutionsDataClient;
   }
 
   private async init(esClient: ElasticsearchClient, logger: Logger): Promise<ElasticsearchClient> {

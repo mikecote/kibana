@@ -19,13 +19,16 @@ import { assertURL } from '@kbn/actions-plugin/server/sub_action_framework/helpe
 import { CONNECTOR_ID, CONNECTOR_NAME } from '@kbn/connector-schemas/bedrock';
 import { ConfigSchema, SecretsSchema } from '@kbn/connector-schemas/bedrock';
 import type { Config, Secrets } from '@kbn/connector-schemas/bedrock';
-import { BedrockConnector } from './bedrock';
+
 import { renderParameterTemplates } from './render';
 
 export const getConnectorType = (): SubActionConnectorType<Config, Secrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new BedrockConnector(params),
+  getService: async (params) => {
+    const { BedrockConnector } = await import('./bedrock');
+    return new BedrockConnector(params);
+  },
   schema: {
     config: ConfigSchema,
     secrets: SecretsSchema,

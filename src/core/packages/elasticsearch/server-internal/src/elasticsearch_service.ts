@@ -53,7 +53,9 @@ import { getElasticsearchCapabilities } from './get_capabilities';
 
 export interface SetupDeps {
   analytics: AnalyticsServiceSetup;
-  http: InternalHttpServiceSetup;
+  http: Pick<InternalHttpServiceSetup, 'authRequestHeaders'> & {
+    config: Pick<InternalHttpServiceSetup['config'], 'serverTimingElasticsearch'>;
+  };
   executionContext: InternalExecutionContextSetup;
   security: InternalSecurityServiceSetup;
   loggingSystem: Pick<ILoggingSystem, 'setGlobalContext'>;

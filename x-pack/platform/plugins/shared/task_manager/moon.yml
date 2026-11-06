@@ -22,6 +22,12 @@ dependsOn:
   - '@kbn/usage-collection-plugin'
   - '@kbn/config-schema'
   - '@kbn/config'
+  - '@kbn/core-user-profile-server'
+  - '@kbn/core-feature-flags-server'
+  - '@kbn/core-analytics-server'
+  - '@kbn/core-base-common'
+  - '@kbn/core-plugins-server-internal'
+  - '@kbn/core-root-server-internal'
   - '@kbn/utility-types'
   - '@kbn/safer-lodash-set'
   - '@kbn/es-types'
@@ -60,6 +66,21 @@ dependsOn:
   - '@kbn/scout'
   - '@kbn/std'
   - '@kbn/mock-idp-utils'
+  - '@kbn/repo-info'
+  - '@kbn/core-saved-objects-server-mocks'
+  - '@kbn/core-logging-server-mocks'
+  - '@kbn/core-elasticsearch-server-mocks'
+  - '@kbn/core-saved-objects-api-server-internal'
+  - '@kbn/core-saved-objects-migration-server-internal'
+  - '@kbn/core-logging-server-internal'
+  - '@kbn/core-elasticsearch-server-internal'
+  - '@kbn/core-elasticsearch-client-server-internal'
+  - '@kbn/core-execution-context-server'
+  - '@kbn/core-security-server-internal'
+  - '@kbn/core-ui-settings-common'
+  - '@kbn/core-ui-settings-server'
+  - '@kbn/core-ui-settings-server-internal'
+  - '@kbn/encrypted-saved-objects-plugin'
 tags:
   - plugin
   - prod
@@ -75,6 +96,9 @@ fileGroups:
     - test/scout_service_accounts/**/*
     - test/scout_uiam_local/**/*
     - test/scout_task_manager_claim_nudge/**/*
+    - test/scout_task_processes/**/*
+    - test/scout_task_processes_es_tls/**/*
+    - test/scout_task_processes_unknown_connector/**/*
     - '!target/**/*'
   jest-config:
     - jest.config.js

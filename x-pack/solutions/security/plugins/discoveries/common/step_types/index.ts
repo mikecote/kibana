@@ -5,6 +5,8 @@
  * 2.0.
  */
 
+export { AD_STEP_TYPE_IDS } from './ad_step_type_ids';
+
 export {
   DefaultAlertRetrievalStepCommonDefinition,
   DefaultAlertRetrievalStepTypeId,

@@ -47,6 +47,12 @@ dependsOn:
   - '@kbn/core-security-server'
   - '@kbn/telemetry-config'
   - '@kbn/config'
+  - '@kbn/core-base-common'
+  - '@kbn/core-plugins-server-internal'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/cloud-plugin'
+  - '@kbn/licensing-plugin'
+  - '@kbn/licensing-types'
 tags:
   - plugin
   - prod

@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/core/server';
 import { addSpanLabels } from '@kbn/apm-utils';
 import type { Alert } from '../alert';
-import { EVENT_LOG_ACTIONS } from '../plugin';
+import { EVENT_LOG_ACTIONS } from '../constants/event_log';
 import type { AlertInstanceContext, AlertInstanceState } from '../types';
 import type { AlertingEventLogger } from '../lib/alerting_event_logger/alerting_event_logger';
 import type { RuleRunMetricsStore } from '../lib/rule_run_metrics_store';

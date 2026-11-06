@@ -13,7 +13,7 @@
 import type { Server } from 'http';
 import { fetch as undiciFetch } from 'undici';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createRetryableError } from '../task_running/errors';
+import { createRetryableError, DeclinedRunError } from '../task_running/errors';
 import type { CancellableTask } from '../task';
 import { startTaskProcessServer } from './server';
 import { RemoteTaskRunner } from './remote_task_runner';
@@ -25,17 +25,30 @@ describe('task process server', () => {
   let server: Server;
   let url: string;
   const cleanup = jest.fn();
+  const flush = jest.fn();
+  const order: string[] = [];
   let createTask: () => CancellableTask;
 
   beforeEach(async () => {
     cleanup.mockReset();
-    createTask = () => ({ run: async () => ({ state: { ran: true } }), cleanup });
+    order.length = 0;
+    flush.mockReset().mockImplementation(async () => {
+      order.push('flush');
+    });
+    createTask = () => ({
+      run: async () => {
+        order.push('run');
+        return { state: { ran: true } };
+      },
+      cleanup,
+    });
     server = startTaskProcessServer({
       taskDefinitions: new Map([[TYPE, { createTaskRunner: () => createTask() }]]),
       port: 0,
       logger: loggingSystemMock.createLogger(),
       kibanaVersion: '9.9.9',
       authToken: TOKEN,
+      flush,
     });
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -43,6 +56,19 @@ describe('task process server', () => {
 
   afterEach(() => {
     server.close();
+  });
+
+  it('listens on the loopback address only when given a host', async () => {
+    const loopback = startTaskProcessServer({
+      taskDefinitions: new Map(),
+      port: 0,
+      host: '127.0.0.1',
+      logger: loggingSystemMock.createLogger(),
+      kibanaVersion: '9.9.9',
+    });
+    await new Promise<void>((resolve) => loopback.once('listening', () => resolve()));
+    expect((loopback.address() as { address: string }).address).toBe('127.0.0.1');
+    loopback.close();
   });
 
   const runner = (overrides: Partial<{ taskType: string; token: string; version: string }> = {}) =>
@@ -69,6 +95,39 @@ describe('task process server', () => {
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 
+  it('finishes what the run left to do before it answers, and answers with the result alone', async () => {
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-flush',
+        kibanaVersion: '9.9.9',
+      }),
+    });
+
+    expect(order).toEqual(['run', 'flush']);
+    expect(await response.json()).toEqual({ kind: 'result', result: { state: { ran: true } } });
+  });
+
+  it('finishes what the run left to do when it throws too', async () => {
+    createTask = () => ({
+      run: async () => {
+        throw new Error('boom');
+      },
+    });
+
+    await expect(runner().run()).rejects.toThrow('boom');
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers even when finishing fails', async () => {
+    flush.mockRejectedValue(new Error('endpoint down'));
+
+    await expect(runner().run()).resolves.toEqual({ state: { ran: true } });
+  });
+
   it('returns the error of a task that throws, keeping its retry decoration', async () => {
     const retryAt = new Date('2030-01-01T00:00:00.000Z');
     createTask = () => ({
@@ -89,5 +148,33 @@ describe('task process server', () => {
 
   it('answers 404 for a task type it does not serve', async () => {
     await expect(runner({ taskType: 'other:type' }).run()).rejects.toThrow(/404/);
+  });
+
+  it('answers 422 for a run the task declines, and Kibana runs it itself', async () => {
+    createTask = () => ({
+      run: async () => {
+        throw new DeclinedRunError('uses a connector the process does not know');
+      },
+      cleanup,
+    });
+    await expect(runner().run()).rejects.toThrow(/422/);
+
+    const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
+    const withFallback = new RemoteTaskRunner({
+      route: { url, token: TOKEN },
+      request: {
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-2',
+        kibanaVersion: '9.9.9',
+      },
+      timeoutMs: 5000,
+      setCustomTaskRunEventFields: jest.fn(),
+      fetchFn: undiciFetch as unknown as typeof fetch,
+      fallback,
+    });
+    await expect(withFallback.run()).resolves.toEqual({ state: { local: true } });
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(cleanup).toHaveBeenCalled();
   });
 });

@@ -17,6 +17,13 @@ export type {
   UpdateExceptionListItemOptions,
 } from './services/exception_lists/exception_list_client_types';
 export { ExceptionListClient } from './services/exception_lists/exception_list_client';
+export {
+  createListsRunServices,
+  createListsTaskProcessServices,
+  LISTS_TASK_PROCESS_SETTINGS_ID,
+} from './lists_run_services';
+export type { ListsRunServices } from './lists_run_services';
+export { exceptionListType, exceptionListAgnosticType } from './saved_objects';
 export type {
   ListPluginSetup,
   ListsApiRequestHandlerContext,

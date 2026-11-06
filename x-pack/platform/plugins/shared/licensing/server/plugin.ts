@@ -21,6 +21,7 @@ import moment from 'moment';
 import type { MaybePromise } from '@kbn/utility-types';
 import type {
   CoreSetup,
+  CoreStart,
   Logger,
   Plugin,
   PluginInitializerContext,
@@ -32,7 +33,12 @@ import { registerAnalyticsContextProvider } from '../common/register_analytics_c
 import type { LicensingPluginSetup, LicensingPluginStart } from './types';
 import { createLicenseUpdate } from '../common/license_update';
 import { registerRoutes } from './routes';
-import { FeatureUsageService } from './services';
+import {
+  FeatureUsageService,
+  FeatureUsageStore,
+  FEATURE_USAGE_SAVED_OBJECT_TYPE,
+  featureUsageSavedObjectType,
+} from './services';
 import type { LicenseConfigType } from './licensing_config';
 import { createRouteHandlerContext } from './licensing_route_handler_context';
 import { createOnPreResponseHandler } from './on_pre_response_handler';
@@ -86,6 +92,7 @@ export class LicensingPlugin implements Plugin<LicensingPluginSetup, LicensingPl
       createRouteHandlerContext(license$, core.getStartServices)
     );
 
+    core.savedObjects.registerType(featureUsageSavedObjectType);
     const featureUsageSetup = this.featureUsage.setup();
 
     registerRoutes(core.http.createRouter(), featureUsageSetup, core.getStartServices);
@@ -153,7 +160,7 @@ export class LicensingPlugin implements Plugin<LicensingPluginSetup, LicensingPl
     };
   }
 
-  public start() {
+  public start(core?: CoreStart) {
     if (!this.refresh || !this.license$) {
       throw new Error('Setup has not been completed');
     }
@@ -161,14 +168,25 @@ export class LicensingPlugin implements Plugin<LicensingPluginSetup, LicensingPl
       refresh: this.refresh,
       getLicense: async () => await firstValueFrom(this.license$!),
       license$: this.license$,
-      featureUsage: this.featureUsage.start(),
+      featureUsage: this.featureUsage.start({
+        // The usages are kept in a saved object, so every node and task process of the cluster
+        // sees what the others used.
+        store: core
+          ? new FeatureUsageStore(
+              core.savedObjects.createInternalRepository([FEATURE_USAGE_SAVED_OBJECT_TYPE]),
+              this.logger
+            )
+          : undefined,
+        logger: this.logger,
+      }),
       createLicensePoller: this.createLicensePoller.bind(this),
     };
   }
 
-  public stop() {
+  public async stop() {
     this.stop$.next();
     this.stop$.complete();
+    await this.featureUsage.stop();
 
     if (this.licenseSubscription !== undefined) {
       this.licenseSubscription.unsubscribe();

@@ -12,6 +12,7 @@ import type { TelemetryConfigType } from './config';
 
 export { config } from './config';
 export type { TelemetryPluginSetup, TelemetryPluginStart } from './plugin';
+export type { TelemetryTaskProcessSettings } from './task_process_settings';
 
 export const plugin = async (initializerContext: PluginInitializerContext<TelemetryConfigType>) => {
   const { TelemetryPlugin } = await import('./plugin');

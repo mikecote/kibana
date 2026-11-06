@@ -5,7 +5,8 @@
  * 2.0.
  */
 
-import type { CoreStart, ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
+import type { ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
+import type { GenerationCoreServices } from '../types';
 
 export const refreshEventLogIndex = async ({
   coreStart,
@@ -14,7 +15,7 @@ export const refreshEventLogIndex = async ({
   logger,
   request,
 }: {
-  coreStart: CoreStart;
+  coreStart: Pick<GenerationCoreServices, 'elasticsearch'>;
   esClient?: ElasticsearchClient;
   eventLogIndex: string;
   logger: Logger;

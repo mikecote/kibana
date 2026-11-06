@@ -32,6 +32,8 @@ export const featureFlags: FeatureFlagDefinitions = [
   },
 ];
 
+export { createEntityStoreRunServices } from './entity_store_run_services';
+export type { EntityStoreRunServices } from './entity_store_run_services';
 export type {
   EntityStoreSetupContract,
   EntityStoreStartContract,

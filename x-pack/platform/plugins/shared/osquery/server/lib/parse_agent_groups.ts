@@ -14,7 +14,7 @@ import {
 } from '@kbn/fleet-plugin/common';
 import type { SortResults } from '@elastic/elasticsearch/lib/api/types';
 import { OSQUERY_INTEGRATION_NAME } from '../../common';
-import type { OsqueryAppContext } from './osquery_app_context_services';
+import type { OsqueryActionContext } from './osquery_app_context_services';
 
 export interface AgentSelection {
   agents?: string[];
@@ -34,7 +34,7 @@ export const aggregateResults = async (
     pitId?: string
   ) => Promise<{ results: string[]; total: number; searchAfter?: SortResults; pitId?: string }>,
   esClient: ElasticsearchClient,
-  context: OsqueryAppContext
+  context: OsqueryActionContext
 ) => {
   let results: string[];
   const { results: initialResults, total } = await generator(1, PER_PAGE);
@@ -119,7 +119,7 @@ export const aggregateResults = async (
 export const parseAgentSelection = async (
   soClient: SavedObjectsClientContract,
   esClient: ElasticsearchClient,
-  context: OsqueryAppContext,
+  context: OsqueryActionContext,
   agentSelection: AgentSelection
 ) => {
   const selectedAgents: Set<string> = new Set();

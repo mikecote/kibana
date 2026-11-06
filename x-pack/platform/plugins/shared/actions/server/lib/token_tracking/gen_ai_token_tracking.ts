@@ -15,15 +15,8 @@ import {
   type SmithyStream,
 } from './get_token_count_from_bedrock_client_send';
 import type { InvokeAsyncIteratorBody } from './get_token_count_from_invoke_async_iterator';
-import { getTokenCountFromInvokeAsyncIterator } from './get_token_count_from_invoke_async_iterator';
-import { getTokenCountFromBedrockInvoke } from './get_token_count_from_bedrock_invoke';
 import type { ActionTypeExecutorRawResult } from '../../../common';
-import { getTokenCountFromOpenAIStream } from './get_token_count_from_openai_stream';
 import type { InvokeBody } from './get_token_count_from_invoke_stream';
-import {
-  getTokenCountFromInvokeStream,
-  parseGeminiStreamForUsageMetadata,
-} from './get_token_count_from_invoke_stream';
 
 export interface TelemetryMetadata {
   pluginId?: string;
@@ -56,6 +49,18 @@ export const getGenAiTokenTracking = async ({
   completion_tokens: number;
   telemetry_metadata?: TelemetryMetadata;
 } | null> => {
+  const [
+    { getTokenCountFromInvokeAsyncIterator },
+    { getTokenCountFromBedrockInvoke },
+    { getTokenCountFromOpenAIStream },
+    { getTokenCountFromInvokeStream, parseGeminiStreamForUsageMetadata },
+  ] = await Promise.all([
+    import('./get_token_count_from_invoke_async_iterator'),
+    import('./get_token_count_from_bedrock_invoke'),
+    import('./get_token_count_from_openai_stream'),
+    import('./get_token_count_from_invoke_stream'),
+  ]);
+
   // this is an async iterator from the OpenAI sdk
   let telemetryMetadata: TelemetryMetadata | undefined;
   if (hasTelemetryMetadata(validatedParams.subActionParams)) {

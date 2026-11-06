@@ -5,9 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
-
-type ManagementApi = NonNullable<WorkflowsServerPluginSetup['management']>;
+import type { WorkflowsManagementApi as ManagementApi } from '../invoke_alert_retrieval_workflow';
 
 /**
  * `triggeredBy` recorded for the sub-workflows this schedules. The platform's

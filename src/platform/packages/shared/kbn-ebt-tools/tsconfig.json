@@ -6,9 +6,10 @@
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "kbn_references": [
+    "@kbn/ebt-tools-common",
     "@kbn/logging-mocks",
     "@kbn/timerange",
-    "@kbn/logging",
+    "@kbn/logging"
   ],
   "exclude": ["target/**/*"]
 }

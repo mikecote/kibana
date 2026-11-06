@@ -34,6 +34,7 @@ const createUsageCountersServiceMock = () => {
   const mocked: jest.Mocked<PublicMethodsOf<UsageCountersService>> = {
     setup: jest.fn(),
     start: jest.fn(),
+    flush: jest.fn(),
     stop: jest.fn(),
   };
 

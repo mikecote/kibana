@@ -9,7 +9,6 @@ import { coreMock, loggingSystemMock, savedObjectsClientMock } from '@kbn/core/s
 import { uiSettingsServiceMock } from '@kbn/core-ui-settings-server-mocks';
 
 import { createMockConfig } from '../../../../../../config.mock';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../../../plugin_contract';
 import { LogLevelSetting } from '../../../../../../../common/api/detection_engine/rule_monitoring';
 import { fetchRuleExecutionSettings } from './fetch_rule_execution_settings';
 
@@ -22,41 +21,44 @@ const DEFAULT_SETTINGS = {
 };
 
 const setup = ({ error }: { error?: Error } = {}) => {
-  const core = coreMock.createSetup();
   const coreStart = coreMock.createStart();
   const uiSettingsClient = uiSettingsServiceMock.createClient();
 
   uiSettingsClient.getAll.mockResolvedValue({});
   coreStart.uiSettings.asScopedToClient.mockReturnValue(uiSettingsClient);
-  if (error) {
-    core.getStartServices.mockRejectedValue(error);
-  } else {
-    core.getStartServices.mockResolvedValue([coreStart, {}, {}] as unknown as Awaited<
-      ReturnType<SecuritySolutionPluginCoreSetupDependencies['getStartServices']>
-    >);
-  }
+  const getUiSettings = error
+    ? jest.fn().mockRejectedValue(error)
+    : jest.fn().mockResolvedValue(coreStart.uiSettings);
 
-  return {
-    core: core as unknown as SecuritySolutionPluginCoreSetupDependencies,
-  };
+  return { getUiSettings };
 };
 
 beforeEach(() => jest.clearAllMocks());
 
 describe('fetchRuleExecutionSettings()', () => {
   test('reads the settings on a healthy fetch', async () => {
-    const { core } = setup();
+    const { getUiSettings } = setup();
 
-    const settings = await fetchRuleExecutionSettings(config, logger, core, savedObjectsClient);
+    const settings = await fetchRuleExecutionSettings(
+      config,
+      logger,
+      getUiSettings,
+      savedObjectsClient
+    );
 
     expect(settings).toEqual(DEFAULT_SETTINGS);
     expect(logger.error).not.toHaveBeenCalled();
   });
 
   test('falls back to defaults when the fetch fails', async () => {
-    const { core } = setup({ error: new Error('uiSettings unavailable') });
+    const { getUiSettings } = setup({ error: new Error('uiSettings unavailable') });
 
-    const settings = await fetchRuleExecutionSettings(config, logger, core, savedObjectsClient);
+    const settings = await fetchRuleExecutionSettings(
+      config,
+      logger,
+      getUiSettings,
+      savedObjectsClient
+    );
 
     expect(settings).toEqual(DEFAULT_SETTINGS);
     expect(logger.error).toHaveBeenCalled();

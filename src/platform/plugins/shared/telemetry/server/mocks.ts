@@ -23,6 +23,9 @@ function createSetupContract(): Setup {
   const telemetryUrl = new URL('https://telemetry-staging.elastic.co/xpack/MOCK_URL/send');
   const setupContract: Setup = {
     getTelemetryUrl: jest.fn().mockResolvedValue(telemetryUrl),
+    getTaskProcessSettings: jest
+      .fn()
+      .mockReturnValue({ sendUsageTo: 'staging', snapshotUrl: '', labels: {} }),
   };
 
   return setupContract;

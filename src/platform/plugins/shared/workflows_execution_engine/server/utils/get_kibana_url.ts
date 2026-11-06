@@ -8,13 +8,23 @@
  */
 
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { CoreStart } from '@kbn/core/server';
 
 const LOCALHOST_FALLBACK = 'http://localhost:5601';
 
+/**
+ * What the address of Kibana is read from: Core's `http` start contract, or in a task process just
+ * the public base URL.
+ */
+export interface KibanaUrlSource {
+  http?: {
+    basePath?: { publicBaseUrl?: string; prepend?: (path: string) => string };
+    getServerInfo?: () => { protocol: string; hostname: string; port: number | string };
+  };
+}
+
 export function getKibanaUrl(
-  coreStart?: CoreStart,
-  cloudSetup?: CloudSetup,
+  coreStart?: KibanaUrlSource,
+  cloudSetup?: Pick<CloudSetup, 'kibanaUrl'>,
   use_server_info: boolean = false,
   use_localhost: boolean = false
 ): string {
@@ -36,9 +46,9 @@ export function getKibanaUrl(
   );
 }
 
-function getServerInfoUrl(coreStart?: CoreStart): string | undefined {
+function getServerInfoUrl(coreStart?: KibanaUrlSource): string | undefined {
   const http = coreStart?.http;
-  if (!http) {
+  if (!http?.getServerInfo || !http.basePath?.prepend) {
     return undefined;
   }
   const { protocol, hostname, port } = http.getServerInfo();

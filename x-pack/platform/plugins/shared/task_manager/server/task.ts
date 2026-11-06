@@ -338,6 +338,9 @@ export const taskDefinitionSchema = schema.object(
       schema.oneOf([schema.literal('alerting'), schema.literal('actions')])
     ),
 
+    /** See `RemoteRunObserverFactory`. */
+    observeRemoteRun: schema.maybe(schema.any()),
+
     runAs: schema.maybe(
       schema.object({
         // codeql[js/kibana/unbounded-array-in-schema] Task type registration at plugin setup, not HTTP input
@@ -392,8 +395,9 @@ export const taskDefinitionSchema = schema.object(
  */
 export type TaskDefinition = Omit<
   TypeOf<typeof taskDefinitionSchema>,
-  'paramsSchema' | 'taskTypeGroup' | 'runAs'
+  'paramsSchema' | 'taskTypeGroup' | 'runAs' | 'observeRemoteRun'
 > & {
+  observeRemoteRun?: RemoteRunObserverFactory;
   /**
    * Creates an object that has a run function which performs the task's work,
    * and an optional cancel function which cancels the task.
@@ -410,6 +414,24 @@ export type TaskDefinition = Omit<
   taskTypeGroup?: TaskTypeGroup;
   runAs?: TaskRunAsDefinition;
 };
+
+/**
+ * What Kibana does with the end of a run that a task process served, for what the type counts in
+ * Kibana's memory (a counter that a collector reads): the process does everything else.
+ */
+export interface RemoteRunObserver {
+  /**
+   * The process ran the task and answered with this result (not an error it threw, and not a run
+   * Kibana cancelled). Not called when Kibana ran the task itself, which counts its own runs.
+   */
+  onResult?: (result: RunResult | undefined | void) => void;
+  /** Kibana cancelled the run, for the timeout of the task, while the process had it. Called once. */
+  onCancel?: () => void;
+}
+
+export type RemoteRunObserverFactory = (context: {
+  taskInstance: ConcreteTaskInstance;
+}) => RemoteRunObserver;
 
 /**
  * Lets tasks of a type run as the registering plugin's bound service accounts.

@@ -14,6 +14,7 @@ import type {
   TaskCost,
   TaskTypeGroup,
   TaskRunAsDefinition,
+  RemoteRunObserverFactory,
 } from './task';
 import { taskDefinitionSchema } from './task';
 import { CONCURRENCY_ALLOW_LIST_BY_TASK_TYPE } from './constants';
@@ -143,6 +144,11 @@ export interface TaskRegisterDefinition {
    * type `task_identity` is reserved for Task Manager.
    */
   runAs?: TaskRunAsDefinition;
+
+  /**
+   * Observes the runs of this type that a task process serves (see `RemoteRunObserver`).
+   */
+  observeRemoteRun?: RemoteRunObserverFactory;
 }
 
 /**

@@ -20,13 +20,16 @@ import {
   TinesSecretsSchema,
 } from '@kbn/connector-schemas/tines';
 import type { TinesConfig, TinesSecrets } from '@kbn/connector-schemas/tines';
-import { TinesConnector } from './tines';
+
 import { renderParameterTemplates } from './render';
 
 export const getTinesConnectorType = (): SubActionConnectorType<TinesConfig, TinesSecrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new TinesConnector(params),
+  getService: async (params) => {
+    const { TinesConnector } = await import('./tines');
+    return new TinesConnector(params);
+  },
   schema: {
     config: TinesConfigSchema,
     secrets: TinesSecretsSchema,

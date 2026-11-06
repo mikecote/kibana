@@ -56,7 +56,11 @@ import { modelManagementRoutes } from './routes/model_management';
 import { systemRoutes } from './routes/system';
 import { MlLicense } from '../common/license';
 import type { SharedServices } from './shared_services';
-import { createSharedServices } from './shared_services';
+import { createMlRunServices } from './ml_run_services';
+import {
+  ML_TASK_PROCESS_SETTINGS_ID,
+  type MlTaskProcessSettings,
+} from './task_types/ml_task_process_services';
 import { setupCapabilitiesSwitcher } from './lib/capabilities';
 import { registerKibanaSettings } from './lib/register_settings';
 import { trainedModelsRoutes } from './routes/trained_models';
@@ -213,23 +217,23 @@ export class MlServerPlugin
       return capabilities.ml as MlCapabilities;
     };
 
-    const { internalServicesProviders, sharedServicesProviders } = createSharedServices(
-      this.mlLicense,
+    const { internalServicesProviders, sharedServicesProviders } = createMlRunServices({
+      mlLicense: this.mlLicense,
       getSpaces,
-      plugins.cloud,
-      plugins.security?.authz,
+      cloud: plugins.cloud,
+      authorization: plugins.security?.authz,
       resolveMlCapabilities,
-      () => this.clusterClient,
-      () => getInternalSavedObjectsClient(),
-      () => this.uiSettings,
-      () => this.fieldsFormat,
+      getClusterClient: () => this.clusterClient,
+      getInternalSavedObjectsClient: () => getInternalSavedObjectsClient(),
+      getUiSettings: () => this.uiSettings,
+      getFieldsFormat: () => this.fieldsFormat,
       getDataViews,
-      () => this.auditService,
-      () => this.isMlReady,
-      this.compatibleModuleType,
-      this.enabledFeatures,
-      this.serverless
-    );
+      getAuditService: () => this.auditService,
+      isMlReady: () => this.isMlReady,
+      compatibleModuleType: this.compatibleModuleType,
+      enabledFeatures: this.enabledFeatures,
+      serverless: this.serverless,
+    });
 
     const routeInit: RouteInitialization = {
       router: coreSetup.http.createRouter(),
@@ -292,6 +296,15 @@ export class MlServerPlugin
     initMlServerLog({ log: this.log });
 
     if (plugins.alerting) {
+      // What a task process that runs an ML rule type reads of this plugin's configuration.
+      plugins.alerting.registerTaskProcessSettings(
+        ML_TASK_PROCESS_SETTINGS_ID,
+        (): MlTaskProcessSettings => ({
+          cpsEnabled: this.serverless.cpsEnabled,
+          enabledFeatures: this.enabledFeatures,
+          compatibleModuleType: this.compatibleModuleType,
+        })
+      );
       registerMlAlerts(
         {
           alerting: plugins.alerting,

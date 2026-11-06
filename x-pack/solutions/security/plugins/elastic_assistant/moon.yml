@@ -18,6 +18,8 @@ project:
   sourceRoot: x-pack/solutions/security/plugins/elastic_assistant
 dependsOn:
   - '@kbn/core'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/repo-info'
   - '@kbn/core-http-server'
   - '@kbn/licensing-plugin'
   - '@kbn/securitysolution-es-utils'

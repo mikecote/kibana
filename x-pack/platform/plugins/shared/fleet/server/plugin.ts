@@ -47,7 +47,7 @@ import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
-import type { AlertingServerStart } from '@kbn/alerting-plugin/server/plugin';
+import type { AlertingServerSetup, AlertingServerStart } from '@kbn/alerting-plugin/server/plugin';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SavedObjectTaggingStart } from '@kbn/saved-objects-tagging-plugin/server';
@@ -57,11 +57,7 @@ import { SECURITY_EXTENSION_ID, SPACES_EXTENSION_ID } from '@kbn/core-saved-obje
 
 import type { FleetConfigType } from '../common/types';
 import type { FleetAuthz } from '../common';
-import {
-  INTEGRATIONS_PLUGIN_ID,
-  MESSAGE_SIGNING_KEYS_SAVED_OBJECT_TYPE,
-  UNINSTALL_TOKENS_SAVED_OBJECT_TYPE,
-} from '../common';
+import { INTEGRATIONS_PLUGIN_ID, UNINSTALL_TOKENS_SAVED_OBJECT_TYPE } from '../common';
 import type { ExperimentalFeatures } from '../common/experimental_features';
 import { parseExperimentalConfigValue } from '../common/experimental_features';
 import {
@@ -71,7 +67,7 @@ import {
   LEGACY_AGENT_POLICY_SAVED_OBJECT_TYPE,
 } from '../common/constants';
 
-import { runWithCache } from './services/epm/packages/cache';
+import type { runWithCache } from './services/epm/packages/cache';
 
 import { getFilesClientFactory } from './services/files/get_files_client_factory';
 
@@ -81,7 +77,6 @@ import {
   getAuthzFromRequest,
   getRouteRequiredAuthz,
   makeRouterWithFleetAuthz,
-  MessageSigningService,
 } from './services/security';
 
 import { OutputClient, type OutputClientInterface } from './services/output_client';
@@ -110,13 +105,11 @@ import type {
   CloudConnectorServiceInterface,
 } from './services';
 import {
-  agentPolicyService,
   AgentServiceImpl,
   appContextService,
   FleetUsageSender,
   licenseService,
   packagePolicyService,
-  PackageServiceImpl,
   cloudConnectorService,
 } from './services';
 import {
@@ -140,7 +133,8 @@ import {
   UninstallTokenService,
   type UninstallTokenServiceInterface,
 } from './services/security/uninstall_token_service';
-import { FleetActionsClient, type FleetActionsClientInterface } from './services/actions';
+import type { FleetActionsClientInterface } from './services/actions';
+import { createFleetRunServices } from './services/run_time';
 import type { FilesClientFactory } from './services/files/types';
 import { PolicyWatcher } from './services/agent_policy_watch';
 import { getPackageSpecTagId } from './services/epm/kibana/assets/tag_assets';
@@ -187,6 +181,7 @@ import { registerReassignAgentsToVersionSpecificPoliciesTask } from './services/
 import { VersionSpecificPolicyAssignmentTask } from './tasks/version_specific_policy_assignment_task';
 
 export interface FleetSetupDeps {
+  alerting?: Pick<AlertingServerSetup, 'registerTaskProcessSettings'>;
   security: SecurityPluginSetup;
   features?: FeaturesPluginSetup;
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
@@ -251,6 +246,11 @@ export interface FleetAppContext {
   alertingStart?: AlertingServerStart;
   reportingStart?: ReportingStart;
   featureFlags: FeatureFlagsStart;
+  /**
+   * The hidden saved object types Fleet's internal clients ask for, when not all of them are registered
+   * where Fleet runs (a task process registers only what it uses). Defaults to all of them.
+   */
+  includedHiddenTypes?: string[];
 }
 
 export type FleetSetupContract = void;
@@ -395,6 +395,9 @@ export class FleetPlugin
     this.securitySetup = deps.security;
     this.isFipsEnabled = core.security.fips.isEnabled();
     const config = this.configInitialValue;
+
+    // What a task process that runs a rule with response actions reads of Fleet's configuration.
+    deps.alerting?.registerTaskProcessSettings('fleet', () => config);
 
     core.status.set(this.fleetStatus$.asObservable());
 
@@ -813,12 +816,14 @@ export class FleetPlugin
   public start(core: CoreStart, plugins: FleetStartDeps): FleetStartContract {
     this.spacesPluginsStart = plugins.spaces;
 
-    const messageSigningService = new MessageSigningService(
-      this.initializerContext.logger,
-      plugins.encryptedSavedObjects.getClient({
-        includedHiddenTypes: [MESSAGE_SIGNING_KEYS_SAVED_OBJECT_TYPE],
-      })
-    );
+    // The services a task process builds the same way (see `createFleetRunServices`).
+    const runServices = createFleetRunServices({
+      elasticsearch: core.elasticsearch.client,
+      savedObjects: core.savedObjects,
+      encryptedSavedObjects: plugins.encryptedSavedObjects,
+      loggerFactory: this.initializerContext.logger,
+    });
+    const { messageSigningService } = runServices;
 
     const uninstallTokenService = new UninstallTokenService(
       plugins.encryptedSavedObjects.getClient({
@@ -1011,16 +1016,10 @@ export class FleetPlugin
         enabled: this.configInitialValue.agentless?.enabled ?? false,
       },
       fleetSetupCompleted: () => fleetSetupPromise,
-      packageService: this.setupPackageService(
-        core.elasticsearch.client.asInternalUser,
-        internalSoClient
-      ),
-      agentService: this.setupAgentService(
-        core.elasticsearch.client.asInternalUser,
-        internalSoClient
-      ),
-      agentPolicyService,
-      packagePolicyService,
+      packageService: (this.packageService ??= runServices.packageService),
+      agentService: (this.agentService ??= runServices.agentService),
+      agentPolicyService: runServices.agentPolicyService,
+      packagePolicyService: runServices.packagePolicyService,
       agentlessPoliciesService: new AgentlessPoliciesServiceImpl(
         packagePolicyService,
         internalSoClient,
@@ -1041,16 +1040,14 @@ export class FleetPlugin
       ),
       messageSigningService,
       uninstallTokenService,
-      createFleetActionsClient(packageName: string) {
-        return new FleetActionsClient(core.elasticsearch.client.asInternalUser, packageName);
-      },
+      createFleetActionsClient: runServices.createFleetActionsClient,
       getPackageSpecTagId,
       async createOutputClient(request: KibanaRequest) {
         const authz = await getAuthzFromRequest(request);
         return new OutputClient(authz);
       },
       cloudConnectorService,
-      runWithCache,
+      runWithCache: runServices.runWithCache,
     };
   }
 
@@ -1080,30 +1077,6 @@ export class FleetPlugin
     }
     this.packagePolicyService = new PackagePolicyServiceImpl();
     return this.packagePolicyService;
-  }
-
-  private setupPackageService(
-    internalEsClient: ElasticsearchClient,
-    internalSoClient: SavedObjectsClientContract
-  ): PackageService {
-    if (this.packageService) {
-      return this.packageService;
-    }
-
-    this.packageService = new PackageServiceImpl(
-      internalEsClient,
-      internalSoClient,
-      this.getLogger()
-    );
-    return this.packageService!;
-  }
-
-  private getLogger(): Logger {
-    if (!this.logger) {
-      this.logger = this.initializerContext.logger.get();
-    }
-
-    return this.logger;
   }
 
   private async initializeUninstallTokens() {

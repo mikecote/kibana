@@ -18,6 +18,16 @@ export async function plugin(initializerContext: PluginInitializerContext) {
   return new WorkflowsExecutionEnginePlugin(initializerContext);
 }
 
+export { createPlainIndexDataClients } from './repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
+export { createWorkflowScheduler } from './create_workflow_scheduler';
+export type {
+  WorkflowScheduler,
+  WorkflowSchedulerDeps,
+  WorkflowSchedulerTaskManager,
+} from './create_workflow_scheduler';
+export type { WorkflowsExecutionEngineConfig } from './config';
+export { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
+
 export type {
   DataClient,
   GetStepExecutionsByIdsOptions,

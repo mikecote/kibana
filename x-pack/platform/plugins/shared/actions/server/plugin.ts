@@ -5,7 +5,6 @@
  * 2.0.
  */
 import { i18n } from '@kbn/i18n';
-import { extractApiKeyIdFromAuthzHeader } from '@kbn/core-security-server';
 import type { PublicMethodsOf, Writable } from '@kbn/utility-types';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type {
@@ -16,14 +15,11 @@ import type {
   KibanaRequest,
   Logger,
   IContextProvider,
-  ElasticsearchServiceStart,
   SavedObjectsClientContract,
   SavedObjectsBulkGetObject,
-  ISavedObjectsRepository,
 } from '@kbn/core/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type {
-  EncryptedSavedObjectsClient,
   EncryptedSavedObjectsPluginSetup,
   EncryptedSavedObjectsPluginStart,
 } from '@kbn/encrypted-saved-objects-plugin/server';
@@ -66,14 +62,12 @@ import {
   LeasePool,
 } from './lib';
 import type {
-  Services,
   ActionType,
   InMemoryConnector,
   ActionTypeConfig,
   ActionTypeSecrets,
   ActionTypeParams,
   ActionsRequestHandlerContext,
-  UnsecuredServices,
   ConnectorLifecycleListener,
 } from './types';
 
@@ -106,16 +100,17 @@ import { ACTIONS_FEATURE } from './feature';
 import { ActionsAuthorization } from './authorization/actions_authorization';
 import { ensureSufficientLicense } from './lib/ensure_sufficient_license';
 import { getCurrentUserProfileIdFromRequest } from './lib/get_current_user_profile_id';
-import { renderMustacheObject } from './lib/mustache_renderer';
-import { getAlertHistoryEsIndex } from './preconfigured_connectors/alert_history_es_index/alert_history_es_index';
 import { createAlertHistoryIndexTemplate } from './preconfigured_connectors/alert_history_es_index/create_alert_history_index_template';
-import { ACTIONS_FEATURE_ID, AlertHistoryEsIndexConnectorId } from '../common';
+import { ACTIONS_FEATURE_ID } from '../common';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from './constants/event_log';
 import { ConnectorTokenClient } from './lib/connector_token_client';
+import {
+  getCurrentUserProfileIdFromAPIKeyFactory,
+  getServicesFactory,
+  getUnsecuredServicesFactory,
+} from './lib/executor_services';
 import { UserConnectorTokenClient } from './lib/user_connector_token_client';
 import { InMemoryMetrics, registerClusterCollector, registerNodeCollector } from './monitoring';
-import type { ConnectorWithOptionalDeprecation } from './application/connector/lib';
-import { isConnectorDeprecated } from './application/connector/lib';
 import { createSubActionConnectorFramework } from './sub_action_framework';
 import type {
   ICaseServiceAbstract,
@@ -128,6 +123,9 @@ import type { IUnsecuredActionsClient } from './unsecured_actions_client/unsecur
 import { UnsecuredActionsClient } from './unsecured_actions_client/unsecured_actions_client';
 import { createBulkUnsecuredExecutionEnqueuerFunction } from './create_unsecured_execute_function';
 import { createSystemConnectors } from './create_system_actions';
+import { renderActionParameterTemplates } from './lib/render_action_parameter_templates';
+import type { ActionsTaskProcessSettings } from './task_types/task_process_settings';
+import { getInMemoryConnectorsFromConfig } from './lib/get_in_memory_connectors_from_config';
 import { ConnectorUsageReportingTask } from './usage/connector_usage_reporting_task';
 import { ConnectorRateLimiter } from './lib/connector_rate_limiter';
 import { OAuthRateLimiter } from './lib/oauth_rate_limiter';
@@ -179,6 +177,17 @@ export interface PluginSetupContract {
   >;
   getActionsHealth: () => { hasPermanentEncryptionKey: boolean };
   getActionsConfigurationUtilities: () => ActionsConfigurationUtilities;
+  /**
+   * The validated actions config. Only for Task Manager's task type modules, whose task process is
+   * sent it; it holds the secrets of preconfigured connectors, so never log it.
+   */
+  getConfig: () => ActionsConfig;
+  /**
+   * Only for Task Manager's task type modules: Kibana's final in-memory connectors, read when a run
+   * is dispatched, and the ids of the connector types registered so far. It holds the secrets of
+   * preconfigured connectors, so never log it.
+   */
+  getTaskProcessSettings: () => ActionsTaskProcessSettings & { connectorTypes: string[] };
   getRelayClient: () => RelayClientContract | undefined;
   setEnabledConnectorTypes: (connectorTypes: EnabledConnectorTypes) => void;
 
@@ -379,31 +388,9 @@ export class ActionsPlugin
         })
       : undefined;
 
-    if (this.actionsConfig.preconfiguredAlertHistoryEsIndex) {
-      this.inMemoryConnectors.push(getAlertHistoryEsIndex());
-    }
-
-    for (const preconfiguredId of Object.keys(this.actionsConfig.preconfigured)) {
-      if (preconfiguredId !== AlertHistoryEsIndexConnectorId) {
-        const rawPreconfiguredConnector: ConnectorWithOptionalDeprecation = {
-          ...this.actionsConfig.preconfigured[preconfiguredId],
-          id: preconfiguredId,
-          isPreconfigured: true,
-          isSystemAction: false,
-          isConnectorTypeDeprecated: false,
-        };
-
-        this.inMemoryConnectors.push({
-          ...rawPreconfiguredConnector,
-          isDeprecated: isConnectorDeprecated(rawPreconfiguredConnector),
-          isConnectorTypeDeprecated: false,
-        });
-      } else {
-        this.logger.warn(
-          `Preconfigured connectors cannot have the id "${AlertHistoryEsIndexConnectorId}" because this is a reserved id.`
-        );
-      }
-    }
+    this.inMemoryConnectors.push(
+      ...getInMemoryConnectorsFromConfig(this.actionsConfig, this.logger)
+    );
 
     const actionTypeRegistry = new ActionTypeRegistry({
       licensing: plugins.licensing,
@@ -590,6 +577,11 @@ export class ActionsPlugin
         };
       },
       getActionsConfigurationUtilities: () => actionsConfigUtils,
+      getConfig: () => this.actionsConfig,
+      getTaskProcessSettings: () => ({
+        inMemoryConnectors: this.inMemoryConnectors,
+        connectorTypes: this.actionTypeRegistry?.getAllTypes() ?? [],
+      }),
       getRelayClient: () => this.relayClient,
       setEnabledConnectorTypes: (connectorTypes) => {
         if (
@@ -795,45 +787,10 @@ export class ActionsPlugin
     const getInternalSavedObjectsRepositoryWithoutAccessToActions = () =>
       core.savedObjects.createInternalRepository();
 
-    /**
-     * Resolves profile UID from the `Authorization` API-key header for callers that run under a
-     * `FakeRequest` (action executor / background execution), where there is no browser session
-     * and `userProfiles.getCurrent` cannot run. For real `KibanaRequest` traffic, use
-     * `getCurrentUserProfileIdFromRequest` instead.
-     */
-    async function getCurrentUserProfileIdFromAPIKey(
-      request: KibanaRequest
-    ): Promise<string | undefined> {
-      try {
-        const id = extractApiKeyIdFromAuthzHeader(request.headers.authorization);
-        if (!id) {
-          logger.debug(`Failed to decode API key ID from Authorization header.`);
-          return undefined;
-        }
-
-        const response = await core.elasticsearch.client
-          .asScoped(request)
-          .asCurrentUser.security.getApiKey({
-            with_profile_uid: true,
-            id,
-          });
-
-        if (response.api_keys && response.api_keys.length > 0) {
-          return response.api_keys[0].profile_uid;
-        }
-
-        logger.debug(
-          `No API keys were returned from query, cannot retrieve associated profile id.`
-        );
-      } catch (error) {
-        logger.debug(
-          `Failed to retrieve API key for user profile retrieval: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-      return undefined;
-    }
+    const getCurrentUserProfileIdFromAPIKey = getCurrentUserProfileIdFromAPIKeyFactory({
+      logger,
+      elasticsearch: core.elasticsearch,
+    });
 
     const getCurrentUserProfileId = (requestWithAuth: KibanaRequest) =>
       getCurrentUserProfileIdFromRequest(requestWithAuth, plugins.security, logger);
@@ -843,20 +800,24 @@ export class ActionsPlugin
       eventLogger: this.eventLogger!,
       spaces: plugins.spaces?.spacesService,
       security: core.security,
-      getServices: this.getServicesFactory(
-        getScopedSavedObjectsClientWithoutAccessToActions,
-        core.elasticsearch,
+      getServices: getServicesFactory({
+        logger: this.logger,
+        getScopedClient: getScopedSavedObjectsClientWithoutAccessToActions,
+        elasticsearch: core.elasticsearch,
         encryptedSavedObjectsClient,
-        (request: KibanaRequest) => this.getUnsecuredSavedObjectsClient(core.savedObjects, request),
-        actionsConfigUtils
-      ),
-      getUnsecuredServices: this.getUnsecuredServicesFactory(
-        getInternalSavedObjectsRepositoryWithoutAccessToActions,
-        core.elasticsearch,
+        unsecuredSavedObjectsClient: (request: KibanaRequest) =>
+          this.getUnsecuredSavedObjectsClient(core.savedObjects, request),
+        configurationUtilities: actionsConfigUtils,
+      }),
+      getUnsecuredServices: getUnsecuredServicesFactory({
+        logger: this.logger,
+        getSavedObjectRepository: getInternalSavedObjectsRepositoryWithoutAccessToActions,
+        elasticsearch: core.elasticsearch,
         encryptedSavedObjectsClient,
-        () => this.getUnsecuredSavedObjectsClientWithFakeRequest(core.savedObjects),
-        actionsConfigUtils
-      ),
+        unsecuredSavedObjectsRepository: () =>
+          this.getUnsecuredSavedObjectsClientWithFakeRequest(core.savedObjects),
+        configurationUtilities: actionsConfigUtils,
+      }),
       encryptedSavedObjectsClient,
       actionTypeRegistry: actionTypeRegistry!,
       inMemoryConnectors: this.inMemoryConnectors,
@@ -980,48 +941,6 @@ export class ActionsPlugin
       authorization: this.security?.authz,
     });
   };
-
-  private getServicesFactory(
-    getScopedClient: (request: KibanaRequest) => SavedObjectsClientContract,
-    elasticsearch: ElasticsearchServiceStart,
-    encryptedSavedObjectsClient: EncryptedSavedObjectsClient,
-    unsecuredSavedObjectsClient: (request: KibanaRequest) => SavedObjectsClientContract,
-    configurationUtilities: ActionsConfigurationUtilities
-  ): (request: KibanaRequest) => Services {
-    return (request) => {
-      return {
-        savedObjectsClient: getScopedClient(request),
-        scopedClusterClient: elasticsearch.client.asScoped(request).asCurrentUser,
-        connectorTokenClient: new ConnectorTokenClient({
-          unsecuredSavedObjectsClient: unsecuredSavedObjectsClient(request),
-          encryptedSavedObjectsClient,
-          logger: this.logger,
-          configurationUtilities,
-        }),
-      };
-    };
-  }
-
-  private getUnsecuredServicesFactory(
-    getSavedObjectRepository: () => ISavedObjectsRepository,
-    elasticsearch: ElasticsearchServiceStart,
-    encryptedSavedObjectsClient: EncryptedSavedObjectsClient,
-    unsecuredSavedObjectsRepository: () => SavedObjectsClientContract,
-    configurationUtilities: ActionsConfigurationUtilities
-  ): () => UnsecuredServices {
-    return () => {
-      return {
-        savedObjectsClient: getSavedObjectRepository(),
-        scopedClusterClient: elasticsearch.client.asInternalUser,
-        connectorTokenClient: new ConnectorTokenClient({
-          unsecuredSavedObjectsClient: unsecuredSavedObjectsRepository(),
-          encryptedSavedObjectsClient,
-          logger: this.logger,
-          configurationUtilities,
-        }),
-      };
-    };
-  }
 
   private getInMemoryConnectors = () => this.inMemoryConnectors;
 
@@ -1265,18 +1184,4 @@ export class ActionsPlugin
   }
 }
 
-export function renderActionParameterTemplates<Params extends ActionTypeParams = ActionTypeParams>(
-  logger: Logger,
-  actionTypeRegistry: ActionTypeRegistry | undefined,
-  actionTypeId: string,
-  actionId: string,
-  params: Params,
-  variables: Record<string, unknown>
-): Params {
-  const actionType = actionTypeRegistry?.get(actionTypeId);
-  if (actionType?.renderParameterTemplates) {
-    return actionType.renderParameterTemplates(logger, params, variables, actionId) as Params;
-  } else {
-    return renderMustacheObject(logger, params, variables);
-  }
-}
+export { renderActionParameterTemplates };

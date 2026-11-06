@@ -22,12 +22,15 @@ import {
   SecretsSchema,
 } from '@kbn/connector-schemas/opsgenie';
 import type { Config, Secrets } from '@kbn/connector-schemas/opsgenie';
-import { OpsgenieConnector } from './connector';
+
 import { renderParameterTemplates } from './render_template_variables';
 
 export const getOpsgenieConnectorType = (): SubActionConnectorType<Config, Secrets> => {
   return {
-    getService: (params) => new OpsgenieConnector(params),
+    getService: async (params) => {
+      const { OpsgenieConnector } = await import('./connector');
+      return new OpsgenieConnector(params);
+    },
     minimumLicenseRequired: 'platinum',
     name: CONNECTOR_NAME,
     id: CONNECTOR_ID,

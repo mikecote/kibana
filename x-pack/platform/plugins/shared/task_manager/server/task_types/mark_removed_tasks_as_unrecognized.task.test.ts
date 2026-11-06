@@ -6,8 +6,9 @@
  */
 
 import { mockLogger } from '../test_utils';
-import { elasticsearchServiceMock, savedObjectsServiceMock } from '@kbn/core/server/mocks';
+import { elasticsearchServiceMock } from '@kbn/core/server/mocks';
 import type { RunContext } from '../task';
+import { createTaskHostMock } from '../task_type_module.mocks';
 import type { TaskHost } from '../task_type_module';
 import { SCHEDULE_INTERVAL, taskType } from './mark_removed_tasks_as_unrecognized.task';
 import type { SearchHit } from '@elastic/elasticsearch/lib/api/types';
@@ -41,11 +42,7 @@ const createTaskDoc = (id: string = '1'): SearchHit<unknown> => ({
 describe('markRemovedTasksAsUnrecognizedTask', () => {
   const logger = mockLogger();
   const esClient = elasticsearchServiceMock.createStart();
-  const host: TaskHost = {
-    logger,
-    elasticsearch: esClient.client,
-    savedObjects: savedObjectsServiceMock.createStartContract(),
-  };
+  const host: TaskHost = createTaskHostMock({ logger, elasticsearch: esClient.client });
 
   afterEach(() => {
     jest.clearAllMocks();

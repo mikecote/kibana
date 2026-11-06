@@ -19,7 +19,6 @@ import type { EsQueryRuleParams } from '@kbn/response-ops-rule-params/es_query';
 import type { ActionContext } from './action_context';
 import type { ESSearchResponse, ESSearchRequest } from '@kbn/es-types';
 import { elasticsearchClientMock } from '@kbn/core-elasticsearch-client-server-mocks';
-import { coreMock } from '@kbn/core/server/mocks';
 import { ActionGroupId, ConditionMetAlertInstanceId } from '../../../common/es_query';
 import type {
   OnlyEsqlQueryRuleParams,
@@ -31,8 +30,7 @@ import { Comparator } from '../../../common/comparator_types';
 import { DEFAULT_FLAPPING_SETTINGS } from '@kbn/alerting-plugin/common/rules_settings';
 
 const logger = loggingSystemMock.create().get();
-const coreSetup = coreMock.createSetup();
-let ruleType = getRuleType(coreSetup, false);
+let ruleType = getRuleType(false);
 const mockNow = jest.getRealSystemTime();
 
 describe('ruleType', () => {
@@ -42,7 +40,7 @@ describe('ruleType', () => {
   });
   beforeEach(() => {
     jest.clearAllMocks();
-    ruleType = getRuleType(coreSetup, false);
+    ruleType = getRuleType(false);
   });
   afterAll(() => {
     jest.useRealTimers();
@@ -171,7 +169,7 @@ describe('ruleType', () => {
     });
 
     it('validator succeeds with valid es query params (serverless)', async () => {
-      ruleType = getRuleType(coreSetup, true);
+      ruleType = getRuleType(true);
       const params: Partial<Writable<OnlyEsQueryRuleParams>> = {
         index: ['index-name'],
         timeField: 'time-field',
@@ -190,7 +188,7 @@ describe('ruleType', () => {
     });
 
     it('validator fails with invalid es query params - size (serverless)', async () => {
-      ruleType = getRuleType(coreSetup, true);
+      ruleType = getRuleType(true);
       const paramsSchema = ruleType.validate.params;
       if (!paramsSchema) throw new Error('params validator not set');
 

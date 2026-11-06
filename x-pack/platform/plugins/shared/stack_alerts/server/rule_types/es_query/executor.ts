@@ -5,7 +5,6 @@
  * 2.0.
  */
 import { i18n } from '@kbn/i18n';
-import type { CoreSetup } from '@kbn/core/server';
 import { getEcsGroupsFromFlattenGrouping } from '@kbn/alerting-rule-utils';
 import {
   isGroupAggregation,
@@ -42,7 +41,6 @@ import { fetchEsqlQuery } from './lib/fetch_esql_query';
 import { ALERT_EVALUATION_CONDITIONS, ALERT_TITLE } from '..';
 
 export async function executor(
-  core: CoreSetup,
   options: ExecutorOptions<EsQueryRuleParams>,
   sourceFields: EsQuerySourceFields
 ) {

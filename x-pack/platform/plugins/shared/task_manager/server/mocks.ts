@@ -41,6 +41,7 @@ const createStartMock = () => {
     bulkDisable: jest.fn(),
     bulkEnable: jest.fn(),
     getRegisteredTypes: jest.fn(),
+    getTaskProcessStats: jest.fn(),
     bulkUpdateState: jest.fn(),
     registerEncryptedSavedObjectsClient: jest.fn(),
     registerApiKeyInvalidateFn: jest.fn(),

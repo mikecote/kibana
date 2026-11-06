@@ -561,6 +561,9 @@ export class TaskManagerRunner implements TaskRunner {
                 apiKey: apiKeyForRequest,
                 spaceId: modifiedContext.taskInstance.userScope?.spaceId,
                 uiamApiKeyExternal: modifiedContext.taskInstance.userScope?.uiamApiKeyExternal,
+                userProfileId,
+                userName,
+                featureFlags: await this.taskProcessDispatch.getFeatureFlags?.(this.taskType),
                 kibanaVersion: this.taskProcessDispatch.kibanaVersion,
               },
               timeoutMs: parseIntervalAsMillisecond(this.timeout),
@@ -569,6 +572,8 @@ export class TaskManagerRunner implements TaskRunner {
               // A process that cannot be started, or does not serve this type, leaves the run to
               // this process.
               fallback: runInThisProcess,
+              onFallback: this.taskProcessDispatch.onFallback,
+              observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {
             this.task = runInThisProcess();

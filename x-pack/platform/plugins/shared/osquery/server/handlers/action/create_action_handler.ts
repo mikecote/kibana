@@ -15,7 +15,7 @@ import type { CreateLiveQueryRequestBodySchema } from '../../../common/api';
 import { buildQueries } from './create_queries';
 import { parseAgentSelection } from '../../lib/parse_agent_groups';
 import { packSavedObjectType } from '../../../common/types';
-import type { OsqueryAppContext } from '../../lib/osquery_app_context_services';
+import type { OsqueryActionContext } from '../../lib/osquery_app_context_services';
 import { ACTIONS_INDEX, ACTION_EXPIRATION_WEEKS, QUERY_TIMEOUT } from '../../../common/constants';
 import { TELEMETRY_EBT_LIVE_QUERY_EVENT } from '../../lib/telemetry/constants';
 import type { PackSavedObject } from '../../common/types';
@@ -55,7 +55,7 @@ interface CreateActionHandlerOptions {
 }
 
 export const createActionHandler = async (
-  osqueryContext: OsqueryAppContext,
+  osqueryContext: OsqueryActionContext,
   params: CreateLiveQueryRequestBodySchema,
   options: CreateActionHandlerOptions
 ) => {

@@ -14,6 +14,8 @@ import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
 import type { ConcreteTaskInstance, RunResult } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
+import type { SerializedValue } from './settings';
+import type { TaskProcessParity } from './parity';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -31,6 +33,39 @@ export interface TaskProcessInit {
   elasticsearch: SerializedElasticsearchConfig;
   kibanaVersion: string;
   authToken: string;
+  /** Kibana's identity and public address. */
+  server?: TaskProcessServerInfo;
+  /** Only when the module declares encrypted saved object types. */
+  encryptedSavedObjects?: { encryptionKey?: string; decryptionOnlyKeys: string[] };
+  /** Kibana's `uiSettings.overrides`, only when the module declares ui settings. */
+  uiSettingsOverrides?: Record<string, unknown>;
+  /** Kibana's `uiSettings.globalOverrides`, only when the module declares ui settings. */
+  uiSettingsGlobalOverrides?: Record<string, unknown>;
+  /**
+   * What Kibana has registered, which the process compares with what it registered itself before it
+   * runs anything (see `TaskTypeModule.parity`). Absent for a remote process.
+   */
+  parity?: TaskProcessParity;
+  /** Plugin configs by plugin id in `serializeSettings` format; only the ids the module declares. */
+  settings?: Record<string, SerializedValue>;
+}
+
+export interface TaskProcessServerInfo {
+  uuid: string;
+  buildNum: number;
+  /**
+   * Kibana's `server.publicBaseUrl` as Core has it: absent when Kibana has none, so the links a run
+   * builds are empty exactly when Kibana's are. Never the address a process reaches Kibana at.
+   */
+  publicBaseUrl?: string;
+  isServerless: boolean;
+  /**
+   * Kibana's `server.basePath`, which Core requires a `publicBaseUrl` with a path to contain; the
+   * process serves nothing, so it is only there for that validation.
+   */
+  basePath?: string;
+  /** Kibana runs from source, which loosens a few of Core's config checks. */
+  isDev?: boolean;
 }
 
 /** The process's answer once it listens, so Kibana can route task types to its port. */
@@ -47,6 +82,13 @@ export interface TaskProcessRunRequest {
   apiKey?: string;
   spaceId?: string;
   uiamApiKeyExternal?: boolean;
+  userProfileId?: string;
+  userName?: string;
+  /**
+   * The values of the feature flags the task type declares, which Kibana evaluated when it
+   * dispatched this run (so Cloud's flag service, which only Kibana reaches, answers).
+   */
+  featureFlags?: Record<string, boolean | string | number>;
   /** ISO time after which Kibana gives up on this run; the process aborts it too. */
   deadline?: string;
   /** The Kibana version dispatching the run; a process built from another version refuses it. */
@@ -104,3 +146,11 @@ export const deserializeRunResult = (serialized?: SerializedRunResult): RunResul
     ...(taskRunError ? { taskRunError: deserializeTaskRunError(taskRunError) } : {}),
   } as unknown as RunResult;
 };
+
+/** Body of the response (status 422) to a run the process declines; Kibana runs it itself. */
+export interface TaskProcessDeclinedResponse {
+  kind: 'declined';
+  reason: string;
+}
+
+export const DECLINED_STATUS = 422;

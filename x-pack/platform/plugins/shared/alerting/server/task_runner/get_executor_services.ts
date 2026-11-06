@@ -29,11 +29,11 @@ import type {
   PublicRuleResultService,
 } from '../types';
 import { withAlertingSpan } from './lib';
-import { type AsyncSearchClient, type TaskRunnerContext } from './types';
+import { type AsyncSearchClient, type RuleRunRuntime } from './types';
 import { wrapAsyncSearchClient } from '../lib/wrap_async_search_client';
 
 interface GetExecutorServicesOpts {
-  context: TaskRunnerContext;
+  context: RuleRunRuntime;
   fakeRequest: KibanaRequest;
   abortController: AbortController;
   logger: Logger;

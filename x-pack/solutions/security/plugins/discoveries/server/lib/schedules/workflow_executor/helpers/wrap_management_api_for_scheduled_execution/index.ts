@@ -5,9 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
-
-type ManagementApi = NonNullable<WorkflowsServerPluginSetup['management']>;
+import type { WorkflowsManagementApi as ManagementApi } from '@kbn/discoveries/impl/attack_discovery/generation/types';
 
 /**
  * `triggeredBy` recorded for workflows the scheduled attack discovery orchestration

@@ -9,10 +9,11 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
-import { serializeTaskRunError } from '../task_running/errors';
+import { isDeclinedRunError, serializeTaskRunError } from '../task_running/errors';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
-import { MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
+import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
+import { runInRunContext } from './run_context';
 import type { RunContext, CancellableTask } from '../task';
 
 /** What the server needs of a task definition: a way to create the run's task. */
@@ -70,14 +71,21 @@ const isSameSecret = (received: string | undefined, expected: string) => {
 export const startTaskProcessServer = ({
   taskDefinitions,
   port,
+  host,
   logger,
   kibanaVersion,
   authToken,
   onListening,
   onShutdown,
+  flush,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   port: number;
+  /**
+   * The address to listen on. A process Kibana forked listens on `127.0.0.1` only: the run request
+   * carries credentials. A remote process leaves it unset to be reachable from other hosts.
+   */
+  host?: string;
   logger: Logger;
   /** The Kibana version this process was built for; runs from another version are refused. */
   kibanaVersion: string;
@@ -87,6 +95,11 @@ export const startTaskProcessServer = ({
   onListening?: (port: number) => void;
   /** Called once the in-flight runs have finished and before the process exits. */
   onShutdown?: () => Promise<void>;
+  /**
+   * Finishes what the run left to do, such as shipping its analytics events, before the response
+   * is sent: Kibana does nothing with a run besides rescheduling it. Bounded by the caller.
+   */
+  flush?: () => Promise<void>;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
@@ -116,6 +129,8 @@ export const startTaskProcessServer = ({
       apiKey: body.apiKey,
       spaceId: body.spaceId,
       uiamApiKeyExternal: body.uiamApiKeyExternal,
+      userProfileId: body.userProfileId,
+      userName: body.userName,
     });
 
     const task = definition.createTaskRunner({
@@ -127,16 +142,29 @@ export const startTaskProcessServer = ({
     });
     inFlight.set(body.executionUuid, { abortController, task });
     try {
-      const result = await task.run();
+      const { value, error } = await runInRunContext(async () => task.run(), {
+        featureFlags: body.featureFlags,
+      });
+      // What the run produced (analytics events, usage) leaves this process before it answers,
+      // whether the run returned or threw.
+      try {
+        await flush?.();
+      } catch (flushError) {
+        logger.warn(`Flushing after ${body.taskType} failed: ${(flushError as Error).message}`);
+      }
+      if (error !== undefined) {
+        if (isDeclinedRunError(error)) {
+          throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
+        }
+        return {
+          kind: 'thrown',
+          error: serializeTaskRunError(error),
+          customTaskRunEventFields: customFields.at(-1),
+        } as TaskProcessRunResponse;
+      }
       return {
         kind: 'result',
-        result: serializeRunResult(result as never),
-        customTaskRunEventFields: customFields.at(-1),
-      } as TaskProcessRunResponse;
-    } catch (error) {
-      return {
-        kind: 'thrown',
-        error: serializeTaskRunError(error),
+        result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
       } as TaskProcessRunResponse;
     } finally {
@@ -200,7 +228,13 @@ export const startTaskProcessServer = ({
       sendJson(res, 404, { error: 'not found' });
     } catch (error) {
       if (error instanceof RefusedRun) {
-        sendJson(res, error.status, { error: error.message });
+        sendJson(
+          res,
+          error.status,
+          error.status === DECLINED_STATUS
+            ? { kind: 'declined', reason: error.message }
+            : { error: error.message }
+        );
         return;
       }
       sendJson(res, 500, { error: (error as Error).message });
@@ -229,9 +263,11 @@ export const startTaskProcessServer = ({
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
 
-  server.listen(port, () => {
+  const onListen = () => {
     const address = server.address();
     onListening?.(typeof address === 'object' && address ? address.port : port);
-  });
+  };
+  if (host) server.listen(port, host, onListen);
+  else server.listen(port, onListen);
   return server;
 };

@@ -5,10 +5,11 @@
  * 2.0.
  */
 
-import type { Logger } from '@kbn/core/server';
+import type { Logger, UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
+import type { IEventLogService } from '@kbn/event-log-plugin/server';
 import { invariant } from '../../../../../common/utils/invariant';
-import type { ConfigType } from '../../../../config';
+import type { ConfigType, SecurityRuleRunConfig } from '../../../../config';
 import { withSecuritySpan } from '../../../../utils/with_security_span';
 import type {
   SecuritySolutionPluginCoreSetupDependencies,
@@ -119,40 +120,72 @@ export const createRuleMonitoringService = (
       return createRuleExecutionLogClientForRoutes(eventLogClient, logger);
     },
 
-    createRuleExecutionLogClientForExecutors: (
-      params: RuleExecutionLogClientForExecutorsParams
-    ): Promise<IRuleExecutionLogForExecutors> => {
-      return withSecuritySpan(
-        'IRuleMonitoringService.createRuleExecutionLogClientForExecutors',
-        async () => {
-          const { savedObjectsClient, context, ruleMonitoringService, ruleResultService } = params;
-
-          invariant(coreSetup, 'Dependencies of RuleMonitoringService are not initialized');
-          invariant(pluginsSetup, 'Dependencies of RuleMonitoringService are not initialized');
-          invariant(ruleMonitoringService, 'ruleMonitoringService required for detection rules');
-          invariant(ruleResultService, 'ruleResultService required for detection rules');
-
-          const childLogger = logger.get('ruleExecution');
-
-          const ruleExecutionSettings = await fetchRuleExecutionSettings(
-            config,
-            childLogger,
-            coreSetup,
-            savedObjectsClient
-          );
-
-          const eventLogWriter = createEventLogWriter(pluginsSetup.eventLog);
-
-          return createRuleExecutionLogClientForExecutors(
-            ruleExecutionSettings,
-            eventLogWriter,
-            childLogger,
-            context,
-            ruleMonitoringService,
-            ruleResultService
-          );
-        }
-      );
-    },
+    createRuleExecutionLogClientForExecutors: createRuleExecutionLogClientForExecutorsFactory({
+      config,
+      logger,
+      getEventLog: () => {
+        invariant(pluginsSetup, 'Dependencies of RuleMonitoringService are not initialized');
+        return pluginsSetup.eventLog;
+      },
+      getUiSettings: async () => {
+        invariant(coreSetup, 'Dependencies of RuleMonitoringService are not initialized');
+        const [started] = await coreSetup.getStartServices();
+        return started.uiSettings;
+      },
+    }),
   };
 };
+
+export interface RuleExecutionLogForExecutorsFactoryDeps {
+  config: SecurityRuleRunConfig;
+  logger: Logger;
+  /** The event log the rule execution events are written to, read when a rule runs. */
+  getEventLog: () => IEventLogService;
+  /** The ui settings, which hold the log level of the extended rule execution logging. */
+  getUiSettings: () => Promise<Pick<UiSettingsServiceStart, 'asScopedToClient'>>;
+}
+
+/**
+ * Creates the rule execution log client of a rule run, from explicit dependencies: Kibana's service
+ * reads them from Core and the event log plugin, a task process from its host. The provider of the
+ * events (`RULE_EXECUTION_LOG_PROVIDER`) has to be registered with the event log first, which
+ * `registerEventLogProvider` does.
+ */
+export const createRuleExecutionLogClientForExecutorsFactory =
+  ({
+    config,
+    logger,
+    getEventLog,
+    getUiSettings,
+  }: RuleExecutionLogForExecutorsFactoryDeps): IRuleMonitoringService['createRuleExecutionLogClientForExecutors'] =>
+  (params: RuleExecutionLogClientForExecutorsParams): Promise<IRuleExecutionLogForExecutors> => {
+    return withSecuritySpan(
+      'IRuleMonitoringService.createRuleExecutionLogClientForExecutors',
+      async () => {
+        const { savedObjectsClient, context, ruleMonitoringService, ruleResultService } = params;
+
+        invariant(ruleMonitoringService, 'ruleMonitoringService required for detection rules');
+        invariant(ruleResultService, 'ruleResultService required for detection rules');
+
+        const childLogger = logger.get('ruleExecution');
+
+        const ruleExecutionSettings = await fetchRuleExecutionSettings(
+          config,
+          childLogger,
+          getUiSettings,
+          savedObjectsClient
+        );
+
+        const eventLogWriter = createEventLogWriter(getEventLog());
+
+        return createRuleExecutionLogClientForExecutors(
+          ruleExecutionSettings,
+          eventLogWriter,
+          childLogger,
+          context,
+          ruleMonitoringService,
+          ruleResultService
+        );
+      }
+    );
+  };

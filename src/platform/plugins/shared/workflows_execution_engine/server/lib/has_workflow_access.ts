@@ -14,7 +14,7 @@ import type { WorkflowAccessSubject } from '@kbn/workflows';
 import { getWorkflowOriginalRequest } from '../service_account_execution';
 
 interface WorkflowAccessContext {
-  core: Pick<CoreStart, 'security'>;
+  core: { security: Pick<CoreStart['security'], 'authc' | 'audit'> };
   request: KibanaRequest;
   id: string;
   spaceId: string;
@@ -42,7 +42,10 @@ export const checkWorkflowAccess = (
 export const hasWorkflowAccess = async (
   workflow: WorkflowAccessSubject,
   request: KibanaRequest,
-  core: Pick<CoreStart, 'userProfile' | 'security'>,
+  core: {
+    userProfile: Pick<CoreStart['userProfile'], 'getCurrentProfileId'>;
+    security: Pick<CoreStart['security'], 'authc' | 'audit'>;
+  },
   {
     id,
     spaceId,

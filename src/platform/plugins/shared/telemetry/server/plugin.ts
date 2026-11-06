@@ -61,6 +61,8 @@ import { FetcherTask } from './fetcher';
 import { OPT_IN_POLL_INTERVAL_MS } from '../common/constants';
 import { getTelemetryChannelEndpoint } from '../common/telemetry_config';
 import { getTelemetryOptIn } from './telemetry_config';
+import type { TelemetryTaskProcessSettings } from './task_process_settings';
+import { getTaskProcessSettings } from './task_process_settings';
 
 interface TelemetryPluginsDepsSetup {
   usageCollection: UsageCollectionSetup;
@@ -81,6 +83,11 @@ export interface TelemetryPluginSetup {
    * The url is wrapped with node's [URL constructor](https://nodejs.org/api/url.html).
    */
   getTelemetryUrl: () => Promise<URL>;
+  /**
+   * What a task process needs to ship analytics events the way this Kibana does: the opt-in status
+   * as Kibana has it, where usage goes and the labels of the events. Read when a process is started.
+   */
+  getTaskProcessSettings: () => TelemetryTaskProcessSettings;
 }
 
 /**
@@ -118,6 +125,7 @@ export class TelemetryPlugin implements Plugin<TelemetryPluginSetup, TelemetryPl
   private readonly config$: Observable<TelemetryConfigType>;
   private readonly isOptedIn$: Observable<boolean>;
   private isOptedIn?: boolean;
+  private latestConfig: TelemetryConfigType;
   private readonly isDev: boolean;
   private readonly fetcherTask: FetcherTask;
   private readonly shouldStartSnapshotTelemetryFetcher: boolean;
@@ -144,8 +152,13 @@ export class TelemetryPlugin implements Plugin<TelemetryPluginSetup, TelemetryPl
     this.logger = initializerContext.logger.get();
     this.isDev = initializerContext.env.mode.dev;
     this.currentKibanaVersion = initializerContext.env.packageInfo.version;
-    this.config$ = initializerContext.config.create();
+    this.config$ = initializerContext.config.create().pipe(
+      tap((config) => {
+        this.latestConfig = config;
+      })
+    );
     this.initialConfig = initializerContext.config.get();
+    this.latestConfig = this.initialConfig;
     this.fetcherTask = new FetcherTask({
       ...initializerContext,
       logger: this.logger,
@@ -248,6 +261,8 @@ export class TelemetryPlugin implements Plugin<TelemetryPluginSetup, TelemetryPl
       .subscribe();
 
     return {
+      getTaskProcessSettings: () =>
+        getTaskProcessSettings({ config: this.latestConfig, isOptedIn: this.isOptedIn }),
       getTelemetryUrl: async () => {
         const { appendServerlessChannelsSuffix, sendUsageTo } = await firstValueFrom(config$);
         const telemetryUrl = getTelemetryChannelEndpoint({

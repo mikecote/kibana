@@ -10,6 +10,11 @@
     "id": "stackAlerts",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/es_query.task.ts",
+      "server/task_types/index_threshold.task.ts",
+      "server/task_types/geo_containment.task.ts"
+    ],
     "configPath": [
       "xpack",
       "stack_alerts"

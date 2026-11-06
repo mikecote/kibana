@@ -8,7 +8,10 @@
 import type { SavedObjectsServiceSetup, SavedObjectsType } from '@kbn/core/server';
 import { schema } from '@kbn/config-schema';
 
-import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
+import type {
+  EncryptedSavedObjectsPluginSetup,
+  EncryptedSavedObjectTypeRegistration,
+} from '@kbn/encrypted-saved-objects-plugin/server';
 
 import {
   LEGACY_PACKAGE_POLICY_SAVED_OBJECT_TYPE,
@@ -2218,35 +2221,41 @@ export const FLEET_SERVER_HOST_ENCRYPTED_FIELDS = new Set([{ key: 'ssl' }]);
 
 export const DOWNLOAD_SOURCE_ENCRYPTED_FIELDS = new Set([{ key: 'ssl' }, { key: 'auth' }]);
 
-export function registerEncryptedSavedObjects(
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup
-) {
-  encryptedSavedObjects.registerType({
+export const getEncryptedSavedObjectTypes = (): EncryptedSavedObjectTypeRegistration[] => [
+  {
     type: OUTPUT_SAVED_OBJECT_TYPE,
     attributesToEncrypt: OUTPUT_ENCRYPTED_FIELDS,
     attributesToIncludeInAAD: OUTPUT_INCLUDE_AAD_FIELDS,
-  });
+  },
   // Encrypted saved objects
-  encryptedSavedObjects.registerType({
+  {
     type: MESSAGE_SIGNING_KEYS_SAVED_OBJECT_TYPE,
     attributesToEncrypt: new Set(['passphrase']),
     attributesToIncludeInAAD: new Set(['private_key', 'public_key', 'passphrase_plain']),
-  });
-  encryptedSavedObjects.registerType({
+  },
+  {
     type: UNINSTALL_TOKENS_SAVED_OBJECT_TYPE,
     attributesToEncrypt: new Set(['token']),
     attributesToIncludeInAAD: new Set(['policy_id', 'token_plain']),
-  });
-  encryptedSavedObjects.registerType({
+  },
+  {
     type: FLEET_SERVER_HOST_SAVED_OBJECT_TYPE,
     attributesToEncrypt: FLEET_SERVER_HOST_ENCRYPTED_FIELDS,
     // enforceRandomId allows to create an SO with an arbitrary id
     enforceRandomId: false,
-  });
-  encryptedSavedObjects.registerType({
+  },
+  {
     type: DOWNLOAD_SOURCE_SAVED_OBJECT_TYPE,
     attributesToEncrypt: DOWNLOAD_SOURCE_ENCRYPTED_FIELDS,
     // enforceRandomId allows to create an SO with an arbitrary id
     enforceRandomId: false,
-  });
+  },
+];
+
+export function registerEncryptedSavedObjects(
+  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup
+) {
+  getEncryptedSavedObjectTypes().forEach((registration) =>
+    encryptedSavedObjects.registerType(registration)
+  );
 }

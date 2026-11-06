@@ -26,6 +26,7 @@ import { PluginSetup, PluginStart, Setup, Start } from '@kbn/core-di';
 import { CoreSetup, CoreStart, PluginInitializer } from '@kbn/core-di-server';
 import { createRuntimePluginContractResolverMock } from './test_helpers';
 import { PluginWrapper } from './plugin';
+import { createTaskPluginSetupContext, createTaskPluginStartContext } from './task_plugin_context';
 
 import type { InstanceInfo } from './plugin_context';
 import {
@@ -730,5 +731,48 @@ describe('#getConfigSchema()', () => {
     await expect(() => plugin.getConfigDescriptor()).rejects.toThrowErrorMatchingInlineSnapshot(
       `"Configuration schema expected to be an instance of Type"`
     );
+  });
+});
+
+describe('task plugin lifecycle', () => {
+  it('provides the task contract and resolves start services after asynchronous start', async () => {
+    const setup = jest.fn(() => ({ registered: true }));
+    const start = jest.fn(async () => ({ started: true }));
+    const stop = jest.fn();
+    const manifest = createPluginManifest();
+    const opaqueId = Symbol();
+    const plugin = new PluginWrapper({
+      path: 'static:task-plugin',
+      manifest,
+      opaqueId,
+      initializerContext: createPluginInitializerContext({
+        coreContext,
+        opaqueId,
+        manifest,
+        instanceInfo,
+        nodeInfo,
+      }),
+      definition: { taskPlugin: () => ({ setup, start, stop }) },
+    });
+    await plugin.init();
+    const setupContext = createTaskPluginSetupContext(
+      coreInternalLifecycleMock.createInternalSetup(),
+      plugin
+    );
+    expect(setupContext).not.toHaveProperty('http');
+    expect(setupContext).not.toHaveProperty('metrics');
+    expect(plugin.setupTask(setupContext, {})).toEqual({ registered: true });
+    const startContext = createTaskPluginStartContext(
+      coreInternalLifecycleMock.createInternalStart(),
+      plugin
+    );
+    await expect(plugin.startTask(startContext, {})).resolves.toEqual({ started: true });
+    await expect(setupContext.getStartServices()).resolves.toEqual([
+      startContext,
+      {},
+      { started: true },
+    ]);
+    await plugin.stop();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

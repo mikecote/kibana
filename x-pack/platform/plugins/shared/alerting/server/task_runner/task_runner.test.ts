@@ -80,7 +80,7 @@ import {
   mockedRawRuleSO,
 } from './fixtures';
 import { ALERT_STATUS_CHANGED_EVENT_TYPE } from '../lib/workflow_extensions/events';
-import { EVENT_LOG_ACTIONS } from '../plugin';
+import { EVENT_LOG_ACTIONS } from '../constants/event_log';
 import { IN_MEMORY_METRICS } from '../monitoring';
 import { translations } from '../constants/translations';
 import { gapReasonType } from '../../common/constants';
@@ -187,6 +187,7 @@ describe('Task Runner', () => {
   const taskRunnerFactoryInitializerParams: TaskRunnerFactoryInitializerParamsType = {
     actionsConfigMap: { default: { max: 1000 } },
     actionsPlugin: actionsMock.createStart(),
+    inMemoryMetrics,
     alertsService,
     auditService,
     backfillClient,

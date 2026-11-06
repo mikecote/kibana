@@ -125,6 +125,17 @@ const createMockWorkflowsExtensionsStart = () => ({
   }),
 });
 
+/** A setup whose start services have what the scheduled workflow executor reads of Core and security. */
+const createSetupWithStartServices = () => {
+  const coreSetup = coreMock.createSetup();
+  coreSetup.getStartServices.mockResolvedValue([
+    coreMock.createStart(),
+    { security: { authz: {} } } as never,
+    {},
+  ]);
+  return coreSetup;
+};
+
 const createPluginInitializerContext = () =>
   coreMock.createPluginInitializerContext({
     enabled: true,
@@ -193,7 +204,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -212,7 +223,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps();
 
         expect(() => plugin.setup(coreSetup, deps)).not.toThrow();
@@ -223,7 +234,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -245,9 +256,15 @@ describe('DiscoveriesPlugin', () => {
         expect(workflowExecutor).toHaveBeenCalledTimes(1);
         expect(workflowExecutor).toHaveBeenCalledWith({
           deps: expect.objectContaining({
+            apiKeys: expect.anything(),
+            authz: expect.anything(),
+            basePath: expect.anything(),
+            elasticsearch: expect.anything(),
+            featureFlags: expect.anything(),
             getEventLogIndex: expect.any(Function),
             getEventLogger: expect.any(Function),
-            getStartServices: expect.any(Function),
+            getSpaceId: expect.any(Function),
+            inference: expect.anything(),
             logger: expect.anything(),
             request: expect.objectContaining({
               headers: expect.any(Object),
@@ -266,7 +283,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -295,7 +312,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -337,7 +354,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -373,7 +390,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });
@@ -410,7 +427,7 @@ describe('DiscoveriesPlugin', () => {
         const context = createPluginInitializerContext();
         const plugin = new DiscoveriesPlugin(context);
 
-        const coreSetup = coreMock.createSetup();
+        const coreSetup = createSetupWithStartServices();
         const deps = createPluginSetupDeps({
           elasticAssistant: mockElasticAssistant,
         });

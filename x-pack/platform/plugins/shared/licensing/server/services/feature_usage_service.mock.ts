@@ -24,7 +24,7 @@ const createSetupMock = (): jest.Mocked<FeatureUsageServiceSetup> => {
 const createStartMock = (): jest.Mocked<FeatureUsageServiceStart> => {
   const mock = {
     notifyUsage: jest.fn(),
-    getLastUsages: jest.fn(),
+    getLastUsages: jest.fn().mockResolvedValue([]),
   };
 
   return mock;
@@ -34,6 +34,7 @@ const createServiceMock = (): jest.Mocked<PublicMethodsOf<FeatureUsageService>> 
   const mock = {
     setup: jest.fn(() => createSetupMock()),
     start: jest.fn(() => createStartMock()),
+    stop: jest.fn(),
   };
 
   return mock;

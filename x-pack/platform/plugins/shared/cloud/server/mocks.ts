@@ -9,6 +9,7 @@ import type { CloudSetup, CloudStart } from './plugin';
 
 function createSetupMock(): jest.Mocked<CloudSetup> {
   return {
+    analyticsMetadata: { id: 'mock-cloud-id' },
     cloudId: 'mock-cloud-id',
     deploymentId: 'deployment-id',
     elasticsearchUrl: 'elasticsearch-url',

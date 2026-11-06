@@ -20,6 +20,8 @@ import {
   OVERVIEW_STATUS_MAX_PER_PAGE,
 } from '../../common/constants/monitor_management';
 import { getAllLocations } from '../synthetics_service/get_all_locations';
+import type { LocationsClient } from '../synthetics_service/get_all_locations';
+import type { ServiceLocationsServer } from '../synthetics_service/get_service_locations';
 import type { PrivateLocation, ServiceLocation } from '../../common/runtime_types';
 import { syntheticsMonitorAttributes } from '../../common/types/saved_objects';
 import {
@@ -307,7 +309,10 @@ export const parseLocationFilter = async (
     syntheticsMonitorClient,
     savedObjectsClient,
     server,
-  }: Pick<RouteContext, 'syntheticsMonitorClient' | 'savedObjectsClient' | 'server'>,
+  }: Pick<RouteContext, 'savedObjectsClient'> & {
+    syntheticsMonitorClient: LocationsClient;
+    server: ServiceLocationsServer;
+  },
   locations?: string | string[]
 ) => {
   if (!locations || locations?.length === 0) {

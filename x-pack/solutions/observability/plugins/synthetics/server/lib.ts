@@ -128,7 +128,9 @@ export class SyntheticsEsClient {
 
     if (this.excludedDataTiers === undefined) {
       this.excludedDataTiers = this.uiSettingsClient
-        .get<DataTier[]>(searchExcludedDataTiers)
+        .get<DataTier[] | undefined>(searchExcludedDataTiers)
+        // A setting that is not registered, as in a task process, has no value.
+        .then((tiers) => tiers ?? [])
         .catch(() => [] as DataTier[]);
     }
 

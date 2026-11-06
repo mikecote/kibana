@@ -6,7 +6,6 @@
  */
 
 import { i18n } from '@kbn/i18n';
-import type { CoreSetup } from '@kbn/core/server';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import { extractReferences, injectReferences } from '@kbn/data-plugin/common';
 import { ES_QUERY_ID, STACK_ALERTS_FEATURE_ID } from '@kbn/rule-data-utils';
@@ -27,7 +26,6 @@ import { isSearchSourceRule, getSourceFields } from './util';
 import type { StackAlertType } from '../types';
 
 export function getRuleType(
-  core: CoreSetup,
   isServerless: boolean
 ): RuleType<
   EsQueryRuleParams,
@@ -224,7 +222,7 @@ export function getRuleType(
     minimumLicenseRequired: 'basic',
     isExportable: true,
     executor: async (options: ExecutorOptions<EsQueryRuleParams>) => {
-      return await executor(core, options, sourceFields);
+      return await executor(options, sourceFields);
     },
     category: DEFAULT_APP_CATEGORIES.management.id,
     producer: STACK_ALERTS_FEATURE_ID,

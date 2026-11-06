@@ -16,7 +16,7 @@ import type { UnifiedQueryRuleParams } from '../../../rule_schema';
 
 import type { BuildReasonMessage } from '../../utils/reason_formatters';
 import { searchAfterAndBulkCreate } from '../../utils/search_after_bulk_create';
-import type { ITelemetryEventsSender } from '../../../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_events_sender';
 
 type BulkCreateUnsuppressedAlerts = (params: {
   sharedParams: SecuritySharedParams<UnifiedQueryRuleParams>;
@@ -25,7 +25,7 @@ type BulkCreateUnsuppressedAlerts = (params: {
   buildReasonMessage: BuildReasonMessage;
   services: SecurityRuleServices;
   filter: QueryDslQueryContainer;
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
 }) => Promise<SearchAfterAndBulkCreateReturnType>;
 
 /**

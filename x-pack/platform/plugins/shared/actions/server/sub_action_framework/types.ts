@@ -122,7 +122,9 @@ export interface SubActionConnectorType<Config, Secrets> {
     secrets: z4.ZodType<Secrets | undefined>;
   };
   validators?: Array<ConfigValidator<Config> | SecretsValidator<Secrets>>;
-  getService: (params: ServiceParams<Config, Secrets>) => SubActionConnector<Config, Secrets>;
+  getService: (
+    params: ServiceParams<Config, Secrets>
+  ) => SubActionConnector<Config, Secrets> | Promise<SubActionConnector<Config, Secrets>>;
   renderParameterTemplates?: RenderParameterTemplates<ExecutorParams>;
   isSystemActionType?: boolean;
   isDeprecated?: boolean;

@@ -121,6 +121,9 @@ export class ObservabilityPlugin
 
     core.savedObjects.registerType(threshold);
 
+    // The custom threshold rule type reads this config in a task process too.
+    plugins.alerting.registerTaskProcessSettings('observability', () => config);
+
     registerRuleTypes(plugins.alerting, core, core.http.basePath, config, this.logger, {
       alertsLocator,
       logsLocator,

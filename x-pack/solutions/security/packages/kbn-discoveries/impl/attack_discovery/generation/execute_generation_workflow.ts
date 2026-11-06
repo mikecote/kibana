@@ -7,7 +7,6 @@
 
 import type {
   AuthenticatedUser,
-  CoreStart,
   ElasticsearchClient,
   KibanaRequest,
   Logger,
@@ -66,6 +65,7 @@ import {
 import type {
   DefaultWorkflowIds,
   ExecuteGenerationWorkflowParams,
+  GenerationCoreServices,
   ParsedApiConfig,
   WorkflowConfig,
   WorkflowIntegrityResult,
@@ -394,7 +394,7 @@ const handleGenerationFailure = async ({
 }: {
   analytics: ExecuteGenerationWorkflowParams['analytics'];
   authenticatedUser: AuthenticatedUser | undefined;
-  coreStart: CoreStart | undefined;
+  coreStart: GenerationCoreServices | undefined;
   err: unknown;
   esClient: ElasticsearchClient | undefined;
   eventLogIndex: string | undefined;

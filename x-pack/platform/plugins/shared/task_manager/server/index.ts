@@ -41,7 +41,13 @@ export {
 
 export type { TaskRegisterDefinition, TaskDefinitionRegistry } from './task_type_dictionary';
 export { defineTaskType } from './task_type_module';
-export type { TaskHost, TaskTypeModule } from './task_type_module';
+export type {
+  TaskHost,
+  TaskTypeModule,
+  TaskTypeHostExtensions,
+  TaskTypeRegistrationOptions,
+} from './task_type_module';
+export { DeclinedRunError } from './task_running/errors';
 
 export { asInterval } from './lib/intervals';
 export { calculateNextRunAtFromSchedule } from './lib/get_next_run_at';

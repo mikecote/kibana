@@ -153,6 +153,8 @@ export const createMockEndpointAppContextService = (
 
   return {
     start: jest.fn(),
+    initialize: jest.fn(),
+    startSideEffects: jest.fn(),
     stop: jest.fn(),
     experimentalFeatures: {
       ...allowedExperimentalValues,

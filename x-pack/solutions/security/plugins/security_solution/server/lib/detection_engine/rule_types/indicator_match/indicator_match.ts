@@ -5,10 +5,14 @@
  * 2.0.
  */
 
-import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
+import type {
+  RuleRunLicensing,
+  WrapSuppressedHits,
+  SecuritySharedParams,
+  SecurityRuleServices,
+} from '../types';
 
-import type { WrapSuppressedHits, SecuritySharedParams, SecurityRuleServices } from '../types';
-import type { ITelemetryEventsSender } from '../../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_events_sender';
 import { createThreatSignals } from './threat_mapping/create_threat_signals';
 import type { ThreatRuleParams } from '../../rule_schema';
 import { withSecuritySpan } from '../../../../utils/with_security_span';
@@ -24,9 +28,9 @@ export const indicatorMatchExecutor = async ({
 }: {
   sharedParams: SecuritySharedParams<ThreatRuleParams>;
   services: SecurityRuleServices;
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   wrapSuppressedHits: WrapSuppressedHits;
-  licensing: LicensingPluginSetup;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
 }) => {
   return withSecuritySpan('indicatorMatchExecutor', async () => {

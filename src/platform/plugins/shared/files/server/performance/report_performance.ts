@@ -7,17 +7,19 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { PerformanceMetricEvent } from '@kbn/ebt-tools';
-import { reportPerformanceMetricEvent } from '@kbn/ebt-tools';
+import type { PerformanceMetricEvent } from '@kbn/ebt-tools-common';
+import { reportPerformanceMetricEvent } from '@kbn/ebt-tools-common';
 import type { Optional } from 'utility-types';
-import { FilesPlugin } from '../plugin';
+import type { FileAnalytics } from './analytics';
+import { getFileAnalytics } from './analytics';
 
 export interface PerfArgs {
   eventData: Optional<PerformanceMetricEvent, 'duration'>;
+  analytics?: FileAnalytics;
 }
 
 export async function withReportPerformanceMetric<T>(perfArgs: PerfArgs, cb: () => Promise<T>) {
-  const analytics = FilesPlugin.getAnalytics();
+  const analytics = perfArgs.analytics ?? getFileAnalytics();
 
   const start = performance.now();
   const response = await cb();

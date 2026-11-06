@@ -85,6 +85,11 @@ import type {
   SearchWorkflowExecutionsParams,
   WorkflowsService,
 } from './workflows_management_service';
+import {
+  getWorkflowExecutionForRequest,
+  getWorkflowForRequest,
+  scheduleWorkflowWithEngine,
+} from './workflows_read_api';
 import { formatWorkflowDiagnostic } from '../../common/lib/format_workflow_diagnostic';
 import type {
   RestoreWorkflowVersionResponseDto,
@@ -455,11 +460,13 @@ export class WorkflowsManagementApi {
     spaceId: string,
     request: KibanaRequest
   ): Promise<WorkflowDetailDto | null> {
-    const workflow = await this.workflowsService.getWorkflow(id, spaceId);
-    if (!workflow) return null;
-    const access = await this.workflowsService.getAccessControl();
-    if (!(await access.checkAccess(workflow, 'read', request))) return null;
-    return access.toDto(workflow, request);
+    return getWorkflowForRequest({
+      getWorkflow: (workflowId, space) => this.workflowsService.getWorkflow(workflowId, space),
+      access: await this.workflowsService.getAccessControl(),
+      id,
+      spaceId,
+      request,
+    });
   }
 
   public async getHistoryForWorkflow(
@@ -933,23 +940,16 @@ export class WorkflowsManagementApi {
     triggeredBy: string,
     metadata?: WorkflowExecutionEventDispatchMetadata
   ): Promise<string> {
-    const { event, ...manualInputs } = inputs;
-    const context: Record<string, unknown> = {
-      event,
-      spaceId,
-      inputs: manualInputs,
-      triggeredBy,
-    };
-    if (metadata) {
-      context.metadata = metadata;
-    }
     const workflowsExecutionEngine = await this.getWorkflowsExecutionEngine();
-    const scheduleResponse = await workflowsExecutionEngine.scheduleWorkflow(
+    return scheduleWorkflowWithEngine({
+      scheduleWorkflow: workflowsExecutionEngine.scheduleWorkflow,
       workflow,
-      context,
-      request
-    );
-    return scheduleResponse.workflowExecutionId;
+      spaceId,
+      inputs,
+      request,
+      triggeredBy,
+      metadata,
+    });
   }
 
   public async bulkScheduleWorkflow(
@@ -1145,21 +1145,16 @@ export class WorkflowsManagementApi {
       request: KibanaRequest;
     }
   ): Promise<WorkflowExecutionDto | null> {
-    const execution = await this.workflowsService.getWorkflowExecution(
-      workflowExecutionId,
+    return getWorkflowExecutionForRequest({
+      getExecution: (id, space, readOptions) =>
+        this.workflowsService.getWorkflowExecution(id, space, readOptions),
+      getWorkflow: (id, space, readOptions) =>
+        this.workflowsService.getWorkflow(id, space, readOptions),
+      access: await this.workflowsService.getAccessControl(),
+      executionId: workflowExecutionId,
       spaceId,
-      options
-    );
-    if (!execution) return null;
-    if (!execution.workflowId) return execution;
-    const workflow = await this.workflowsService.getWorkflow(execution.workflowId, spaceId, {
-      includeDeleted: true,
+      options,
     });
-    if (workflow) {
-      const access = await this.workflowsService.getAccessControl();
-      if (!(await access.checkAccess(workflow, 'read', options?.request))) return null;
-    }
-    return execution;
   }
 
   /**

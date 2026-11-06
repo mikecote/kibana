@@ -17,6 +17,7 @@
       "licensing"
     ],
     "optionalPlugins": [
+      "alerting",
       "usageApi",
       "cloud",
       "spaces",

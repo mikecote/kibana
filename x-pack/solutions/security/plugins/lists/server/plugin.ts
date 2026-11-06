@@ -17,12 +17,14 @@ import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import type { ConfigType } from './config';
 import { initRoutes } from './routes/init_routes';
 import { ListClient } from './services/lists/list_client';
+import { LISTS_TASK_PROCESS_SETTINGS_ID, createListsRunServices } from './lists_run_services';
 import type {
   ContextProvider,
   ContextProviderReturn,
   ListPluginSetup,
   ListsPluginStart,
   ListsRequestHandlerContext,
+  PluginsSetup,
   PluginsStart,
 } from './types';
 import { getSpaceId } from './get_space_id';
@@ -35,7 +37,9 @@ import type {
 } from './services/extension_points';
 import { ExtensionPointStorage } from './services/extension_points';
 
-export class ListPlugin implements Plugin<ListPluginSetup, ListsPluginStart, {}, PluginsStart> {
+export class ListPlugin
+  implements Plugin<ListPluginSetup, ListsPluginStart, PluginsSetup, PluginsStart>
+{
   private readonly logger: Logger;
   private readonly config: ConfigType;
   private readonly extensionPoints: ExtensionPointStorageInterface;
@@ -47,8 +51,11 @@ export class ListPlugin implements Plugin<ListPluginSetup, ListsPluginStart, {},
     this.extensionPoints = new ExtensionPointStorage(this.logger);
   }
 
-  public setup(core: CoreSetup): ListPluginSetup {
+  public setup(core: CoreSetup, plugins: PluginsSetup): ListPluginSetup {
     const { config } = this;
+
+    // What a task process that runs a rule type reads of this plugin's configuration.
+    plugins.alerting?.registerTaskProcessSettings(LISTS_TASK_PROCESS_SETTINGS_ID, () => config);
 
     initSavedObjects(core.savedObjects);
 
@@ -61,26 +68,10 @@ export class ListPlugin implements Plugin<ListPluginSetup, ListsPluginStart, {},
     initRoutes(router, config, kibanaVersion);
 
     return {
-      getExceptionListClient: (
-        savedObjectsClient,
-        user,
-        enableServerExtensionPoints = true
-      ): ExceptionListClient => {
-        return new ExceptionListClient({
-          enableServerExtensionPoints,
-          savedObjectsClient,
-          serverExtensionsClient: this.extensionPoints.getClient(),
-          user,
-        });
-      },
-      getListClient: (esClient, spaceId, user): ListClient => {
-        return new ListClient({
-          config,
-          esClient,
-          spaceId,
-          user,
-        });
-      },
+      ...createListsRunServices({
+        config,
+        getServerExtensionsClient: () => this.extensionPoints.getClient(),
+      }),
       registerExtension: (extension): void => {
         this.extensionPoints.add(extension);
       },

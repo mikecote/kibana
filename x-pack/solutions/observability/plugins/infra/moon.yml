@@ -17,6 +17,7 @@ project:
   owner: '@elastic/obs-signals-metrics-team'
   sourceRoot: x-pack/solutions/observability/plugins/infra
 dependsOn:
+  - '@kbn/task-manager-plugin'
   - '@kbn/synthtrace'
   - '@kbn/synthtrace-client'
   - '@kbn/core'
@@ -160,6 +161,7 @@ dependsOn:
   - '@kbn/tooling-log'
   - '@kbn/core-logging-server-mocks'
   - '@kbn/ui-callout'
+  - '@kbn/core-ui-settings-common'
 tags:
   - plugin
   - prod

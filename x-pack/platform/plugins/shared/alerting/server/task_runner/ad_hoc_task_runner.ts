@@ -22,6 +22,7 @@ import type {
   RuleRunnerErrorStackTraceLog,
   RuleTaskInstance,
   RunRuleResult,
+  RuleRunRuntime,
   TaskRunnerContext,
 } from './types';
 import { getExecutorServices } from './get_executor_services';
@@ -31,7 +32,6 @@ import type {
   AlertInstanceState,
   RuleAlertData,
   RuleTypeParams,
-  RuleTypeRegistry,
   RuleTypeState,
 } from '../types';
 import { RuleExecutionStatusErrorReasons } from '../types';
@@ -80,7 +80,7 @@ export class AdHocTaskRunner implements CancellableTask {
   private readonly context: TaskRunnerContext;
   private readonly executionId: string;
   private readonly internalSavedObjectsRepository: ISavedObjectsRepository;
-  private readonly ruleTypeRegistry: RuleTypeRegistry;
+  private readonly ruleTypeRegistry: RuleRunRuntime['ruleTypeRegistry'];
   private readonly taskInstance: ConcreteTaskInstance;
 
   private adHocRunSchedule: AdHocRunSchedule[] = [];

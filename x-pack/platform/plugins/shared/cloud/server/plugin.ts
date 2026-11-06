@@ -16,6 +16,7 @@ import camelcaseKeys from 'camelcase-keys';
 import type { KibanaProductTier, KibanaSolution } from '@kbn/projects-solutions-groups';
 import type { CloudConfigType } from './config';
 
+import type { CloudDeploymentMetadata } from '../common/register_cloud_deployment_id_analytics_context';
 import { registerCloudDeploymentMetadataAnalyticsContext } from '../common/register_cloud_deployment_id_analytics_context';
 import { registerCloudUsageCollector } from './collectors';
 import { getIsCloudEnabled } from '../common/is_cloud_enabled';
@@ -40,6 +41,11 @@ interface PluginsSetup {
  * Setup contract
  */
 export interface CloudSetup {
+  /**
+   * What the analytics context of every event says about the deployment or project, as plain data:
+   * it is what a task process is sent so that the events it ships carry the same context.
+   */
+  analyticsMetadata?: CloudDeploymentMetadata;
   /**
    * This is the ID of the Cloud deployment to which the Kibana instance belongs.
    *
@@ -358,6 +364,14 @@ export class CloudPlugin implements Plugin<CloudSetup, CloudStart> {
     setupSavedObjects(core.savedObjects, this.logger);
     return {
       ...this.getCloudUrls(),
+      analyticsMetadata: {
+        id: this.config.id,
+        organization_id: this.config.organization_id,
+        trial_end_date: this.config.trial_end_date,
+        is_elastic_staff_owned: this.config.is_elastic_staff_owned,
+        deployment_url: this.config.deployment_url,
+        serverless: this.config.serverless,
+      },
       cloudId: this.config.id,
       csp: this.config.csp,
       region: this.config.region,

@@ -5,18 +5,12 @@
  * 2.0.
  */
 
-import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
-import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import type { RunContext } from './task';
 import type { TaskHost } from './task_type_module';
 import { defineTaskType, toTaskDefinition } from './task_type_module';
+import { createTaskHostMock } from './task_type_module.mocks';
 
-const host = (): TaskHost => ({
-  logger: loggingSystemMock.createLogger(),
-  elasticsearch: elasticsearchServiceMock.createStart().client,
-  savedObjects: savedObjectsServiceMock.createStartContract(),
-});
+const host = (): TaskHost => createTaskHostMock();
 
 const context = {} as RunContext;
 
@@ -48,6 +42,25 @@ describe('toTaskDefinition', () => {
     );
     expect(await create(context).run()).toEqual({ state: { a: 1 } });
     expect(createTaskRunner).toHaveBeenCalledWith(context, resolved);
+  });
+
+  it('does not hand the parity hooks to the definition, and stops a run the guard refuses', async () => {
+    const createTaskRunner = jest.fn().mockReturnValue({ run: async () => undefined });
+    const definition = toTaskDefinition(
+      defineTaskType({
+        type: 'test:one',
+        title: 'One',
+        parity: [{ kind: 'connectorTypes', getIds: () => [] }],
+        createTaskRunner,
+      }),
+      async () => host(),
+      async () => {
+        throw new Error('declined');
+      }
+    );
+    expect(definition).not.toHaveProperty('parity');
+    await expect(definition.createTaskRunner(context).run()).rejects.toThrow('declined');
+    expect(createTaskRunner).not.toHaveBeenCalled();
   });
 
   it('cancels a run that was cancelled before the host resolved', async () => {

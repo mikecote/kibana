@@ -22,7 +22,7 @@ import {
 } from '@kbn/connector-schemas/d3security';
 import type { D3SecurityConfig, D3SecuritySecrets } from '@kbn/connector-schemas/d3security';
 import { renderParameterTemplates } from './render';
-import { D3SecurityConnector } from './d3security';
+
 export type D3SecurityConnectorType = SubActionConnectorType<D3SecurityConfig, D3SecuritySecrets>;
 
 export function getConnectorType(): D3SecurityConnectorType {
@@ -30,7 +30,10 @@ export function getConnectorType(): D3SecurityConnectorType {
     id: CONNECTOR_ID,
     minimumLicenseRequired: 'gold',
     name: CONNECTOR_NAME,
-    getService: (params) => new D3SecurityConnector(params),
+    getService: async (params) => {
+      const { D3SecurityConnector } = await import('./d3security');
+      return new D3SecurityConnector(params);
+    },
     supportedFeatureIds: [
       AlertingConnectorFeatureId,
       SecurityConnectorFeatureId,

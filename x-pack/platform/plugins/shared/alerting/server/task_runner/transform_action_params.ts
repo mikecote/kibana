@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
 import type { ActionContextVariables, SummaryActionContextVariables } from '@kbn/alerting-types';
 import type { AADAlert } from '@kbn/alerts-as-data-utils';
 import { mapKeys, snakeCase } from 'lodash/fp';
@@ -16,9 +15,10 @@ import type {
   RuleTypeParams,
 } from '../types';
 import type { ActionSchedulerRule } from './action_scheduler/types';
+import type { RuleRunRuntime } from './types';
 
 export interface TransformActionParamsOptions {
-  actionsPlugin: ActionsPluginStartContract;
+  actionsPlugin: RuleRunRuntime['actionsPlugin'];
   alertId: string;
   alertType: string;
   actionId: string;
@@ -148,7 +148,7 @@ export function transformSummaryActionParams({
   alerts: SummarizedAlertsWithAll;
   rule: ActionSchedulerRule<RuleTypeParams>;
   ruleTypeId: string;
-  actionsPlugin: ActionsPluginStartContract;
+  actionsPlugin: RuleRunRuntime['actionsPlugin'];
   actionId: string;
   actionTypeId: string;
   spaceId: string;

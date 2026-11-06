@@ -132,6 +132,12 @@ export class MonitoringPlugin
       setupPlugins: this.setupPlugins!,
     });
 
+    // The rule types run in a task process too, which gets the config they read.
+    plugins.alerting?.registerTaskProcessSettings('monitoring', () => ({
+      config: this.initializerContext.config.get<MonitoringConfigSchema>(),
+      isCloud: plugins.cloud?.isCloudEnabled ?? false,
+    }));
+
     const rules = RulesFactory.getAll();
     for (const rule of rules) {
       plugins.alerting?.registerType(rule.getRuleType());

@@ -59,6 +59,8 @@ dependsOn:
   - '@kbn/serverless'
   - '@kbn/core-http-router-server-mocks'
   - '@kbn/core-elasticsearch-server'
+  - '@kbn/core-ui-settings-common'
+  - '@kbn/field-formats-plugin'
   - '@kbn/core-saved-objects-api-server'
   - '@kbn/core-saved-objects-api-server-mocks'
   - '@kbn/core-ui-settings-server-mocks'
@@ -94,6 +96,8 @@ dependsOn:
   - '@kbn/cps-utils'
   - '@kbn/core-saved-objects-common'
   - '@kbn/workflows-extensions'
+  - '@kbn/telemetry-plugin'
+  - '@kbn/cloud-plugin'
 tags:
   - plugin
   - prod

@@ -180,16 +180,25 @@ describe('workflowExecutor', () => {
 
   const mockGetEventLogIndex = jest.fn().mockResolvedValue('.kibana-event-log-test');
   const mockGetEventLogger = jest.fn().mockResolvedValue({ logEvent: jest.fn() });
-  const mockGetStartServices = jest.fn().mockResolvedValue({
-    coreStart: {},
-    pluginsStart: { security: { authz: {} } },
-  });
+  const mockFeatureFlags = { getBooleanValue$: jest.fn() };
+  const mockApiKeys = { grantAsInternalUser: jest.fn(), invalidateAsInternalUser: jest.fn() };
+  const mockBasePath = { get: jest.fn().mockReturnValue('') };
+  const mockElasticsearch = { asScoped: jest.fn() };
+  const mockInference = { getConnectorById: jest.fn() };
+  const mockGetSpaceId = jest.fn().mockReturnValue('test-space');
+  const mockAuthz = {} as WorkflowExecutorDeps['authz'];
   const mockWorkflowsManagementApi = {} as WorkflowExecutorDeps['workflowsManagementApi'];
 
   const deps: WorkflowExecutorDeps = {
+    apiKeys: mockApiKeys,
+    authz: mockAuthz,
+    basePath: mockBasePath,
+    elasticsearch: mockElasticsearch,
+    featureFlags: mockFeatureFlags,
     getEventLogIndex: mockGetEventLogIndex,
     getEventLogger: mockGetEventLogger,
-    getStartServices: mockGetStartServices,
+    getSpaceId: mockGetSpaceId,
+    inference: mockInference,
     logger: mockLogger,
     publicBaseUrl: 'https://localhost:5601',
     request: mockRequest,
@@ -206,6 +215,24 @@ describe('workflowExecutor', () => {
     (ruleExecutorServices.alertsClient.report as jest.Mock).mockReturnValue({
       uuid: 'mock-alert-doc-id',
     });
+  });
+
+  it('hands the generation the explicit dependencies in the shape it reads', async () => {
+    const options = { ...executorOptions } as unknown as RuleExecutorOptions;
+
+    await workflowExecutor({ deps, options });
+
+    const { getStartServices } = (executeGenerationWorkflow as jest.Mock).mock.calls[0][0];
+    const { coreStart, pluginsStart } = await getStartServices();
+    expect(coreStart.featureFlags).toBe(mockFeatureFlags);
+    expect(coreStart.security.authc.apiKeys).toBe(mockApiKeys);
+    expect(coreStart.http.basePath).toBe(mockBasePath);
+    expect(coreStart.elasticsearch.client).toBe(mockElasticsearch);
+    expect(pluginsStart.inference).toBe(mockInference);
+    expect(pluginsStart.spaces.spacesService.getSpaceId(mockRequest)).toBe('test-space');
+    expect(executeGenerationWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ authz: mockAuthz })
+    );
   });
 
   it('throws AlertsClientError when alertsClient is null', async () => {
@@ -231,7 +258,7 @@ describe('workflowExecutor', () => {
         filter: params.combinedFilter,
         getEventLogIndex: mockGetEventLogIndex,
         getEventLogger: mockGetEventLogger,
-        getStartServices: mockGetStartServices,
+        getStartServices: expect.any(Function),
         logger: expect.objectContaining({
           debug: expect.any(Function),
           error: expect.any(Function),

@@ -13,6 +13,7 @@ import { ElasticsearchBlobStorageClient } from '../blob_storage_service';
 import { FileClientImpl } from './file_client';
 import type { FileClient } from './types';
 import { EsIndexFilesMetadataClient } from './file_metadata_client';
+import type { FileAnalytics } from '../performance/analytics';
 
 const NO_FILE_KIND = 'none';
 
@@ -48,6 +49,7 @@ export interface CreateEsFileClientArgs {
    * A logger for debugging purposes.
    */
   logger: Logger;
+  analytics?: FileAnalytics;
 }
 
 /**
@@ -66,6 +68,7 @@ export function createEsFileClient(arg: CreateEsFileClientArgs): FileClient {
     metadataIndex,
     maxSizeBytes,
     indexIsAlias,
+    analytics,
   } = arg;
 
   let hashes: Array<'sha1' | 'sha256' | 'sha512' | 'md5'> = ['sha1', 'sha256', 'sha512'];
@@ -88,10 +91,12 @@ export function createEsFileClient(arg: CreateEsFileClientArgs): FileClient {
       logger,
       undefined,
       undefined,
-      indexIsAlias
+      indexIsAlias,
+      analytics
     ),
     undefined,
     undefined,
-    logger
+    logger,
+    analytics
   );
 }

@@ -7,7 +7,7 @@
 import { isObject, sum } from 'lodash';
 import type { estypes } from '@elastic/elasticsearch';
 import type { Logger } from '@kbn/logging';
-import type { AnalyticsServiceSetup } from '@kbn/core-analytics-server';
+import type { RuleRunAnalytics } from '../../types';
 import { NEW_TERMS_FIELD_CARDINALITY_EVENT } from '../../../../telemetry/event_based/events';
 import type { NewTermsRuleParams } from '../../../rule_schema';
 
@@ -38,7 +38,7 @@ export const createNewTermsFieldCardinalityTracker = ({
   logger,
   ruleParams,
 }: {
-  analytics?: AnalyticsServiceSetup;
+  analytics?: RuleRunAnalytics;
   logger: Logger;
   ruleParams: NewTermsRuleParams;
 }): NewTermsFieldCardinalityTracker => {

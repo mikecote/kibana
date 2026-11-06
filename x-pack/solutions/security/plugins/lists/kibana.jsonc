@@ -15,6 +15,7 @@
       "lists"
     ],
     "optionalPlugins": [
+      "alerting",
       "spaces",
       "security"
     ],

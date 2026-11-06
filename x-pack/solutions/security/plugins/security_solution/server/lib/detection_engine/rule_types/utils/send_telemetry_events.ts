@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { ITelemetryEventsSender } from '../../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_events_sender';
 import type { TelemetryEvent } from '../../../telemetry/types';
 import type { IRuleExecutionLogForExecutors } from '../../rule_monitoring';
 import type { SignalSource, SignalSourceHit } from '../types';
@@ -47,7 +47,7 @@ export function enrichEndpointAlertsSignalID(
 export function sendAlertTelemetryEvents(
   filteredEvents: SignalSourceHit[],
   createdEvents: SignalSource[],
-  eventsTelemetry: ITelemetryEventsSender | undefined,
+  eventsTelemetry: RuleRunTelemetrySender | undefined,
   ruleExecutionLogger: IRuleExecutionLogForExecutors
 ) {
   if (eventsTelemetry === undefined) {

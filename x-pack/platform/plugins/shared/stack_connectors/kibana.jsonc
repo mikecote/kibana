@@ -18,7 +18,12 @@
       "licensing",
       "spaces"
     ],
-    "optionalPlugins": ["usageCollection", "cloud"],
-    "extraPublicDirs": ["public/common"]
+    "optionalPlugins": ["usageCollection", "cloud", "alerting"],
+    "extraPublicDirs": ["public/common"],
+    "taskTypeContributions": {
+      "alerting-rule-run": [
+        "server/task_types/rule_run_contribution.ts"
+      ]
+    }
   }
 }

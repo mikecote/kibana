@@ -49,7 +49,7 @@ import {
   generateActionOpts,
   mockedRawRuleSO,
 } from './fixtures';
-import { EVENT_LOG_ACTIONS } from '../plugin';
+import { EVENT_LOG_ACTIONS } from '../constants/event_log';
 import type { SharePluginStart } from '@kbn/share-plugin/server';
 import type { DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
 import { dataViewPluginMocks } from '@kbn/data-views-plugin/public/mocks';
@@ -133,6 +133,7 @@ describe('Task Runner Cancel', () => {
   const taskRunnerFactoryInitializerParams: TaskRunnerFactoryInitializerParamsType = {
     actionsConfigMap: { default: { max: 1000 } },
     actionsPlugin: actionsMock.createStart(),
+    inMemoryMetrics,
     alertsService,
     backfillClient,
     cancelAlertsOnRuleTimeout: true,

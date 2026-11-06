@@ -93,6 +93,7 @@ describe('Spaces plugin', () => {
       const licensing = licensingMock.createSetup();
       const cloud = {
         ...cloudMock.createSetup(),
+        analyticsMetadata: {},
         apm: {},
         onboarding: { defaultSolution: 'security' },
       } as CloudSetup;

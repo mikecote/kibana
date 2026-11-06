@@ -18,3 +18,6 @@ export type {
 export { WorkloadTypeRegistry } from './src/workload_type_registry';
 export { createCoreUiamService } from './src/uiam';
 export type { CoreUiamService } from './src/uiam';
+
+// exported for task processes, which have no security plugin
+export { getDefaultSecurityImplementation } from './src/utils/default_implementation';

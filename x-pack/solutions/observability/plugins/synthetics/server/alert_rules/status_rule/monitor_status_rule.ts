@@ -17,7 +17,11 @@ import { PROJECT_ROUTING_ORIGIN } from '@kbn/cps-server-utils';
 import { SyntheticsEsClient } from '../../lib';
 import type { AlertOverviewStatus } from '../../../common/runtime_types/alert_rules/common';
 import type { StatusRuleExecutorOptions } from './types';
-import type { SyntheticsPluginsSetupDependencies, SyntheticsServerSetup } from '../../types';
+import type {
+  SyntheticsRuleMonitorClient,
+  SyntheticsRulePlugins,
+  SyntheticsRuleServer,
+} from '../rule_dependencies';
 import { StatusRuleExecutor } from './status_rule_executor';
 import { MONITOR_STATUS } from '../../../common/constants/synthetics_alerts';
 import {
@@ -27,13 +31,12 @@ import {
 } from '../common';
 import { getActionVariables } from '../action_variables';
 import { STATUS_RULE_NAME } from '../translations';
-import type { SyntheticsMonitorClient } from '../../synthetics_service/synthetics_monitor/synthetics_monitor_client';
 import { SYNTHETICS_INDEX_PATTERN } from '../../../common/constants';
 
 export const registerSyntheticsStatusCheckRule = (
-  server: SyntheticsServerSetup,
-  plugins: SyntheticsPluginsSetupDependencies,
-  syntheticsMonitorClient: SyntheticsMonitorClient
+  server: SyntheticsRuleServer,
+  plugins: SyntheticsRulePlugins,
+  syntheticsMonitorClient: SyntheticsRuleMonitorClient
 ) => {
   if (!plugins.alerting) {
     throw new Error(

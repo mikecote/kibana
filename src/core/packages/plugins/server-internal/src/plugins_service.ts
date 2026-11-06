@@ -9,7 +9,7 @@
 
 import Path from 'path';
 import type { Observable } from 'rxjs';
-import { firstValueFrom } from 'rxjs';
+import { EMPTY, firstValueFrom, from } from 'rxjs';
 import { filter, map, tap, toArray } from 'rxjs';
 import { getFlattenedObject } from '@kbn/std';
 
@@ -25,17 +25,20 @@ import type {
   InternalCoreSetup,
   InternalCoreStart,
 } from '@kbn/core-lifecycle-server-internal';
-import type { PluginConfigDescriptor } from '@kbn/core-plugins-server';
+import type { PluginConfigDescriptor, PluginManifest } from '@kbn/core-plugins-server';
 import type { DiscoveredPlugin } from '@kbn/core-base-common';
 import type { PluginDiscoveryError } from './discovery';
 import { discover, PluginDiscoveryErrorType } from './discovery';
-import type { PluginWrapper } from './plugin';
+import { PluginWrapper } from './plugin';
+import type { PluginDefinition } from './plugin';
+import { createPluginInitializerContext } from './plugin_context';
 
 import type { PluginDependencies } from './types';
 import type { PluginsConfigType } from './plugins_config';
 import { PluginsConfig } from './plugins_config';
 import { PluginsSystem } from './plugins_system';
 import { createBrowserConfig } from './create_browser_config';
+import type { TaskCoreSetupServices, TaskCoreStartServices } from './task_plugin';
 
 /** @internal */
 export type DiscoveredPlugins = {
@@ -75,6 +78,23 @@ export interface PluginsServiceDiscoverDeps {
   node: InternalNodeServicePreboot;
 }
 
+/**
+ * A plugin whose manifest and server module are already in memory, such as one bundled into a task
+ * process. Core composes it like a discovered plugin: config, enablement, dependency order and
+ * lifecycle are the same.
+ * @internal
+ */
+export interface StaticPlugin {
+  manifest: PluginManifest;
+  definition: PluginDefinition<any, any, any, any>;
+}
+
+/** @internal */
+export interface PluginsServiceOptions {
+  /** When set, these are the only plugins: nothing is discovered on disk. */
+  staticPlugins?: readonly StaticPlugin[];
+}
+
 /** @internal */
 export class PluginsService
   implements CoreService<InternalPluginsServiceSetup, InternalPluginsServiceStart>
@@ -90,7 +110,10 @@ export class PluginsService
   private readonly pluginConfigDescriptors = new Map<PluginName, PluginConfigDescriptor>();
   private readonly pluginConfigUsageDescriptors = new Map<string, Record<string, any | any[]>>();
 
-  constructor(private readonly coreContext: CoreContext) {
+  constructor(
+    private readonly coreContext: CoreContext,
+    private readonly options: PluginsServiceOptions = {}
+  ) {
     this.log = coreContext.logger.get('plugins-service');
     this.configService = coreContext.configService;
     this.config$ = coreContext.configService
@@ -110,17 +133,31 @@ export class PluginsService
       this.coreContext.configService.atPath<boolean>('airgapped')
     ).catch(() => false);
 
-    const { error$, plugin$ } = discover({
-      config,
-      coreContext: this.coreContext,
-      instanceInfo: {
-        uuid: environment.instanceUuid,
-        airgapped,
-      },
-      nodeInfo: {
-        roles: node.roles,
-      },
-    });
+    const instanceInfo = { uuid: environment.instanceUuid, airgapped };
+    const nodeInfo = { roles: node.roles };
+    const { error$, plugin$ } = this.options.staticPlugins
+      ? {
+          error$: EMPTY as Observable<PluginDiscoveryError>,
+          plugin$: from(
+            this.options.staticPlugins.map(({ manifest, definition }) => {
+              const opaqueId = Symbol(manifest.id);
+              return new PluginWrapper({
+                path: `static:${manifest.id}`,
+                manifest,
+                opaqueId,
+                definition,
+                initializerContext: createPluginInitializerContext({
+                  coreContext: this.coreContext,
+                  opaqueId,
+                  manifest,
+                  instanceInfo,
+                  nodeInfo,
+                }),
+              });
+            })
+          ),
+        }
+      : discover({ config, coreContext: this.coreContext, instanceInfo, nodeInfo });
 
     await this.handleDiscoveryErrors(error$);
     await this.handleDiscoveredPlugins(plugin$);
@@ -213,6 +250,22 @@ export class PluginsService
     }
 
     await this.standardPluginsSystem.stopPlugins();
+  }
+
+  public async setupTask(deps: TaskCoreSetupServices) {
+    const config = await firstValueFrom(this.config$);
+    const contracts = config.initialize
+      ? await this.standardPluginsSystem.setupTaskPlugins(deps)
+      : new Map<PluginName, unknown>();
+    return { initialized: config.initialize, contracts };
+  }
+
+  public async startTask(deps: TaskCoreStartServices) {
+    const config = await firstValueFrom(this.config$);
+    const contracts = config.initialize
+      ? await this.standardPluginsSystem.startTaskPlugins(deps)
+      : new Map<PluginName, unknown>();
+    return { contracts };
   }
 
   private generateUiPluginsConfigs(

@@ -8,7 +8,6 @@
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { taskManagerMock } from '@kbn/task-manager-plugin/server/mocks';
 import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
-import { inMemoryMetricsMock } from '../monitoring/in_memory_metrics.mock';
 import type { ConstructorOptions } from '../rule_type_registry';
 import { RuleTypeRegistry } from '../rule_type_registry';
 import { TaskRunnerFactory } from '../task_runner/task_runner_factory';
@@ -22,7 +21,6 @@ describe('createGetAlertIndicesAliasFn', () => {
   const logger = loggingSystemMock.create().get();
   const mockedLicenseState: jest.Mocked<ILicenseState> = licenseStateMock.create();
   const taskManager = taskManagerMock.createSetup();
-  const inMemoryMetrics = inMemoryMetricsMock.create();
 
   const ruleTypeRegistryParams: ConstructorOptions = {
     config: {} as AlertingConfig,
@@ -33,7 +31,6 @@ describe('createGetAlertIndicesAliasFn', () => {
     licenseState: mockedLicenseState,
     licensing: licensingMock.createSetup(),
     minimumScheduleInterval: { value: '1m', enforce: false },
-    inMemoryMetrics,
   };
   const registry = new RuleTypeRegistry(ruleTypeRegistryParams);
   registry.register({

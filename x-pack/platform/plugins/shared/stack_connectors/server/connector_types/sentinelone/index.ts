@@ -21,7 +21,7 @@ import {
   SentinelOneSecretsSchema,
 } from '@kbn/connector-schemas/sentinelone';
 import type { SentinelOneConfig, SentinelOneSecrets } from '@kbn/connector-schemas/sentinelone';
-import { SentinelOneConnector } from './sentinelone';
+
 import { renderParameterTemplates } from './render';
 
 export const getSentinelOneConnectorType = (): SubActionConnectorType<
@@ -30,7 +30,10 @@ export const getSentinelOneConnectorType = (): SubActionConnectorType<
 > => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new SentinelOneConnector(params),
+  getService: async (params) => {
+    const { SentinelOneConnector } = await import('./sentinelone');
+    return new SentinelOneConnector(params);
+  },
   schema: {
     config: SentinelOneConfigSchema,
     secrets: SentinelOneSecretsSchema,

@@ -7,7 +7,7 @@
 
 import { createHash } from 'crypto';
 
-import type { AnalyticsServiceSetup, CoreStart, KibanaRequest, Logger } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import type {
   AttackDiscoveryExecutorOptions,
@@ -25,15 +25,13 @@ import { getAttackDiscoveryMarkdownFields } from '@kbn/elastic-assistant-common'
 import { ALERT_URL } from '@kbn/rule-data-utils';
 import { transformError } from '@kbn/securitysolution-es-utils';
 import { createTaskRunError, TaskErrorSource } from '@kbn/task-manager-plugin/server';
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 import { v4 as uuidv4 } from 'uuid';
 
 import type {
-  GetEventLogIndex,
-  GetEventLogger,
+  GetStartServices,
   WorkflowConfig,
 } from '@kbn/discoveries/impl/attack_discovery/generation/types';
+import type { AttackDiscoveryWorkflowExecutorDeps } from '@kbn/discoveries/impl/attack_discovery/workflow_executor_contribution';
 import type { SourceMetadata } from '@kbn/discoveries/impl/attack_discovery/persistence/event_logging';
 import { createTracedLogger } from '@kbn/discoveries/impl/lib/create_traced_logger';
 import {
@@ -41,7 +39,6 @@ import {
   getInferredPrebuiltStepTypes,
 } from '../../../routes/generate/helpers';
 import { isWorkflowsEnabledForSpace } from '../../is_workflows_enabled_for_space';
-import type { DiscoveriesPluginStartDeps } from '../../../types';
 import { checkManagedWorkflowIntegrity } from '../../../managed_workflows/check_managed_workflow_integrity';
 import { wrapManagementApiForScheduledExecution } from './helpers/wrap_management_api_for_scheduled_execution';
 
@@ -59,19 +56,12 @@ const getDefaultWorkflowConfig = (): WorkflowConfig => ({
   validation_workflow_id: 'default',
 });
 
-export interface WorkflowExecutorDeps {
-  analytics?: AnalyticsServiceSetup;
-  getEventLogIndex: GetEventLogIndex;
-  getEventLogger: GetEventLogger;
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
-  logger: Logger;
-  publicBaseUrl?: string;
+/**
+ * What the scheduled run needs, explicitly: the discoveries plugin hands over what its start
+ * contracts offer, and a task process what its host does. Nothing here is read from `getStartServices`.
+ */
+export interface WorkflowExecutorDeps extends AttackDiscoveryWorkflowExecutorDeps {
   request: KibanaRequest;
-  workflowsExtensions?: WorkflowsExtensionsServerPluginStart;
-  workflowsManagementApi?: WorkflowsServerPluginSetup['management'];
 }
 
 export const workflowExecutor = async ({
@@ -150,11 +140,23 @@ export const workflowExecutor = async ({
       ? wrapManagementApiForScheduledExecution(deps.workflowsManagementApi)
       : deps.workflowsManagementApi;
 
-  const { coreStart, pluginsStart } = await deps.getStartServices();
-  const { authz } = pluginsStart.security;
+  const { authz } = deps;
+  // The generation reads Core and the plugins through this: the explicit dependencies, in its shape.
+  const getStartServices: GetStartServices = async () => ({
+    coreStart: {
+      elasticsearch: { client: deps.elasticsearch },
+      featureFlags: deps.featureFlags,
+      http: { basePath: deps.basePath },
+      security: { authc: { apiKeys: deps.apiKeys } },
+    },
+    pluginsStart: {
+      inference: deps.inference,
+      spaces: { spacesService: { getSpaceId: deps.getSpaceId } },
+    },
+  });
 
   const spaceEnabled = await isWorkflowsEnabledForSpace({
-    featureFlags: coreStart.featureFlags,
+    featureFlags: deps.featureFlags,
     uiSettingsClient: services.uiSettingsClient,
   });
 
@@ -196,7 +198,7 @@ export const workflowExecutor = async ({
       getEventLogIndex: deps.getEventLogIndex,
       getEventLogger: deps.getEventLogger,
       getInferredPrebuiltStepTypes,
-      getStartServices: deps.getStartServices,
+      getStartServices,
       logger: tracedLogger,
       request: deps.request,
       scheduleInfo,

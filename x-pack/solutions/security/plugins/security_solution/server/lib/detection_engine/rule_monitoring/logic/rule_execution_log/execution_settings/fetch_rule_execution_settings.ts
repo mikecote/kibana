@@ -5,29 +5,26 @@
  * 2.0.
  */
 
-import type { Logger, SavedObjectsClientContract } from '@kbn/core/server';
-import type { ConfigType } from '../../../../../../config';
+import type { Logger, SavedObjectsClientContract, UiSettingsServiceStart } from '@kbn/core/server';
+import type { SecurityRuleRunConfig } from '../../../../../../config';
 import { withSecuritySpan } from '../../../../../../utils/with_security_span';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../../../plugin_contract';
 
 import { EXTENDED_RULE_EXECUTION_LOGGING_MIN_LEVEL_SETTING } from '../../../../../../../common/constants';
 import type { RuleExecutionSettings } from '../../../../../../../common/api/detection_engine/rule_monitoring';
 import { LogLevelSetting } from '../../../../../../../common/api/detection_engine/rule_monitoring';
 
 export const fetchRuleExecutionSettings = async (
-  config: ConfigType,
+  config: SecurityRuleRunConfig,
   logger: Logger,
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  getUiSettings: () => Promise<Pick<UiSettingsServiceStart, 'asScopedToClient'>>,
   savedObjectsClient: SavedObjectsClientContract
 ): Promise<RuleExecutionSettings> => {
   try {
     const ruleExecutionSettings = await withSecuritySpan('fetchRuleExecutionSettings', async () => {
-      const [coreStart] = await withSecuritySpan('getCoreStartServices', () =>
-        core.getStartServices()
-      );
+      const uiSettings = await withSecuritySpan('getUiSettings', () => getUiSettings());
 
       const kibanaAdvancedSettings = await withSecuritySpan('getKibanaAdvancedSettings', () => {
-        const settingsClient = coreStart.uiSettings.asScopedToClient(savedObjectsClient);
+        const settingsClient = uiSettings.asScopedToClient(savedObjectsClient);
         return settingsClient.getAll();
       });
 
@@ -45,7 +42,7 @@ export const fetchRuleExecutionSettings = async (
 };
 
 const getRuleExecutionSettingsFrom = (
-  config: ConfigType,
+  config: SecurityRuleRunConfig,
   advancedSettings: Record<string, unknown>
 ): RuleExecutionSettings => {
   const featureFlagEnabled = config.experimentalFeatures.extendedRuleExecutionLoggingEnabled;
@@ -65,7 +62,7 @@ const getRuleExecutionSettingsFrom = (
   };
 };
 
-const getRuleExecutionSettingsDefault = (config: ConfigType): RuleExecutionSettings => {
+const getRuleExecutionSettingsDefault = (config: SecurityRuleRunConfig): RuleExecutionSettings => {
   const featureFlagEnabled = config.experimentalFeatures.extendedRuleExecutionLoggingEnabled;
 
   return {

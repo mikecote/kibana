@@ -36,7 +36,7 @@ import type {
   AsyncSearchClient,
   RuleRunnerErrorStackTraceLog,
   RuleTypeRunnerContext,
-  TaskRunnerContext,
+  RuleRunRuntime,
 } from './types';
 import { withAlertingSpan } from './lib';
 import type { WrappedSearchSourceClient } from '../lib/wrap_search_source_client';
@@ -51,7 +51,7 @@ interface ConstructorOpts<
   RecoveryActionGroupId extends string,
   AlertData extends RuleAlertData
 > {
-  context: TaskRunnerContext;
+  context: RuleRunRuntime;
   task: ConcreteTaskInstance;
   timer: TaskRunnerTimer;
 }

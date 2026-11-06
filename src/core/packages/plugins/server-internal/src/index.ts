@@ -9,6 +9,8 @@
 
 export { PluginsService } from './plugins_service';
 export type {
+  StaticPlugin,
+  PluginsServiceOptions,
   InternalPluginsServiceSetup,
   InternalPluginsServiceStart,
   DiscoveredPlugins,
@@ -16,3 +18,11 @@ export type {
 export { config } from './plugins_config';
 export type { PluginDependencies } from './types';
 export { PluginWrapper } from './plugin';
+export type {
+  TaskCoreSetup,
+  TaskCoreStart,
+  TaskCoreSetupServices,
+  TaskCoreStartServices,
+  TaskPluginInitializer,
+  TaskStaticPlugin,
+} from './task_plugin';

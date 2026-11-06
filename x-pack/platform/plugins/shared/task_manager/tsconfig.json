@@ -11,7 +11,10 @@
     "test/scout/**/*",
     "test/scout_service_accounts/**/*",
     "test/scout_uiam_local/**/*",
-    "test/scout_task_manager_claim_nudge/**/*"
+    "test/scout_task_manager_claim_nudge/**/*",
+    "test/scout_task_processes/**/*",
+    "test/scout_task_processes_es_tls/**/*",
+    "test/scout_task_processes_unknown_connector/**/*"
   ],
   "kbn_references": [
     "@kbn/core",
@@ -19,6 +22,12 @@
     "@kbn/usage-collection-plugin",
     "@kbn/config-schema",
     "@kbn/config",
+    "@kbn/core-user-profile-server",
+    "@kbn/core-feature-flags-server",
+    "@kbn/core-analytics-server",
+    "@kbn/core-base-common",
+    "@kbn/core-plugins-server-internal",
+    "@kbn/core-root-server-internal",
     "@kbn/utility-types",
     "@kbn/safer-lodash-set",
     "@kbn/es-types",
@@ -66,6 +75,12 @@
     "@kbn/core-logging-server-internal",
     "@kbn/core-elasticsearch-server-internal",
     "@kbn/core-elasticsearch-client-server-internal",
+    "@kbn/core-execution-context-server",
+    "@kbn/core-security-server-internal",
+    "@kbn/core-ui-settings-common",
+    "@kbn/core-ui-settings-server",
+    "@kbn/core-ui-settings-server-internal",
+    "@kbn/encrypted-saved-objects-plugin",
   ],
   "exclude": ["target/**/*"]
 }

@@ -5,31 +5,36 @@
  * 2.0.
  */
 
-import type { api } from '@elastic/opentelemetry-node/sdk';
-import { tracing } from '@elastic/opentelemetry-node/sdk';
+import { type Context } from '@opentelemetry/api';
+import {
+  type SpanProcessor,
+  BatchSpanProcessor,
+  type ReadableSpan,
+  type Span,
+} from '@opentelemetry/sdk-trace-base';
 import type { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { IS_ROOT_INFERENCE_SPAN_ATTRIBUTE_NAME } from './root_inference_span';
 import { isInferenceSpan } from './is_inference_span';
 
-export abstract class BaseInferenceSpanProcessor implements tracing.SpanProcessor {
-  private delegate: tracing.SpanProcessor;
+export abstract class BaseInferenceSpanProcessor implements SpanProcessor {
+  private delegate: SpanProcessor;
 
   constructor(exporter: OTLPTraceExporter, scheduledDelayMillis: number) {
-    this.delegate = new tracing.BatchSpanProcessor(exporter, {
+    this.delegate = new BatchSpanProcessor(exporter, {
       scheduledDelayMillis,
     });
   }
 
-  abstract processInferenceSpan(span: tracing.ReadableSpan): tracing.ReadableSpan;
+  abstract processInferenceSpan(span: ReadableSpan): ReadableSpan;
 
-  onStart(span: tracing.Span, parentContext: api.Context): void {
+  onStart(span: Span, parentContext: Context): void {
     if (isInferenceSpan(span, parentContext)) {
       span.setAttribute('_should_track', true);
       this.delegate.onStart(span, parentContext);
     }
   }
 
-  onEnd(span: tracing.ReadableSpan): void {
+  onEnd(span: ReadableSpan): void {
     if (span.attributes._should_track) {
       // if this is the "root" inference span, but has a parent,
       // drop the parent context as Phoenix only shows root spans

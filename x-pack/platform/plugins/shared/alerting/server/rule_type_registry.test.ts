@@ -14,7 +14,6 @@ import type { ILicenseState } from './lib/license_state';
 import { licenseStateMock } from './lib/license_state.mock';
 import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { loggingSystemMock } from '@kbn/core/server/mocks';
-import { inMemoryMetricsMock } from './monitoring/in_memory_metrics.mock';
 import { alertsServiceMock } from './alerts_service/alerts_service.mock';
 import { schema } from '@kbn/config-schema';
 import type { RecoveredActionGroupId } from '../common';
@@ -27,7 +26,6 @@ let mockedLicenseState: jest.Mocked<ILicenseState>;
 let ruleTypeRegistryParams: ConstructorOptions;
 
 const taskManager = taskManagerMock.createSetup();
-const inMemoryMetrics = inMemoryMetricsMock.create();
 const alertsService = alertsServiceMock.create();
 
 beforeEach(() => {
@@ -42,7 +40,6 @@ beforeEach(() => {
     licenseState: mockedLicenseState,
     licensing: licensingMock.createSetup(),
     minimumScheduleInterval: { value: '1m', enforce: false },
-    inMemoryMetrics,
   };
 });
 
@@ -532,13 +529,12 @@ describe('Create Lifecycle', () => {
       registry.register(ruleType);
       expect(registry.get('test').priority).toEqual(TaskPriority.Deferrable);
 
-      expect(taskManager.registerTaskDefinitions).toHaveBeenCalledTimes(1);
-      expect(taskManager.registerTaskDefinitions.mock.calls[0][0]).toMatchObject({
-        'alerting:test': {
-          title: 'Test',
-          priority: TaskPriority.Deferrable,
-          taskTypeGroup: 'alerting',
-        },
+      expect(taskManager.registerTaskType).toHaveBeenCalledTimes(1);
+      expect(taskManager.registerTaskType.mock.calls[0][0]).toMatchObject({
+        type: 'alerting:test',
+        title: 'Test',
+        priority: TaskPriority.Deferrable,
+        taskTypeGroup: 'alerting',
       });
     });
 
@@ -646,13 +642,12 @@ describe('Create Lifecycle', () => {
       };
       const registry = new RuleTypeRegistry(ruleTypeRegistryParams);
       registry.register(ruleType);
-      expect(taskManager.registerTaskDefinitions).toHaveBeenCalledTimes(1);
-      expect(taskManager.registerTaskDefinitions.mock.calls[0][0]).toMatchObject({
-        'alerting:test': {
-          timeout: '20m',
-          title: 'Test',
-          taskTypeGroup: 'alerting',
-        },
+      expect(taskManager.registerTaskType).toHaveBeenCalledTimes(1);
+      expect(taskManager.registerTaskType.mock.calls[0][0]).toMatchObject({
+        type: 'alerting:test',
+        timeout: '20m',
+        title: 'Test',
+        taskTypeGroup: 'alerting',
       });
     });
 
@@ -680,14 +675,13 @@ describe('Create Lifecycle', () => {
       };
       const registry = new RuleTypeRegistry(ruleTypeRegistryParams);
       registry.register(ruleType);
-      expect(taskManager.registerTaskDefinitions).toHaveBeenCalledTimes(1);
-      expect(taskManager.registerTaskDefinitions.mock.calls[0][0]).toMatchObject({
-        'alerting:siem.indicatorRule': {
-          timeout: '20m',
-          title: 'Test',
-          cost: 10,
-          taskTypeGroup: 'alerting',
-        },
+      expect(taskManager.registerTaskType).toHaveBeenCalledTimes(1);
+      expect(taskManager.registerTaskType.mock.calls[0][0]).toMatchObject({
+        type: 'alerting:siem.indicatorRule',
+        timeout: '20m',
+        title: 'Test',
+        cost: 10,
+        taskTypeGroup: 'alerting',
       });
     });
 

@@ -145,6 +145,7 @@ describe('Security Plugin', () => {
               "useRbacForRequest": [Function],
             },
           },
+          "getTaskProcessSettings": [Function],
           "license": Object {
             "features$": Observable {
               "operator": [Function],

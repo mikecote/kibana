@@ -8,6 +8,11 @@
   "plugin": {
     "id": "infra",
     "server": true,
+    "taskTypes": [
+      "server/task_types/metric_threshold.task.ts",
+      "server/task_types/inventory_metric_threshold.task.ts",
+      "server/task_types/log_threshold.task.ts"
+    ],
     "browser": true,
     "configPath": ["xpack", "infra"],
     "requiredPlugins": [

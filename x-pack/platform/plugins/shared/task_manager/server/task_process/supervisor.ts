@@ -12,6 +12,9 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Logger } from '@kbn/core/server';
 import type { TaskProcessLease, TaskProcessRoute } from './remote_task_runner';
+import { TaskProcessAcquireError } from './acquire_error';
+import { getChildNodeOptions } from './child_node_options';
+import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 
@@ -25,14 +28,46 @@ export interface TaskProcessSettings {
   kibanaVersion: string;
   /** Kibana's own Elasticsearch connection, which every process connects with. */
   getElasticsearchConfig: () => SerializedElasticsearchConfig;
+  /** What else a task type's process needs, such as the keys and plugin settings it declared. */
+  /** The most task processes that are alive for runs at once; a run past it goes to Kibana. Unbounded when unset. */
+  maxConcurrentProcesses?: number;
+  /** `--max-old-space-size` of each process, in MB. Without it a process uses Node's default, not Kibana's heap flags. */
+  childMaxOldSpaceMb?: number;
+  /** `--max-semi-space-size` of each process, in MB (its young generation). Defaults to 2. */
+  childMaxSemiSpaceMb?: number;
+  /** How long `stop` lets runs in flight finish before it kills their processes. */
+  drainTimeoutMs?: number;
+  getInitFor?: (
+    taskType: string
+  ) =>
+    | Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>
+    | Promise<Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>>;
 }
 
 const READY_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
+const DEFAULT_DRAIN_TIMEOUT_MS = 10_000;
+/** After the drain bound, how long a process gets to exit on SIGTERM before it is killed. */
+const DRAIN_KILL_GRACE_MS = 2_000;
+
+/** What the supervisor has done since Kibana started. */
+export interface TaskProcessSupervisorStats {
+  /** Processes alive now, including ones that are shutting down. */
+  live: number;
+  /** Processes held by a run now; this is what `max` bounds. */
+  active: number;
+  max?: number;
+  spawned: number;
+  spawnFailures: number;
+  spawnTimeouts: number;
+  /** Runs turned away because `max` processes were active. */
+  capacityRejections: number;
+}
 
 interface Bundle {
   name: string;
   file: string;
+  taskType: string;
 }
 
 /**
@@ -46,6 +81,13 @@ export class TaskProcessSupervisor {
   private readonly children = new Set<ChildProcess>();
   private readonly bundleByTaskType = new Map<string, Bundle>();
   private stopping = false;
+  private activeCount = 0;
+  private readonly stats = {
+    spawned: 0,
+    spawnFailures: 0,
+    spawnTimeouts: 0,
+    capacityRejections: 0,
+  };
 
   constructor(
     private readonly params: {
@@ -67,7 +109,11 @@ export class TaskProcessSupervisor {
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as TaskBundleManifest;
     for (const [name, { file, taskType }] of Object.entries(manifest.bundles)) {
-      this.bundleByTaskType.set(taskType, { name, file: join(settings.bundle_dir, file) });
+      this.bundleByTaskType.set(taskType, {
+        name,
+        file: join(settings.bundle_dir, file),
+        taskType,
+      });
     }
     logger.debug(`Task bundles serve ${[...this.bundleByTaskType.keys()]}`);
   }
@@ -75,44 +121,187 @@ export class TaskProcessSupervisor {
   /** The route of a task type that has a bundle. */
   public getRoute(taskType: string): TaskProcessRoute | undefined {
     const bundle = this.bundleByTaskType.get(taskType);
-    return bundle && !this.stopping ? { acquire: () => this.acquire(bundle) } : undefined;
+    return bundle && !this.stopping
+      ? { acquire: (context) => this.acquire(bundle, context) }
+      : undefined;
   }
 
+  public getStats(): TaskProcessSupervisorStats {
+    return {
+      live: this.children.size,
+      active: this.activeCount,
+      max: this.params.settings.maxConcurrentProcesses,
+      ...this.stats,
+    };
+  }
+
+  /**
+   * Rejects new runs, gives the runs in flight `drainTimeoutMs` to finish (each stops its own process
+   * when it ends), then stops what is left: SIGTERM, and SIGKILL if it does not exit.
+   */
   public async stop() {
     this.stopping = true;
-    await Promise.all([...this.children].map((child) => this.terminate(child)));
+    const { logger, settings } = this.params;
+    const drainMs = settings.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS;
+    const live = [...this.children];
+    if (live.length === 0) return;
+    logger.debug(`Waiting up to ${drainMs}ms for ${live.length} task process(es) to finish`);
+    let timer: NodeJS.Timeout | undefined;
+    const drained = await Promise.race([
+      Promise.all(live.map((child) => this.exited(child))).then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), drainMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (drained) return;
+    const remaining = [...this.children];
+    logger.warn(
+      `Stopping ${remaining.length} task process(es) that did not finish in ${drainMs}ms`
+    );
+    await Promise.all(remaining.map((child) => this.terminate(child, DRAIN_KILL_GRACE_MS)));
+  }
+
+  private exited(child: ChildProcess): Promise<void> {
+    return new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) return resolve();
+      child.once('exit', () => resolve());
+    });
   }
 
   /** Starts a process for one run; releasing the lease stops it. */
-  private async acquire(bundle: Bundle): Promise<TaskProcessLease> {
-    if (this.stopping) throw new Error('Kibana is shutting down');
+  private async acquire(
+    bundle: Bundle,
+    context?: { executionUuid?: string }
+  ): Promise<TaskProcessLease> {
+    if (this.stopping) throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
+    const { settings } = this.params;
+    const max = settings.maxConcurrentProcesses;
+    if (max !== undefined && this.activeCount >= max) {
+      this.stats.capacityRejections++;
+      throw new TaskProcessAcquireError(
+        'capacity',
+        `${this.activeCount} task processes are running, the most xpack.task_manager.task_execution.max_concurrent_processes allows (${max})`
+      );
+    }
+    // Held from here, before anything is awaited, so concurrent runs cannot pass the cap together.
+    this.activeCount++;
+    let held = true;
+    const giveBack = () => {
+      if (!held) return;
+      held = false;
+      this.activeCount--;
+    };
+    try {
+      return await this.spawn(bundle, context, giveBack);
+    } catch (error) {
+      giveBack();
+      throw error;
+    }
+  }
+
+  private async spawn(
+    bundle: Bundle,
+    context: { executionUuid?: string } | undefined,
+    giveBack: () => void
+  ): Promise<TaskProcessLease> {
     const { settings, logger, forkFn = fork } = this.params;
-    const child = forkFn(bundle.file, [], {
-      env: { ...process.env, PORT: '0' },
-      // Logs go straight to Kibana's console; the fork channel carries the settings and readiness.
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    // What Kibana has right now (its connectors, say), read before the process exists, so a failure
+    // to read it leaves nothing running.
+    const initOrPromise = settings.getInitFor?.(bundle.taskType);
+    // Only what is asynchronous waits, so a process of settings known now starts at once.
+    const init = initOrPromise instanceof Promise ? await initOrPromise : initOrPromise;
+    if (this.stopping) throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
+    const { execArgv, nodeOptions } = getChildNodeOptions({
+      maxOldSpaceMb: settings.childMaxOldSpaceMb,
+      maxSemiSpaceMb: settings.childMaxSemiSpaceMb,
     });
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PORT: '0',
+      // Logs are records in Kibana's JSON layout that Kibana logs again with its own logger.
+      TASK_PROCESS_LOG_LAYOUT: 'json',
+      TASK_PROCESS_LOG_LEVEL: getChildLogLevel(logger),
+    };
+    if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
+    else delete env.NODE_OPTIONS;
+    const child = forkFn(bundle.file, [], {
+      env,
+      execArgv,
+      // stdout and stderr are read here; the fork channel carries the settings and readiness.
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    });
+    this.stats.spawned++;
+    // An unhandled error event would take Kibana down.
+    child.on('error', (error) =>
+      logger.debug(`Task process ${bundle.name} error: ${error.message}`)
+    );
     this.children.add(child);
-    child.once('exit', () => this.children.delete(child));
+    const labels = {
+      task_type: bundle.taskType,
+      ...(context?.executionUuid ? { run_id: context.executionUuid } : {}),
+    };
+    const childLogger = logger.get('task_process');
+    const stopForwarding = [
+      child.stdout && forwardChildLogs({ stream: child.stdout, logger: childLogger, labels }),
+      child.stderr &&
+        forwardChildLogs({
+          stream: child.stderr,
+          logger: childLogger,
+          labels,
+          fallbackLevel: 'warn',
+        }),
+    ];
+    child.once('exit', () => {
+      this.children.delete(child);
+      giveBack();
+      logger.debug(
+        `Task process ${child.pid} for ${bundle.taskType} exited; ${this.children.size} live`
+      );
+      // What the child wrote before it exited is read before the streams close.
+      setImmediate(() => stopForwarding.forEach((stop) => stop?.()));
+    });
+    logger.debug(
+      `Task process ${child.pid} started for ${bundle.taskType}; ${this.children.size} live (${this.activeCount} held by runs)`
+    );
 
     const port = await new Promise<number>((resolve, reject) => {
+      let settled = false;
       const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        reject(new Error(`Task process ${bundle.name} did not become ready in time`));
-      }, READY_TIMEOUT_MS);
-      child.once('exit', (code, signal) => {
-        clearTimeout(timer);
+        settled = true;
+        this.stats.spawnTimeouts++;
+        // Rejected first: killing the process also emits its exit.
         reject(
-          new Error(`Task process ${bundle.name} exited (${signal ?? code}) before it was ready`)
+          new TaskProcessAcquireError(
+            'spawn_timeout',
+            `Task process ${bundle.name} did not become ready in time`
+          )
         );
-      });
+        child.kill('SIGKILL');
+      }, READY_TIMEOUT_MS);
+      const failed = (message: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.stats.spawnFailures++;
+        reject(new TaskProcessAcquireError('spawn_failed', message));
+      };
+      child.once('exit', (code, signal) =>
+        failed(`Task process ${bundle.name} exited (${signal ?? code}) before it was ready`)
+      );
+      // `fork` reports a process that cannot be spawned (no such executable) as an error event.
+      child.once('error', (error) =>
+        failed(`Task process ${bundle.name} could not be started: ${error.message}`)
+      );
       child.on('message', (message: TaskProcessReady) => {
         if (message?.kind !== 'ready') return;
+        settled = true;
         clearTimeout(timer);
         resolve(message.port);
       });
       child.send({
         kind: 'init',
+        ...init,
         elasticsearch: settings.getElasticsearchConfig(),
         kibanaVersion: settings.kibanaVersion,
         authToken: this.token,
@@ -127,16 +316,17 @@ export class TaskProcessSupervisor {
       url: `http://127.0.0.1:${port}`,
       token: this.token,
       release: () => {
+        giveBack();
         this.terminate(child);
       },
     };
   }
 
   /** Asks the process to exit, and kills it if it does not. */
-  private terminate(child: ChildProcess): Promise<void> {
+  private terminate(child: ChildProcess, killAfterMs = STOP_TIMEOUT_MS): Promise<void> {
     return new Promise<void>((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) return resolve();
-      const timer = setTimeout(() => child.kill('SIGKILL'), STOP_TIMEOUT_MS);
+      const timer = setTimeout(() => child.kill('SIGKILL'), killAfterMs);
       child.once('exit', () => {
         clearTimeout(timer);
         resolve();

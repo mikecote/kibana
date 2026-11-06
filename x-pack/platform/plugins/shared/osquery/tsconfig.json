@@ -17,6 +17,9 @@
     "common/schemas/*/*.json"
   ],
   "kbn_references": [
+    "@kbn/core-elasticsearch-server-mocks",
+    "@kbn/core-saved-objects-server-mocks",
+    "@kbn/licensing-types",
     "@kbn/app-header",
     "@kbn/core",
     // add references to other TypeScript projects the plugin depends on

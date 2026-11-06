@@ -23,3 +23,7 @@ export type {
 
 // only exported for integration tests
 export { createOrUpgradeSavedConfig } from './src/create_or_upgrade_saved_config';
+
+// exported for task processes, which build their own ui settings client
+export { getCoreSettings } from './src/settings';
+export { uiSettingsType } from './src/saved_objects';

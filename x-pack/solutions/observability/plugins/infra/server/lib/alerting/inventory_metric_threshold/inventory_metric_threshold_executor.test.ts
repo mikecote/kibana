@@ -15,8 +15,8 @@ import type { LogMeta, Logger } from '@kbn/logging';
 import { DEFAULT_FLAPPING_SETTINGS } from '@kbn/alerting-plugin/common';
 import { createInventoryMetricThresholdExecutor } from './inventory_metric_threshold_executor';
 import type { ConditionResult } from './evaluate_condition';
-import type { InfraBackendLibs, InfraLocators } from '../../infra_types';
-import { infraPluginMock } from '../../../mocks';
+import type { InfraLocators } from '../../infra_types';
+import type { InfraAlertingLibs } from '../create_infra_alerting_libs';
 import { logsSharedPluginMock } from '@kbn/logs-shared-plugin/server/mocks';
 import { createLogSourcesServiceMock } from '@kbn/logs-data-access-plugin/common/services/log_sources_service/log_sources_service.mocks';
 import { sharePluginMock } from '@kbn/share-plugin/public/mocks';
@@ -130,20 +130,10 @@ const mockLibs = {
       });
     },
   },
-  getStartServices: () => [
-    null,
-    {
-      logsShared: logsSharedPluginMock.createStartContract(),
-      logsDataAccess: {
-        services: {
-          logSourcesServiceFactory: {
-            getLogSourcesService: () => createLogSourcesServiceMock(),
-          },
-        },
-      },
-    },
-    infraPluginMock.createStartContract(),
-  ],
+  getLogViewsClient: async () =>
+    logsSharedPluginMock
+      .createStartContract()
+      .logViews.getClient({} as never, {} as never, Promise.resolve(createLogSourcesServiceMock())),
   configuration: createMockStaticConfiguration({}),
   metricsRules: {},
   basePath: {
@@ -156,7 +146,7 @@ const mockLibs = {
     },
   },
   logger,
-} as unknown as InfraBackendLibs;
+} as unknown as InfraAlertingLibs;
 const alerts = new Map<string, AlertTestInstance>();
 let services: RuleExecutorServicesMock;
 

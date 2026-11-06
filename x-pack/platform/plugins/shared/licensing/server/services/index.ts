@@ -7,3 +7,8 @@
 
 export { FeatureUsageService } from './feature_usage_service';
 export type { FeatureUsageServiceSetup, FeatureUsageServiceStart } from './feature_usage_service';
+export {
+  FeatureUsageStore,
+  featureUsageSavedObjectType,
+  FEATURE_USAGE_SAVED_OBJECT_TYPE,
+} from './feature_usage_store';

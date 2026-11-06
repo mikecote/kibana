@@ -5,22 +5,23 @@
  * 2.0.
  */
 
-import { node, tracing } from '@elastic/opentelemetry-node/sdk';
-import type { resources } from '@elastic/opentelemetry-node/sdk';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { type SpanProcessor, AlwaysOnSampler } from '@opentelemetry/sdk-trace-base';
+import { type Resource } from '@opentelemetry/resources';
 import { trace } from '@opentelemetry/api';
 import type { Tracer } from '@opentelemetry/api';
 
-let inferenceProvider: node.NodeTracerProvider | undefined;
+let inferenceProvider: NodeTracerProvider | undefined;
 
 export const initInferenceTracerProvider = ({
   processors,
   resource,
 }: {
-  processors: tracing.SpanProcessor[];
-  resource: resources.Resource;
+  processors: SpanProcessor[];
+  resource: Resource;
 }): void => {
-  inferenceProvider = new node.NodeTracerProvider({
-    sampler: new tracing.AlwaysOnSampler(),
+  inferenceProvider = new NodeTracerProvider({
+    sampler: new AlwaysOnSampler(),
     spanProcessors: processors,
     resource,
   });

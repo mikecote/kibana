@@ -11,6 +11,12 @@
     "id": "uptime",
     "browser": true,
     "server": true,
+    "taskTypes": [
+      "server/task_types/monitor_status.task.ts",
+      "server/task_types/tls_certificate.task.ts",
+      "server/task_types/tls_legacy.task.ts",
+      "server/task_types/duration_anomaly.task.ts"
+    ],
     "configPath": [
       "xpack",
       "legacy_uptime"

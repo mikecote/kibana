@@ -26,7 +26,6 @@ import {
   type MCPConnectorConfig,
   type MCPConnectorSecrets,
 } from '@kbn/connector-schemas/mcp';
-import { McpConnector } from './mcp';
 
 export interface McpConnectorTypeDeps {
   getClientLeasePool: ActionsPluginSetupContract['getClientLeasePool'];
@@ -37,7 +36,10 @@ export const getMcpConnectorType = ({
 }: McpConnectorTypeDeps): SubActionConnectorType<MCPConnectorConfig, MCPConnectorSecrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new McpConnector(params, getClientLeasePool()),
+  getService: async (params) => {
+    const { McpConnector } = await import('./mcp');
+    return new McpConnector(params, getClientLeasePool());
+  },
   schema: {
     config: MCPConnectorConfigSchema,
     secrets: MCPConnectorSecretsSchema,

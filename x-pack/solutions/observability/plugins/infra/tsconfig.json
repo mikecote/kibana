@@ -13,6 +13,7 @@
     "test/scout/api/**/*"
   ],
   "kbn_references": [
+    "@kbn/task-manager-plugin",
     "@kbn/synthtrace",
     "@kbn/synthtrace-client",
     "@kbn/core",
@@ -155,7 +156,8 @@
     "@kbn/test",
     "@kbn/tooling-log",
     "@kbn/core-logging-server-mocks",
-    "@kbn/ui-callout"
+    "@kbn/ui-callout",
+    "@kbn/core-ui-settings-common"
   ],
   "exclude": ["target/**/*"]
 }

@@ -17,6 +17,7 @@
     "@kbn/actions-plugin",
     "@kbn/spaces-plugin",
     "@kbn/security-plugin",
+    "@kbn/repo-info",
     "@kbn/licensing-plugin",
     "@kbn/task-manager-plugin",
     "@kbn/event-log-plugin",
@@ -54,6 +55,8 @@
     "@kbn/serverless",
     "@kbn/core-http-router-server-mocks",
     "@kbn/core-elasticsearch-server",
+    "@kbn/core-ui-settings-common",
+    "@kbn/field-formats-plugin",
     "@kbn/core-saved-objects-api-server",
     "@kbn/core-saved-objects-api-server-mocks",
     "@kbn/core-ui-settings-server-mocks",
@@ -89,6 +92,8 @@
     "@kbn/cps-utils",
     "@kbn/core-saved-objects-common",
     "@kbn/workflows-extensions",
+    "@kbn/telemetry-plugin",
+    "@kbn/cloud-plugin",
   ],
   "exclude": ["target/**/*"]
 }

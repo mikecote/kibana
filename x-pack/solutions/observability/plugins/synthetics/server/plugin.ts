@@ -27,6 +27,7 @@ import { SyntheticsTelemetry } from './telemetry/synthetics_telemetry';
 import { SyntheticsMonitorClient } from './synthetics_service/synthetics_monitor/synthetics_monitor_client';
 import { initSyntheticsServer } from './server';
 import { syntheticsFeature } from './feature';
+import { getSyntheticsTaskProcessSettings } from './alert_rules/rule_dependencies';
 import { registerSyntheticsSavedObjects } from './saved_objects/saved_objects';
 import type { UptimeConfig } from './config';
 import { ServiceManagedLocations } from './synthetics_service/service_managed_locations';
@@ -97,6 +98,16 @@ export class Plugin implements PluginType {
       syntheticsIndicesCache: new SyntheticsIndicesCache(),
       isCpsEnabled: plugins.cps?.getCpsEnabled() ?? false,
     } as SyntheticsServerSetup;
+
+    // The rule types read this in a task process too.
+    plugins.alerting.registerTaskProcessSettings('synthetics', () =>
+      getSyntheticsTaskProcessSettings({
+        config,
+        isCpsEnabled: plugins.cps?.getCpsEnabled() ?? false,
+        // As Kibana has them now: the sync task refreshes them while Kibana runs.
+        serviceManagedLocations: this.serviceManagedLocations,
+      })
+    );
 
     this.serviceManagedLocations = new ServiceManagedLocations(this.server);
 

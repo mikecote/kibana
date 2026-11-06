@@ -27,11 +27,17 @@ import type { CorePreboot, CoreSetup, CoreStart } from '@kbn/core-lifecycle-serv
 import type { ServiceToken } from '@kbn/core-di';
 import { Setup, Start } from '@kbn/core-di';
 import { createSetupModule, createStartModule } from '@kbn/core-di-internal';
+import type {
+  TaskCoreSetup,
+  TaskCoreStart,
+  TaskPlugin,
+  TaskPluginInitializer,
+} from './task_plugin';
 
 const OSS_PATH_REGEX = /[\/|\\]src[\/|\\]plugins[\/|\\]/; // Matches src/plugins directory on POSIX and Windows
 const XPACK_PATH_REGEX = /[\/|\\]x-pack[\/|\\]plugins[\/|\\]/; // Matches x-pack/plugins directory on POSIX and Windows
 
-interface PluginDefinition<
+export interface PluginDefinition<
   TSetup = unknown,
   TStart = unknown,
   TPluginsSetup extends object = object,
@@ -40,6 +46,7 @@ interface PluginDefinition<
   readonly config?: PluginConfigDescriptor;
   readonly module?: ContainerModule;
   readonly plugin?: PluginInitializer<TSetup, TStart, TPluginsSetup, TPluginsStart>;
+  readonly taskPlugin?: TaskPluginInitializer<TSetup, TStart, TPluginsSetup, TPluginsStart>;
 }
 
 /**
@@ -75,6 +82,11 @@ export class PluginWrapper<
     | Plugin<TSetup, TStart, TPluginsSetup, TPluginsStart>
     | PrebootPlugin<TSetup, TPluginsSetup>;
   private container?: Container;
+  private taskInstance?: TaskPlugin<TSetup, TStart, TPluginsSetup, TPluginsStart>;
+  private readonly taskStartDependencies$ = new Subject<
+    [TaskCoreStart, TPluginsStart, TStart | undefined]
+  >();
+  public readonly taskStartDependencies = firstValueFrom(this.taskStartDependencies$);
 
   private readonly startDependencies$ = new Subject<
     [CoreStart, TPluginsStart, TStart | undefined]
@@ -87,6 +99,8 @@ export class PluginWrapper<
       readonly manifest: PluginManifest;
       readonly opaqueId: PluginOpaqueId;
       readonly initializerContext: PluginInitializerContext;
+      /** The plugin's server module when it is already in memory, so nothing is loaded from `path`. */
+      readonly definition?: PluginDefinition<TSetup, TStart, TPluginsSetup, TPluginsStart>;
     }
   ) {
     this.path = params.path;
@@ -109,9 +123,19 @@ export class PluginWrapper<
     this.log.debug('Initializing plugin');
 
     this.definition = await this.getPluginDefinition();
-    this.instance = await this.createPluginInstance();
+    if (this.definition.taskPlugin) {
+      this.taskInstance = await this.definition.taskPlugin(this.initializerContext);
+    } else {
+      this.instance = await this.createPluginInstance();
+    }
 
-    if (!('plugin' in this.definition || 'module' in this.definition)) {
+    if (
+      !(
+        'plugin' in this.definition ||
+        'module' in this.definition ||
+        'taskPlugin' in this.definition
+      )
+    ) {
       throw new Error(
         `Plugin "${this.name}" does not export the "plugin" definition or "module" (${this.path}).`
       );
@@ -192,9 +216,36 @@ export class PluginWrapper<
     }
 
     await this.instance?.stop?.();
+    await this.taskInstance?.stop?.();
     await this.container?.unbindAllAsync();
     this.instance = undefined;
+    this.taskInstance = undefined;
     this.container = undefined;
+  }
+
+  public setupTask(
+    core: TaskCoreSetup<TPluginsStart, TStart>,
+    plugins: TPluginsSetup
+  ): TSetup | Promise<TSetup> {
+    if (!this.taskInstance) {
+      throw new Error(`Plugin "${this.name}" does not provide a task-process lifecycle.`);
+    }
+    return this.taskInstance.setup(core, plugins);
+  }
+
+  public startTask(core: TaskCoreStart, plugins: TPluginsStart): TStart | Promise<TStart> {
+    if (!this.taskInstance) {
+      throw new Error(`Task plugin "${this.name}" must be initialized before start.`);
+    }
+    const contract = this.taskInstance.start(core, plugins);
+    if (isPromise(contract)) {
+      return contract.then((resolved) => {
+        this.taskStartDependencies$.next([core, plugins, resolved]);
+        return resolved;
+      });
+    }
+    this.taskStartDependencies$.next([core, plugins, contract]);
+    return contract;
   }
 
   public async getConfigDescriptor(): Promise<PluginConfigDescriptor | null> {
@@ -217,6 +268,9 @@ export class PluginWrapper<
   protected async getPluginDefinition(): Promise<
     PluginDefinition<TSetup, TStart, TPluginsSetup, TPluginsStart>
   > {
+    if (this.params.definition) {
+      return this.params.definition;
+    }
     return (await import(join(this.path, 'server'))) ?? {};
   }
 

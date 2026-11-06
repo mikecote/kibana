@@ -11,11 +11,16 @@ import type { ResponseActionsApiCommandNames } from '../../../../common/endpoint
 import type { FeatureKeys } from './feature_keys';
 import { getResponseActionFeatureKey, FEATURE_KEYS } from './feature_keys';
 
+/** What reporting a feature usage needs: Licensing's start contract, or what a task process has */
+export interface FeatureUsageStart {
+  featureUsage?: Pick<LicensingPluginStart['featureUsage'], 'notifyUsage'>;
+}
+
 export class FeatureUsageService {
-  private licensingPluginStart: LicensingPluginStart | undefined;
+  private licensingPluginStart: FeatureUsageStart | undefined;
 
   private get notify(): (featureName: Values<typeof FEATURE_KEYS>) => void {
-    return this.licensingPluginStart?.featureUsage.notifyUsage || function () {};
+    return this.licensingPluginStart?.featureUsage?.notifyUsage || function () {};
   }
 
   public setup(licensingPluginSetup: LicensingPluginSetup): void {
@@ -28,7 +33,7 @@ export class FeatureUsageService {
     });
   }
 
-  public start(licensingPluginStart: LicensingPluginStart): void {
+  public start(licensingPluginStart: FeatureUsageStart): void {
     this.licensingPluginStart = licensingPluginStart;
   }
 

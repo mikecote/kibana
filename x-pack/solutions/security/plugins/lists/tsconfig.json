@@ -47,6 +47,7 @@
     "@kbn/security-solution-features",
     "@kbn/kql",
     "@kbn/core-spaces-common",
+    "@kbn/alerting-plugin",
   ],
   "exclude": ["target/**/*"]
 }

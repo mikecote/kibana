@@ -5,10 +5,11 @@
  * 2.0.
  */
 
-import type { CoreStart, KibanaRequest, Logger } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import type { FakeRawRequest } from '@kbn/core-http-server';
 import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import { asSpaceId } from '@kbn/core-spaces-common';
+import type { GenerationCoreServices } from '../types';
 
 /**
  * Lifetime of the granted API key. Exceeds the pipeline's own budget so a run
@@ -18,7 +19,7 @@ import { asSpaceId } from '@kbn/core-spaces-common';
 export const PIPELINE_API_KEY_EXPIRATION = '1h';
 
 export interface CreatePipelineRequestParams {
-  coreStart: CoreStart;
+  coreStart: Pick<GenerationCoreServices, 'security'>;
   executionUuid: string;
   logger: Logger;
   request: KibanaRequest;

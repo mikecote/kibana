@@ -2003,6 +2003,9 @@ importers:
       '@kbn/ebt-tools':
         specifier: workspace:*
         version: link:src/platform/packages/shared/kbn-ebt-tools
+      '@kbn/ebt-tools-common':
+        specifier: workspace:*
+        version: link:src/platform/packages/shared/kbn-ebt-tools-common
       '@kbn/ecs-data-quality-dashboard':
         specifier: workspace:*
         version: link:x-pack/solutions/security/packages/ecs-data-quality-dashboard
@@ -4235,6 +4238,9 @@ importers:
       '@opentelemetry/context-async-hooks':
         specifier: 2.11.0
         version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core':
+        specifier: 2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-logs-otlp-grpc':
         specifier: 0.222.0
         version: 0.222.0(@opentelemetry/api@1.9.1)
@@ -4280,9 +4286,21 @@ importers:
       '@opentelemetry/otlp-transformer':
         specifier: 0.222.0
         version: 0.222.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources':
+        specifier: 2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-logs':
         specifier: 0.222.0
         version: 0.222.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics':
+        specifier: 2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base':
+        specifier: 2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-node':
+        specifier: 2.11.0
+        version: 2.11.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions':
         specifier: 1.43.0
         version: 1.43.0
@@ -8075,6 +8093,8 @@ importers:
   src/platform/packages/shared/kbn-ebt-click: {}
 
   src/platform/packages/shared/kbn-ebt-tools: {}
+
+  src/platform/packages/shared/kbn-ebt-tools-common: {}
 
   src/platform/packages/shared/kbn-edot-collector: {}
 

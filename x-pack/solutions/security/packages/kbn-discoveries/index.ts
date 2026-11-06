@@ -112,6 +112,14 @@ export {
   logUnverifiableDiscoveries,
 } from './impl/attack_discovery/hallucination_detection';
 
+export { ATTACK_DISCOVERY_WORKFLOW_EXECUTOR_CONTRIBUTIONS } from './impl/attack_discovery/workflow_executor_contribution';
+export type {
+  AttackDiscoveryWorkflowExecutor,
+  AttackDiscoveryWorkflowExecutorContribution,
+  AttackDiscoveryWorkflowExecutorDeps,
+  ScheduledWorkflowsExtensions,
+} from './impl/attack_discovery/workflow_executor_contribution';
+
 // Event logging — introduced in this PR (Orchestration + Event Logging).
 export {
   ATTACK_DISCOVERY_EVENT_ACTIONS,

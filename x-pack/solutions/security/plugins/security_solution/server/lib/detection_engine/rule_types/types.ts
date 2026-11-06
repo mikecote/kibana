@@ -23,27 +23,28 @@ import type {
   AlertInstanceContext,
   RuleExecutorServices,
   CpsData,
+  AlertingServerSetup,
 } from '@kbn/alerting-plugin/server';
 import type { WithoutReservedActionGroups } from '@kbn/alerting-plugin/common';
-import type { ListClient } from '@kbn/lists-plugin/server';
+import type { ListClient, ListPluginSetup } from '@kbn/lists-plugin/server';
 import type { PersistenceServices, IRuleDataClient } from '@kbn/rule-registry-plugin/server';
 import type { EcsFieldMap } from '@kbn/rule-registry-plugin/common/assets/field_maps/ecs_field_map';
 import type { TypeOfFieldMap } from '@kbn/rule-registry-plugin/common/field_map';
 import type { Filter } from '@kbn/es-query';
 
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
-import type { DocLinksServiceSetup, KibanaRequest } from '@kbn/core/server';
+import type { PluginSetupContract as ActionsPluginSetupContract } from '@kbn/actions-plugin/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { EntityStoreStartContract, EntityStoreCRUDClient } from '@kbn/entity-store/server';
 import type { DetectionRulesAuthz } from '../../../../common/detection_engine/rule_management/authz';
 import type { EndpointAppContextService } from '../../../endpoint/endpoint_app_context_services';
 import type { CheckOsqueryResponseActionAuthz } from '../../../endpoint/services/actions/utils/rule_response_actions_validators';
 import type { RulePreviewLoggedRequest } from '../../../../common/api/detection_engine/rule_preview/rule_preview.gen';
 import type { RuleResponseAction } from '../../../../common/api/detection_engine/model/rule_response_actions';
-import type { ConfigType } from '../../../config';
-import type { SetupPlugins } from '../../../plugin';
+import type { ConfigType, SecurityRuleRunConfig } from '../../../config';
 import type { CompleteRule, RuleParams } from '../rule_schema';
 import type { ExperimentalFeatures } from '../../../../common/experimental_features';
-import type { ITelemetryEventsSender } from '../../telemetry/sender';
+import type { RuleRunTelemetrySender } from '../../telemetry/rule_run_events_sender';
 import type { IRuleExecutionLogForExecutors, IRuleMonitoringService } from '../rule_monitoring';
 import type { RefreshTypes } from '../types';
 
@@ -112,10 +113,10 @@ export interface SecuritySharedParams<TParams extends RuleParams = RuleParams> {
   entityStoreCrudClient?: EntityStoreCRUDClient;
   ignoreFields: Record<string, boolean>;
   ignoreFieldsRegexes: string[];
-  eventsTelemetry: ITelemetryEventsSender | undefined;
-  licensing: LicensingPluginSetup;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
-  analytics?: AnalyticsServiceSetup;
+  analytics?: RuleRunAnalytics;
   /** Cross-project search scope of the rule run, when CPS is enabled */
   cpsData?: CpsData;
 }
@@ -155,12 +156,26 @@ export type SecurityAlertType<TParams extends RuleParams, TState extends RuleTyp
   >;
 };
 
+/** What a rule run reads of the licensing plugin: only the license. */
+export type RuleRunLicensing = Pick<LicensingPluginSetup, 'license$'>;
+/** What a rule run reads of Core's analytics: it only reports events. */
+export type RuleRunAnalytics = Pick<AnalyticsServiceSetup, 'reportEvent'>;
+/** What a rule run reads of the lists plugin: the clients of lists and exceptions. */
+export type RuleRunLists = Pick<ListPluginSetup, 'getListClient' | 'getExceptionListClient'>;
+/** What a rule run reads of the actions plugin. */
+export type RuleRunActions = Pick<ActionsPluginSetupContract, 'isActionTypeEnabled'>;
+/** What a rule run reads of the alerting plugin. */
+export interface RuleRunAlerting {
+  getConfig: () => Pick<ReturnType<AlertingServerSetup['getConfig']>, 'run'>;
+}
+/** What a rule run reads of the entity store plugin. */
+export type RuleRunEntityStore = Pick<EntityStoreStartContract, 'createCRUDClient'>;
+
 export interface CreateSecurityRuleTypeWrapperProps {
-  lists: SetupPlugins['lists'];
-  actions: SetupPlugins['actions'];
-  docLinks: DocLinksServiceSetup;
+  lists: RuleRunLists | undefined;
+  actions: RuleRunActions;
   logger: Logger;
-  config: ConfigType;
+  config: SecurityRuleRunConfig;
   publicBaseUrl: string | undefined;
   ruleDataClient: IRuleDataClient;
   ruleExecutionLoggerFactory: IRuleMonitoringService['createRuleExecutionLogClientForExecutors'];
@@ -168,13 +183,13 @@ export interface CreateSecurityRuleTypeWrapperProps {
   isPreview?: boolean;
   isServerless?: boolean;
   experimentalFeatures: ExperimentalFeatures;
-  alerting: SetupPlugins['alerting'];
-  analytics?: AnalyticsServiceSetup;
-  eventsTelemetry: ITelemetryEventsSender | undefined;
-  licensing: LicensingPluginSetup;
+  alerting: RuleRunAlerting;
+  analytics?: RuleRunAnalytics;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
+  licensing: RuleRunLicensing;
   scheduleNotificationResponseActionsService: ScheduleNotificationResponseActionsService;
   endpointAppContextService: EndpointAppContextService;
-  getEntityStore: () => Promise<EntityStoreStartContract>;
+  getEntityStore: () => Promise<RuleRunEntityStore>;
   getRulesAuthz: (request: KibanaRequest) => Promise<DetectionRulesAuthz>;
   /**
    * Returns a request-scoped osquery response action authorization checker, used
@@ -342,7 +357,7 @@ export type SecurityRuleServices = RuleExecutorServices<
 export interface SearchAfterAndBulkCreateParams {
   sharedParams: SecuritySharedParams;
   services: SecurityRuleServices;
-  eventsTelemetry: ITelemetryEventsSender | undefined;
+  eventsTelemetry: RuleRunTelemetrySender | undefined;
   filter: estypes.QueryDslQueryContainer;
   buildReasonMessage: BuildReasonMessage;
   enrichment?: SignalsEnrichment;

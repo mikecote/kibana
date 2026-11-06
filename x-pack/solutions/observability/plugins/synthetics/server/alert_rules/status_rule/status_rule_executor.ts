@@ -43,13 +43,12 @@ import { applyPendingCounts, filterPendingConfigsByThreshold } from './queries/h
 import { queryMonitorStatusAlert } from './queries/query_monitor_status_alert';
 import { getStepInformation, type StepInformation } from './queries/get_step_information';
 import { parseArrayFilters, parseLocationFilter } from '../../routes/common';
-import type { SyntheticsServerSetup } from '../../types';
+import type { SyntheticsRuleMonitorClient, SyntheticsRuleServer } from '../rule_dependencies';
 import type { SyntheticsEsClient } from '../../lib';
 import { processMonitors } from '../../saved_objects/synthetics_monitor/process_monitors';
 import { getConditionType } from '../../../common/rules/status_rule';
 import type { EncryptedSyntheticsMonitorAttributes } from '../../../common/runtime_types';
 import { ConfigKey } from '../../../common/runtime_types';
-import type { SyntheticsMonitorClient } from '../../synthetics_service/synthetics_monitor/synthetics_monitor_client';
 import { AlertConfigKey } from '../../../common/constants/monitor_management';
 import { ALERT_DETAILS_URL, VIEW_IN_APP_URL } from '../action_variables';
 import { MONITOR_STATUS } from '../../../common/constants/synthetics_alerts';
@@ -62,8 +61,8 @@ export class StatusRuleExecutor {
   params: StatusRuleParams;
   esClient: SyntheticsEsClient;
   soClient: SavedObjectsClientContract;
-  server: SyntheticsServerSetup;
-  syntheticsMonitorClient: SyntheticsMonitorClient;
+  server: SyntheticsRuleServer;
+  syntheticsMonitorClient: SyntheticsRuleMonitorClient;
   monitors: Array<SavedObjectsFindResult<EncryptedSyntheticsMonitorAttributes>> = [];
   hasCustomCondition: boolean;
   monitorLocationsMap: Record<string, string[]>; // monitorId: locationIds
@@ -76,8 +75,8 @@ export class StatusRuleExecutor {
 
   constructor(
     esClient: SyntheticsEsClient,
-    server: SyntheticsServerSetup,
-    syntheticsMonitorClient: SyntheticsMonitorClient,
+    server: SyntheticsRuleServer,
+    syntheticsMonitorClient: SyntheticsRuleMonitorClient,
     options: StatusRuleExecutorOptions
   ) {
     const { services, params, previousStartedAt, rule } = options;

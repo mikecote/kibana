@@ -5,11 +5,12 @@
  * 2.0.
  */
 
-import type { CoreStart, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
+import type { GenerationCoreServices } from '../types';
 
 export interface InvalidatePipelineApiKeyParams {
   apiKeyId: string | undefined;
-  coreStart: CoreStart | undefined;
+  coreStart: Pick<GenerationCoreServices, 'security'> | undefined;
   logger: Logger;
 }
 

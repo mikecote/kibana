@@ -17,7 +17,7 @@ export async function getInternalSavedObjectsClient(coreStart: CoreStart) {
 }
 
 export function getInternalSavedObjectsClientForSpaceId(
-  coreStart: CoreStart,
+  coreStart: Pick<CoreStart, 'savedObjects'>,
   spaceId?: string
 ): SavedObjectsClient {
   const request = kibanaRequestFactory({

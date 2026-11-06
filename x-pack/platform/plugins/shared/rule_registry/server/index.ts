@@ -17,6 +17,10 @@ export type {
 } from './types';
 
 export type { RuleRegistryPluginConfig } from './config';
+export {
+  createRuleDataTaskProcessService,
+  RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID,
+} from './task_types/rule_data_task_process_services';
 export { config, INDEX_PREFIX } from './config';
 export type {
   IRuleDataService,
@@ -32,6 +36,7 @@ export type {
 } from './rule_data_plugin_service';
 export {
   RuleDataService,
+  createRuleDataService,
   Dataset,
   RuleDataWriteDisabledError,
   RuleDataWriterInitializationError,
