@@ -47,6 +47,8 @@ export const collectRegisteredIds = async ({
     getActionsStart: unavailable('The actions plugin') as never,
     getInferenceStart: unavailable('The inference plugin') as never,
     getCoreStart: unavailable('Core') as never,
+    // As in a process: the SML tools are registered, and read the SML service when they run.
+    getAgentBuilderSml: unavailable('SML') as never,
     taskProcess: { registerSettings: () => {} },
   });
   const contributionServices: AgentBuilderContributionServices = {

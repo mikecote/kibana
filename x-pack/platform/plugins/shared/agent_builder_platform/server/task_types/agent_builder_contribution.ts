@@ -14,7 +14,7 @@ import {
   CHAT_ATTACHMENT_IMAGES_FILE_KIND,
   MAX_IMAGE_BYTES,
   SUPPORTED_IMAGE_MIME_TYPES,
-} from '@kbn/agent-builder-common';
+} from '@kbn/agent-builder-common/attachments';
 import {
   createFilesRunServices,
   filesRunSavedObjectTypes,

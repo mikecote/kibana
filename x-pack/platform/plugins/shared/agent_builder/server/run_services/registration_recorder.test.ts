@@ -48,6 +48,7 @@ describe('createRegistrationRecorder', () => {
     recorded.hooks.registerCycleHook({ id: 'cycle-1' } as never);
     recorded.skills.registerSkill({ id: 'skill-1' } as never);
     recorded.plugins.register({ id: 'plugin-1' } as never);
+    recorder.recordSmlType('sml-1');
 
     expect(setups.tools.register).toHaveBeenCalledWith(tool);
     expect(recorder.ids()).toEqual({
@@ -62,6 +63,7 @@ describe('createRegistrationRecorder', () => {
       hooks: ['cycle:cycle-1', 'hook-1'],
       plugins: ['plugin-1'],
       aiIndexResolvers: ['resolver'],
+      smlTypes: ['sml-1'],
     });
   });
 

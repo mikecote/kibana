@@ -19,15 +19,30 @@
     "platform.core.create_visualization",
     "platform.core.execute_connector_sub_action",
     "platform.core.execute_esql",
+    "platform.core.execute_workflow",
     "platform.core.generate_esql",
+    "platform.core.generate_workflow",
     "platform.core.get_document_by_id",
     "platform.core.get_index_mapping",
+    "platform.core.get_workflow_execution_status",
     "platform.core.index_explorer",
     "platform.core.integration_knowledge",
     "platform.core.list_indices",
     "platform.core.list_inference_endpoints",
+    "platform.core.list_workflow_executions",
+    "platform.core.product_documentation",
+    "platform.core.resume_workflow_execution",
     "platform.core.search",
+    "platform.core.sml_attach",
+    "platform.core.sml_search",
     "platform.proposals.revise",
+    "platform.workflows.get_connectors",
+    "platform.workflows.get_examples",
+    "platform.workflows.get_step_definitions",
+    "platform.workflows.get_trigger_definitions",
+    "platform.workflows.get_workflow",
+    "platform.workflows.validate_workflow",
+    "platform.workflows.workflow_execute_step",
     "proposals.create"
   ],
   "agents": [
@@ -44,6 +59,7 @@
     "connector-authoring",
     "connector-discovery",
     "context-engine-signals",
+    "dashboards",
     "discover-data-analysis",
     "discover-session",
     "graph-creation",
@@ -60,7 +76,8 @@
     "search.use-case-library",
     "search.vector-hybrid-search",
     "skill-management",
-    "visualization-creation"
+    "visualization-creation",
+    "workflow-authoring"
   ],
   "attachmentTypes": [
     "case",
@@ -71,6 +88,7 @@
     "esql",
     "esql.query_results",
     "graph",
+    "image",
     "ml.anomaly_charts",
     "ml.anomaly_swimlane",
     "ml.single_metric_viewer",
@@ -78,11 +96,14 @@
     "observability.service-map-context",
     "platform.context_engine.ai_index",
     "platform.custom_content.panel_context",
+    "platform.dashboard.dashboard_state",
     "platform.proposal",
     "screen_context",
     "skill",
     "text",
-    "visualization"
+    "visualization",
+    "workflow.yaml",
+    "workflow.yaml.diff"
   ],
   "conversationEvents": [
     "text_note"
@@ -100,5 +121,11 @@
   "plugins": [],
   "aiIndexResolvers": [
     "resolver"
+  ],
+  "smlTypes": [
+    "connector",
+    "dashboard",
+    "visualization",
+    "workflow"
   ]
 }
