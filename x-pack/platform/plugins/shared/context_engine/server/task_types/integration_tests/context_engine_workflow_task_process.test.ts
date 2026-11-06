@@ -57,7 +57,16 @@ describe('context engine workflow steps served from the workflow:scheduled bundl
       },
       seed: async ({ es, host }) => {
         // The AI index Kibana would have stored, over a plain index: the ones Kibana creates map
-        // ELSER `semantic_text` fields, and the model is not deployed on the test cluster.
+        // ELSER `semantic_text` fields, and the model is not deployed on the test cluster. Elasticsearch
+        // ships an index template for `ai-index-*` that adds them to any index of that name, and the
+        // first document written to such an index then waits ~30s for the inference endpoint (the
+        // request times out): a template of a higher priority for this index keeps its mapping plain.
+        await es.indices.putIndexTemplate({
+          name: 'plain-ki-index',
+          index_patterns: [KI_INDEX],
+          priority: 100000,
+          template: { settings: { number_of_replicas: 0 } },
+        });
         await es.indices.create({
           index: KI_INDEX,
           settings: { number_of_replicas: 0 },
