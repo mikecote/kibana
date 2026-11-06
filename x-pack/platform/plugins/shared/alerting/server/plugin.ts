@@ -11,6 +11,11 @@ import { BehaviorSubject, ReplaySubject, map, distinctUntilChanged } from 'rxjs'
 import { pick } from 'lodash';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type { SecurityPluginSetup, SecurityPluginStart } from '@kbn/security-plugin/server';
+import type {
+  TelemetryPluginSetup,
+  TelemetryTaskProcessSettings,
+} from '@kbn/telemetry-plugin/server';
+import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { PluginSetup as DataPluginSetup } from '@kbn/data-plugin/server';
 import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
 import type {
@@ -211,6 +216,8 @@ export interface AlertingServerStart {
 
 export interface AlertingPluginsSetup {
   security?: SecurityPluginSetup;
+  telemetry?: TelemetryPluginSetup;
+  cloud?: CloudSetup;
   taskManager: TaskManagerSetupContract;
   actions: ActionsPluginSetupContract;
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
@@ -317,6 +324,28 @@ export class AlertingPlugin {
     const securitySetup = plugins.security;
     if (securitySetup?.getTaskProcessSettings) {
       this.taskProcessSettings.security = () => securitySetup.getTaskProcessSettings();
+    }
+
+    // The analytics context a task process puts on the events it ships, as this Kibana has it: the
+    // telemetry plugin's settings and the license and cloud deployment, which it cannot read.
+    const telemetrySetup = plugins.telemetry;
+    if (telemetrySetup?.getTaskProcessSettings) {
+      let license: TelemetryTaskProcessSettings['license'];
+      plugins.licensing.license$.subscribe((next) => {
+        license = { uid: next.uid, status: next.status, type: next.type };
+      });
+      this.taskProcessSettings.telemetry = () => ({
+        ...telemetrySetup.getTaskProcessSettings(),
+        license,
+        cloud: plugins.cloud?.analyticsMetadata,
+      });
+    }
+
+    // How a task process counts and stores usage, as the usage collection plugin does here.
+    const usageCollectionSetup = plugins.usageCollection;
+    if (usageCollectionSetup?.getTaskProcessSettings) {
+      this.taskProcessSettings.usageCollection = () =>
+        usageCollectionSetup.getTaskProcessSettings();
     }
 
     const elasticsearchAndSOAvailability$ = getElasticsearchAndSOAvailability(core.status.core$);

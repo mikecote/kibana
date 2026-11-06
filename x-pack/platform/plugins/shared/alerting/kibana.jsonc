@@ -27,6 +27,8 @@
     "optionalPlugins": [
       "usageCollection",
       "security",
+      "telemetry",
+      "cloud",
       "monitoringCollection",
       "spaces",
       "serverless",

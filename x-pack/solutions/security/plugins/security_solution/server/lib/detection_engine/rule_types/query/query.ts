@@ -11,7 +11,7 @@ import { getFilter } from '../utils/get_filter';
 import type { BucketHistory } from './alert_suppression/group_and_bulk_create';
 import { groupAndBulkCreate } from './alert_suppression/group_and_bulk_create';
 import { searchAfterAndBulkCreate } from '../utils/search_after_bulk_create';
-import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_events_sender';
 import type { UnifiedQueryRuleParams } from '../../rule_schema';
 import { buildReasonMessageForQueryAlert } from '../utils/reason_formatters';
 import { withSecuritySpan } from '../../../../utils/with_security_span';

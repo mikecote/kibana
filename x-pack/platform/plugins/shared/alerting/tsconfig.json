@@ -92,6 +92,8 @@
     "@kbn/cps-utils",
     "@kbn/core-saved-objects-common",
     "@kbn/workflows-extensions",
+    "@kbn/telemetry-plugin",
+    "@kbn/cloud-plugin",
   ],
   "exclude": ["target/**/*"]
 }

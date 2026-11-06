@@ -16,6 +16,8 @@ import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
+import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
+import { ACTIONS_FEATURE_ID } from '@kbn/actions-plugin/common';
 import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import { EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER } from '@kbn/actions-plugin/server/constants/event_log';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
@@ -32,6 +34,7 @@ import { RulesSettingsClientFactory } from '../../rules_settings/rules_settings_
 import { RulesSettingsService } from '../../rules_settings/rules_settings_service';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';
 import { MaintenanceWindowsService } from '../../task_runner/maintenance_windows/maintenance_windows_service';
+import { ALERTING_FEATURE_ID } from '../../types';
 import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
@@ -60,8 +63,8 @@ const spaceIdToNamespace = (spaceId?: string) =>
 /**
  * The services of a rule run, built from the task host instead of the alerting plugin and the
  * plugins it uses. Everything is the plugin's own class over the host's services, except what
- * cannot exist in a process, which is `undefined` here and listed in the task types README: usage
- * counters, the `alert.status.changed` event bus, and the backfill and event log read clients.
+ * cannot exist in a process, which is `undefined` here and listed in the task types README: the
+ * `alert.status.changed` event bus, and the backfill and event log read clients.
  */
 export const createStandaloneRuleRunRuntime = ({
   host,
@@ -87,6 +90,12 @@ export const createStandaloneRuleRunRuntime = ({
   const uiSettings = host.uiSettings as UiSettingsServiceStart;
 
   const licenseState = new LicenseState(host.licensing!.license$);
+
+  // The counters of the domains Kibana counts rule runs under, stored when the run ends.
+  const usageCounter = host.usageCounters?.getUsageCounter(ALERTING_FEATURE_ID) as
+    | UsageCounter
+    | undefined;
+  const actionsUsageCounter = host.usageCounters?.getUsageCounter(ACTIONS_FEATURE_ID);
 
   const rulesSettingsClientFactory = new RulesSettingsClientFactory();
   rulesSettingsClientFactory.initialize({
@@ -140,6 +149,8 @@ export const createStandaloneRuleRunRuntime = ({
     logger: host.logger.get('plugins', 'actions'),
     config: actionsConfig,
     license$: host.licensing!.license$,
+    usageCounter: actionsUsageCounter,
+    featureUsage: host.licensing!.featureUsage,
     elasticsearch: host.elasticsearch,
     savedObjects,
     getEncryptedSavedObjectsClient: host.encryptedSavedObjects!.getClient,
@@ -228,6 +239,7 @@ export const createStandaloneRuleRunRuntime = ({
     share: { url: urlService } as unknown as SharePluginStart,
     spaceIdToNamespace,
     uiSettings,
+    usageCounter,
     isServerless,
     // As in Kibana: UIAM API keys are used when Core's security exposes them (serverless with UIAM).
     shouldGrantUiam: !!host.security.authc.apiKeys.uiam,

@@ -21,6 +21,11 @@ export interface TaskProcessContext {
   contributions: Record<string, unknown[]>;
   /** The task definitions plugins registered through Task Manager's contract. */
   definitions: Map<string, TaskRegisterDefinition>;
+  /**
+   * What plugins ask the process to finish before it answers a run, such as shipping the events the
+   * run reported. Added by plugins at setup, run by `flushTaskProcess`.
+   */
+  flushers: Array<() => Promise<void>>;
   /** Set by the module's plugin: the host its runner gets, once Core has started. */
   host?: Promise<TaskHost>;
 }

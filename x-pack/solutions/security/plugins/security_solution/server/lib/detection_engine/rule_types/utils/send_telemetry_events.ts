@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../../telemetry/rule_run_events_sender';
 import type { TelemetryEvent } from '../../../telemetry/types';
 import type { IRuleExecutionLogForExecutors } from '../../rule_monitoring';
 import type { SignalSource, SignalSourceHit } from '../types';

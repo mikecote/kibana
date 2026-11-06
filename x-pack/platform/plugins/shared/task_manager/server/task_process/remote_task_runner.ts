@@ -9,7 +9,7 @@ import { Agent } from 'undici';
 import type { CancellableTask, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
 import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
-import type { TaskProcessRunRequest, TaskProcessRunResponse, TaskProcessTelemetry } from './wire';
+import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 
 /** Where a run goes: its address, and the bearer token the process requires. */
 export interface TaskProcessAddress {
@@ -36,8 +36,6 @@ export interface TaskProcessDispatch {
   kibanaVersion: string;
   /** The values of the feature flags a task type declares, for the run being dispatched. */
   getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
-  /** Sends on what a run reported that only this Kibana can send: analytics, feature usage, plugin channels. */
-  reportTelemetry?: (telemetry: TaskProcessTelemetry) => void;
 }
 
 const authHeaders = (address: TaskProcessAddress): Record<string, string> =>
@@ -88,8 +86,6 @@ export class RemoteTaskRunner implements CancellableTask {
       /** Aborted when Task Manager cancels the run. */
       signal?: AbortSignal;
       setCustomTaskRunEventFields: (fields: Record<string, unknown>) => void;
-      /** Receives what the run reported, whether it returned or threw. */
-      reportTelemetry?: (telemetry: TaskProcessTelemetry) => void;
       /**
        * Runs the task in this process instead. Used when the process does not serve the task type, for
        * example a connector type that needs privileges only Kibana can check.
@@ -169,13 +165,6 @@ export class RemoteTaskRunner implements CancellableTask {
       const body = (await response.json()) as TaskProcessRunResponse;
       if (body.customTaskRunEventFields) {
         setCustomTaskRunEventFields(body.customTaskRunEventFields);
-      }
-      if (body.telemetry) {
-        try {
-          this.params.reportTelemetry?.(body.telemetry);
-        } catch {
-          // Telemetry never changes the outcome of a run.
-        }
       }
       if (body.kind === 'thrown') {
         throw deserializeTaskRunError(body.error);

@@ -136,7 +136,14 @@ describe('detection rule task type modules', () => {
     });
 
     it('runs next to the security plugin of Core', () => {
-      expect(queryTaskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual(['security']);
+      expect(queryTaskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
+        'security',
+        'telemetry',
+      ]);
+    });
+
+    it('registers the analytics events of the plugin in the process, which ships them', () => {
+      expect(queryTaskType.analyticsEventTypes?.length).toBeGreaterThan(0);
     });
 
     it('declares the ml job saved object type for the ml rule', () => {

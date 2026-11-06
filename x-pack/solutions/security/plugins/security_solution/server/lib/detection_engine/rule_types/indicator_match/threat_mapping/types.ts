@@ -20,7 +20,7 @@ import type {
   SecuritySharedParams,
   SecurityRuleServices,
 } from '../../types';
-import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_telemetry_sender';
+import type { RuleRunTelemetrySender } from '../../../../telemetry/rule_run_events_sender';
 import type { ThreatRuleParams } from '../../../rule_schema';
 import type { IRuleExecutionLogForExecutors } from '../../../rule_monitoring';
 import type { ScheduleNotificationResponseActionsService } from '../../../rule_response_actions/schedule_notification_response_actions';

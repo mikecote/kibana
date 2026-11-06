@@ -11,13 +11,14 @@ import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { AnalyticsServiceStart } from '@kbn/core-analytics-server';
+import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
+import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type {
   EncryptedSavedObjectTypeRegistration,
   EncryptedSavedObjectsClient,
@@ -76,19 +77,19 @@ export interface TaskHost {
   };
 
   /**
-   * Core's analytics in Kibana. In a task process the events are returned with the run, and the
-   * Kibana that dispatched it reports them.
+   * Core's analytics. In a task process the events are shipped from the process itself, before the
+   * run answers, when the module lists the telemetry task plugin in `taskPlugins`.
    */
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
-  /**
-   * A channel of a plugin, such as security telemetry, that only Kibana can send on: a task process
-   * returns the payloads with the run and Kibana hands them to the sink the plugin registered with
-   * `registerTaskProcessTelemetrySink`; in Kibana the sink is called directly.
-   */
-  telemetry: { report: (kind: string, payload: unknown) => void };
 
   /** Core's user profile service; in a task process the security task plugin's delegate answers. */
   userProfile?: UserProfileServiceStart;
+  /**
+   * A task process only: registers what has to finish before the process answers a run, such as
+   * sending a queue of events. Bounded by a timeout, so a slow endpoint cannot hold the run. In
+   * Kibana nothing answers for a run, and what a plugin queues is sent by its own lifecycle.
+   */
+  onRunEnd?: (flusher: () => Promise<void>) => void;
   /** Declared with `featureFlags`. */
   featureFlags?: Pick<
     FeatureFlagsStart,
@@ -113,8 +114,16 @@ export interface TaskHost {
   /** Declared with `licensing`. */
   licensing?: {
     license$: Observable<ILicense>;
-    /** Records that a licensed feature was used; reported by Kibana when a task process returns. */
+    /** Records that a licensed feature was used, durably, for every node and process to see. */
     featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
+  };
+  /**
+   * Declared with `usageCounters`. The counter of a domain (such as `alerting`), made once and counting
+   * from then on: in Kibana it is the usage collection plugin's, in a task process the counts are
+   * stored when the run ends, in the same saved objects.
+   */
+  usageCounters?: {
+    getUsageCounter: (domainId: string, params?: { retentionPeriodDays?: number }) => IUsageCounter;
   };
   /** Validated plugin configs by plugin id, for the ids listed in `settings`. */
   settings?: Record<string, unknown>;
@@ -148,8 +157,16 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   taskManager?: true | { schedulableTypes?: RegExp[] };
   /** Gives the runner `host.uiSettings`, with these defaults registered in a task process. */
   uiSettings?: { defaults?: Array<Record<string, UiSettingsParams>> };
+  /**
+   * The analytics event types the runner reports, which Core's analytics requires to be registered
+   * before an event is reported. A task process registers them; Kibana's plugins already have.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  analyticsEventTypes?: Array<EventTypeOpts<any>>;
   /** Gives the runner `host.licensing`. */
   licensing?: true;
+  /** Gives the runner `host.usageCounters`. */
+  usageCounters?: true;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
   /**
@@ -248,6 +265,8 @@ export const toTaskDefinition = (
     taskManager,
     uiSettings,
     licensing,
+    analyticsEventTypes,
+    usageCounters,
     settings,
     contributions,
     taskPlugins,

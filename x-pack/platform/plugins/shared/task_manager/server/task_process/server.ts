@@ -13,7 +13,7 @@ import { isDeclinedRunError, serializeTaskRunError } from '../task_running/error
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
-import { collectTelemetry } from './telemetry';
+import { runInRunContext } from './run_context';
 import type { RunContext, CancellableTask } from '../task';
 
 /** What the server needs of a task definition: a way to create the run's task. */
@@ -76,6 +76,7 @@ export const startTaskProcessServer = ({
   authToken,
   onListening,
   onShutdown,
+  flush,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   port: number;
@@ -88,6 +89,11 @@ export const startTaskProcessServer = ({
   onListening?: (port: number) => void;
   /** Called once the in-flight runs have finished and before the process exits. */
   onShutdown?: () => Promise<void>;
+  /**
+   * Finishes what the run left to do, such as shipping its analytics events, before the response
+   * is sent: Kibana does nothing with a run besides rescheduling it. Bounded by the caller.
+   */
+  flush?: () => Promise<void>;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
@@ -130,10 +136,16 @@ export const startTaskProcessServer = ({
     });
     inFlight.set(body.executionUuid, { abortController, task });
     try {
-      // What the run reports for Kibana to send on comes back with its result, even when it throws.
-      const { value, error, telemetry } = await collectTelemetry(async () => task.run(), {
+      const { value, error } = await runInRunContext(async () => task.run(), {
         featureFlags: body.featureFlags,
       });
+      // What the run produced (analytics events, usage) leaves this process before it answers,
+      // whether the run returned or threw.
+      try {
+        await flush?.();
+      } catch (flushError) {
+        logger.warn(`Flushing after ${body.taskType} failed: ${(flushError as Error).message}`);
+      }
       if (error !== undefined) {
         if (isDeclinedRunError(error)) {
           throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
@@ -142,14 +154,12 @@ export const startTaskProcessServer = ({
           kind: 'thrown',
           error: serializeTaskRunError(error),
           customTaskRunEventFields: customFields.at(-1),
-          telemetry,
         } as TaskProcessRunResponse;
       }
       return {
         kind: 'result',
         result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
-        telemetry,
       } as TaskProcessRunResponse;
     } finally {
       clearTimeout(deadlineTimer);

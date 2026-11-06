@@ -41,6 +41,9 @@ export class AsyncTelemetryEventsSender implements IAsyncTelemetryEventsSender {
 
   private readonly flush$ = new rx.Subject<void>();
 
+  /** Events of every queue that are buffered or being sent, and not accounted for yet. */
+  private readonly inflightEvents$ = new rx.BehaviorSubject<number>(0);
+
   private readonly events$ = new rx.Subject<Event>();
 
   private readonly finished$ = new rx.Subject<void>();
@@ -145,6 +148,23 @@ export class AsyncTelemetryEventsSender implements IAsyncTelemetryEventsSender {
     this.updateStatus(ServiceStatus.STARTED);
   }
 
+  /**
+   * Sends what is buffered now instead of at the end of the buffer time, and resolves once every
+   * event, in the queues and being sent, has been sent or has failed. A task process calls it before it
+   * answers a run, because it is gone before the buffer time of the queues passes.
+   */
+  public async flush(): Promise<void> {
+    if (this.status !== ServiceStatus.STARTED) return;
+    this.flush$.next();
+    await rx.firstValueFrom(
+      this.inflightEvents$.pipe(
+        rx.filter((inflight) => inflight <= 0),
+        rx.takeUntil(this.finished$)
+      ),
+      { defaultValue: undefined }
+    );
+  }
+
   public async stop(): Promise<void> {
     this.logger.debug('Stopping service');
 
@@ -219,7 +239,10 @@ export class AsyncTelemetryEventsSender implements IAsyncTelemetryEventsSender {
     let inflightEventsCounter: number = 0;
     const inflightEvents$: rx.Subject<number> = new rx.Subject<number>();
 
-    inflightEvents$.subscribe((value) => (inflightEventsCounter += value));
+    inflightEvents$.subscribe((value) => {
+      inflightEventsCounter += value;
+      this.inflightEvents$.next(this.inflightEvents$.value + value);
+    });
 
     return upstream$.pipe(
       // only take events for the configured channel

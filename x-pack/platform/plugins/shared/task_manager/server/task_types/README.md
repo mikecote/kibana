@@ -103,18 +103,35 @@ task type hands over its own service for the same capability.
 | `eventLog` | `eventLog` | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit | `hostExtensions.eventLog` |
 | `taskManager` | `taskManager` | writes `task` saved objects, only for `schedulableTypes` | Task Manager's start contract |
 | `uiSettings` | `uiSettings` | Core's, with the module's defaults registered | Core |
-| `licensing` | `licensing` | the license read from Elasticsearch once, and feature usage | the licensing plugin |
+| `licensing` | `licensing` | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares | the licensing plugin |
+| `usageCounters` | `usageCounters` | the usage collection plugin's own counters service, stored when the run ends | the usage collection plugin |
 | `settings: ['pluginId']` | `settings.pluginId` | the validated config Kibana sends | the getter passed to `registerTaskType` |
 | `featureFlags` | `featureFlags` | the values Kibana evaluated for this run | Core |
 | `contributions` | `contributions[key]` | what plugins export for the key | the plugins themselves |
 | `taskPlugins` | `plugins[id]` | the `start` contract of each plugin | the real plugins |
 
-`host.analytics`, `host.telemetry`, `host.security` and `host.elasticsearch` are always there.
+`host.analytics`, `host.security`, `host.elasticsearch` and `host.onRunEnd` (in a process) are always there.
 
-**Telemetry is returned, not sent.** A run reports analytics events, feature usage and plugin
-channels through the host. The process keeps them for that run and returns them with the result, and
-the Kibana that dispatched the run reports them with its own analytics, licensing and the sinks
-plugins register with `registerTaskProcessTelemetrySink(kind, sink)`.
+**A process does every side effect itself.** Kibana does nothing with a run but reschedule it, so
+nothing a run produces comes back in the response, and the process finishes it before it answers (bounded
+by a few seconds, so a slow endpoint cannot hold the run; a warning is logged on timeout):
+
+- **Analytics events.** A module that lists the telemetry plugin's task plugin in `taskPlugins` (rule
+  modules always do) gets Core's analytics client with the real `ElasticV3ServerShipper`, opted in as
+  Kibana is, with the labels, license and cloud context Kibana's events carry. The telemetry plugin
+  sends the opt-in, `sendUsageTo` and labels (`getTaskProcessSettings`); alerting adds the license and
+  the cloud deployment. If Kibana has no opt-in, nothing ships, exactly as in Kibana. Events leave
+  through the shipper's `flush`, and Core's shutdown flushes the rest.
+- **Usage counters.** `host.usageCounters.getUsageCounter(domainId)` is the usage collection plugin's
+  `UsageCountersService`: the same `usage-counter` saved objects, one per counter and day, stored at
+  the end of the run instead of on the interval. The daily clean-up stays with Kibana.
+- **Feature usage.** The licensing plugin keeps when each feature was last used in a hidden saved
+  object (`licensing-feature-usage`, one per feature) that every node and process writes, and
+  `/api/licensing/feature_usage` and `getLastUsages()` read it merged with the node's memory.
+  `host.licensing.featureUsage.notifyUsage` writes through the same store.
+- **Anything else with a queue.** `host.onRunEnd(flusher)` registers what has to finish before the
+  process answers. Security telemetry builds its own sender from a snapshot of Kibana's telemetry
+  settings (opt-in, endpoint, cluster and license) and flushes its queue there.
 
 **Config over the wire.** Kibana sends its Elasticsearch connection, the encryption keys, the
 `security` settings (which carry UIAM) and the plugin configs the task type registered. Core
@@ -209,10 +226,11 @@ from explicit inputs. These are the steps, in the order most plugins need them.
    shape in the consuming plugin, add a key to the task type's `contributions` and have contributing
    plugins list a file under `plugin.taskTypeContributions` in their `kibana.jsonc` that exports
    `contribution`. Rule runs use `alerting-rule-run` (see `RuleRunContribution`).
-8. **Report through the host.** Use `host.analytics.reportEvent`, `host.telemetry.report(kind, payload)`
-   and `host.licensing.featureUsage` rather than the service directly: the process returns them with the
-   run and Kibana reports them. A plugin with a channel of its own registers a sink with
-   `registerTaskProcessTelemetrySink(kind, sink)`.
+8. **Do the side effects in the run.** Use `host.analytics.reportEvent`, `host.usageCounters` and
+   `host.licensing.featureUsage` rather than the services directly: in a process they are the real
+   shipper, counters and store, and the process flushes them before it answers. A plugin with a queue
+   of its own builds it from explicit dependencies and a snapshot of what it reads from Kibana (send the
+   snapshot as a setting) and registers its flush with `host.onRunEnd`. Nothing is returned to Kibana.
 9. **Keep the bundle clean.** Import leaf files, not barrels. A cycle through an `export *` barrel
    leaves names undefined inside a bundle. Do not import a plugin class (`server/plugin.ts`); use
    `node scripts/task_bundle --name <bundle>` and the bundle hygiene test (`es_query_bundle.test.ts`)
@@ -251,7 +269,7 @@ Options: `locators`, `savedObjectTypes`, `encryptedSavedObjectTypes`, `uiSetting
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
-Not the same in a process: no `alert.status.changed` workflow events, usage counters or in-memory
+Not the same in a process: no `alert.status.changed` workflow events or in-memory
 metrics; a rule that uses a connector type or adapter the process does not know is declined; and each run is a
 fresh process, so it pays for the encryption service, the license and the alerts resource checks every
 time.

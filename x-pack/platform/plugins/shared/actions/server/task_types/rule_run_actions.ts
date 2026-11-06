@@ -18,6 +18,8 @@ import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
+import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
+import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
@@ -102,6 +104,10 @@ export interface RuleRunActionsDeps {
     analyticsService: AnalyticsServiceStart;
     createInternalRepository: SavedObjectsServiceStart['createInternalRepository'];
   };
+  /** The counter of the actions domain, which the actions client counts what it is asked to with. */
+  usageCounter?: IUsageCounter;
+  /** Records that a licensed connector type was used, as the licensing plugin does in Kibana. */
+  featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
   /** Registers the connector types a rule run may enqueue, such as stack_connectors'. */
   registerConnectorTypes: (
     actions: RuleRunActionsSetup,
@@ -128,6 +134,8 @@ export const createRuleRunActions = (
   const { logger, config } = deps;
   const configurationUtilities = getActionsConfigurationUtilities(config);
   const licenseState = new LicenseState(deps.license$);
+  // As the actions plugin does at start: using a licensed connector type is recorded.
+  if (deps.featureUsage) licenseState.setNotifyUsage(deps.featureUsage.notifyUsage);
   const inMemoryConnectors = getInMemoryConnectorsFromConfig(config, logger);
 
   const actionTypeRegistry = new ActionTypeRegistry({
@@ -253,6 +261,7 @@ export const createRuleRunActions = (
           authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
           actionExecutor,
           bulkExecutionEnqueuer,
+          usageCounter: deps.usageCounter as UsageCounter | undefined,
           connectorTokenClient: new ConnectorTokenClient({
             unsecuredSavedObjectsClient,
             encryptedSavedObjectsClient,

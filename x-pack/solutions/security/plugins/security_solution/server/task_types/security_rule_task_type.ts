@@ -37,6 +37,7 @@ import {
 } from '@kbn/rule-registry-plugin/server';
 import type { AlertingConfig } from '@kbn/alerting-plugin/server/config';
 import { RuleExecutionEventType } from '../../common/api/detection_engine/rule_monitoring';
+import { APP_ID } from '../../common/constants';
 import { TASK_PROCESS_SETTINGS_ID } from '../config';
 import type { SecurityRuleRunConfig } from '../config';
 import { getEndpointResponseActionsRunSavedObjectTypes } from '../endpoint/run_time/create_endpoint_response_actions_run_services';
@@ -45,7 +46,9 @@ import { createSecurityRuleTypeWrapper } from '../lib/detection_engine/rule_type
 import type { CreateSecurityRuleTypeWrapperProps } from '../lib/detection_engine/rule_types/types';
 import { RULE_EXECUTION_LOG_PROVIDER } from '../lib/detection_engine/rule_monitoring/logic/event_log/event_log_constants';
 import { createRuleExecutionLogClientForExecutorsFactory } from '../lib/detection_engine/rule_monitoring/logic/service';
-import { createRuleRunTelemetrySender } from '../lib/telemetry/rule_run_telemetry_sender';
+import { createRuleRunTelemetrySender } from '../lib/telemetry/rule_run_events_sender';
+import type { RuleRunTelemetrySender } from '../lib/telemetry/rule_run_events_sender';
+import { events as securityEventTypes } from '../lib/telemetry/event_based/events';
 import { getSecurityRuleRunUiSettings } from '../ui_settings';
 import { getResponseActionsServices } from './response_actions_services';
 
@@ -69,6 +72,35 @@ const SAVED_OBJECT_TYPES: SavedObjectsType[] = [
 ];
 
 export type SecurityRuleTypeWrapper = ReturnType<typeof createSecurityRuleTypeWrapper>;
+
+/**
+ * The sender of the events of a run, which is one per process: it queues what runs send, and the
+ * process flushes the queue before it answers each run. Built when the first run sends, from what
+ * Kibana said of its telemetry; without it (no telemetry plugin) nothing is sent, as in Kibana.
+ */
+const createRunEventsTelemetry = (
+  host: RuleTypeModuleDeps['host'],
+  config: SecurityRuleRunConfig,
+  logger: RuleTypeModuleDeps['logger']
+): RuleRunTelemetrySender | undefined => {
+  if (!config.ruleRunTelemetry) return undefined;
+  const settings = config.ruleRunTelemetry;
+  let created: ReturnType<typeof createRuleRunTelemetrySender> | undefined;
+  return {
+    sendAsync: (channel, events) => {
+      if (!created) {
+        created = createRuleRunTelemetrySender({
+          logger,
+          settings,
+          usageCounter: host.usageCounters?.getUsageCounter(APP_ID),
+          analytics: host.analytics as never,
+        });
+        host.onRunEnd?.(created.flush);
+      }
+      created.sender.sendAsync(channel, events);
+    },
+  };
+};
 
 const kibanaOnly = (what: string) => () => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);
@@ -125,10 +157,8 @@ export const createSecurityRuleRunServicesFromHost = (
       getEventLog: () => host.eventLog as IEventLogService,
       getUiSettings: async () => deps.runtime.uiSettings,
     }),
-    // Queues nothing here: the events are returned with the run and Kibana sends them.
-    eventsTelemetry: createRuleRunTelemetrySender((kind, payload) =>
-      host.telemetry.report(kind, payload)
-    ),
+    // Sent from here, before the run answers: Kibana does nothing with a run but reschedule it.
+    eventsTelemetry: createRunEventsTelemetry(host, config, logger),
     getEntityStore: async () => (entityStore ??= createEntityStoreRunServices({ logger })),
     // Only the write paths of rules authorize a request, which Kibana serves.
     getRulesAuthz: kibanaOnly('Resolving the authorization of a request'),
@@ -164,6 +194,8 @@ export const createSecurityRuleTaskType = (
       eventLogProviders: [
         { provider: RULE_EXECUTION_LOG_PROVIDER, actions: RuleExecutionEventType.options },
       ],
+      // Core's analytics refuses the events of the plugin unless they are registered.
+      analyticsEventTypes: securityEventTypes,
       settings: SETTINGS,
       encryptedSavedObjectTypes: getFleetRunEncryptedSavedObjectTypes(),
     }

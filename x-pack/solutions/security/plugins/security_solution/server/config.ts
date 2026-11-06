@@ -242,6 +242,8 @@ export const configSchema = schema.object({
   ),
 });
 
+import type { RuleRunTelemetrySettings } from './lib/telemetry/rule_run_events_sender';
+
 export type ConfigSchema = TypeOf<typeof configSchema>;
 
 export type ConfigType = Omit<ConfigSchema, 'offeringSettings'> & {
@@ -262,10 +264,17 @@ export type SecurityRuleRunConfig = Pick<
   | 'experimentalFeatures'
   | 'maxUploadResponseActionFileBytes'
   | 'maxEndpointScriptFileSize'
->;
+> & {
+  /** What the sender of the events of a run needs of Kibana's telemetry; see `RuleRunTelemetrySettings`. */
+  ruleRunTelemetry?: RuleRunTelemetrySettings;
+};
 
 /** The settings a task process receives: serializable, and only what a rule run reads. */
-export const getTaskProcessSettings = (config: ConfigType): SecurityRuleRunConfig => ({
+export const getTaskProcessSettings = (
+  config: ConfigType,
+  telemetry?: RuleRunTelemetrySettings
+): SecurityRuleRunConfig => ({
+  ...(telemetry ? { ruleRunTelemetry: telemetry } : {}),
   alertIgnoreFields: config.alertIgnoreFields,
   alertMergeStrategy: config.alertMergeStrategy,
   signalsIndex: config.signalsIndex,

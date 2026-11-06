@@ -122,9 +122,15 @@ describe('createRuleTaskType', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
       expect(taskType.settings).toEqual(['alerting', 'actions', 'security']);
       // The privileges of a connector are checked when a run enqueues it, as in Kibana.
-      expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual(['security']);
+      expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
+        'security',
+        'telemetry',
+      ]);
       expect(taskType.taskManager).toEqual({ schedulableTypes: [/^actions:/] });
       expect(taskType.licensing).toBe(true);
+      // Usage a rule run counts is stored by the process, which also ships the events it reports.
+      expect(taskType.usageCounters).toBe(true);
+      expect(taskType.analyticsEventTypes).toEqual([]);
       expect(taskType.eventLog?.providers).toEqual([
         { provider: 'alerting', actions: expect.arrayContaining(['execute', 'execute-start']) },
       ]);
@@ -136,6 +142,23 @@ describe('createRuleTaskType', () => {
         'action_task_params',
         'alert',
       ]);
+    });
+
+    it('declares the analytics events the executor reports, and those of the connectors it executes', () => {
+      const event = { eventType: 'my_event', schema: {} };
+
+      expect(
+        createRuleTaskType(
+          { ruleTypeId: 'test.rule', getRuleType },
+          { analyticsEventTypes: [event] }
+        ).analyticsEventTypes
+      ).toEqual([event]);
+      expect(
+        createRuleTaskType(
+          { ruleTypeId: 'test.rule', getRuleType },
+          { analyticsEventTypes: [event], executeConnectors: true }
+        ).analyticsEventTypes?.map(({ eventType }) => eventType)
+      ).toEqual(expect.arrayContaining(['my_event', 'gen_ai_token_count']));
     });
 
     it('schedules the task types the rule type asks for besides actions', () => {

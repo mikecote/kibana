@@ -38,6 +38,7 @@ const startContext = (settings: unknown) =>
     module: {} as never,
     contributions: {},
     definitions: new Map(),
+    flushers: [],
   });
 
 const initializerContext = () => {
@@ -143,6 +144,7 @@ describe('the security task plugin', () => {
         module: {} as never,
         contributions: {},
         definitions: new Map(),
+        flushers: [],
       });
       await expect(staticPlugin.definition.plugin!(initializerContext())).rejects.toThrow(
         'The task process was not given the settings of: security'

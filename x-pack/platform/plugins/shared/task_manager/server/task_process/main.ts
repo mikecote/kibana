@@ -94,6 +94,7 @@ export const runTaskProcess = async (
         }
       },
       onShutdown: core.stop,
+      flush: core.flush,
     });
   } catch (error) {
     process.stderr.write(`Task process failed to start: ${(error as Error).stack ?? error}\n`);

@@ -65,6 +65,23 @@ describe('createRuleRunActions', () => {
     stop();
   });
 
+  it('records the use of a licensed connector type with the feature usage it is given', () => {
+    const notifyUsage = jest.fn();
+    const { actionsPlugin, stop } = create(
+      {},
+      {
+        featureUsage: { notifyUsage },
+        registerConnectorTypes: (actions) =>
+          actions.registerType({ ...connectorType, minimumLicenseRequired: 'gold' }),
+      }
+    );
+
+    actionsPlugin.isActionExecutable('connector-1', '.server-log', { notifyUsage: true });
+
+    expect(notifyUsage).toHaveBeenCalledWith('Connector: Test');
+    stop();
+  });
+
   it('knows system connectors from the registered connector types', () => {
     const { actionsPlugin, stop } = create({
       preconfigured: { 'my-log': { name: 'log', actionTypeId: '.server-log' } },

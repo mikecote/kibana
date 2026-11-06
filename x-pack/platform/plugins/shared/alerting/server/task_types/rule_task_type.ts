@@ -10,6 +10,8 @@ import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
+import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
+import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
 import type { RunContext } from '@kbn/task-manager-plugin/server';
 import { DeclinedRunError } from '@kbn/task-manager-plugin/server/task_running/errors';
 import {
@@ -84,6 +86,11 @@ export interface RuleTaskTypeOptions {
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** A task process only: event log providers the executor writes with, besides alerting's own. */
   eventLogProviders?: Array<{ provider: string; actions: string[] }>;
+  /**
+   * A task process only: analytics event types the executor reports, which Core's analytics requires
+   * to be registered (the plugin that owns the rule type registers them in Kibana).
+   */
+  analyticsEventTypes?: TaskTypeModule['analyticsEventTypes'];
   /** A task process only: ids of plugins whose config the executor reads, besides alerting and actions. */
   settings?: string[];
   /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
@@ -280,9 +287,13 @@ export function createRuleTaskType(
     stateSchemaByVersion,
     // Every rule run enqueues actions as its user: the privileges of the connector are checked by the
     // security plugin's own authorization, so the process always has it (and Core's security delegate).
+    // Every rule run may report analytics events, which the process ships itself before it answers.
     taskPlugins: [
-      ...(options.taskPlugins ?? []).filter(({ manifest }) => manifest.id !== 'security'),
+      ...(options.taskPlugins ?? []).filter(
+        ({ manifest }) => manifest.id !== 'security' && manifest.id !== 'telemetry'
+      ),
       createSecurityTaskPlugin(kibanaPackageJson.version),
+      createTelemetryTaskPlugin(kibanaPackageJson.version),
     ],
     taskTypeGroup: TaskTypeGroup.Alerting,
     paramsSchema: ruleTaskParamsSchema,
@@ -307,6 +318,7 @@ export function createRuleTaskType(
           },
           taskManager: { schedulableTypes: [/^actions:/, ...(options.schedulableTaskTypes ?? [])] },
           licensing: true as const,
+          usageCounters: true as const,
           settings: [...new Set(['alerting', 'actions', 'security', ...(options.settings ?? [])])],
         }),
     createTaskRunner: (context, host): CancellableTask => {
@@ -357,6 +369,14 @@ export function createRuleTaskType(
       uiSettings: {
         enumerable: true,
         get: () => ({ defaults: [...getRuleRunUiSettings(), ...(options.uiSettings ?? [])] }),
+      },
+      analyticsEventTypes: {
+        enumerable: true,
+        get: () => [
+          // What the connectors a rule executes itself (such as a model's) report.
+          ...(options.executeConnectors ? actionsEventTypes : []),
+          ...(options.analyticsEventTypes ?? []),
+        ],
       },
     });
   }
