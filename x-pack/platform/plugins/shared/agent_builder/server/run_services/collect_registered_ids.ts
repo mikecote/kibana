@@ -8,6 +8,7 @@
 import type { Logger } from '@kbn/logging';
 import type {
   AgentBuilderContribution,
+  AgentBuilderContributionContext,
   AgentBuilderContributionServices,
 } from '@kbn/agent-builder-server';
 import { configSchema } from '../config';
@@ -60,17 +61,28 @@ export const collectRegisteredIds = async ({
     getWorkflowsManagement: () => ({}),
     getAgentBuilderStart: unavailable('The agent builder start contract') as never,
   };
+  const context: AgentBuilderContributionContext = {
+    host,
+    logger,
+    isServerless: false,
+    kibanaVersion: '1.0.0',
+    settings,
+    services: contributionServices,
+    registerSmlType: (definition: { id: string }) =>
+      services.registrations.recordSmlType(definition.id),
+  };
   for (const contribution of contributions) {
-    await contribution.register(services.setupContract, {
-      host,
-      logger,
-      isServerless: false,
-      kibanaVersion: '1.0.0',
-      settings,
-      services: contributionServices,
-      registerSmlType: (definition: { id: string }) =>
-        services.registrations.recordSmlType(definition.id),
-    });
+    await contribution.register(services.setupContract, context);
+  }
+  // What plugins register after start: skills are recorded, the availability of agents is not an id.
+  for (const contribution of contributions) {
+    await contribution.registerAtStart?.(
+      {
+        skills: { register: async (skill) => services.registrations.recordSkill(skill.id) },
+        agents: { ensure: async () => {} },
+      },
+      context
+    );
   }
   return services.registrations.ids();
 };

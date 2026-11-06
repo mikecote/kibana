@@ -247,4 +247,5 @@ export type {
   AgentBuilderContributionContext,
   AgentBuilderContributionDeclares,
   AgentBuilderContributionServices,
+  AgentBuilderContributionStart,
 } from './task_process';

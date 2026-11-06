@@ -104,6 +104,28 @@ export interface AgentBuilderContributionContext {
 }
 
 /**
+ * What a plugin registers with agent builder after start (`agentBuilder.skills.register` and
+ * `agentBuilder.agents.ensure` of the start contract), which may change while Kibana runs (a feature
+ * flag flips). Kibana decides the current set and sends it as settings with each dispatch; the process
+ * runs the contribution's `registerAtStart` with these, so it registers exactly that set.
+ */
+export interface AgentBuilderContributionStart {
+  skills: {
+    /** Registers a skill, as `AgentBuilderPluginStart['skills']['register']` does. */
+    register: AgentBuilderPluginStart['skills']['register'];
+  };
+  agents: {
+    /**
+     * As `AgentBuilderPluginStart['agents']['ensure']`, but for the part that lives in a process:
+     * the availability and visibility of the agent. The agent itself is persisted by Kibana, a
+     * process does not write it. An `availability` that holds a callback is built by the registration
+     * from what Kibana sent (the result of the check, evaluated per dispatch).
+     */
+    ensure: AgentBuilderPluginStart['agents']['ensure'];
+  };
+}
+
+/**
  * What a plugin adds to agent builder's registries in the task process of the workflow task types, as
  * it adds it to Kibana in its `setup()`. Exported as `contribution` from a file listed under
  * `plugin.taskTypeContributions['agent-builder']` in the plugin's `kibana.jsonc`.
@@ -117,6 +139,16 @@ export interface AgentBuilderContribution {
   declares?: AgentBuilderContributionDeclares;
   register(
     setup: AgentBuilderPluginSetup,
+    context: AgentBuilderContributionContext
+  ): void | Promise<void>;
+  /**
+   * The registrations Kibana makes after start (skills registered through the start contract,
+   * persisted agents with their availability), as the plugin makes them: call the function the plugin
+   * calls with this `start`. What varies while Kibana runs is sent as settings per dispatch
+   * (`registerSettings(id, () => current)`), and read here as `context.settings[id]`.
+   */
+  registerAtStart?(
+    start: AgentBuilderContributionStart,
     context: AgentBuilderContributionContext
   ): void | Promise<void>;
 }

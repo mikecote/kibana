@@ -26,7 +26,10 @@ import { createSmlStartContract } from '@kbn/agent-builder-sml-plugin/server/sta
 import type { AgentBuilderSmlPluginStart } from '@kbn/agent-builder-sml-plugin/server';
 import type { SmlTypeDefinition } from '@kbn/agent-builder-sml-plugin/server';
 import type { AuthorizationServiceSetup } from '@kbn/security-plugin-types-server';
-import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
+import type {
+  AgentBuilderContributionStart,
+  AgentBuilderPluginStart,
+} from '@kbn/agent-builder-server';
 import { AGENTBUILDER_USAGE_DOMAIN } from '../telemetry/usage_counters';
 import { AnalyticsService, TrackingService } from '../telemetry';
 import { registerInferenceFeatures } from '../inference_features';
@@ -270,7 +273,22 @@ export const createAgentBuilderProcessServices = async ({
     searchInferenceEndpoints,
     trackingService,
     logger,
+    onSkillRegistered: run.registrations.recordSkill,
   });
+
+  // What plugins register after start, as the current set Kibana sent: skills through the start
+  // contract, and the availability of the agents Kibana persisted (a process does not write them).
+  const contributionStart: AgentBuilderContributionStart = {
+    skills: { register: startContract.skills.register },
+    agents: {
+      ensure: async ({ agent, availability, hidden }) => {
+        startServices.agents.setAgentAvailability({ agentId: agent.id, availability, hidden });
+      },
+    },
+  };
+  for (const contribution of contributions) {
+    await contribution.registerAtStart?.(contributionStart, context);
+  }
 
   return {
     ...run,

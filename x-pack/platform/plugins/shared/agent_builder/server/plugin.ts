@@ -304,6 +304,7 @@ export class AgentBuilderPlugin
       searchInferenceEndpoints,
       trackingService: this.trackingService,
       logger: this.logger,
+      onSkillRegistered: this.services?.registrations.recordSkill,
     });
   }
 

@@ -36,6 +36,8 @@ export interface RegistrationRecorder {
   ids(): Record<RegistrationKind, string[]>;
   /** Records an SML type registered with the SML plugin's registry (which is not one of the services'). */
   recordSmlType(id: string): void;
+  /** Records a skill registered after start (the start contract's `skills.register`). */
+  recordSkill(id: string): void;
   /** The same registries, recording what is registered with them. */
   record(setups: InternalSetupServices): InternalSetupServices;
 }
@@ -58,6 +60,10 @@ export const createRegistrationRecorder = (): RegistrationRecorder => {
   return {
     recordSmlType: (id) => {
       registered.smlTypes.add(id);
+    },
+
+    recordSkill: (id) => {
+      registered.skills.add(id);
     },
 
     ids: () =>

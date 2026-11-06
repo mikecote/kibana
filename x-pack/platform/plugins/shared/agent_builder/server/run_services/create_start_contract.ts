@@ -30,6 +30,7 @@ export const createAgentBuilderStartContract = ({
   searchInferenceEndpoints,
   trackingService,
   logger,
+  onSkillRegistered,
 }: {
   startServices: InternalStartServices;
   coreStart: Pick<CoreStart, 'elasticsearch' | 'security' | 'savedObjects'>;
@@ -38,6 +39,8 @@ export const createAgentBuilderStartContract = ({
   searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;
   trackingService?: TrackingService;
   logger: Logger;
+  /** Told the id of each skill registered after start (the recorder of the registrations). */
+  onSkillRegistered?: (id: string) => void;
 }): AgentBuilderPluginStart => {
   const {
     tools,
@@ -74,7 +77,10 @@ export const createAgentBuilderStartContract = ({
     },
     skills: {
       getRegistry: skills.getRegistry.bind(skills),
-      register: skills.registerSkill.bind(skills),
+      register: async (skill) => {
+        await skills.registerSkill(skill);
+        onSkillRegistered?.(skill.id);
+      },
     },
     plugins: {
       getRegistry: ({ request }) => plugins.getRegistry({ request }),
