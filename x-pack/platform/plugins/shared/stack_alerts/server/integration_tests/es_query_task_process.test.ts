@@ -24,6 +24,11 @@ import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import {
+  ConfigSchema as SecurityConfigSchema,
+  createConfig as createSecurityConfig,
+} from '@kbn/security-plugin/server/config';
+import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
@@ -63,6 +68,16 @@ describe('the .es-query rule type served from a bundle', () => {
     actions: actionsConfigSchema.validate({}),
     // What Kibana sends for the cases system action, which cases contributes to every rule run.
     cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
+    // The security plugin's task plugin, which every rule run brings for the privileges of connectors.
+    security: getSecurityTaskProcessSettings({
+      config: createSecurityConfig(
+        SecurityConfigSchema.validate({ audit: { enabled: false } }),
+        loggingSystemMock.create().get(),
+        { isTLSEnabled: false }
+      ),
+      applicationName: 'kibana-.kibana',
+      kibanaServerResourceURL: 'http://localhost:5601',
+    }),
   });
 
   const initFor = () => ({
@@ -307,7 +322,7 @@ describe('the .es-query rule type served from a bundle', () => {
 
   it('declares what its process needs and what it is, from its module file', () => {
     expect(taskType.type).toBe(TASK_TYPE);
-    expect(taskType.settings).toEqual(['alerting', 'actions']);
+    expect(taskType.settings).toEqual(['alerting', 'actions', 'security']);
     expect(taskType.encryptedSavedObjectTypes?.map((t) => t.type).sort()).toEqual([
       'action',
       'action_task_params',

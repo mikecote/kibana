@@ -220,6 +220,7 @@ describe('side effects of a run in a task process', () => {
     );
 
     // (b) The usage counter is stored, in the document Kibana's usage collection would use.
+    await es.indices.refresh({ index: USAGE_COUNTERS_INDEX });
     const counters = await es.search<{ 'usage-counter': Record<string, unknown> }>({
       index: USAGE_COUNTERS_INDEX,
       query: { term: { 'usage-counter.domainId': USAGE_COUNTER_DOMAIN } },
@@ -263,6 +264,8 @@ describe('side effects of a run in a task process', () => {
     }).run();
 
     expect(result).toEqual({ state: { done: true } });
+    // Counters are written without a refresh, as Kibana writes them.
+    await es.indices.refresh({ index: USAGE_COUNTERS_INDEX });
     const counters = await es.search<{ 'usage-counter': { count: number } }>({
       index: USAGE_COUNTERS_INDEX,
       query: { term: { 'usage-counter.domainId': USAGE_COUNTER_DOMAIN } },
