@@ -29,6 +29,7 @@ describe('the degraded docs rule type served from a bundle', () => {
     timeSize: 1,
     threshold: [threshold],
     comparator: '>',
+    groupBy: ['host'],
     searchConfiguration: { index },
   });
 
@@ -37,19 +38,20 @@ describe('the degraded docs rule type served from a bundle', () => {
       rules: [{ taskType, bundle: 'dataQuality__degraded_docs' }],
     });
     await harness.es.indices.create({
-      index: 'logs-degraded-test',
+      index: 'degraded-source',
       mappings: {
         properties: {
           '@timestamp': { type: 'date' },
+          host: { type: 'keyword' },
           value: { type: 'integer', ignore_malformed: true },
         },
       },
     });
     await harness.es.index({
-      index: 'logs-degraded-test',
+      index: 'degraded-source',
       refresh: 'wait_for',
       // Not a number: Elasticsearch ignores the field and lists it in `_ignored`.
-      document: { '@timestamp': new Date().toISOString(), value: 'not a number' },
+      document: { '@timestamp': new Date().toISOString(), host: 'h1', value: 'not a number' },
     });
   });
 
@@ -62,7 +64,7 @@ describe('the degraded docs rule type served from a bundle', () => {
       {
         id: 'degraded',
         ruleTypeId: DEGRADED_DOCS_RULE_TYPE_ID,
-        params: params('logs-degraded-test', 0),
+        params: params('degraded-source', 0),
       },
       ALERTS_INDEX
     );
@@ -78,7 +80,7 @@ describe('the degraded docs rule type served from a bundle', () => {
       {
         id: 'healthy',
         ruleTypeId: DEGRADED_DOCS_RULE_TYPE_ID,
-        params: params('logs-degraded-test', 100),
+        params: params('degraded-source', 100),
       },
       ALERTS_INDEX
     );

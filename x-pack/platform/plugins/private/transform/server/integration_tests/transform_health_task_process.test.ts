@@ -19,7 +19,7 @@ const ALERTS_INDEX = '.alerts-*';
 
 /**
  * The transform health rule type from its own bundle, forked the way Kibana does, against a real
- * Elasticsearch with a transform that is created and never started: the "not started" check alerts.
+ * Elasticsearch with a continuous transform that is created and never started: the "not started" check alerts.
  */
 describe('the transform_health rule type served from a bundle', () => {
   let harness: RuleProcessHarness;
@@ -36,6 +36,8 @@ describe('the transform_health rule type served from a bundle', () => {
       transform_id: 'stopped-transform',
       source: { index: 'transform-source' },
       dest: { index: 'transform-dest' },
+      // The rule type only looks at continuous transforms.
+      sync: { time: { field: '@timestamp', delay: '60s' } },
       pivot: {
         group_by: { host: { terms: { field: 'host' } } },
         aggregations: { latest: { max: { field: '@timestamp' } } },
