@@ -19,3 +19,9 @@ export const WORKFLOWS_USAGE_API_SETTINGS_ID = 'workflowsUsageApi';
 /** The contribution keys of the plugins that add connector types and workflow steps to a task process. */
 export const RULE_RUN_CONTRIBUTIONS_KEY = 'alerting-rule-run';
 export const WORKFLOW_STEPS_CONTRIBUTIONS_KEY = 'workflow-steps';
+/**
+ * The contribution key under which plugins add what agent builder's registries hold (tools, agents,
+ * skills, attachment types ...) to a task process: the file exports `contribution:
+ * AgentBuilderContribution` (`@kbn/agent-builder-plugin/server`).
+ */
+export const AGENT_BUILDER_CONTRIBUTIONS_KEY = 'agent-builder';

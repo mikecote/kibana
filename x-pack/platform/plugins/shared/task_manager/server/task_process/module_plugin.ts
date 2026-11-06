@@ -143,6 +143,7 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
           context.flushers.push(flusher);
         },
         logger,
+        parity: init.parity,
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,

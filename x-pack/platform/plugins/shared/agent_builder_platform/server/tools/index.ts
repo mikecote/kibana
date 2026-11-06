@@ -5,15 +5,11 @@
  * 2.0.
  */
 
-import type { CoreSetup } from '@kbn/core-lifecycle-server';
 import type { StaticToolRegistration } from '@kbn/agent-builder-server';
+import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import { productDocumentationTool } from './product_documentation';
 import { integrationKnowledgeTool } from './integration_knowledge';
-import type {
-  AgentBuilderPlatformPluginStart,
-  PluginSetupDependencies,
-  PluginStartDependencies,
-} from '../types';
+import type { AgentBuilderPlatformCoreSetup } from '../types';
 import { getDocumentByIdTool } from './get_document_by_id';
 import { getIndexMappingsTool } from './get_index_mapping';
 import { listIndicesTool } from './list_indices';
@@ -24,24 +20,25 @@ import { searchTool } from './search';
 
 export const registerTools = ({
   coreSetup,
-  setupDeps,
+  agentBuilder,
+  organizationId,
+  productDocumentation,
 }: {
-  coreSetup: CoreSetup<PluginStartDependencies, AgentBuilderPlatformPluginStart>;
-  setupDeps: PluginSetupDependencies;
+  coreSetup: AgentBuilderPlatformCoreSetup;
+  agentBuilder: AgentBuilderPluginSetup;
+  organizationId?: string;
+  /** Whether the LLM tasks plugin is there: the product documentation tool is only registered with it. */
+  productDocumentation: boolean;
 }) => {
-  const { agentBuilder, cloud } = setupDeps;
-
   const tools: Array<StaticToolRegistration<any>> = [
     searchTool({ coreSetup, topSnippetsDefaults: agentBuilder.topSnippets }),
     getDocumentByIdTool(),
     executeEsqlTool(),
-    generateEsqlTool({
-      organizationId: cloud?.organizationId,
-    }),
+    generateEsqlTool({ organizationId }),
     getIndexMappingsTool(),
     listIndicesTool(),
     indexExplorerTool(),
-    productDocumentationTool(coreSetup),
+    ...(productDocumentation ? [productDocumentationTool(coreSetup)] : []),
     integrationKnowledgeTool(coreSetup),
   ];
 

@@ -78,6 +78,7 @@ export class WorkflowsExecutionEnginePlugin
   private runtimePromise?: Promise<WorkflowRuntime>;
   /** What a task process may be told: the engine's own, and (from `start`) what the step plugins register. */
   private readonly taskTypeSettings: NonNullable<TaskTypeRegistrationOptions['settings']> = {};
+  private readonly taskTypeParity: NonNullable<TaskTypeRegistrationOptions['parity']> = {};
 
   constructor(initializerContext: PluginInitializerContext) {
     this.logger = initializerContext.logger.get();
@@ -173,6 +174,7 @@ export class WorkflowsExecutionEnginePlugin
         },
       },
       settings: this.taskTypeSettings,
+      parity: this.taskTypeParity,
     };
     Object.assign(this.taskTypeSettings, {
       workflowsExecutionEngine: () => this.config,
@@ -240,6 +242,8 @@ export class WorkflowsExecutionEnginePlugin
     // The configs the steps of other plugins read in a task process: their getters are registered
     // during their `setup()`, and read when a process starts.
     Object.assign(this.taskTypeSettings, plugins.workflowsExtensions.getTaskProcessSettings());
+    // What the registries of other plugins hold, which a process compares with its own.
+    Object.assign(this.taskTypeParity, plugins.workflowsExtensions.getTaskProcessParity());
 
     void this.dataClientBundle.initStart(coreStart);
 

@@ -52,6 +52,7 @@ const createSetupContractMock = (): AgentBuilderPluginSetupMock => {
       enableUpdatedTrigger: jest.fn(),
     },
     topSnippets: { numSnippets: 2, numWords: 750 },
+    taskProcess: { registerSettings: jest.fn() },
   };
 };
 

@@ -10,6 +10,8 @@ import { CAN_MONITOR_ALL_INDICES_CAPABILITY, PLUGIN_ID } from '../common/constan
 import { registerDeploymentStatsRoute } from './routes/deployment_stats';
 import { registerStarredDashboardsCountRoute } from './routes/starred_dashboards_count';
 import { registerSearchSkills } from './skills/register_search_skills';
+import { ELASTICSEARCH_HOME_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import type { ElasticsearchHomeAgentBuilderSettings } from './task_types/agent_builder_contribution';
 import type { ElasticsearchHomeServerSetupDependencies } from './types';
 
 export class ElasticsearchHomePlugin
@@ -39,7 +41,13 @@ export class ElasticsearchHomePlugin
       ],
     });
 
-    registerSearchSkills({ agentBuilder, cloud, logger: this.logger });
+    const projectType = cloud?.serverless.projectType;
+    // What a task process needs to register what this Kibana registers.
+    agentBuilder.taskProcess?.registerSettings(
+      ELASTICSEARCH_HOME_AGENT_BUILDER_SETTINGS_ID,
+      (): ElasticsearchHomeAgentBuilderSettings => ({ projectType })
+    );
+    registerSearchSkills({ agentBuilder, projectType, logger: this.logger });
 
     const router = core.http.createRouter();
     registerDeploymentStatsRoute(router, this.logger);

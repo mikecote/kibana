@@ -54,6 +54,7 @@ import type {
 } from './types';
 import { registerDataProviders } from './agent_builder/data_provider/register_data_providers';
 import { registerServiceMapAgentBuilder } from './agent_builder/register_service_map';
+import { APM_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { registerServiceMapEmbeddableTransforms } from './lib/embeddables/register_service_map_embeddable_transforms';
 
 export class APMPlugin
@@ -266,6 +267,8 @@ export class APMPlugin
     registerServiceMapEmbeddableTransforms(plugins.embeddable);
 
     if (plugins.agentBuilder) {
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      plugins.agentBuilder.taskProcess?.registerSettings(APM_AGENT_BUILDER_SETTINGS_ID, () => ({}));
       registerServiceMapAgentBuilder({ agentBuilder: plugins.agentBuilder });
     }
 

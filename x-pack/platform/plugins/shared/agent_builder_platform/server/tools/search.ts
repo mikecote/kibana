@@ -7,12 +7,12 @@
 
 import { memoize } from 'lodash';
 import { z } from '@kbn/zod/v4';
-import type { CoreSetup } from '@kbn/core-lifecycle-server';
 import { platformCoreTools, ToolType } from '@kbn/agent-builder-common';
 import type { TopSnippetsConfig } from '@kbn/agent-builder-genai-utils/tools';
 import { runSearchTool } from '@kbn/agent-builder-genai-utils/tools';
 import { AGENT_BUILDER_EXPERIMENTAL_FEATURES_SETTING_ID } from '@kbn/management-settings-ids';
 import type { DynamicSchemaBuiltinToolDefinition } from '@kbn/agent-builder-server';
+import type { AgentBuilderPlatformCoreSetup } from '../types';
 import { resolveTimeRange } from './screen_context_utils';
 import { createIncludeFrozenSchema, getIncludeFrozenByDefault } from './include_frozen_schema';
 
@@ -46,11 +46,13 @@ export const searchTool = ({
   coreSetup,
   topSnippetsDefaults,
 }: {
-  coreSetup: CoreSetup;
+  coreSetup: Pick<AgentBuilderPlatformCoreSetup, 'getStartServices'>;
   topSnippetsDefaults: TopSnippetsConfig;
 }): DynamicSchemaBuiltinToolDefinition<SearchSchema> => {
   // Cache the start services promise so it is resolved at most once.
-  let startServicesPromise: ReturnType<CoreSetup['getStartServices']> | undefined;
+  let startServicesPromise:
+    | ReturnType<AgentBuilderPlatformCoreSetup['getStartServices']>
+    | undefined;
   const getStartServices = () => {
     if (!startServicesPromise) {
       startServicesPromise = coreSetup.getStartServices();

@@ -27,9 +27,8 @@ import { createSearchEmbeddableFactory } from './embeddable';
 import { initializeLocatorServices } from './locator';
 import { registerSampleData } from './sample_data';
 import { getUiSettings } from './ui_settings';
-import { registerAttachments } from './agent_builder/register_attachments';
-import { registerTools } from './agent_builder/register_tools';
-import { registerSkill } from './agent_builder/register_skill';
+import { registerDiscoverAgentBuilder } from './agent_builder/register_agent_builder';
+import { DISCOVER_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import type { ConfigSchema } from './config';
 import { appLocatorGetLocationCommon } from '../common/app_locator_get_location';
 import {
@@ -100,9 +99,12 @@ export class DiscoverServerPlugin
     });
 
     if (plugins.agentBuilder) {
-      registerAttachments(plugins.agentBuilder);
-      registerTools(plugins.agentBuilder);
-      registerSkill(plugins.agentBuilder);
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        DISCOVER_AGENT_BUILDER_SETTINGS_ID,
+        () => ({})
+      );
+      registerDiscoverAgentBuilder(plugins.agentBuilder);
     }
 
     core.pricing.registerProductFeatures([

@@ -13,12 +13,11 @@ import type {
   PluginStartDependencies,
   AgentBuilderPlatformPluginSetup,
   AgentBuilderPlatformPluginStart,
+  AgentBuilderPlatformCoreSetup,
 } from './types';
-import { registerTools } from './tools';
-import { registerAttachmentTypes } from './attachment_types';
-import { registerConversationEventTypes } from './conversation_events';
-import { registerConversationTemplates } from './conversation_templates';
-import { registerSkills } from './skills';
+import { registerAgentBuilderPlatform } from './register_agent_builder';
+import { AGENT_BUILDER_PLATFORM_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import type { AgentBuilderPlatformTaskProcessSettings } from './task_types/agent_builder_contribution';
 import { createConnectorSmlType } from './sml_types/connector';
 import { createConnectorLifecycleHandler } from './connector_lifecycle/connector_lifecycle_handler';
 import { setAgentBuilderDashboard } from './dashboard/install_dashboard';
@@ -42,22 +41,20 @@ export class AgentBuilderPlatformPlugin
     coreSetup: CoreSetup<PluginStartDependencies, AgentBuilderPlatformPluginStart>,
     setupDeps: PluginSetupDependencies
   ): AgentBuilderPlatformPluginSetup {
-    registerTools({
-      coreSetup,
-      setupDeps,
-    });
-    registerAttachmentTypes({
-      coreSetup,
-      setupDeps,
+    // What a task process needs to register what this Kibana registers.
+    setupDeps.agentBuilder.taskProcess?.registerSettings(
+      AGENT_BUILDER_PLATFORM_SETTINGS_ID,
+      (): AgentBuilderPlatformTaskProcessSettings => ({
+        organizationId: setupDeps.cloud?.organizationId,
+      })
+    );
+    registerAgentBuilderPlatform(setupDeps.agentBuilder, {
+      coreSetup: coreSetup as AgentBuilderPlatformCoreSetup,
       logger: this.logger,
+      organizationId: setupDeps.cloud?.organizationId,
+      // Kibana has the LLM tasks plugin and the files plugin whenever they are enabled.
+      has: { llmTasks: true, files: true },
     });
-    registerConversationTemplates({ setupDeps });
-    registerConversationEventTypes({ setupDeps });
-    const getActionsStart = async () => {
-      const [, startDeps] = await coreSetup.getStartServices();
-      return startDeps.actions;
-    };
-    registerSkills(setupDeps.agentBuilder, getActionsStart, this.logger);
 
     const connectorSmlType = createConnectorSmlType({
       getActionSavedObjectsClient: async (request) => {

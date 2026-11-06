@@ -78,6 +78,14 @@ export interface WorkflowsExtensionsServerPluginSetup {
    * services. Use `alerting.registerTaskProcessSettings` only for rule runs.
    */
   registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
+
+  /**
+   * Says what this Kibana has registered of a kind (such as the agent builder tools), read each time a
+   * run is dispatched to a task process, which compares it with what it registered of the same kind
+   * (`host.parity`). Use it for the registries that plugins fill in their `setup()` and that a step
+   * reads.
+   */
+  registerTaskProcessParity(kind: string, getIds: () => string[]): void;
 }
 
 /**
@@ -106,6 +114,9 @@ export type WorkflowsExtensionsServerPluginStart =
 
     /** The getters registered with `registerTaskProcessSettings`, by plugin id. */
     getTaskProcessSettings(): Record<string, () => unknown>;
+
+    /** The getters registered with `registerTaskProcessParity`, by kind. */
+    getTaskProcessParity(): Record<string, () => string[]>;
 
     /**
      * Initialize a plugin-scoped managed workflows client. The plugin id is bound once

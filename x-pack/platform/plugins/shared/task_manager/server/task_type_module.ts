@@ -26,7 +26,7 @@ import type {
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
 import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
-import type { TaskTypeParityHook } from './task_process/parity';
+import type { TaskProcessParity, TaskTypeParityHook } from './task_process/parity';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
 
 export interface TaskHostEventLog {
@@ -102,6 +102,15 @@ export interface TaskHost {
     FeatureFlagsStart,
     'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'
   >;
+
+  /**
+   * A task process only: what Kibana had registered when it dispatched the run, by kind (see
+   * `TaskTypeRegistrationOptions.parity`). A module that cannot be served as Kibana serves it unless
+   * everything of a kind is registered (such as the agent builder registries, which only some of the
+   * plugins fill in a process) compares it itself with {@link findMissingParity} and declines only the
+   * runs that need it, instead of the process declining every run (`TaskTypeModule.parity`).
+   */
+  parity?: TaskProcessParity;
 
   /** Declared with `encryptedSavedObjectTypes`. */
   encryptedSavedObjects?: {

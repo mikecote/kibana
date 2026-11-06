@@ -5,28 +5,170 @@
  * 2.0.
  */
 
+import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { agentBuilderServerEbtEvents } from '@kbn/agent-builder-common';
+import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
+import { normalizeConnectorFeatureIds } from '@kbn/search-inference-endpoints/server/lib/resolve_connector_id_from_features';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
+import { agentBuilderSpaceSettingsType } from '../saved_objects';
+import { registerUISettings } from '../ui_settings';
 import { registerAgentBuilderProcessWorkflowDefinitions } from '../workflows';
+import { registerAgentBuilderWorkflowSteps } from '../workflows/register_workflow_steps';
+import { registerConversationWorkflowEventBridge } from '../workflows/triggers/event_bridge';
+import { describeAgentBuilderParityGap } from '../run_services/parity';
+import { AGENT_BUILDER_RUN_SETTINGS_ID } from '../run_services/run_settings';
+import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
+import type { AgentBuilderContribution } from './agent_builder_contribution';
+import { createAgentBuilderProcessServices } from './create_agent_builder_process_services';
+
+/**
+ * Why a step that names inference features (`connector-id-by-feature`) cannot be served as Kibana
+ * serves it: Kibana skips an id that is not registered, so a process that lacks a feature another plugin
+ * registers would use the default connector instead of the one configured for it.
+ */
+const checkConnectorFeatures = (
+  config: Record<string, unknown>,
+  isFeatureRegistered: (featureId: string) => boolean
+): string | undefined => {
+  const value = config['connector-id-by-feature'];
+  if (value === undefined) return undefined;
+  for (const featureId of normalizeConnectorFeatureIds(value)) {
+    if (featureId.includes('{{')) {
+      return `connector-id-by-feature "${featureId}" is a template, which is only known when the step runs`;
+    }
+    if (!isFeatureRegistered(featureId)) {
+      return `the inference feature "${featureId}" is not registered in this process`;
+    }
+  }
+  return undefined;
+};
+
+/** The ui settings agent builder registers, which the services read. */
+const getAgentBuilderUiSettings = (): Array<Record<string, UiSettingsParams>> => {
+  const collected: Array<Record<string, UiSettingsParams>> = [];
+  registerUISettings({
+    uiSettings: {
+      register: (settings: Record<string, UiSettingsParams>) => collected.push(settings),
+    } as never,
+  });
+  return collected;
+};
 
 /**
  * The workflow triggers and steps of Agent Builder in the task process of the workflow task types.
  * Listed under `taskTypeContributions['workflow-steps']` in `kibana.jsonc`.
  *
- * Registered: the triggers (definitions only) and the `rerank` step, which only needs the scoped
- * Elasticsearch client of the run.
+ * The triggers (definitions only) and the `rerank` step, which only needs the scoped Elasticsearch
+ * client of the run, are always registered. The steps that run an agent (`ai.agent`) and read and
+ * write conversations and attachments (`ai.conversation.*`, `ai.attachment.*`) read the registries
+ * that plugins fill in their `setup()` (agents, tools, skills, attachment types, conversation
+ * templates). In a process they run on agent builder's own services, built by the function the plugin
+ * builds them with and filled by the `agent-builder` contributions of the plugins that register with
+ * agent builder in Kibana (`AgentBuilderContribution`).
  *
- * Deliberately not registered, so a workflow that uses one is declined and Kibana runs it:
- * - `runAgent`, the conversation steps (`create_conversation`, `get/update_conversation_metadata`,
- *   `add_conversation_event`, `add_user_message`) and the attachment steps (`add`, `update`,
- *   `delete`, `read`, `list`). They read registries that other plugins fill in their `setup()`, which a
- *   process does not run: the built-in agents (conversation access checks and agent lookups), the
- *   attachment types (validation, defaults, staleness), conversation templates, tools, skills and
- *   plugins. A process would serve them with empty registries and behave differently from Kibana.
- *   `runAgent` and `add_user_message` also run the agent execution loop with those tools.
- *   Onboarding them needs a contribution mechanism for those registries.
+ * Parity: Kibana sends the ids it registered with each registry and the process compares them with
+ * what it registered. When Kibana has an id the process lacks (a plugin that does not contribute yet,
+ * or a registration that needs a service only Kibana has), the steps above are declined, with a
+ * warning that names the ids, and Kibana runs the workflow. The other steps are not affected.
  */
 export const contribution: WorkflowStepsContribution = {
-  register: (registry) => {
+  declares: {
+    savedObjectTypes: [agentBuilderSpaceSettingsType],
+    settings: [AGENT_BUILDER_RUN_SETTINGS_ID],
+    uiSettings: getAgentBuilderUiSettings(),
+    analyticsEventTypes: agentBuilderServerEbtEvents,
+  },
+  register: async (registry, context) => {
     registerAgentBuilderProcessWorkflowDefinitions(registry);
+
+    const { services, registerRunCheck } = context;
+    const host = context.host as TaskHost;
+    // Without the services of the engine (a unit test of a contribution that does not use them) or the
+    // settings of Kibana's agent builder (it is disabled there), the steps that need them are not served.
+    if (!services || !context.settings[AGENT_BUILDER_RUN_SETTINGS_ID]) return;
+
+    const contributions = (host.contributions?.[AGENT_BUILDER_CONTRIBUTIONS_KEY] ??
+      []) as AgentBuilderContribution[];
+    const processServices = await createAgentBuilderProcessServices({
+      host,
+      logger: context.logger,
+      settings: context.settings,
+      contributions,
+      context: {
+        host,
+        logger: context.logger,
+        isServerless: context.isServerless,
+        kibanaVersion: context.kibanaVersion,
+        settings: context.settings,
+      },
+      getActionsClientWithRequest: services.getActionsClientWithRequest as never,
+    });
+    if (!processServices) return;
+
+    // The steps that read agent builder's registries, so that the guard can name them.
+    const stepIds = new Set<string>();
+    registerAgentBuilderWorkflowSteps(
+      {
+        registerStepDefinition: (definition) => {
+          stepIds.add((definition as { id: string }).id);
+          registry.registerStepDefinition(definition);
+        },
+      },
+      {
+        serviceManager: processServices.serviceManager,
+        getCoreStart: async () => ({ savedObjects: host.savedObjects } as never),
+        getSpaces: async () => processServices.spaces,
+      }
+    );
+
+    // The conversation triggers: a run emits them with the engine's runtime, and finishes before it answers.
+    const pending = new Set<Promise<unknown>>();
+    registerConversationWorkflowEventBridge(
+      processServices.conversationEventBus,
+      {
+        getClient: async (request: never) => ({
+          emitEvent: (triggerId: string, payload: Record<string, unknown>) => {
+            const emitted = services.emitEvent({ triggerId, payload, request });
+            pending.add(emitted);
+            void emitted.finally(() => pending.delete(emitted)).catch(() => {});
+            return emitted;
+          },
+        }),
+      } as never,
+      context.logger,
+      processServices.conversationUpdatedOptIns
+    );
+    host.onRunEnd?.(async () => {
+      await Promise.allSettled([...pending]);
+    });
+
+    let gap: string | undefined | null = null;
+    const getGap = () => {
+      if (gap === null) {
+        gap = describeAgentBuilderParityGap(host.parity, processServices.registrations.ids());
+        if (gap) {
+          context.logger.warn(
+            `This task process registered something other than Kibana did with agent builder, so the workflows that run an agent or use conversations and attachments are declined: the process ${gap}`
+          );
+        }
+      }
+      return gap;
+    };
+    registerRunCheck?.((step) => {
+      if (stepIds.has(step.type)) {
+        const missing = getGap();
+        if (missing)
+          return `the agent builder registrations of the process differ from Kibana's: the process ${missing}`;
+        if (processServices.deductiveRegistered) {
+          return 'the Deductive agent is registered: its settings are only available in Kibana';
+        }
+        if (step.type === 'ai.agent') {
+          return checkConnectorFeatures(step.config, (featureId) =>
+            processServices.inferenceFeatureIds().includes(featureId)
+          );
+        }
+      }
+      return undefined;
+    });
   },
 };

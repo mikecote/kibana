@@ -23,6 +23,7 @@ import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plu
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import {
+  AGENT_BUILDER_CONTRIBUTIONS_KEY,
   RULE_RUN_CONTRIBUTIONS_KEY,
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
   WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID,
@@ -61,6 +62,17 @@ const getRuntime = async (host: TaskHost): Promise<WorkflowRuntime> => {
   return (await processRuntime).runtime;
 };
 
+/** What an `agent-builder` contribution adds to the module: the part of its `declares` the engine reads. */
+export type AgentBuilderContributionDeclares = Pick<
+  NonNullable<WorkflowStepsContribution['declares']>,
+  | 'savedObjectTypes'
+  | 'encryptedSavedObjectTypes'
+  | 'settings'
+  | 'uiSettings'
+  | 'featureFlags'
+  | 'analyticsEventTypes'
+>;
+
 /**
  * One of the three workflow task types as a module. What it declares is what a process needs and
  * Kibana already has: the same module is registered in Kibana (whose plugin hands over its runtime)
@@ -78,9 +90,13 @@ export const defineWorkflowTaskType = (
     | 'allowPriorityOverride'
   >,
   pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction,
-  stepContributions: WorkflowStepsContribution[] = []
+  stepContributions: WorkflowStepsContribution[] = [],
+  agentBuilderContributions: Array<{ declares?: AgentBuilderContributionDeclares }> = []
 ): TaskTypeModule => {
-  const declared = stepContributions.map((contribution) => contribution.declares ?? {});
+  const declared: Array<NonNullable<WorkflowStepsContribution['declares']>> = [
+    ...stepContributions.map((contribution) => contribution.declares ?? {}),
+    ...agentBuilderContributions.map((contribution) => contribution.declares ?? {}),
+  ];
   const taskType = defineTaskType({
     ...definition,
     // Reads and schedules the `workflow:*` tasks (and the `actions:*` tasks that run connectors).
@@ -126,15 +142,23 @@ export const defineWorkflowTaskType = (
       ? { uiSettings: { defaults: declared.flatMap(({ uiSettings }) => uiSettings ?? []) } }
       : {}),
     // `alerting-rule-run`: the connector types of the plugins that own them. `workflow-steps`: the
-    // steps and triggers of the plugins that register them.
+    // steps and triggers of the plugins that register them. `agent-builder`: the tools, agents, skills
+    // and attachment types of the plugins that register them with agent builder.
     contributions: {
-      keys: [RULE_RUN_CONTRIBUTIONS_KEY, WORKFLOW_STEPS_CONTRIBUTIONS_KEY],
+      keys: [
+        RULE_RUN_CONTRIBUTIONS_KEY,
+        WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
+        AGENT_BUILDER_CONTRIBUTIONS_KEY,
+      ],
       // A task process hands over what plugins contribute; the module is built again with it.
       apply: (contributed) =>
         defineWorkflowTaskType(
           definition,
           pick,
-          (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ?? []) as WorkflowStepsContribution[]
+          (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ?? []) as WorkflowStepsContribution[],
+          (contributed[AGENT_BUILDER_CONTRIBUTIONS_KEY] ?? []) as Array<{
+            declares?: AgentBuilderContributionDeclares;
+          }>
         ),
     },
     taskPlugins: [

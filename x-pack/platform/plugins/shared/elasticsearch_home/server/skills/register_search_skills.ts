@@ -7,7 +7,6 @@
 
 import type { Logger } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import { skills } from '@kbn/search-agent';
 
 const VECTORDB_PROJECT_TYPE = 'vectordb';
@@ -26,14 +25,15 @@ const VECTORDB_PROJECT_TYPE = 'vectordb';
  */
 export const registerSearchSkills = ({
   agentBuilder,
-  cloud,
+  projectType,
   logger,
 }: {
   agentBuilder: AgentBuilderPluginSetup;
-  cloud?: CloudSetup;
+  /** The serverless project type of this deployment, which decides whether the skills are registered. */
+  projectType?: string;
   logger: Logger;
 }) => {
-  if (cloud?.serverless.projectType !== VECTORDB_PROJECT_TYPE) {
+  if (projectType !== VECTORDB_PROJECT_TYPE) {
     logger.debug(
       'Not running in a VectorDB project, skipping search skills registration in agent-builder'
     );

@@ -9,6 +9,9 @@
     "id": "apm",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "taskTypes": [
       "server/task_types/error_count.task.ts",
       "server/task_types/transaction_error_rate.task.ts",

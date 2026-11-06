@@ -49,6 +49,7 @@ export class WorkflowsExtensionsServerPlugin
   private readonly triggerRegistry: TriggerRegistry;
   private readonly managedWorkflowPluginIds = new Set<string>();
   private readonly taskProcessSettings: Record<string, () => unknown> = {};
+  private readonly taskProcessParity: Record<string, () => string[]> = {};
   private workflowsClientProvider: WorkflowsClientProvider | undefined;
   private managedWorkflowsSystemApiProvider: ManagedWorkflowsSystemApiProvider | undefined;
 
@@ -109,6 +110,9 @@ export class WorkflowsExtensionsServerPlugin
       registerTaskProcessSettings: (pluginId, getSettings) => {
         this.taskProcessSettings[pluginId] = getSettings;
       },
+      registerTaskProcessParity: (kind, getIds) => {
+        this.taskProcessParity[kind] = getIds;
+      },
     };
   }
 
@@ -155,6 +159,7 @@ export class WorkflowsExtensionsServerPlugin
         return this.createPluginScopedManagedWorkflowsClient(pluginId, systemClient);
       },
       getTaskProcessSettings: () => this.taskProcessSettings,
+      getTaskProcessParity: () => this.taskProcessParity,
       getManagedWorkflowPluginIds: () => Array.from(this.managedWorkflowPluginIds),
     };
   }

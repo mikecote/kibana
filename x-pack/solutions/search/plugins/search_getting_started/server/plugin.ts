@@ -14,6 +14,7 @@ import type {
 } from '@kbn/core/server';
 import type { SearchGettingStartedSetupDependencies } from './types';
 import { registerSearchSkills } from './skills/register_search_skills';
+import { SEARCH_GETTING_STARTED_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 
 export class SearchGettingStartedPlugin
   implements Plugin<{}, {}, SearchGettingStartedSetupDependencies>
@@ -25,7 +26,18 @@ export class SearchGettingStartedPlugin
   }
 
   public setup(_core: CoreSetup, plugins: SearchGettingStartedSetupDependencies) {
-    registerSearchSkills({ plugins, logger: this.logger });
+    if (plugins.agentBuilder) {
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        SEARCH_GETTING_STARTED_AGENT_BUILDER_SETTINGS_ID,
+        () => ({})
+      );
+      registerSearchSkills({ agentBuilder: plugins.agentBuilder, logger: this.logger });
+    } else {
+      this.logger.debug(
+        'Agent Builder plugin is not available, skipping search skills registration'
+      );
+    }
     return {};
   }
 

@@ -12,9 +12,8 @@ import type {
   AgentBuilderVisualizationsPluginSetup,
   AgentBuilderVisualizationsPluginStart,
 } from './types';
-import { createVisualizationAttachmentType } from './attachment_types';
-import { createVisualizationTool } from './tools/create_visualization';
-import { visualizationCreationSkill } from './skills/visualization_creation_skill';
+import { registerVisualizationsAgentBuilder } from './register_agent_builder';
+import { VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { visualizationSmlType } from './sml_types/visualization';
 
 export class AgentBuilderVisualizationsPlugin
@@ -35,13 +34,12 @@ export class AgentBuilderVisualizationsPlugin
     >,
     setupDeps: AgentBuilderVisualizationsSetupDependencies
   ): AgentBuilderVisualizationsPluginSetup {
-    setupDeps.agentBuilder.attachments.registerType(
-      createVisualizationAttachmentType() as Parameters<
-        typeof setupDeps.agentBuilder.attachments.registerType
-      >[0]
+    // What a task process needs to register what this Kibana registers: the plugin is enabled.
+    setupDeps.agentBuilder.taskProcess?.registerSettings(
+      VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID,
+      () => ({})
     );
-    setupDeps.agentBuilder.tools.register(createVisualizationTool());
-    setupDeps.agentBuilder.skills.register(visualizationCreationSkill);
+    registerVisualizationsAgentBuilder(setupDeps.agentBuilder);
     setupDeps.agentBuilderSml.registerType(visualizationSmlType);
     return {};
   }

@@ -51,6 +51,7 @@ const createSetupMock: () => jest.Mocked<WorkflowsExtensionsServerPluginSetup> =
     registerManagedWorkflowsSystemApiProvider: jest.fn(),
     registerManagedWorkflowOwner: jest.fn(),
     registerTaskProcessSettings: jest.fn(),
+    registerTaskProcessParity: jest.fn(),
   };
 };
 
@@ -86,6 +87,7 @@ const createStartMock: () => jest.Mocked<WorkflowsExtensionsServerPluginStart> =
     }),
     getManagedWorkflowPluginIds: jest.fn().mockReturnValue([]),
     getTaskProcessSettings: jest.fn().mockReturnValue({}),
+    getTaskProcessParity: jest.fn().mockReturnValue({}),
     isReady: jest.fn(() => Promise.resolve()),
   };
 };

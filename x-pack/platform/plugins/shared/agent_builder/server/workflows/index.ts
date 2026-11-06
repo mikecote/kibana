@@ -34,7 +34,7 @@ export function registerAgentBuilderProcessWorkflowDefinitions(registry: Workflo
 }
 
 export function registerConversationWorkflowSteps(
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup,
+  workflowsExtensions: Pick<WorkflowsExtensionsServerPluginSetup, 'registerStepDefinition'>,
   deps: ConversationStepDeps
 ) {
   for (const factory of conversationStepRegistry) {
@@ -43,7 +43,7 @@ export function registerConversationWorkflowSteps(
 }
 
 export function registerAttachmentWorkflowSteps(
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup,
+  workflowsExtensions: Pick<WorkflowsExtensionsServerPluginSetup, 'registerStepDefinition'>,
   deps: AttachmentStepDeps
 ) {
   for (const factory of attachmentStepRegistry) {
