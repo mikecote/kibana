@@ -13,6 +13,7 @@ const path = require('path');
 const { build } = require('esbuild');
 const { REPO_ROOT } = require('@kbn/repo-info');
 const { getPackages } = require('@kbn/repo-packages');
+const { escapeNonLatin1 } = require('./escape_non_latin1');
 
 const OUT_DIR = path.join(REPO_ROOT, 'target', 'task_bundles');
 const RUNTIME_ENTRY = path.join(
@@ -232,6 +233,8 @@ const buildTaskBundle = async ({
     },
     plugins: [uiSharedDepsStubPlugin, pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
   });
+  // V8 holds the source of the bundle in memory, at two bytes per character when one character is not Latin-1.
+  fs.writeFileSync(outfile, escapeNonLatin1(fs.readFileSync(outfile, 'utf8')));
   return {
     name: entry.name,
     outfile,
