@@ -58,6 +58,46 @@ xpack.task_manager.task_execution:
 
 Build the bundles with `node scripts/task_bundle` (the distributable builds them for you).
 
+```yaml
+xpack.task_manager.task_execution:
+  max_concurrent_processes: 8       # default: xpack.task_manager.max_workers
+  child_max_old_space_mb: 512       # optional
+```
+
+### Running processes in production
+
+- **Loopback only.** A forked process listens on `127.0.0.1` and on a port the OS picks. Everything
+  secret (the Elasticsearch credentials, the encryption keys, the security settings) goes over the
+  fork channel (IPC), which no other process can read. Over HTTP go only the run request (the task,
+  and the fake request credentials of this run) and the bearer token the supervisor generated at
+  startup and sent over IPC; `/run` and `/cancel` refuse any other caller, and `/health` is the only
+  open route. A remote process, which has to be reachable, listens on `HOST` (default: all addresses).
+- **It ends with Kibana.** A process exits when the fork channel disconnects (Kibana was killed) and,
+  as a backstop, when its parent pid changes, closing Core first (bounded to 5 s). No orphans remain
+  after a `SIGKILL` of Kibana.
+- **Flags.** A process does not inherit `--inspect*`/`--debug*` (the port would clash with Kibana's) or
+  heap sizing flags (`--max-old-space-size` and friends, which are sized for Kibana) from `execArgv` or
+  `NODE_OPTIONS`. `child_max_old_space_mb` sets the heap of each process explicitly.
+- **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
+  `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
+  not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
+  process costs about 500 MB resident for a rule bundle (measured on `es_query`). Every spawn and exit logs the number of live processes at debug.
+- **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
+  stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
+- **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
+  `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
+  process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the
+  configured layout, appenders and level filters apply, and labels each line with `task_type`, `run_id` (the
+  execution id) and `child_logger` (the context inside the process, such as `plugins.alerting`). A line that
+  is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
+  copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
+- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns the fallbacks by task type
+  and reason (`declined` for a 422, `not_served` for a 404, `capacity`, `spawn_failed`, `spawn_timeout`,
+  `unavailable`) and the supervisor's numbers (`live`, `active`, `max`, `spawned`, `spawnFailures`,
+  `spawnTimeouts`, `capacityRejections`). Fallbacks are also in the `taskManager` usage counter as
+  `taskProcessFallback:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
+  response schema is public; that would be its own change.
+
 **`remote`.** Runs go to a task process you start yourself from the same bundle, so it can live on
 another host. It serves the one task type of its bundle and answers 404 for any other, which then
 runs in Kibana.
@@ -200,6 +240,35 @@ and the module. Workspace source is treated as free of import-time side effects,
 what is used from it. Two traps: import leaf files (a cycle through an `export *` barrel leaves names
 undefined in a bundle), and a module that reaches a plugin class through a barrel still pays for it.
 Bundle size and memory are not optimized yet (about 25 to 45 MB per bundle).
+
+### Distributable
+
+The `BuildTaskBundles` task of `node scripts/build` (after `BuildBundles`, before `InstallDependencies`) writes one
+bundle per `plugin.taskTypes` entry and `manifest.json` to `<build>/task_bundles`, and the archive copy
+step carries the directory into every platform folder. In a distributable `bundle_dir` defaults to
+`<install dir>/task_bundles` (`REPO_ROOT` is the install dir there; from a repository checkout it is
+`target/task_bundles`, which is where `node scripts/task_bundle` writes), and the manifest has
+`{ kibanaVersion, bundles: { <name>: { file, taskType, bytes } } }`, which is what the supervisor reads.
+
+Verified by running the task function against a temporary build directory (48 bundles, 1.4 GB, 29 minutes
+with four builds at a time) and booting the `es_query` bundle, copied alone with its manifest to a directory
+outside the repository, with the supervisor against a real Elasticsearch: Core and the module started and
+`/health` served `alerting:.es-query`.
+
+- **Externals.** `re2` and `canvas` are external. `re2` is no longer a dependency of Kibana (`re2js` is
+  JavaScript, so it is bundled) and no bundle requires it. No bundle needs a native module: `lmdb`, `sharp`
+  and `@parcel/watcher` are not in any bundle, and the `.node` files that are referenced
+  (`zstd`, `kerberos`, `snappy`) are optional requires inside `try`/`catch` of MongoDB and AWS clients that
+  Kibana's own `node_modules` would serve. If a native module is ever needed, add it to `EXTERNALS` and it
+  resolves from the distributable's `node_modules`, since a bundle sits at `<install dir>/task_bundles`.
+- **Nothing reads the source tree.** `@kbn/repo-info` is replaced with a stub that answers with the working
+  directory, so a bundle never walks up to find a repository; a task process does not read the paths
+  `@kbn/utils` derives from it. The remaining `__dirname` and `readFileSync` uses are libraries' own
+  (pino worker threads, `source-map`'s `mappings.wasm`) and are on paths a run does not take.
+- **Cost.** Every bundle carries Core and the plugins it needs: 28 to 31 MB each, so 1.4 GB for all 48 task
+  types, and a build of about half an hour. Bundle splitting (one shared Core) is the way to cut both, and
+  is not done.
+- **Not covered here.** The full archive build (`node scripts/build`), and Windows.
 
 ### Contributions
 
