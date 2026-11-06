@@ -55,8 +55,7 @@ export interface AgentBuilderProcessServices extends AgentBuilderRunServices {
  * Agent builder's services in a task process, built by the function the plugin builds them with, from
  * the host of the process: the same registries, filled by the `agent-builder` contributions of the
  * plugins that fill them in Kibana, and started with Core's own services. What cannot exist in a
- * process (the callbacks of an asynchronous execution, the SML plugin, the workflows management API)
- * throws "only available in Kibana" when used.
+ * process (the callbacks of an asynchronous execution) throws "only available in Kibana" when used.
  *
  * Nothing is installed: indices and templates are Kibana's, and the storage of agents, conversations
  * and attachments is the plugin's own, which creates its index when it first writes, as in Kibana.
@@ -149,7 +148,6 @@ export const createAgentBuilderProcessServices = async ({
     } as unknown as ActionsPluginSetup,
     getActionsStart: async () => actionsStart,
     getInferenceStart: async () => inference,
-    getAgentBuilderSml: onlyInKibana('The SML plugin'),
     getCoreStart,
     taskProcess: { registerSettings: () => {} },
   });

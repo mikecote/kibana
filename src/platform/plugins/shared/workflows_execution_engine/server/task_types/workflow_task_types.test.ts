@@ -69,7 +69,11 @@ describe('workflow task type modules', () => {
           'taskManager',
         ])
       );
-      expect(module.contributions?.keys).toEqual(['alerting-rule-run', 'workflow-steps']);
+      expect(module.contributions?.keys).toEqual([
+        'alerting-rule-run',
+        'workflow-steps',
+        'agent-builder',
+      ]);
       expect(module.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',
         'telemetry',

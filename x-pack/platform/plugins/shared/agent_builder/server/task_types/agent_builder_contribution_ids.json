@@ -1,0 +1,71 @@
+{
+  "tools": [
+    "custom_content_update_panel",
+    "platform.core.create_discover_session",
+    "platform.core.create_visualization",
+    "platform.core.execute_connector_sub_action",
+    "platform.core.execute_esql",
+    "platform.core.generate_esql",
+    "platform.core.get_document_by_id",
+    "platform.core.get_index_mapping",
+    "platform.core.index_explorer",
+    "platform.core.integration_knowledge",
+    "platform.core.list_indices",
+    "platform.core.list_inference_endpoints",
+    "platform.core.search"
+  ],
+  "agents": [],
+  "agentTypes": [],
+  "skills": [
+    "agent-builder-traces",
+    "ai-index-automations",
+    "ai-index-sources",
+    "analyze-and-improve",
+    "connector-authoring",
+    "connector-discovery",
+    "context-engine-signals",
+    "discover-data-analysis",
+    "discover-session",
+    "graph-creation",
+    "ki-retrieval",
+    "observability.investigate-service-map",
+    "observability.service-map",
+    "search.catalog-ecommerce",
+    "search.elasticsearch-onboarding",
+    "search.elasticsearch-tutorial",
+    "search.keyword-search",
+    "search.rag-chatbot",
+    "search.use-case-library",
+    "search.vector-hybrid-search",
+    "skill-management",
+    "visualization-creation"
+  ],
+  "attachmentTypes": [
+    "connector",
+    "connector_setup",
+    "discover.session",
+    "esql",
+    "esql.query_results",
+    "graph",
+    "observability.service-map",
+    "observability.service-map-context",
+    "platform.custom_content.panel_context",
+    "screen_context",
+    "skill",
+    "text",
+    "visualization"
+  ],
+  "conversationEvents": [
+    "text_note"
+  ],
+  "conversationTemplates": [
+    "escalation",
+    "investigation"
+  ],
+  "renderers": [],
+  "hooks": [
+    "skill-tools-loader"
+  ],
+  "plugins": [],
+  "aiIndexResolvers": []
+}

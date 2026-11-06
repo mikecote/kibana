@@ -277,7 +277,9 @@ A plugin adds what other plugins' task types need under `plugin.taskTypeContribu
 exports `contribution`. A task type that lists the key in `contributions` gets every plugin's export:
 the bundler imports them and the process hands them to the module. Stack connectors, cases and the
 observability AI assistant contribute the connector types and adapters of their system actions, so a
-rule module never names the plugins that add connectors.
+rule module never names the plugins that add connectors. The workflow task types take two more keys:
+`workflow-steps` (steps and triggers) and `agent-builder` (what plugins register with agent builder's
+registries, see "Agent builder in a process").
 
 ## Making a plugin's services available to other plugins' tasks
 
@@ -513,10 +515,10 @@ flags and event log providers it needs to the module. Rules to follow:
 
 - A plugin sends its settings with `workflowsExtensions.registerTaskProcessSettings(id, getter)` in `setup`.
   They are optional: a disabled plugin sends none and the contribution registers nothing.
-- Do not register a step that reads a registry other plugins fill in their own `setup()` (agent builder
-  tools, agents and attachment types, cases attachment types, the features registry). It would behave
-  differently from Kibana. A workflow that uses a step the process lacks is declined before anything is
-  written, and Kibana runs it.
+- Do not register a step that reads a registry other plugins fill in their own `setup()` (cases attachment
+  types, the features registry) unless the registry is filled by contributions too, as agent builder's is
+  (see below). It would behave differently from Kibana. A workflow that uses a step the process lacks is
+  declined before anything is written, and Kibana runs it.
 - `context.registerRunCheck(check)` declines a single step by what it asks for (a connector feature the
   process does not know, a templated value, an input only Kibana can serve).
 - A step that emits events without waiting must flush them before it returns, because the process exits
@@ -524,13 +526,91 @@ flags and event log providers it needs to the module. Rules to follow:
 - A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
   counts usage reads `host.usageCounters.getUsageCounter(domain)`.
 
+### Agent builder in a process
+
+`ai.agent`, `ai.conversation.*` and `ai.attachment.*` read agent builder's registries (tools, agents, agent
+types, skills, attachment types, conversation templates and event types, renderers, hooks, plugins, the AI
+index resolver), which about two dozen plugins fill in their `setup()`. A process has no plugin lifecycle,
+so it is built the way the plugin builds it, from explicit dependencies, and filled by contributions.
+
+**The run services.** `createAgentBuilderRunServices(deps)` (`agent_builder/server/run_services`) builds the
+`ServiceManager`, registers what agent builder itself registers (the connector tools, the SML tools, the hooks,
+the Deductive agent) and returns the registries (`serviceSetups`), the registration surface plugins use in
+`setup()` (`setupContract`, an `AgentBuilderPluginSetup`) and a recorder of the ids registered with each
+registry. The plugin's `setup()` calls it with Kibana's services; the process
+(`task_types/create_agent_builder_process_services.ts`) calls it with the host: the inference services of
+`createInferenceTaskProcessServices` (chat models and clients are built from the connectors, with the run's
+request and credential), the search inference endpoints with agent builder's features and the recommended
+endpoints Kibana's poller had found (sent as a setting), Core's Elasticsearch, saved objects and ui settings,
+the actions client of the run, the usage counter and analytics of the host, the deployment information Kibana
+sent, and a space taken from the run's request. The start contract plugins read (`getAgentBuilderStart()`) is
+built by `createAgentBuilderStartContract`, which the plugin's `start()` calls too. What cannot exist in a
+process (the callbacks of an asynchronous execution) throws "only available in Kibana". Conversation events
+are forwarded to the workflows triggers with the engine's runtime and flushed before the run answers.
+
+**Contributions.** A plugin lists a file under `plugin.taskTypeContributions['agent-builder']` in its
+`kibana.jsonc` that exports `contribution: AgentBuilderContribution` (`@kbn/agent-builder-server`):
+
+```ts
+export const contribution: AgentBuilderContribution = {
+  // What the registrations read besides Core: merged into what the workflow task types declare.
+  declares: { settings: [MY_SETTINGS_ID], savedObjectTypes: [], uiSettings: [], featureFlags: {}, analyticsEventTypes: [] },
+  register: (agentBuilder, { host, logger, settings, services }) => {
+    if (!settings[MY_SETTINGS_ID]) return;      // the plugin is not enabled in this Kibana
+    registerMyPluginAgentBuilder(agentBuilder, { /* services built from `host` and `services` */ });
+  },
+};
+```
+
+`agentBuilder` is the same `AgentBuilderPluginSetup` plugins register with in `setup()`, and `register` calls the
+function `setup()` calls (`registerXAgentBuilder(setup, services)`), so there is one implementation. Rules:
+
+- Everything conditional (config, the serverless project type, a feature flag, whether another plugin is there)
+  is decided in Kibana and sent: `agentBuilder.taskProcess?.registerSettings(id, () => value)` in `setup()`, read as
+  `settings[id]` and listed in `declares.settings`. Send `() => ({})` at least, so that a plugin that is not
+  enabled in this Kibana (a plugin of another solution, `enabled: false`) registers nothing in the process.
+- `services` has what a registration reads in Kibana from `coreSetup.getStartServices()` (`getCoreStart`,
+  `getActionsStart`, `getAgentBuilderStart`), lazily. A registration that needs a service the process does not
+  have is not made (the platform plugin does not register the product documentation tool, which needs the
+  LLM tasks plugin, nor the image attachment type, which needs the files plugin). Do not register a tool that
+  would answer "not available": the process would then differ from Kibana, which the parity guard reports.
+- Import leaf files, and take the registration function's services as arguments, as for every plugin factory.
+
+**Parity.** Kibana sends the ids it registered with each registry (`workflowsExtensions.registerTaskProcessParity`,
+one kind per registry: `agentBuilder.tools`, `.agents`, `.skills`, `.attachmentTypes` ...), read at every dispatch,
+and the process compares them with what it registered, in both directions: an id Kibana has that the process lacks
+(a plugin that does not contribute yet, a registration the process cannot make) and an id only the process has (a
+plugin that contributes but is disabled in this Kibana). The steps that read the registries are declined, with a
+warning that names the ids, and Kibana runs the workflow; every other step is served as before. This is not
+`TaskTypeModule.parity`, which declines every run of the process: most workflows do not use agents, and they keep
+running in a process while contributions are still being added. The parity is `host.parity`, compared with
+`findMissingParity`. In Kibana today the hooks that run an agent's workflows need the workflows management API,
+which a process does not have, so `ai.agent` is declined until that and the plugins listed below contribute.
+
+A checked-in list of the ids the contributions register (`agent_builder_contribution_ids.json`) and a test that
+every plugin that takes `AgentBuilderPluginSetup` either contributes or is listed as not yet (with what it needs)
+fail when a plugin registers something new without a contribution. Test a contribution with
+`collectRegisteredIds`, and a registration end to end with
+`workflow_agent_builder_process.test.ts` (a real bundle, Elasticsearch and a stub LLM behind a `.gen-ai`
+connector).
+
+Who contributes: discover, elasticsearch_home, search_getting_started, apm (service map), custom_content,
+agent_builder_visualizations and agent_builder_platform (tools, attachment types, skills, templates, event types).
+Not yet: agent_builder_dashboards (the dashboard client and the embeddable schemas), agent_builder_workflows,
+cases, ml, alerting_v2, evals_skills, proposals, context_engine_agent_builder (each needs one more service built
+from explicit dependencies), and streams, security_solution, discoveries, alertzero, agentic_investigations,
+observability_agent_builder (which infra, slo and synthetics register data providers with), significant_events and
+nightshift_investigations. The SML types (`agentBuilderSml.registerType`) are another registry, not yet served: the
+SML tools are not registered in a process, so a Kibana that has them is not at parity.
+
 ### What stays in Kibana
 
 These steps are not registered in a process, so a workflow that uses one runs in Kibana:
 
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
-  message) and `ai.attachment.*` (add, update, delete, read, list). They read agents, attachment types,
-  templates, tools and skills that other plugins register in `setup()`. `ai.rerank` and the triggers run.
+  message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
+  what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, they are
+  declined. `ai.rerank` and the triggers run.
 - **cases:** `cases.addAlerts`, `cases.addEvents`, `cases.addAttachments`, `cases.deleteAttachments` and
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
@@ -546,6 +626,6 @@ These steps are not registered in a process, so a workflow that uses one runs in
 - **evals** steps that name a task provider a suite registered in Kibana, and **ai.\*** steps whose
   `connector-id-by-feature` names a feature the process does not know.
 
-The common cause is the registries. A contribution mechanism for agent builder's tools, agents and
-attachment types would move most of this list into processes.
+The common cause is the registries. Agent builder's have a contribution mechanism now; the plugins above that
+register with it move into processes as they contribute.
 

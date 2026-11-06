@@ -74,6 +74,11 @@ export interface WorkflowProcessHarnessOptions {
   kibanaHandler?: (request: StubRequest) => { status?: number; body: unknown };
   /** The configs the steps read, by plugin id, added to the ones of the engine. */
   settings?: Record<string, unknown>;
+  /**
+   * What this Kibana has registered, by kind (`TaskTypeRegistrationOptions.parity`): sent to the process
+   * with its init, which hands it to the module as `host.parity`.
+   */
+  parity?: Array<{ kind: string; ids: string[] }>;
   /** Saved object types the plugin of the steps registers, whose indices Kibana would have. */
   savedObjectTypes?: Array<{ name: string; mappings: unknown; indexPattern?: string }>;
   /**
@@ -142,6 +147,7 @@ const startHarness = async (
   const initFor = () => ({
     server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false, publicBaseUrl: kibanaUrl },
     encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
+    ...(options.parity ? { parity: options.parity } : {}),
     settings: Object.fromEntries(
       Object.entries(settings()).map(([id, config]) => [id, serializeSettings(config)])
     ) as never,

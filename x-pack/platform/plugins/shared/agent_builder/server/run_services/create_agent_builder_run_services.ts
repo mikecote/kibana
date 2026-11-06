@@ -57,8 +57,11 @@ export interface AgentBuilderRunServicesDeps {
   actions: ActionsPluginSetup;
   getActionsStart: () => Promise<ActionsPluginStart>;
   getInferenceStart: () => Promise<InferenceServerStart>;
-  /** Throws when the SML plugin is not available (a task process: it only exists in Kibana). */
-  getAgentBuilderSml: () => AgentBuilderSmlPluginStart;
+  /**
+   * The SML plugin's start contract, which the SML tools read. A task process does not have it: the
+   * tools are then not registered, and the parity guard keeps the runs that read them in Kibana.
+   */
+  getAgentBuilderSml?: () => AgentBuilderSmlPluginStart;
   getCoreStart: () => Promise<Pick<CoreStart, 'uiSettings' | 'savedObjects'>>;
   /** Kibana registers the global settings of the Deductive agent: a process has them from Core's module. */
   uiSettings?: UiSettingsServiceSetup;
@@ -140,9 +143,12 @@ export const createAgentBuilderRunServices = (
     trackingService: deps.trackingService,
   });
 
-  createSmlTools({ getAgentBuilderSml: deps.getAgentBuilderSml }).forEach((tool) => {
-    serviceSetups.tools.register(tool);
-  });
+  const { getAgentBuilderSml } = deps;
+  if (getAgentBuilderSml) {
+    createSmlTools({ getAgentBuilderSml }).forEach((tool) => {
+      serviceSetups.tools.register(tool);
+    });
+  }
 
   createConnectorTools({
     getActions: deps.getActionsStart,
