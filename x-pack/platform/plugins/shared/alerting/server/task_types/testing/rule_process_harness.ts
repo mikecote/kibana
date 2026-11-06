@@ -155,6 +155,7 @@ export interface RunOutcome {
   runner: RemoteTaskRunner;
 }
 
+const BUILD_CONCURRENCY = 4;
 const NOT_ROUTED = 'Not a rule type module this harness serves';
 
 export const DEFAULT_RULE_ATTRIBUTES = () => ({
@@ -275,9 +276,22 @@ export class RuleProcessHarness {
       (name) => !entries.some((entry: { name: string }) => entry.name === name)
     );
     if (missing.length) throw new Error(`No task bundle entry named ${missing.join(', ')}`);
-    const building = Promise.all(
-      entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
-    );
+    // A few at a time: each build holds a lot of memory, and a file may serve a dozen rule types.
+    const building = (async () => {
+      const built: unknown[] = [];
+      for (let i = 0; i < entries.length; i += BUILD_CONCURRENCY) {
+        built.push(
+          ...(await Promise.all(
+            entries
+              .slice(i, i + BUILD_CONCURRENCY)
+              .map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
+          ))
+        );
+      }
+      return built;
+    })();
+    // Not unhandled while Elasticsearch boots.
+    building.catch(() => undefined);
     this.esServer = await startES();
     this.es = this.esServer.es.getClient();
 
@@ -633,6 +647,15 @@ export class RuleProcessHarness {
     }
   }
 
+  /** The features a license-gated rule or connector reported using, in the store every node and process shares. */
+  public async getFeatureUsage() {
+    await this.es.indices.refresh({ index: '.kibana*' });
+    const { hits } = await this.es.search<{
+      'licensing-feature-usage': { featureName?: string; lastUsed?: string };
+    }>({ index: '.kibana*', query: { term: { type: 'licensing-feature-usage' } }, size: 100 });
+    return hits.hits.map((hit) => ({ id: hit._id, ...hit._source!['licensing-feature-usage'] }));
+  }
+
   /** The usage counters stored so far (a process stores its own when its run ends). */
   public async getUsageCounters() {
     await this.es.indices.refresh({ index: '.kibana*' });
@@ -672,20 +695,54 @@ export class RuleProcessHarness {
     state: Record<string, unknown> = {}
   ) {
     const taskType = `alerting:${ruleTypeId}`;
-    const definition = this.seeder.definitions.get(taskType);
-    if (!definition) throw new Error(`${NOT_ROUTED}: ${taskType}`);
-    const task = definition.createTaskRunner({
+    const context = {
       taskInstance: reviveTaskInstance(this.taskInstanceOf(ruleId, ruleTypeId, state)),
       fakeRequest: undefined,
       signal: new AbortController().signal,
       executionUuid: `${ruleId}-in-process-${Date.now()}`,
       setCustomTaskRunEventFields: jest.fn(),
-    } as never);
+    } as never;
+    let task: { run: () => Promise<unknown> };
+    const definition = this.seeder.definitions.get(taskType);
+    if (definition) {
+      task = definition.createTaskRunner(context);
+    } else {
+      // A module the seeder was not booted with runs on the same host, which every rule module's
+      // needs are alike enough to share: the rule types of one test file do not differ in them.
+      const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
+      if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
+      const applied = module.contributions?.apply?.(this.loadContributions()) ?? module;
+      task = applied.createTaskRunner(context, this.seeder.host);
+    }
     try {
       return await task.run();
     } finally {
       await this.seeder.flush();
     }
+  }
+
+  /**
+   * Seeds the same rule twice, runs one in a forked process and the other in this process (what
+   * Kibana's runtime does, without the process boundary) and returns what each wrote, with ids and times
+   * removed, so a test can assert they agree.
+   */
+  public async runBoth(seed: SeedRuleOptions, alertsIndex: string, expectedEvents = 2) {
+    const summarize = async (id: string, result: unknown) => ({
+      result: normalizeRun(result, id),
+      alerts: normalizeRun(await this.getAlertDocs(alertsIndex, id), id),
+      events: normalizeRun(
+        (await this.getEventDocs(id, (docs) => docs.length >= expectedEvents)).map(summarizeEvent),
+        id
+      ),
+    });
+    await this.createRule({ ...seed, id: `${seed.id}-forked`, name: seed.id });
+    await this.createRule({ ...seed, id: `${seed.id}-in-process`, name: seed.id });
+    const forked = await this.run(`${seed.id}-forked`, seed.ruleTypeId);
+    const inProcess = await this.runInProcess(`${seed.id}-in-process`, seed.ruleTypeId);
+    return {
+      forked: await summarize(`${seed.id}-forked`, forked.result),
+      inProcess: await summarize(`${seed.id}-in-process`, inProcess),
+    };
   }
 
   // ---- assertions -------------------------------------------------------------------------------
@@ -769,6 +826,20 @@ export const stripVolatile = (value: unknown): unknown => {
   }
   return value;
 };
+
+/**
+ * A run's output made comparable: no ids or times, the rule id replaced, and the link of an alert (a
+ * compressed state that holds the rule and the time range) reduced to its locator.
+ */
+export const normalizeRun = (value: unknown, ruleId: string) =>
+  JSON.parse(
+    JSON.stringify(stripVolatile(value) ?? null)
+      .split(ruleId)
+      .join('<rule>')
+      // The time a reason or a message mentions.
+      .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '<time>'),
+    (key, item) => (key === 'kibana.alert.url' ? String(item).split('&lz=')[0] : item)
+  );
 
 /** The parts of an event log document that say what happened, without the volatile fields. */
 export const summarizeEvent = (doc: Doc) => ({

@@ -393,4 +393,19 @@ reschedule, the task state, the retries). What differs, and why:
   store them, is declined, and each run is a fresh process, so it pays for the encryption service, the license
   and the alerts resource checks every time.
 
+### Testing a rule type in a process
+
+`alerting/server/task_types/testing/rule_process_harness.ts` is the harness of every real run of a rule
+type (`*_task_process.test.ts` next to the plugin that owns the rule type). `startRuleProcessHarness({ rules:
+[{ taskType, bundle }] })` boots a test Elasticsearch with a trial license, builds the bundles once (four at a
+time), sends the process every setting Kibana sends (alerting, actions, security with the license, `alertingRun`,
+`cases`, `stackConnectors`, the final connectors and the parity lists; more with `settings`), and seeds rules,
+connectors and API keys as Kibana stores them. `run(ruleId, ruleTypeId)` goes through `RemoteTaskRunner` and fails
+when the run was declined; `runInProcess` runs the same rule in the test process, as Kibana's runtime does,
+and `runBoth` compares the two. `createUserWithPrivileges` registers Kibana privileges in Elasticsearch, which a
+process does not, so a rule can be created by a user who may or may not execute connectors or read a data view.
+`rule_process_parity.test.ts` (stack alerts) holds the behaviour tests: enqueue authorization, saved object
+privileges of the executor, timeout and cancel (and the in-memory metrics observer), a forked run against one in
+the test process, and `alert.status.changed` with a fake workflows client contribution.
+
 The distributable builds the bundles into `task_bundles/`.
