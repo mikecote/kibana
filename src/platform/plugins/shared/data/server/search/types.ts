@@ -32,6 +32,7 @@ import type { ISearchStartSearchSource, SearchSourceService } from '../../common
 import type { AggsSetup, AggsStart } from './aggs';
 import type { SearchUsage } from './collectors/search';
 import type { IScopedSearchSessionsClient } from './session';
+import type { SearchConfigSchema } from '../config';
 
 export interface SearchStrategyDependencies {
   savedObjectsClient: SavedObjectsClientContract;
@@ -122,6 +123,18 @@ export interface ISearchStart<
   searchSource: {
     asScoped: (request: KibanaRequest, opts?: AsScopedOptions) => Promise<ISearchStartSearchSource>;
   };
+  /**
+   * What a task process needs to search as this Kibana does (`createStandaloneSearch`): the
+   * `data.search` config, the Elasticsearch timeouts and whether rollup searches are enabled.
+   */
+  getTaskProcessSettings?: () => SearchTaskProcessSettings;
+}
+
+/** What a task process is sent to search as Kibana does: plain data. */
+export interface SearchTaskProcessSettings {
+  searchConfig: SearchConfigSchema;
+  elasticsearchTimeouts?: { shardTimeout?: number; requestTimeout?: number };
+  rollupsEnabled: boolean;
 }
 
 export type SearchRequestHandlerContext = IScopedSearchClient;

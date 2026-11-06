@@ -29,6 +29,7 @@ import {
   createConfig as createSecurityConfig,
 } from '@kbn/security-plugin/server/config';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
+import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
@@ -82,6 +83,12 @@ describe('the .es-query rule type served from a bundle', () => {
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
     actions: actionsConfigSchema.validate({}),
+    // What Kibana decided while it started from the plugins around alerting.
+    alertingRun: {
+      maintenanceWindowsEnabled: true,
+      dataViews: { scriptedFieldsEnabled: true },
+      search: { searchConfig: searchConfigSchema.validate({}), rollupsEnabled: false },
+    },
     // What Kibana sends for the cases system action, which cases contributes to every rule run.
     cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
     // Kibana's final in-memory connectors: its system connectors and one that a plugin registered
@@ -374,7 +381,7 @@ describe('the .es-query rule type served from a bundle', () => {
 
   it('declares what its process needs and what it is, from its module file', () => {
     expect(taskType.type).toBe(TASK_TYPE);
-    expect(taskType.settings).toEqual(['alerting', 'actions', 'security']);
+    expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
     expect(taskType.encryptedSavedObjectTypes?.map((t) => t.type).sort()).toEqual([
       'action',
       'action_task_params',

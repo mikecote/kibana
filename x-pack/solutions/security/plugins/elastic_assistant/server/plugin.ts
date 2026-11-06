@@ -20,6 +20,7 @@ import {
 } from '@kbn/elastic-assistant-common';
 import { ReplaySubject, type Subject, exhaustMap, takeWhile, takeUntil } from 'rxjs';
 import { ECS_COMPONENT_TEMPLATE_NAME } from '@kbn/alerting-plugin/server';
+import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import type { IRuleDataClient, IndexOptions } from '@kbn/rule-registry-plugin/server';
 import { Dataset } from '@kbn/rule-registry-plugin/server';
 import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
@@ -285,6 +286,11 @@ export class ElasticAssistantPlugin
     core: ElasticAssistantPluginCoreSetupDependencies;
     plugins: ElasticAssistantPluginSetupDependencies;
   }): IRuleDataClient {
+    // The flag the rule reads when a task process runs it: Kibana evaluates it for every run it dispatches.
+    plugins.alerting.registerTaskProcessFeatureFlags({
+      [ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG]: true,
+    });
+
     // Register the Attack Discovery Schedule type
     plugins.alerting.registerType(
       getAttackDiscoveryScheduleType({

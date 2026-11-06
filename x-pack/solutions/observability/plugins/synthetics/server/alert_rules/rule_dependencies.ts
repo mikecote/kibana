@@ -40,15 +40,34 @@ export type SyntheticsRuleMonitorClient = LocationsClient;
 export interface SyntheticsTaskProcessSettings {
   service: ServiceLocationsServer['config']['service'];
   isCpsEnabled: boolean;
+  /**
+   * The public locations and access status of the Synthetics service as Kibana has them now, which
+   * its sync task refreshes. A rule that filters by location reads them to resolve the location.
+   */
+  serviceManagedLocations?: Pick<
+    SyntheticsRuleMonitorClient['serviceManagedLocations'],
+    'isAllowed' | 'locations' | 'throttling'
+  >;
 }
 
 export const getSyntheticsTaskProcessSettings = ({
   config,
   isCpsEnabled,
+  serviceManagedLocations,
 }: {
   config: SyntheticsServerSetup['config'];
   isCpsEnabled: boolean;
+  serviceManagedLocations?: SyntheticsTaskProcessSettings['serviceManagedLocations'];
 }): SyntheticsTaskProcessSettings => ({
   service: { manifestUrl: config.service?.manifestUrl, devUrl: config.service?.devUrl },
   isCpsEnabled,
+  ...(serviceManagedLocations
+    ? {
+        serviceManagedLocations: {
+          isAllowed: serviceManagedLocations.isAllowed,
+          locations: serviceManagedLocations.locations,
+          throttling: serviceManagedLocations.throttling,
+        },
+      }
+    : {}),
 });

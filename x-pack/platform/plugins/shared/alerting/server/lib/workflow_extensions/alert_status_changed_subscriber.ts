@@ -7,7 +7,6 @@
 
 import type { Logger } from '@kbn/core/server';
 import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
-import { AlertStatusChangedTriggerId } from '../../../common/workflows/triggers';
 import type { AsyncDomainEventBus } from '../events/event_bus';
 import type {
   AlertStatusChangedEvent,
@@ -16,6 +15,7 @@ import type {
 } from './events';
 import { ALERT_STATUS_CHANGED_EVENT_TYPE } from './events';
 import type { Subscription } from '../events/event_bus/types';
+import { emitAlertStatusChangedEvent } from './alert_status_changed_emitter';
 
 /**
  * Attaches to the in-process alerting bus and forwards
@@ -49,20 +49,11 @@ export class AlertStatusChangedWorkflowSubscriber {
   }
 
   async #emit(event: AlertStatusChangedEvent, context: AlertingPublisherContext): Promise<void> {
-    try {
-      const client = await this.workflows.getClient(context.request);
-      if (!client.isWorkflowsAvailable) return;
-      await client.emitEvent(AlertStatusChangedTriggerId, event.payload);
-    } catch (err) {
-      // One line is logged per failed alert for now. A batched emit will make this one line per
-      // run. It is a warning, not an error, so an unavailable workflows service does not flood
-      // the error log.
-      this.logger.warn(
-        `[alert_status_changed_subscriber] Failed to emit for rule ${event.payload.rule.id} alert ${
-          event.payload.alert.uuid
-        }: ${err instanceof Error ? err.message : String(err)}`,
-        { error: { stack_trace: err instanceof Error ? err.stack : undefined } }
-      );
-    }
+    await emitAlertStatusChangedEvent({
+      getClient: (request) => this.workflows.getClient(request),
+      payload: event.payload,
+      request: context.request,
+      logger: this.logger,
+    });
   }
 }

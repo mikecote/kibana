@@ -573,6 +573,7 @@ export class TaskManagerRunner implements TaskRunner {
               // this process.
               fallback: runInThisProcess,
               onFallback: this.taskProcessDispatch.onFallback,
+              observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {
             this.task = runInThisProcess();

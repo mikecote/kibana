@@ -6,7 +6,7 @@
  */
 
 import { Agent } from 'undici';
-import type { CancellableTask, RunResult } from '../task';
+import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import type { TaskProcessFallbackReason } from './fallback_counter';
@@ -99,10 +99,13 @@ export class RemoteTaskRunner implements CancellableTask {
       fallback?: () => CancellableTask;
       /** Told when the fallback runs, and why. */
       onFallback?: TaskProcessDispatch['onFallback'];
+      /** What the task type counts in Kibana's memory of the runs a process served. */
+      observer?: RemoteRunObserver;
       fetchFn?: typeof fetch;
     }
   ) {}
 
+  private cancelled = false;
   private local?: CancellableTask;
   private target?: TaskProcessAddress;
 
@@ -195,10 +198,22 @@ export class RemoteTaskRunner implements CancellableTask {
       if (body.kind === 'thrown') {
         throw deserializeTaskRunError(body.error);
       }
-      return deserializeRunResult(body.result);
+      const result = deserializeRunResult(body.result);
+      // A run Kibana cancelled is not counted as run, as when Kibana runs it itself.
+      if (!this.cancelled) this.observe((observer) => observer.onResult?.(result));
+      return result;
     } finally {
       dispose();
       lease?.release();
+    }
+  }
+
+  /** What the type counts must never fail a run. */
+  private observe(call: (observer: RemoteRunObserver) => void) {
+    try {
+      if (this.params.observer) call(this.params.observer);
+    } catch (error) {
+      // Counting is best effort.
     }
   }
 
@@ -210,6 +225,10 @@ export class RemoteTaskRunner implements CancellableTask {
     const address = this.target;
     // Not started yet: nothing to cancel.
     if (!address) return;
+    if (!this.cancelled) {
+      this.cancelled = true;
+      this.observe((observer) => observer.onCancel?.());
+    }
     const fetchFn = this.params.fetchFn ?? fetch;
     try {
       const { signal, dispose } = abortAfter(DEADLINE_GRACE_MS);

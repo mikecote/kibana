@@ -147,9 +147,71 @@ describe('createRuleTaskType', () => {
       standalone.mockRestore();
     });
 
+    describe('declining a rule before it has side effects', () => {
+      const createStandalone = (ruleAttributes: Record<string, unknown>) =>
+        jest
+          .spyOn(
+            jest.requireActual('./standalone/create_standalone_rule_run_runtime'),
+            'createStandaloneRuleRunRuntime'
+          )
+          .mockReturnValue({
+            runtime: {
+              alertsService: null,
+              spaceIdToNamespace: () => undefined,
+              savedObjects: {
+                createInternalRepository: () => ({
+                  get: async () => ({ attributes: ruleAttributes }),
+                }),
+              },
+            },
+            fieldFormats: {},
+            getUnsupportedActionTypes: () => [],
+            getRegisteredConnectorTypeIds: () => [],
+            getRegisteredConnectorAdapterIds: () => [],
+            stop: jest.fn(),
+          } as never);
+      const host = { ...createRuleTypeHostMock(), licensing: { license$: {} } } as never;
+
+      it('declines a rule that the module says it cannot serve, with the reason', async () => {
+        const standalone = createStandalone({ params: { workflowConfig: {} } });
+        const declineRun = jest.fn(({ ruleParams }) =>
+          ruleParams.workflowConfig ? 'storage is not supported' : undefined
+        );
+        const taskType = createRuleTaskType(
+          { ruleTypeId: 'test.rule', getRuleType },
+          { declineRun }
+        );
+        const task = taskType.createTaskRunner(context, host);
+        await expect(task.run()).rejects.toThrow(
+          /Rule rule-1 cannot run in this task process: storage is not supported/
+        );
+        expect(declineRun).toHaveBeenCalledWith({
+          settings: expect.objectContaining({ alerting: expect.anything() }),
+          ruleParams: { workflowConfig: {} },
+        });
+        // Nothing ran: the task runner was never built.
+        expect(TaskRunner).not.toHaveBeenCalled();
+        standalone.mockRestore();
+      });
+
+      it('runs a rule the module can serve', async () => {
+        const standalone = createStandalone({ params: {} });
+        const run = jest.fn().mockResolvedValue({ state: {} });
+        (TaskRunner as unknown as jest.Mock).mockImplementation(() => ({ run, cancel: jest.fn() }));
+        const taskType = createRuleTaskType(
+          { ruleTypeId: 'test.rule', getRuleType },
+          { declineRun: () => undefined }
+        );
+        await expect(taskType.createTaskRunner(context, host).run()).resolves.toEqual({
+          state: {},
+        });
+        standalone.mockRestore();
+      });
+    });
+
     it('declares what a rule run needs from the host', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
-      expect(taskType.settings).toEqual(['alerting', 'actions', 'security']);
+      expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
       // The privileges of a connector are checked when a run enqueues it, as in Kibana.
       expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',

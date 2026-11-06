@@ -34,7 +34,10 @@ import type {
   AlertingPublisherContext,
 } from '../lib/workflow_extensions/events';
 import type { AlertStatusChangedOptIn } from '../lib/workflow_extensions/alert_status_changed_opt_in';
-import type { AlertStatusChangedV1Payload } from '../../common/workflows/triggers';
+import type {
+  AlertStatusChangedBatch,
+  AlertStatusChangedEmitter,
+} from '../lib/workflow_extensions/alert_status_changed_emitter';
 import type { IAlertsClient } from '../alerts_client/types';
 import type { Alert } from '../alert';
 import type { AlertsService } from '../alerts_service/alerts_service';
@@ -106,10 +109,7 @@ export interface RunRuleResult {
    * is configured. The bus publish happens in `run()`, not here, so a failure
    * before `run()` returns prevents any publish.
    */
-  alertStatusChangedBatch?: {
-    events: AlertStatusChangedV1Payload[];
-    request: KibanaRequest;
-  };
+  alertStatusChangedBatch?: AlertStatusChangedBatch;
 }
 
 export interface RunRuleParams<Params extends RuleTypeParams> {
@@ -289,6 +289,11 @@ export interface RuleRunRuntime {
    * registered after the context is created still apply.
    */
   alertStatusChangedOptIns?: readonly AlertStatusChangedOptIn[];
+  /**
+   * Where `alert.status.changed` events go when it is not the bus above: a task process sends them
+   * with the workflows client the workflows plugins contribute. Absent, a run sends none.
+   */
+  alertStatusChanged?: AlertStatusChangedEmitter;
 }
 
 /** The ad hoc (backfill) runner also needs two things that only exist in Kibana. */

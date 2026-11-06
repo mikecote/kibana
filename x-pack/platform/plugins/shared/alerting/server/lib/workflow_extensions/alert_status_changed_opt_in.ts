@@ -20,6 +20,12 @@ export interface AlertStatusChangedOptIn {
    * the answer can differ per space. A check that throws is logged and treated as false.
    */
   isEnabled: (request: KibanaRequest) => Promise<boolean>;
+  /**
+   * The feature flags `isEnabled` reads, with their fallbacks. A rule run in a task process cannot
+   * ask Kibana's feature flag service, so Kibana evaluates these for every run it dispatches and
+   * sends the values (as `host.featureFlags`). Only needed by an opt-in that reads flags.
+   */
+  featureFlags?: Record<string, boolean | string | number>;
 }
 
 interface IsAlertStatusChangedEnabledOptions {

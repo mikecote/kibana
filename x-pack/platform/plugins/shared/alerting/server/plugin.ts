@@ -76,6 +76,11 @@ import type {
   AlertingPublisherContext,
 } from './lib/workflow_extensions/events';
 import { registerTriggerDefinitions } from './lib/workflow_extensions/register_trigger_definitions';
+import {
+  ALERTING_RUN_SETTINGS_ID,
+  DEFAULT_ALERTING_RUN_SETTINGS,
+} from './task_types/rule_run_settings';
+import type { AlertingRunSettings } from './task_types/rule_run_settings';
 import type { AlertStatusChangedOptIn } from './lib/workflow_extensions/alert_status_changed_opt_in';
 import { AlertStatusChangedWorkflowSubscriber } from './lib/workflow_extensions/alert_status_changed_subscriber';
 import { RuleTypeRegistry } from './rule_type_registry';
@@ -162,6 +167,12 @@ export interface AlertingServerSetup {
    * `host.settings[pluginId]`. The config is sent to the task process, so it may hold secrets.
    */
   registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
+  /**
+   * Lets the rule types of a plugin read feature flags in a task process (`host.featureFlags`, with a
+   * module that declares the same flags). Kibana evaluates them for every run it dispatches and sends
+   * the values, so a flag flipped between runs reaches the next one.
+   */
+  registerTaskProcessFeatureFlags(flags: Record<string, boolean | string | number>): void;
   registerType<
     Params extends RuleTypeParams = RuleTypeParams,
     ExtractedParams extends RuleTypeParams = RuleTypeParams,
@@ -281,7 +292,12 @@ export class AlertingPlugin {
     [ACTIONS_CONNECTORS_SETTINGS_ID]: (): ActionsTaskProcessSettings => ({
       inMemoryConnectors: this.actionsSetup!.getTaskProcessSettings().inMemoryConnectors,
     }),
+    // What differs by the plugins around alerting: maintenance windows, data views and search.
+    [ALERTING_RUN_SETTINGS_ID]: (): AlertingRunSettings =>
+      this.getRunSettings?.() ?? DEFAULT_ALERTING_RUN_SETTINGS,
   };
+  private getRunSettings?: () => AlertingRunSettings;
+  private readonly taskProcessFeatureFlags: Record<string, boolean | string | number> = {};
   /** What this Kibana has registered, which a task process of a rule type must have registered too. */
   private readonly taskProcessParity: Record<string, () => string[]> = {
     [CONNECTOR_TYPES_PARITY_KIND]: () =>
@@ -468,6 +484,13 @@ export class AlertingPlugin {
         },
         settings: this.taskProcessSettings,
         parity: this.taskProcessParity,
+        // The flags the opt-ins of `alert.status.changed` read, which a process cannot ask for itself.
+        featureFlags: () =>
+          Object.assign(
+            {},
+            this.taskProcessFeatureFlags,
+            ...this.alertStatusChangedOptIns.map((optIn) => optIn.featureFlags)
+          ),
       },
     });
     this.ruleTypeRegistry = ruleTypeRegistry;
@@ -595,6 +618,9 @@ export class AlertingPlugin {
         adapter: ConnectorAdapter<RuleActionParams, ConnectorParams>
       ) => {
         this.connectorAdapterRegistry.register(adapter);
+      },
+      registerTaskProcessFeatureFlags: (flags) => {
+        Object.assign(this.taskProcessFeatureFlags, flags);
       },
       registerTaskProcessSettings: (pluginId, getSettings) => {
         this.taskProcessSettings[pluginId] = getSettings;
@@ -727,6 +753,11 @@ export class AlertingPlugin {
       licenseState,
     } = this;
     licenseState?.setNotifyUsage(plugins.licensing.featureUsage.notifyUsage);
+    this.getRunSettings = () => ({
+      maintenanceWindowsEnabled: !!plugins.maintenanceWindows,
+      dataViews: { scriptedFieldsEnabled: plugins.dataViews.getScriptedFieldsEnabled() },
+      search: plugins.data.search.getTaskProcessSettings?.(),
+    });
 
     const shouldGrantUiam = this.getShouldGrantUiam(core);
 

@@ -41,7 +41,8 @@ export const createSyntheticsRuleTaskType = (
     {
       ruleTypeId,
       getRuleType: ({ logger, publicBaseUrl, settings, host }) => {
-        const { service, isCpsEnabled } = settings.synthetics as SyntheticsTaskProcessSettings;
+        const { service, isCpsEnabled, serviceManagedLocations } =
+          settings.synthetics as SyntheticsTaskProcessSettings;
         const observability = settings.observability as ObservabilityConfig;
         return getRuleTypeFromRegistration((alerting) =>
           register(
@@ -60,8 +61,13 @@ export const createSyntheticsRuleTaskType = (
               observability: { getAlertDetailsConfig: () => observability.unsafe.alertDetails },
             },
             {
-              // Public locations are looked up when a rule filters by location, in the run, not kept.
-              serviceManagedLocations: { isAllowed: true, locations: [], throttling: undefined },
+              // The public locations and access status Kibana had when it dispatched the run. Without
+              // them (a remote process without them) every location is looked up when a rule filters by one.
+              serviceManagedLocations: serviceManagedLocations ?? {
+                isAllowed: true,
+                locations: [],
+                throttling: undefined,
+              },
               // Agent policies are Fleet's, which only Kibana has; no rule asks for them.
               privateLocationAPI: {
                 getAgentPolicies: kibanaOnly('The list of agent policies'),

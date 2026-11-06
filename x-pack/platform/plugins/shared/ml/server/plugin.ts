@@ -299,7 +299,11 @@ export class MlServerPlugin
       // What a task process that runs an ML rule type reads of this plugin's configuration.
       plugins.alerting.registerTaskProcessSettings(
         ML_TASK_PROCESS_SETTINGS_ID,
-        (): MlTaskProcessSettings => ({ cpsEnabled: this.serverless.cpsEnabled })
+        (): MlTaskProcessSettings => ({
+          cpsEnabled: this.serverless.cpsEnabled,
+          enabledFeatures: this.enabledFeatures,
+          compatibleModuleType: this.compatibleModuleType,
+        })
       );
       registerMlAlerts(
         {

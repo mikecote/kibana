@@ -86,6 +86,7 @@ const registerContributions = () => {
             isServerless: false,
             kibanaVersion: '9.9.9',
             publicBaseUrl,
+            host: {} as never,
             // What the plugins that contribute are sent: cases reads its own settings.
             settings: {
               cases: {

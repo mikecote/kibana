@@ -433,7 +433,10 @@ export class TaskManagerPlugin
         },
         // The feature flags a task type declares, as Kibana's flag service answers them now.
         getFeatureFlags: async (taskType) => {
-          const flags = this.moduleRegistrations.get(taskType)?.module.featureFlags;
+          const registration = this.moduleRegistrations.get(taskType);
+          const declared = registration?.module.featureFlags;
+          const added = registration?.options?.featureFlags?.();
+          const flags = declared || added ? { ...declared, ...added } : undefined;
           if (!flags || !this.featureFlagsService) return undefined;
           const service = this.featureFlagsService;
           const values = await Promise.all(

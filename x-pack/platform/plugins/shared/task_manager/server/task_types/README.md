@@ -362,9 +362,35 @@ Options: `locators`, `savedObjectTypes`, `encryptedSavedObjectTypes`, `uiSetting
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
-Not the same in a process: no `alert.status.changed` workflow events or in-memory
-metrics; a rule that uses a connector type or adapter the process does not know is declined; and each run is a
-fresh process, so it pays for the encryption service, the license and the alerts resource checks every
-time.
+A run in a process does what it does in Kibana; Kibana starts it and processes its end result (the
+reschedule, the task state, the retries). What differs, and why:
+
+- **`alert.status.changed` workflow events.** The batch is built by the same functions as in Kibana
+  (`alert_status_changed_emitter.ts`), before the action scheduler clears the snapshot of the alerts, and is
+  sent by the process before it answers, with the workflows client built from the request of the run. A
+  plugin that wants the events contributes to `alerting-rule-run`: `register` calls
+  `alerting.enableAlertStatusChanged({ isEnabled, featureFlags })` as the plugin does in Kibana (the flags it
+  reads go in `declares.featureFlags`; Kibana evaluates them for each dispatch and sends them as
+  `host.featureFlags`), and `getWorkflowsClient(request, context)` returns what `workflowsExtensions.getClient`
+  returns. Without a contribution that provides the client, a run sends no events. This branch has no such
+  contribution: the workflows plugins have to add it.
+- **In-memory metrics.** The `node_rules` collector reads Kibana's counters, so Kibana counts what its processes
+  served from the end of the run (`observeRemoteRun`): a result is an execution, a result with a
+  `taskRunError` is also a failure (it is the same condition as the outcome of `TaskRunner`), a run Kibana
+  cancels for its timeout is a timeout and no execution. A run Kibana serves itself (a fallback) counts itself.
+- **Settings Kibana decides.** `settings.alertingRun` carries what alerting learns from the plugins around
+  it: whether the maintenance windows plugin is enabled (without it no window applies), the data views'
+  `scriptedFieldsEnabled` (off by default in serverless), and the `data.search` config, the Elasticsearch
+  timeouts and whether rollups are enabled. ES|QL searches read the license, as in Kibana. A plugin that
+  reads feature flags in a run registers them with `alerting.registerTaskProcessFeatureFlags`.
+- **License feature usage** is reported by the process for the rule types and connector types that need a
+  license, to the store every node shares.
+- **Not reproduced.** OpenTelemetry counters (`kibana.alerting.rule_run.count`, the connector counters): a
+  process has no meter provider, Kibana's is created by its command line from `telemetry.metrics`, and a
+  short-lived process cannot export the same series (cumulative counters of one resource from many
+  processes overwrite each other, and Prometheus cannot scrape them). A rule that uses a connector type or
+  adapter the process does not know, or a workflow rule whose executions are stored where the process cannot
+  store them, is declined, and each run is a fresh process, so it pays for the encryption service, the license
+  and the alerts resource checks every time.
 
 The distributable builds the bundles into `task_bundles/`.

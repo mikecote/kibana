@@ -240,6 +240,12 @@ export interface TaskTypeRegistrationOptions {
    * process compares it with what the module's `parity` hooks say it registered.
    */
   parity?: Record<string, () => string[]>;
+  /**
+   * Feature flags besides the ones the module declares, read when a run is dispatched to a process
+   * (with their fallbacks). For a module Kibana registers without the flags the module a process
+   * runs declares, such as the opt-ins of plugins that other plugins register with Kibana.
+   */
+  featureFlags?: () => Record<string, boolean | string | number>;
 }
 
 /** Throws when a declared capability has no real service to hand to the module in Kibana. */

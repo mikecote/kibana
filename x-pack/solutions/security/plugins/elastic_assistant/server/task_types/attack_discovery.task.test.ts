@@ -15,7 +15,11 @@ import {
 } from '@kbn/discoveries';
 import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { getAttackDiscoveryScheduleType } from '../lib/attack_discovery/schedules/register_schedule/definition';
-import { taskType } from './attack_discovery.task';
+import {
+  declineUnsupportedWorkflowStorage,
+  getUnsupportedStorage,
+  taskType,
+} from './attack_discovery.task';
 
 describe('attack_discovery task type module', () => {
   it('builds the rule type that the plugin registers', () => {
@@ -29,6 +33,38 @@ describe('attack_discovery task type module', () => {
         telemetry: analyticsServiceMock.createAnalyticsServiceSetup(),
       })
     );
+  });
+
+  describe('declining a rule', () => {
+    const settings = (source: string) => ({ workflowsExecutionEngine: { storage: { source } } });
+
+    it('declines a workflow rule whose executions are not stored in a plain index', () => {
+      expect(
+        declineUnsupportedWorkflowStorage({
+          settings: settings('data_stream'),
+          ruleParams: { workflowConfig: { workflowId: 'w' } },
+        })
+      ).toMatch(/"data_stream" are only available in Kibana/);
+    });
+
+    it('serves a workflow rule stored in a plain index, and a rule without workflows whatever the storage', () => {
+      expect(
+        declineUnsupportedWorkflowStorage({
+          settings: settings('plain_index'),
+          ruleParams: { workflowConfig: {} },
+        })
+      ).toBeUndefined();
+      expect(
+        declineUnsupportedWorkflowStorage({ settings: settings('data_stream'), ruleParams: {} })
+      ).toBeUndefined();
+    });
+
+    it('describes the storage of an engine config', () => {
+      expect(
+        getUnsupportedStorage({ storage: { source: 'plain_index' } } as never)
+      ).toBeUndefined();
+      expect(getUnsupportedStorage(undefined)).toBeUndefined();
+    });
   });
 
   it('executes the connectors of the rule and reads the prompt saved object', () => {
@@ -45,7 +81,10 @@ describe('attack_discovery task type module', () => {
     expect(taskType.encryptedSavedObjectTypes?.map(({ type }) => type)).toEqual(
       expect.arrayContaining(['task', 'alert'])
     );
-    expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual(['security']);
+    expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
+      'security',
+      'telemetry',
+    ]);
     expect(taskType.taskManager).toEqual({
       schedulableTypes: expect.arrayContaining([/^workflow:run$/]),
     });

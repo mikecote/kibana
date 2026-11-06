@@ -97,6 +97,7 @@ export const createInfraAlertingLibs = ({
 });
 
 export interface InfraLogViewsServices {
+  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
   dataViews: Pick<DataViewsServerPluginStart, 'dataViewsServiceFactory'>;
   uiSettings: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
 }
@@ -127,14 +128,10 @@ export const createLogViewsClientGetter = ({
       get uiSettings() {
         return getServices().uiSettings as UiSettingsServiceStart;
       },
-      savedObjects: new Proxy(
-        {},
-        {
-          get: () => {
-            throw new Error('Saved objects service of a log sources service is Kibana only');
-          },
-        }
-      ) as SavedObjectsServiceStart,
+      // Core's saved objects, read when a request needs them (`getScopedLogSourcesService`).
+      get savedObjects() {
+        return getServices().savedObjects as SavedObjectsServiceStart;
+      },
     },
   });
 
