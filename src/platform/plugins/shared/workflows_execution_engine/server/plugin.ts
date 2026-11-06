@@ -31,6 +31,7 @@ import { WorkflowsMeteringService } from './metering/metering_service';
 import { createDataClientBundle, type DataClientBundle } from './repositories/data_access_layer';
 import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 import { resolveWorkflowWorkloads } from './service_account_workload_resolver';
+import { WORKFLOW_WORKLOAD_TYPE_NAME } from './task_plugin';
 import { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 import { WORKFLOWS_USAGE_API_SETTINGS_ID } from './task_types/constants';
 import { taskType as resumeTaskType } from './task_types/workflow_resume.task';
@@ -98,7 +99,7 @@ export class WorkflowsExecutionEnginePlugin
     this.coreSetup = core;
     core.security.serviceAccounts.registerWorkloadType({
       type: WORKFLOW_SERVICE_ACCOUNT_TYPE,
-      name: 'Workflow',
+      name: WORKFLOW_WORKLOAD_TYPE_NAME,
       resolveWorkloads: async (workloads, options) => {
         const [coreStart] = await core.getStartServices();
         return resolveWorkflowWorkloads(

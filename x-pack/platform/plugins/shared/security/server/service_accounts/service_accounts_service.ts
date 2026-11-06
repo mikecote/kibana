@@ -39,7 +39,7 @@ import type { ConfigType } from '../config';
 import type { UiamServicePublic } from '../uiam';
 
 export interface ServiceAccountsServiceStartParams {
-  config: ConfigType;
+  config: Pick<ConfigType, 'serviceAccounts'>;
   /** Whether this is a serverless deployment, which is what selects the backend. */
   isServerless: boolean;
   license: SecurityLicense;

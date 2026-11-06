@@ -478,6 +478,7 @@ export class SecurityPlugin
           applicationName: this.authorizationSetup!.applicationName,
           kibanaServerResourceURL: this.getKibanaServerResourceURL(core.http),
           elasticsearchUrl: this.elasticsearchUrl,
+          cloudProjectContext: this.cloudProjectContext,
         }),
       audit: this.auditSetup,
       authc: {

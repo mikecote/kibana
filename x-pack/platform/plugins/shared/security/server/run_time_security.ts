@@ -19,6 +19,8 @@ import { checkSavedObjectsPrivilegesWithRequestFactory } from './authorization/c
 import { authorizationModeFactory } from './authorization/mode';
 import type { UiamConfigType } from './config';
 import type { SpacesService } from './plugin';
+import type { UiamServicePublic } from './uiam';
+import type { UiamTlsMaterial } from './uiam/uiam_service';
 import { UiamService } from './uiam/uiam_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 
@@ -40,6 +42,8 @@ export interface RunTimeSecurityOptions {
     kibanaServerResourceURL: string;
     elasticsearchUrl?: string;
     kibanaVersion: string;
+    /** The TLS material of the connection as contents, when the files are not readable here. */
+    tls?: UiamTlsMaterial;
   };
   audit: AuditServiceSetup;
   /** Who a request acts for: Kibana's authenticated user, or what enriches a fake request. */
@@ -65,6 +69,8 @@ export interface RunTimeSecurity {
     >;
   };
   audit: AuditServiceSetup;
+  /** The UIAM service (the one the API keys use), when UIAM is enabled. */
+  uiam?: UiamServicePublic;
 }
 
 /**
@@ -130,5 +136,6 @@ export const createRunTimeSecurity = ({
       ),
     },
     audit,
+    uiam,
   };
 };

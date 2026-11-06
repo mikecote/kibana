@@ -53,7 +53,7 @@ const onlyInKibana = (what: string) => () => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);
 };
 
-/** Service accounts are not available in a task process: a workflow that needs one is declined. */
+/** For a host without service accounts (the security plugin did not serve them): a workflow that needs one is declined. */
 const noServiceAccounts = (): SecurityServiceStart['serviceAccounts'] =>
   ({
     isEnabled: () => false,
@@ -269,9 +269,8 @@ export const createWorkflowRuntimeFromHost = async (
     // The process meters itself, with the Usage API connection Kibana sent (none when Kibana does
     // not meter), and finishes sending before it answers.
     metering,
-    // Service accounts need Kibana's workload bindings: until a process can resolve them, a
-    // `run_as` workflow is declined whatever `serviceAccounts.enabled` says.
-    canRunAs: () => false,
+    // `canRunAs` is the default: the process's security plugin serves the service accounts from the
+    // same bindings and credentials as Kibana (`serviceAccounts.enabled` says whether it does).
     cloud,
     preflight: assertRunnableInProcessPreflight,
     checkStep: (step) => {

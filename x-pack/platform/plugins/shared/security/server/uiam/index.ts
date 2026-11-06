@@ -29,7 +29,9 @@ export type {
   UiamServiceAccountDetails,
 } from './service_account_types';
 export {
+  readUiamTlsMaterial,
   UiamService,
+  type UiamTlsMaterial,
   type UiamServicePublic,
   type ConvertUiamApiKeyRequestEntry,
   type ConvertUiamApiKeysResponse,
