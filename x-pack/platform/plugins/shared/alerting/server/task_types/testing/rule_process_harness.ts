@@ -37,6 +37,7 @@ import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import { reviveTaskInstance } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import type { RemoteRunObserver, RunResult } from '@kbn/task-manager-plugin/server/task';
@@ -46,6 +47,7 @@ import {
   createConfig as createSecurityConfig,
 } from '@kbn/security-plugin/server/config';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
+import { getLicenseFetcher } from '@kbn/licensing-plugin/server/license_fetcher';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
 import { configSchema as alertingConfigSchema } from '../../config';
@@ -99,6 +101,11 @@ export interface RuleProcessHarnessOptions {
   settings?: Record<string, unknown>;
   /** Connectors besides the system connectors and the dynamic one Kibana has in memory. */
   inMemoryConnectors?: Array<Record<string, unknown>>;
+  /**
+   * Contributions that only the runs in the test process (`runInProcess`) get, such as a fake workflows
+   * client: a forked process has the contributions its bundle was built with.
+   */
+  inProcessContributions?: unknown[];
   /** Extra indices to create (name -> mappings), before any rule runs. */
   indices?: Record<string, Record<string, unknown>>;
 }
@@ -126,6 +133,8 @@ export interface SeedRuleOptions {
   apiKey?: string;
   apiKeyOwner?: string;
   createdBy?: string;
+  /** References besides the ones of the actions, such as the data view a rule reads. */
+  references?: Array<{ id: string; name: string; type: string }>;
   /** Overrides any attribute of the rule saved object. */
   attributes?: Record<string, unknown>;
 }
@@ -180,6 +189,8 @@ export class RuleProcessHarness {
     TaskProcessCore['host']['savedObjects']['getUnsafeInternalClient']
   >;
   private defaultApiKey!: string;
+  /** The license Kibana read from Elasticsearch, which the security settings carry (RBAC needs it). */
+  private license?: Awaited<ReturnType<ReturnType<typeof getLicenseFetcher>>>;
 
   /** Everything Kibana sends a rule process, composed as Kibana does it. */
   public getSettings(): Record<string, unknown> {
@@ -209,6 +220,7 @@ export class RuleProcessHarness {
       },
       // The security plugin's task plugin, which every rule run brings for the privileges of connectors.
       security: getSecurityTaskProcessSettings({
+        license: this.license,
         config: createSecurityConfig(
           SecurityConfigSchema.validate({ audit: { enabled: false } }),
           loggingSystemMock.create().get(),
@@ -269,6 +281,12 @@ export class RuleProcessHarness {
     this.esServer = await startES();
     this.es = this.esServer.es.getClient();
 
+    this.license = await getLicenseFetcher({
+      clusterClient: { asInternalUser: this.es } as never,
+      logger: loggingSystemMock.create().get() as never,
+      cacheDurationMs: 0,
+      maxRetryDelay: 1000,
+    })();
     await this.createKibanaIndices();
     if (options.indices) {
       for (const [index, mappings] of Object.entries(options.indices)) {
@@ -328,10 +346,13 @@ export class RuleProcessHarness {
   /** What plugins contribute to rule runs, which the bundle builder imports into each bundle. */
   private loadContributions() {
     return {
-      'alerting-rule-run': getContributionFiles('alerting-rule-run').map(
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        (file: string) => require(file).contribution
-      ),
+      'alerting-rule-run': [
+        ...getContributionFiles('alerting-rule-run').map(
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          (file: string) => require(file).contribution
+        ),
+        ...(this.options.inProcessContributions ?? []),
+      ],
     };
   }
 
@@ -350,6 +371,8 @@ export class RuleProcessHarness {
         });
       }
     }
+    // The main index, where saved objects such as data views live, even if no rule type has its own.
+    indexMappings.set('.kibana', { ...(indexMappings.get('.kibana') ?? {}) });
     indexMappings.set(TASK_MANAGER_INDEX, {
       ...(indexMappings.get(TASK_MANAGER_INDEX) ?? {}),
       task: {
@@ -397,9 +420,21 @@ export class RuleProcessHarness {
 
   // ---- seeding ----------------------------------------------------------------------------------
 
+  /** The address of the test Elasticsearch carries the credentials of its superuser, which a client would prefer. */
+  private nodeWithoutCredentials() {
+    const url = new URL(this.esServer.hosts[0]);
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  }
+
   /** A client of Elasticsearch that acts as this user. */
   public clientAs(username: string, password: string) {
-    return new Client({ node: this.esServer.hosts[0], auth: { username, password } });
+    return new Client({ node: this.nodeWithoutCredentials(), auth: { username, password } });
+  }
+
+  public clientAsApiKey(encoded: string) {
+    return new Client({ node: this.nodeWithoutCredentials(), auth: { apiKey: encoded } });
   }
 
   /** An API key as Kibana stores it for a rule: of the superuser, or of the user given. */
@@ -426,9 +461,16 @@ export class RuleProcessHarness {
     );
   }
 
+  /** The saved objects client of the seeder, for seeding other types (data views, for instance). */
+  public get savedObjectsClient() {
+    return this.seederClient;
+  }
+
   /** Stores a rule as Kibana does, encrypted with the key the process is sent. */
   public async createRule(options: SeedRuleOptions) {
-    const references: Array<{ id: string; name: string; type: string }> = [];
+    const references: Array<{ id: string; name: string; type: string }> = [
+      ...(options.references ?? []),
+    ];
     const actions = (options.actions ?? []).map((action, i) => {
       let connector: Record<string, unknown>;
       if (action.connectorId) {
@@ -538,8 +580,18 @@ export class RuleProcessHarness {
     const fallback =
       options.fallback ??
       jest.fn().mockReturnValue({ run: async () => ({ state: { declinedToKibana: true } }) });
+    const route = this.supervisor.getRoute(taskType)! as Extract<
+      ReturnType<TaskProcessSupervisor['getRoute']>,
+      { acquire: unknown }
+    >;
+    let lease: { url: string } | undefined;
     const runner = new RemoteTaskRunner({
-      route: this.supervisor.getRoute(taskType)!,
+      route: {
+        acquire: async (context) => {
+          lease = await route.acquire(context);
+          return lease as never;
+        },
+      },
       request: {
         taskType,
         taskInstance: this.taskInstanceOf(ruleId, ruleTypeId, options.state) as never,
@@ -553,7 +605,46 @@ export class RuleProcessHarness {
       observer: options.observer,
       signal: options.signal,
     });
-    return { runner, fallback };
+    /** Resolves when the process has the run in flight: it booted and the task is running. */
+    const waitForInFlight = async () => {
+      for (let i = 0; i < 400; i++) {
+        if (lease) {
+          try {
+            const health = (await (await undiciFetch(`${lease.url}/health`)).json()) as {
+              inFlight: number;
+            };
+            if (health.inFlight > 0) return;
+          } catch (e) {
+            // not listening yet
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      throw new Error('The process never had the run in flight');
+    };
+    return { runner, fallback, waitForInFlight };
+  }
+
+  /** The processes the supervisor forked end with their runs. */
+  public async waitForNoProcesses(timeoutMs = 20000) {
+    const giveUpAt = Date.now() + timeoutMs;
+    while (this.supervisor.getStats().live > 0 && Date.now() < giveUpAt) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
+
+  /** The usage counters stored so far (a process stores its own when its run ends). */
+  public async getUsageCounters() {
+    await this.es.indices.refresh({ index: '.kibana*' });
+    const { hits } = await this.es.search<{
+      'usage-counter': {
+        domainId: string;
+        counterName: string;
+        counterType: string;
+        count: number;
+      };
+    }>({ index: '.kibana*', query: { term: { type: 'usage-counter' } }, size: 200 });
+    return hits.hits.map((hit) => hit._source!['usage-counter']);
   }
 
   public async run(
@@ -584,7 +675,7 @@ export class RuleProcessHarness {
     const definition = this.seeder.definitions.get(taskType);
     if (!definition) throw new Error(`${NOT_ROUTED}: ${taskType}`);
     const task = definition.createTaskRunner({
-      taskInstance: this.taskInstanceOf(ruleId, ruleTypeId, state) as never,
+      taskInstance: reviveTaskInstance(this.taskInstanceOf(ruleId, ruleTypeId, state)),
       fakeRequest: undefined,
       signal: new AbortController().signal,
       executionUuid: `${ruleId}-in-process-${Date.now()}`,
@@ -662,35 +753,18 @@ export const startRuleProcessHarness = async (options: RuleProcessHarnessOptions
   return harness;
 };
 
-const VOLATILE_KEYS = new Set([
-  '@timestamp',
-  'event.start',
-  'event.end',
-  'event.duration',
-  'event.created',
-  'kibana.alert.uuid',
-  'kibana.alert.start',
-  'kibana.alert.end',
-  'kibana.alert.time_range',
-  'kibana.alert.last_detected',
-  'kibana.alert.duration.us',
-  'kibana.alert.rule.execution.uuid',
-  'kibana.alert.rule.execution.timestamp',
-  'kibana.alert.instance.id',
-  'kibana.version',
-  'kibana.alert.workflow_status_updated_at',
-  'kibana.space_ids',
-]);
+/** What changes from run to run: ids, times and durations, by the last segment of the key. */
+const VOLATILE_KEY =
+  /^(@timestamp|event.start|uuid|id|date|datestart|dateend|start|end|duration|timestamp|created|executionid|execution_id|previousstartedat|lastexecutiondate|us|ms|ns|time_range|workflow_status_updated_at|space_ids|version|apikey|schedule_id)$/i;
 
 /** Drops what changes from run to run (ids, times, durations) so two runs can be compared. */
-export const stripVolatile = (value: unknown, path = ''): unknown => {
-  if (Array.isArray(value)) return value.map((item) => stripVolatile(item, path));
+export const stripVolatile = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(stripVolatile);
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => !VOLATILE_KEYS.has(path ? `${path}.${key}` : key))
-        .filter(([key]) => !/(^|\.)(uuid|id|timestamp|duration|ms|ns|time|start|end)$/i.test(key))
-        .map(([key, item]) => [key, stripVolatile(item, path ? `${path}.${key}` : key)])
+        .filter(([key]) => !VOLATILE_KEY.test(key.split('.').at(-1)!))
+        .map(([key, item]) => [key, stripVolatile(item)])
     );
   }
   return value;
