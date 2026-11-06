@@ -33,6 +33,7 @@ import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
 import type { TaskProcessDispatch } from './task_process/remote_task_runner';
 import { serializeElasticsearchConfig } from './task_process/es_config';
 import { TaskProcessSupervisor } from './task_process/supervisor';
+import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
 import { serializeSettings } from './task_process/settings';
@@ -121,6 +122,13 @@ export interface TaskManagerSetupContract {
   registerTaskEventLogger: (logger: TaskEventLogger) => void;
 }
 
+export interface TaskProcessStats {
+  mode: 'in_process' | 'child_process' | 'remote';
+  fallbacks: ReturnType<TaskProcessFallbackCounter['getCounts']>;
+  /** Only in `child_process` mode. */
+  processes?: TaskProcessSupervisorStats;
+}
+
 export type TaskManagerStartContract = Pick<
   TaskScheduling,
   | 'schedule'
@@ -136,6 +144,12 @@ export type TaskManagerStartContract = Pick<
     removeIfExists: TaskStore['remove'];
   } & {
     getRegisteredTypes: () => string[];
+    /**
+     * What task processes have done since Kibana started: the runs Kibana ran itself because a
+     * process could not (by task type and reason), and the processes started now. The same
+     * fallbacks are counted in the `taskManager` usage counter as `taskProcessFallback:<reason>:<type>`.
+     */
+    getTaskProcessStats: () => TaskProcessStats;
     registerEncryptedSavedObjectsClient: (
       client: EncryptedSavedObjectsClient,
       isEncryptionError?: (error: Error) => boolean
@@ -773,6 +787,11 @@ export class TaskManagerPlugin
       bulkDisable: (...args) => taskScheduling.bulkDisable(...args),
       bulkUpdateSchedules: (...args) => taskScheduling.bulkUpdateSchedules(...args),
       getRegisteredTypes: () => this.definitions.getAllTypes(),
+      getTaskProcessStats: () => ({
+        mode: this.config.task_execution?.mode ?? 'in_process',
+        fallbacks: this.taskProcessFallbacks.getCounts(),
+        processes: this.taskProcessSupervisor?.getStats(),
+      }),
       bulkUpdateState: (...args) => taskScheduling.bulkUpdateState(...args),
       registerEncryptedSavedObjectsClient: (
         client: EncryptedSavedObjectsClient,
@@ -797,7 +816,12 @@ export class TaskManagerPlugin
    * which is always correct.
    */
   private startTaskProcessSupervisor() {
-    const { mode, bundle_dir: bundleDir } = this.config.task_execution ?? {};
+    const {
+      mode,
+      bundle_dir: bundleDir,
+      max_concurrent_processes: maxConcurrentProcesses,
+      child_max_old_space_mb: childMaxOldSpaceMb,
+    } = this.config.task_execution ?? {};
     if (mode !== 'child_process') return;
     try {
       this.taskProcessSupervisor = new TaskProcessSupervisor({
@@ -809,6 +833,8 @@ export class TaskManagerPlugin
               this.initContext.env.packageInfo.dist ? 'task_bundles' : 'target/task_bundles'
             ),
           kibanaVersion: this.kibanaVersion,
+          maxConcurrentProcesses: maxConcurrentProcesses ?? this.config.max_workers,
+          childMaxOldSpaceMb,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },

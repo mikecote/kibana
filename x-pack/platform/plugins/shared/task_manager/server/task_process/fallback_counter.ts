@@ -5,7 +5,37 @@
  * 2.0.
  */
 
-export type TaskProcessFallbackReason = 'declined' | 'not_served' | 'unavailable';
+/**
+ * Why Kibana ran a task itself:
+ * - `declined`: the process answered 422.
+ * - `not_served`: the process answered 404.
+ * - `capacity`: Kibana already has `max_concurrent_processes` live task processes.
+ * - `spawn_failed`: the process exited before it was ready.
+ * - `spawn_timeout`: the process was not ready in time.
+ * - `unavailable`: anything else that kept a process from starting.
+ */
+export type TaskProcessFallbackReason =
+  | 'declined'
+  | 'not_served'
+  | 'unavailable'
+  | 'capacity'
+  | 'spawn_failed'
+  | 'spawn_timeout';
+
+export const TASK_PROCESS_FALLBACK_REASONS: TaskProcessFallbackReason[] = [
+  'declined',
+  'not_served',
+  'unavailable',
+  'capacity',
+  'spawn_failed',
+  'spawn_timeout',
+];
+
+const emptyCounts = () =>
+  Object.fromEntries(TASK_PROCESS_FALLBACK_REASONS.map((reason) => [reason, 0])) as Record<
+    TaskProcessFallbackReason,
+    number
+  >;
 
 /**
  * Counts the runs Kibana ran itself because their task process could not: a process that declined
@@ -19,7 +49,7 @@ export class TaskProcessFallbackCounter {
   constructor(private readonly logger?: { warn: (message: string) => void }) {}
 
   public increment(taskType: string, reason: TaskProcessFallbackReason, detail?: string) {
-    const counts = this.counts.get(taskType) ?? { declined: 0, not_served: 0, unavailable: 0 };
+    const counts = this.counts.get(taskType) ?? emptyCounts();
     counts[reason]++;
     this.counts.set(taskType, counts);
     this.logger?.warn(

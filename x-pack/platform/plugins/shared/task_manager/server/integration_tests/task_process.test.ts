@@ -10,7 +10,7 @@
  * 2.0.
  */
 
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -24,6 +24,7 @@ import { elasticsearchConfigFromEnv } from '../task_process/es_config';
 import { RemoteTaskRunner } from '../task_process/remote_task_runner';
 import type { TaskProcessLease } from '../task_process/remote_task_runner';
 import { TaskProcessSupervisor } from '../task_process/supervisor';
+import type { TaskProcessSettings } from '../task_process/supervisor';
 import { backgroundTaskNodeMapping, taskMappings } from '../saved_objects/mappings';
 import {
   BACKGROUND_TASK_NODE_SO_NAME,
@@ -61,6 +62,13 @@ describe('task types served from bundles', () => {
   let esServer: TestElasticsearchUtils;
   let es: Client;
   let supervisor: TaskProcessSupervisor;
+  let bundleDir: string;
+  const esConfig = () =>
+    elasticsearchConfigFromEnv({
+      ES_URL: esServer.hosts[0],
+      ES_USERNAME: esServer.username,
+      ES_PASSWORD: esServer.password,
+    });
 
   const run = async (taskType: string, id: string) => {
     const pod = supervisor.getRoute(taskType)!;
@@ -103,7 +111,7 @@ describe('task types served from bundles', () => {
       },
     });
 
-    const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+    bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
     const entries = getTaskBundleEntries().filter(
       ({ pluginId }: { pluginId: string }) => pluginId === 'taskManager'
     );
@@ -229,24 +237,24 @@ describe('task types served from bundles', () => {
         aliases: { '.kibana': {}, [`.kibana_${KIBANA_VERSION}`]: {} },
         mappings: { dynamic: false, properties: { type: { type: 'keyword' } } },
       });
-      const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+      const plumbingDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
       const built = await buildTaskBundle({
         entry: {
           pluginId: 'taskManager',
           name: 'taskManager__settings_plumbing',
           file: join(__dirname, 'fixtures/settings_plumbing.task.ts'),
         },
-        outDir: bundleDir,
+        outDir: plumbingDir,
       });
       writeFileSync(
-        join(bundleDir, 'manifest.json'),
+        join(plumbingDir, 'manifest.json'),
         JSON.stringify({
           bundles: { [built.name]: { file: `${built.name}.js`, taskType: PLUMBING_TASK_TYPE } },
         })
       );
       plumbing = new TaskProcessSupervisor({
         settings: {
-          bundle_dir: bundleDir,
+          bundle_dir: plumbingDir,
           kibanaVersion: KIBANA_VERSION,
           getElasticsearchConfig: () =>
             elasticsearchConfigFromEnv({
@@ -340,6 +348,164 @@ describe('task types served from bundles', () => {
         kind: 'declined',
         reason: expect.stringContaining(`${PLUMBING_PARITY_KIND} [registered-later]`),
       });
+    });
+  });
+
+  describe('a process of production hardening', () => {
+    const bundleFile = () => join(bundleDir, DELETE_BUNDLE);
+    const childPids = () =>
+      execSync(`pgrep -f "${DELETE_BUNDLE}" || true`, { encoding: 'utf8' })
+        .split('\n')
+        .filter(Boolean)
+        .map(Number);
+    const isAlive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const createSupervisor = (settings: Partial<TaskProcessSettings>) => {
+      const hardened = new TaskProcessSupervisor({
+        settings: {
+          bundle_dir: bundleDir,
+          kibanaVersion: KIBANA_VERSION,
+          getElasticsearchConfig: esConfig,
+          drainTimeoutMs: 1000,
+          ...settings,
+        },
+        logger: loggingSystemMock.createLogger(),
+      });
+      hardened.start();
+      return hardened;
+    };
+    const routeOf = (hardened: TaskProcessSupervisor) =>
+      hardened.getRoute(DELETE_NODES) as {
+        acquire: (context?: { executionUuid?: string }) => Promise<TaskProcessLease>;
+      };
+
+    it('ends a process whose parent was killed', async () => {
+      // A parent of our own that forks the bundle the way the supervisor does, then is SIGKILLed.
+      const harnessDir = mkdtempSync(join(tmpdir(), 'task-harness-'));
+      const initFile = join(harnessDir, 'init.json');
+      writeFileSync(
+        initFile,
+        JSON.stringify({
+          kind: 'init',
+          elasticsearch: esConfig(),
+          kibanaVersion: KIBANA_VERSION,
+          authToken: 'token',
+        }),
+        { mode: 0o600 }
+      );
+      const harnessFile = join(harnessDir, 'harness.js');
+      writeFileSync(
+        harnessFile,
+        `
+        const { fork } = require('child_process');
+        const child = fork(process.argv[2], [], {
+          env: { ...process.env, PORT: '0' },
+          stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+        });
+        child.on('message', (m) => {
+          if (m && m.kind === 'ready') console.log('CHILD ' + child.pid);
+        });
+        child.send(JSON.parse(require('fs').readFileSync(process.argv[3], 'utf8')));
+        setInterval(() => {}, 1000);
+      `
+      );
+      const harness = spawn(process.execPath, [harnessFile, bundleFile(), initFile], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      try {
+        const childPid = await new Promise<number>((resolve, reject) => {
+          harness.once('exit', () => reject(new Error('the harness exited early')));
+          harness.stdout!.on('data', (chunk: Buffer) => {
+            const match = /CHILD (\d+)/.exec(chunk.toString());
+            if (match) resolve(Number(match[1]));
+          });
+        });
+        expect(isAlive(childPid)).toBe(true);
+
+        // Only the parent this test started.
+        harness.kill('SIGKILL');
+        await retry(async () => expect(isAlive(childPid)).toBe(false), {
+          times: 30,
+          intervalMs: 500,
+        });
+      } finally {
+        harness.kill('SIGKILL');
+      }
+    });
+
+    it('runs in Kibana, counted as capacity, when max_concurrent_processes processes are held', async () => {
+      const capped = createSupervisor({ maxConcurrentProcesses: 1 });
+      const held = await routeOf(capped).acquire();
+      const local = { run: jest.fn().mockResolvedValue({ state: { local: true } }) };
+      const onFallback = jest.fn();
+      try {
+        await expect(
+          new RemoteTaskRunner({
+            route: routeOf(capped),
+            request: {
+              taskType: DELETE_NODES,
+              taskInstance: { id: 'capped', taskType: DELETE_NODES, params: {}, state: {} },
+              executionUuid: 'capped-1',
+              kibanaVersion: KIBANA_VERSION,
+            },
+            timeoutMs: 30000,
+            setCustomTaskRunEventFields: jest.fn(),
+            fallback: () => local,
+            onFallback,
+            fetchFn: undiciFetch as unknown as typeof fetch,
+          }).run()
+        ).resolves.toEqual({ state: { local: true } });
+        expect(onFallback).toHaveBeenCalledWith(DELETE_NODES, 'capacity', expect.any(String));
+        expect(capped.getStats()).toMatchObject({ live: 1, active: 1, capacityRejections: 1 });
+      } finally {
+        held.release();
+        await capped.stop();
+      }
+    });
+
+    it('starts a process without the inspector and heap flags of Kibana and with the configured heap', async () => {
+      const previous = process.env.NODE_OPTIONS;
+      process.env.NODE_OPTIONS = '--max-old-space-size=123 --inspect-port=0 --no-warnings';
+      const configured = createSupervisor({ childMaxOldSpaceMb: 321 });
+      let lease: TaskProcessLease | undefined;
+      try {
+        lease = await routeOf(configured).acquire();
+        const [pid] = childPids();
+        expect(pid).toBeDefined();
+        // `e` prints the environment after the command line.
+        const command = execSync(`ps eww -o command= -p ${pid}`, { encoding: 'utf8' });
+        expect(command).toContain('--max-old-space-size=321');
+        expect(command).not.toContain('--max-old-space-size=123');
+        expect(command).not.toContain('--inspect');
+        expect(command).toContain('NODE_OPTIONS=--no-warnings');
+      } finally {
+        lease?.release();
+        await configured.stop();
+        if (previous === undefined) delete process.env.NODE_OPTIONS;
+        else process.env.NODE_OPTIONS = previous;
+      }
+    });
+
+    it('listens on the loopback address only', async () => {
+      const loopback = createSupervisor({});
+      const lease = await routeOf(loopback).acquire();
+      try {
+        const port = new URL(lease.url).port;
+        const listening = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN || true`, {
+          encoding: 'utf8',
+        });
+        expect(listening).toContain(`127.0.0.1:${port}`);
+        expect(listening).not.toContain(`*:${port}`);
+      } finally {
+        lease.release();
+        await loopback.stop();
+      }
     });
   });
 });

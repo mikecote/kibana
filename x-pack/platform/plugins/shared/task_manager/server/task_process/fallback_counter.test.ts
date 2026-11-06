@@ -16,9 +16,17 @@ describe('TaskProcessFallbackCounter', () => {
     counter.increment('alerting:a', 'unavailable');
     counter.increment('alerting:b', 'not_served');
 
+    const none = {
+      declined: 0,
+      not_served: 0,
+      unavailable: 0,
+      capacity: 0,
+      spawn_failed: 0,
+      spawn_timeout: 0,
+    };
     expect(counter.getCounts()).toEqual({
-      'alerting:a': { declined: 2, not_served: 0, unavailable: 1 },
-      'alerting:b': { declined: 0, not_served: 1, unavailable: 0 },
+      'alerting:a': { ...none, declined: 2, unavailable: 1 },
+      'alerting:b': { ...none, not_served: 1 },
     });
     expect(logger.warn).toHaveBeenCalledTimes(4);
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('(declined): lacks .new'));

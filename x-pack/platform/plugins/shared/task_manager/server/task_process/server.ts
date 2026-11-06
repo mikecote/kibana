@@ -71,6 +71,7 @@ const isSameSecret = (received: string | undefined, expected: string) => {
 export const startTaskProcessServer = ({
   taskDefinitions,
   port,
+  host,
   logger,
   kibanaVersion,
   authToken,
@@ -80,6 +81,11 @@ export const startTaskProcessServer = ({
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   port: number;
+  /**
+   * The address to listen on. A process Kibana forked listens on `127.0.0.1` only: the run request
+   * carries credentials. A remote process leaves it unset to be reachable from other hosts.
+   */
+  host?: string;
   logger: Logger;
   /** The Kibana version this process was built for; runs from another version are refused. */
   kibanaVersion: string;
@@ -257,9 +263,11 @@ export const startTaskProcessServer = ({
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
 
-  server.listen(port, () => {
+  const onListen = () => {
     const address = server.address();
     onListening?.(typeof address === 'object' && address ? address.port : port);
-  });
+  };
+  if (host) server.listen(port, host, onListen);
+  else server.listen(port, onListen);
   return server;
 };

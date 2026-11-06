@@ -58,6 +58,19 @@ describe('task process server', () => {
     server.close();
   });
 
+  it('listens on the loopback address only when given a host', async () => {
+    const loopback = startTaskProcessServer({
+      taskDefinitions: new Map(),
+      port: 0,
+      host: '127.0.0.1',
+      logger: loggingSystemMock.createLogger(),
+      kibanaVersion: '9.9.9',
+    });
+    await new Promise<void>((resolve) => loopback.once('listening', () => resolve()));
+    expect((loopback.address() as { address: string }).address).toBe('127.0.0.1');
+    loopback.close();
+  });
+
   const runner = (overrides: Partial<{ taskType: string; token: string; version: string }> = {}) =>
     new RemoteTaskRunner({
       route: { url, token: overrides.token ?? TOKEN },

@@ -108,8 +108,15 @@ export const buildCoreConfig = (
     plugins: { initialize: true },
     // No translation files: nothing in a run is rendered for a person.
     i18n: { locales: [] },
+    // A forked process writes Kibana's JSON layout, which Kibana reads and logs with its own logger;
+    // a remote process, which nobody reads for, keeps the readable pattern.
     logging: {
-      appenders: { console: { type: 'console', layout: { type: 'pattern' } } },
+      appenders: {
+        console: {
+          type: 'console',
+          layout: { type: process.env.TASK_PROCESS_LOG_LAYOUT === 'json' ? 'json' : 'pattern' },
+        },
+      },
       root: { appenders: ['console'], level: process.env.TASK_PROCESS_LOG_LEVEL ?? 'warn' },
     },
     ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings

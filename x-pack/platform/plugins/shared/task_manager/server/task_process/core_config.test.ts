@@ -30,6 +30,10 @@ const init = (extra: Partial<TaskProcessInit> = {}): TaskProcessInit => ({
   ...extra,
 });
 
+interface Logging {
+  appenders: { console: { layout: { type: string } } };
+}
+
 describe('buildCoreConfig', () => {
   it('gives Core the ui settings overrides and global overrides Kibana has', () => {
     const { settings, cleanup } = buildCoreConfig(
@@ -89,5 +93,21 @@ describe('buildCoreConfig', () => {
     );
     expect((withBasePath.settings.server as Record<string, unknown>).basePath).toBe('/kbn');
     withBasePath.cleanup();
+  });
+
+  it("writes Kibana's JSON layout when Kibana forked the process", () => {
+    const layoutOf = () =>
+      ((some.settings.logging as Logging).appenders.console.layout as { type: string }).type;
+    const some = buildCoreConfig(init(), {});
+    expect(layoutOf()).toBe('pattern');
+    some.cleanup();
+    process.env.TASK_PROCESS_LOG_LAYOUT = 'json';
+    try {
+      const forked = buildCoreConfig(init(), {});
+      expect((forked.settings.logging as Logging).appenders.console.layout.type).toBe('json');
+      forked.cleanup();
+    } finally {
+      delete process.env.TASK_PROCESS_LOG_LAYOUT;
+    }
   });
 });

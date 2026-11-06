@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { TaskProcessAcquireError } from './acquire_error';
 import { RemoteTaskRunner } from './remote_task_runner';
 
 describe('RemoteTaskRunner fallbacks', () => {
@@ -60,6 +61,20 @@ describe('RemoteTaskRunner fallbacks', () => {
       'alerting:test',
       'unavailable',
       'the process could not be started: boom'
+    );
+  });
+
+  it('reports the reason an acquire error carries', async () => {
+    const { runner, onFallback } = create(jest.fn(), {
+      route: {
+        acquire: jest.fn().mockRejectedValue(new TaskProcessAcquireError('capacity', 'full')),
+      },
+    });
+    await runner.run();
+    expect(onFallback).toHaveBeenCalledWith(
+      'alerting:test',
+      'capacity',
+      'the process could not be started: full'
     );
   });
 });

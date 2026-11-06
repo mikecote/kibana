@@ -239,6 +239,17 @@ export const configSchema = schema.object(
           ),
           /* child_process: where the bundles are; defaults to `task_bundles` or `target/task_bundles`. */
           bundle_dir: schema.maybe(schema.string()),
+          /*
+           * child_process: the most processes alive for runs at once. A run that finds the cap reached
+           * runs in Kibana (counted as a `capacity` fallback). Defaults to `max_workers`, which is the
+           * most runs Kibana has in flight, so only a lower value makes runs fall back.
+           */
+          max_concurrent_processes: schema.maybe(schema.number({ min: 1, max: 1000 })),
+          /*
+           * child_process: `--max-old-space-size` of each process, in MB. Unset, a process does not
+           * inherit the heap flags Kibana was started with, and Node picks the heap size.
+           */
+          child_max_old_space_mb: schema.maybe(schema.number({ min: 64, max: 65536 })),
           /* remote: the task process, and the bearer token it was started with (`TASK_PROCESS_TOKEN`). */
           remote: schema.maybe(
             schema.object({

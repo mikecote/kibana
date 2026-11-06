@@ -8,6 +8,7 @@
 import { Agent } from 'undici';
 import type { CancellableTask, RunResult } from '../task';
 import { createRetryableError, deserializeTaskRunError } from '../task_running/errors';
+import { TaskProcessAcquireError } from './acquire_error';
 import type { TaskProcessFallbackReason } from './fallback_counter';
 import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
@@ -27,7 +28,9 @@ export interface TaskProcessLease extends TaskProcessAddress {
  * A remote process Kibana reaches at a fixed address, or a process Kibana starts when a run needs it:
  * `acquire` starts it if it is not running, and rejects if it cannot be started.
  */
-export type TaskProcessRoute = TaskProcessAddress | { acquire: () => Promise<TaskProcessLease> };
+export type TaskProcessRoute =
+  | TaskProcessAddress
+  | { acquire: (context?: { executionUuid?: string }) => Promise<TaskProcessLease> };
 
 /** Where a task type runs when it is not run in this process. */
 export interface TaskProcessDispatch {
@@ -111,13 +114,13 @@ export class RemoteTaskRunner implements CancellableTask {
     let address: TaskProcessAddress;
     if ('acquire' in route) {
       try {
-        lease = await route.acquire();
+        lease = await route.acquire({ executionUuid: request.executionUuid });
       } catch (error) {
         // The process cannot be started: Kibana runs the task itself, as it always can.
         if (this.params.fallback) {
           this.params.onFallback?.(
             request.taskType,
-            'unavailable',
+            error instanceof TaskProcessAcquireError ? error.reason : 'unavailable',
             `the process could not be started: ${(error as Error).message}`
           );
           this.local = this.params.fallback();
