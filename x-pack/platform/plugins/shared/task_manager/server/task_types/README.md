@@ -570,10 +570,17 @@ function `setup()` calls (`registerXAgentBuilder(setup, services)`), so there is
   `settings[id]` and listed in `declares.settings`. Send `() => ({})` at least, so that a plugin that is not
   enabled in this Kibana (a plugin of another solution, `enabled: false`) registers nothing in the process.
 - `services` has what a registration reads in Kibana from `coreSetup.getStartServices()` (`getCoreStart`,
-  `getActionsStart`, `getAgentBuilderStart`), lazily. A registration that needs a service the process does not
-  have is not made (the platform plugin does not register the product documentation tool, which needs the
-  LLM tasks plugin, nor the image attachment type, which needs the files plugin). Do not register a tool that
-  would answer "not available": the process would then differ from Kibana, which the parity guard reports.
+  `getActionsStart`, `getInferenceStart`, `getAgentBuilderStart`, `getWorkflowsManagement`), lazily. A registration that
+  needs a service the process does not have is not made, and the parity guard reports it: do not register a tool that
+  would answer "not available" instead. Services that other plugins own are built from explicit dependencies by a
+  function the plugin and the process share (`createLlmTasksStartContract` with `createProductDocReadServices`, and
+  `createFilesRunServices`, which the platform contribution uses for the product documentation tool and the image
+  attachment type).
+- SML types (`agentBuilderSml.registerType`) are registered with `context.registerSmlType`, which takes the place of
+  the SML plugin's setup contract (`{ registerType: context.registerSmlType }`). The process owns an SML service
+  (`createSmlService`, started with the privileges of the security task plugin) and an SML start contract
+  (`createSmlStartContract`), which the SML tools read. Kibana's ids come from `getRegisteredTypeIds()` of the SML plugin,
+  and are compared under the `agentBuilder.smlTypes` parity kind.
 - Import leaf files, and take the registration function's services as arguments, as for every plugin factory.
 
 **Parity.** Kibana sends the ids it registered with each registry (`workflowsExtensions.registerTaskProcessParity`,
@@ -626,12 +633,22 @@ capabilities of a request are resolved from its `ui:ml/*` privileges and the lic
 capabilities service in a process). Differences from Kibana are in the comment of each contribution (the AI
 indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
 data views of ML recognizers).
-Not yet: agent_builder_dashboards (the dashboard client and the embeddable schemas), agent_builder_workflows
-(the SML type and the workflow tools that need the workflows service), alerting_v2 (the v2 rules services),
-evals_skills (the evals task providers), and streams, security_solution, discoveries, alertzero, agentic_investigations,
-observability_agent_builder (which infra, slo and synthetics register data providers with), significant_events and
-nightshift_investigations. The SML types (`agentBuilderSml.registerType`) are another registry, not yet served: the
-SML tools are not registered in a process, so a Kibana that has them is not at parity.
+Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
+the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
+are read and validated without them), agent_builder_workflows (over the management API of the process: tools that
+need the workflows service of Kibana are registered and fail with "only available in Kibana"; the workflow tool and
+the hooks run workflows through `scheduleWorkflow`), and the SML types of visualizations, platform, dashboards and
+workflows. Product documentation counts as installed from the status saved objects (an installation in flight is
+not looked at; Security Labs is not available).
+
+Not yet, with what each needs: alerting_v2 (its rules, action policy and episodes clients are built per request by an
+inversify container with about a dozen bindings, and its skills use the workflows service), evals_skills (the evals
+start contract: dataset and score services, the evaluator registry other plugins fill in their setup), and the hard
+tier: streams, security_solution, discoveries, alertzero, agentic_investigations, observability_agent_builder (which
+infra, slo and synthetics register data providers with), significant_events and nightshift_investigations. The
+registrations made after start (`agents.ensure` with its availability map, `skills.register` of the start contract:
+significant_events, alertzero, nightshift_investigations) need Kibana to send the current set per dispatch; no plugin of the
+medium tier makes them.
 
 ### What stays in Kibana
 

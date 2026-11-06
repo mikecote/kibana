@@ -82,6 +82,11 @@ export interface WorkflowProcessHarnessOptions {
   /** Saved object types the plugin of the steps registers, whose indices Kibana would have. */
   savedObjectTypes?: Array<{ name: string; mappings: unknown; indexPattern?: string }>;
   /**
+   * What the plugins contribute to the module, by contribution key, for the process that seeds: it
+   * then registers the saved object types the contributions declare (the bundle's process always does).
+   */
+  seedContributions?: Record<string, unknown[]>;
+  /**
    * Seeds what Kibana would have, with the host of a process of the module (saved objects, whose
    * client encrypts the attributes of the encrypted types, such as the `secrets` of a connector) and the ES client.
    */
@@ -311,6 +316,7 @@ const startHarness = async (
         ...initFor(),
       },
       module: scheduledTaskType,
+      contributions: options.seedContributions,
     });
     try {
       await options.seed({
