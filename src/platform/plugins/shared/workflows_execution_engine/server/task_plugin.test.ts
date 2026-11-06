@@ -38,7 +38,7 @@ describe('the workflows execution engine task plugin', () => {
       coreMock.createPluginInitializerContext() as never
     );
     const start = coreMock.createStart();
-    const contract = (instance as { start: (core: unknown) => unknown }).start(start);
+    const contract = (instance as unknown as { start: (core: unknown) => unknown }).start(start);
 
     expect(contract).toEqual({ serviceAccounts: start.security.serviceAccounts });
   });
