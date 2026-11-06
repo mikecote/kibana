@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreSetup } from '@kbn/core/server';
+import type { CoreSetup, CoreStart } from '@kbn/core/server';
 import { PluginType } from '@kbn/core-base-common';
 import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
 
@@ -15,6 +15,15 @@ import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 
 /** The name of the workflow workload type, which the plugin and a task process register alike. */
 export const WORKFLOW_WORKLOAD_TYPE_NAME = 'Workflow';
+
+/** What the engine's task plugin returns from `start`, as `host.plugins.workflowsExecutionEngine`. */
+export interface WorkflowsEngineTaskPluginStart {
+  /**
+   * The service accounts as the engine plugin sees them: Core scopes the workload methods to the plugin
+   * that registered the workload type, and the bindings Kibana made are under this plugin's id.
+   */
+  serviceAccounts: CoreStart['security']['serviceAccounts'];
+}
 
 /**
  * The execution engine as a plugin of a task process, under the id of the real plugin: Core scopes
@@ -47,8 +56,8 @@ export const createWorkflowsEngineTaskPlugin = (kibanaVersion: string): StaticPl
           name: WORKFLOW_WORKLOAD_TYPE_NAME,
         });
       },
-      start() {
-        return {};
+      start(core: CoreStart): WorkflowsEngineTaskPluginStart {
+        return { serviceAccounts: core.security.serviceAccounts };
       },
     })) as never,
   },

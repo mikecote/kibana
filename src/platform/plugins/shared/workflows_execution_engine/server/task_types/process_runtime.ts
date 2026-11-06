@@ -47,6 +47,7 @@ import type { WorkflowMeteringCloud } from '../metering';
 import { WorkflowsMeteringService } from '../metering/metering_service';
 import { createDataStreamDataClients } from '../repositories/data_access_layer/implementations/data_stream/data_stream_data_client_bundle';
 import { createPlainIndexDataClients } from '../repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
+import type { WorkflowsEngineTaskPluginStart } from '../task_plugin';
 import type { WorkflowCoreStart, WorkflowDataStreamsAdapter } from '../workflow_core_services';
 
 const onlyInKibana = (what: string) => () => {
@@ -248,8 +249,10 @@ export const createWorkflowRuntimeFromHost = async (
     security: {
       authc: host.security.authc,
       audit: host.security.audit,
+      // The engine plugin's own: the workload bindings are scoped to the plugin that registered the type.
       serviceAccounts:
-        (host.security as Partial<SecurityServiceStart>).serviceAccounts ?? noServiceAccounts(),
+        (host.plugins?.workflowsExecutionEngine as WorkflowsEngineTaskPluginStart | undefined)
+          ?.serviceAccounts ?? noServiceAccounts(),
     },
     userProfile,
     http,

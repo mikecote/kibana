@@ -18,6 +18,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
+import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
@@ -29,6 +30,11 @@ import {
   createConfig as createSecurityConfig,
   ConfigSchema as securityConfigSchema,
 } from '@kbn/security-plugin/server/config';
+import {
+  registerServiceAccountCredentialSavedObjectType,
+  registerWorkloadBindingSavedObjectType,
+} from '@kbn/security-plugin/server/service_accounts';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
@@ -70,6 +76,10 @@ const CONNECTOR_ID = 'webhook-1';
 const ES_WORKFLOW_ID = 'es-workflow';
 const CUSTOM_STEP_WORKFLOW_ID = 'custom-step-workflow';
 const RUN_AS_WORKFLOW_ID = 'run-as-workflow';
+const RUN_AS_KIBANA_WORKFLOW_ID = 'run-as-kibana-workflow';
+const RUN_AS_UNBOUND_WORKFLOW_ID = 'run-as-unbound-workflow';
+const SERVICE_ACCOUNT_NAME = 'workflow-runner';
+const SERVICE_ACCOUNT_ID = `kibana/${SERVICE_ACCOUNT_NAME}`;
 const KIBANA_WORKFLOW_ID = 'kibana-workflow';
 const CONNECTOR_WORKFLOW_ID = 'connector-workflow';
 const FAILING_WORKFLOW_ID = 'failing-workflow';
@@ -291,7 +301,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
 
     const { startES } = createTestServers({
       adjustTimeout: (t) => jest.setTimeout(t),
-      settings: { es: { license: 'trial' } },
+      settings: { es: { license: 'trial', esArgs: ['xpack.security.authc.token.enabled=true'] } },
     });
     esServer = await startES();
     es = esServer.es.getClient();
@@ -308,9 +318,16 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       const index = type.indexPattern ?? '.kibana';
       indexMappings.set(index, { ...(indexMappings.get(index) ?? {}), [type.name]: type.mappings });
     }
+    // The two hidden types of service accounts, which the security plugin registers.
+    const serviceAccountTypes: Array<{ name: string; mappings: unknown }> = [];
+    const registrar = { registerType: (type: never) => serviceAccountTypes.push(type) } as never;
+    const eso = { registerType: () => {} } as never;
+    registerWorkloadBindingSavedObjectType(registrar, eso);
+    registerServiceAccountCredentialSavedObjectType(registrar, eso);
     indexMappings.set('.kibana', {
       ...(indexMappings.get('.kibana') ?? {}),
       config: { properties: { buildNum: { type: 'integer' } } },
+      ...Object.fromEntries(serviceAccountTypes.map(({ name, mappings }) => [name, mappings])),
     });
     indexMappings.set('.kibana_task_manager', {
       ...(indexMappings.get('.kibana_task_manager') ?? {}),
@@ -406,17 +423,42 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         with: { method: 'GET', path: '/_cluster/health' },
       },
     ]);
+    // The identity a step runs as is what Elasticsearch says it authenticated.
     await seedWorkflow(
       RUN_AS_WORKFLOW_ID,
       'run as workflow',
       [
         {
-          name: 'health',
+          name: 'whoami',
           type: 'elasticsearch.request',
-          with: { method: 'GET', path: '/_cluster/health' },
+          with: { method: 'GET', path: '/_security/_authenticate' },
         },
       ],
-      { settings: { run_as: 'service-account' } }
+      { settings: { run_as: SERVICE_ACCOUNT_ID } }
+    );
+    await seedWorkflow(
+      RUN_AS_KIBANA_WORKFLOW_ID,
+      'run as kibana workflow',
+      [
+        {
+          name: 'status',
+          type: 'kibana.request',
+          with: { request: { method: 'GET', path: '/api/stub/thing' } },
+        },
+      ],
+      { settings: { run_as: SERVICE_ACCOUNT_ID } }
+    );
+    await seedWorkflow(
+      RUN_AS_UNBOUND_WORKFLOW_ID,
+      'run as unbound workflow',
+      [
+        {
+          name: 'whoami',
+          type: 'elasticsearch.request',
+          with: { method: 'GET', path: '/_security/_authenticate' },
+        },
+      ],
+      { settings: { run_as: SERVICE_ACCOUNT_ID } }
     );
     await seedWorkflow(CUSTOM_STEP_WORKFLOW_ID, 'custom step workflow', [
       { name: 'custom', type: 'unregistered.customStep', with: { value: 1 } },
@@ -500,6 +542,61 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         },
         { id: CONNECTOR_ID }
       );
+
+    // What Kibana saved for service accounts, through the same services (the process of the seeder
+    // has the security plugin's): the account with its credential in Elasticsearch, and the workflows
+    // bound to it under the plugin id of the engine. Kibana registers its privileges when it starts.
+    await es.security.putPrivileges({
+      privileges: { 'kibana-.kibana': { all: { actions: ['login:'] } } },
+    });
+    await es.security.putRole({
+      name: 'workflow-runner-role',
+      cluster: ['monitor'],
+      indices: [{ names: ['workflow-runner-*'], privileges: ['all'] }],
+    });
+    const { serviceAccounts } = seeder.host.plugins!.security as SecurityTaskPluginStart;
+    // A user who manages security (Kibana's own user may not).
+    await es.security.putUser({
+      username: 'workflow-admin',
+      password: 'changeme-password',
+      roles: ['superuser'],
+    });
+    const kibanaUser = kibanaRequestFactory({
+      headers: {
+        authorization: `Basic ${Buffer.from('workflow-admin:changeme-password').toString(
+          'base64'
+        )}`,
+      },
+    });
+    // A process has no session: the user is what Kibana's authenticator put on the request.
+    Object.defineProperty(kibanaUser, 'auth', {
+      configurable: true,
+      value: {
+        isAuthenticated: true,
+        credentials: {
+          username: 'workflow-admin',
+          roles: ['superuser'],
+          enabled: true,
+          authentication_realm: { name: 'default_native', type: 'native' },
+          lookup_realm: { name: 'default_native', type: 'native' },
+          authentication_provider: { type: 'basic', name: 'basic' },
+          authentication_type: 'realm',
+          elastic_cloud_user: false,
+          metadata: {},
+        },
+      },
+    });
+    await serviceAccounts!.backend.create(kibanaUser, {
+      name: SERVICE_ACCOUNT_NAME,
+      roles: ['workflow-runner-role'],
+    });
+    for (const workloadId of [RUN_AS_WORKFLOW_ID, RUN_AS_KIBANA_WORKFLOW_ID]) {
+      await serviceAccounts!.workloads.bindWorkload('workflowsExecutionEngine', kibanaUser, {
+        serviceAccountId: SERVICE_ACCOUNT_ID,
+        workloadType: 'workflow',
+        workloadId,
+      });
+    }
 
     const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
     const bundleNames = {
@@ -611,15 +708,67 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     expect(await executionsOf(CUSTOM_STEP_WORKFLOW_ID)).toHaveLength(0);
   });
 
-  it('declines a run_as workflow before any side effect, even with service accounts enabled', async () => {
-    expect(settings().security.serviceAccounts.enabled).toBe(true);
-    const fallback = jest.fn(() => ({ run: async () => undefined }));
-    usageApiRecords.length = 0;
-    await run(RUN_AS_WORKFLOW_ID, fallback as never);
+  describe('workflows that run as a service account', () => {
+    it('runs in the process, and a step is authenticated as the service account', async () => {
+      const fallback = jest.fn();
+      await run(RUN_AS_WORKFLOW_ID, fallback as never);
 
-    expect(fallback).toHaveBeenCalledTimes(1);
-    expect(await executionsOf(RUN_AS_WORKFLOW_ID)).toHaveLength(0);
-    expect(usageApiRecords).toHaveLength(0);
+      expect(fallback).not.toHaveBeenCalled();
+      const [execution] = await executionsOf(RUN_AS_WORKFLOW_ID);
+      expect(execution).toEqual(
+        expect.objectContaining({
+          status: 'completed',
+          effectiveIdentity: expect.objectContaining({ id: SERVICE_ACCOUNT_ID }),
+        })
+      );
+      const steps = await (async () => {
+        await es.indices.refresh({ index: WORKFLOWS_STEP_EXECUTIONS_INDEX });
+        const { hits } = await es.search<Record<string, any>>({
+          index: WORKFLOWS_STEP_EXECUTIONS_INDEX,
+          query: { term: { workflowRunId: execution.id } },
+        });
+        return hits.hits.map((hit) => hit._source!);
+      })();
+      const [step] = steps;
+      expect(step).toEqual(expect.objectContaining({ stepId: 'whoami', status: 'completed' }));
+      // Elasticsearch authenticated the step as the service account, by a token and not by the
+      // API key of the task or Kibana's own user.
+      expect(step.output).toEqual(
+        expect.objectContaining({
+          username: SERVICE_ACCOUNT_ID,
+          authentication_type: 'token',
+        })
+      );
+      // The credential it used is not in what the run stored.
+      expect(JSON.stringify([execution, steps])).not.toContain(apiKey);
+    });
+
+    it('calls Kibana with the credential of the service account, not the one of the task', async () => {
+      kibanaRequests.length = 0;
+      const fallback = jest.fn();
+      await run(RUN_AS_KIBANA_WORKFLOW_ID, fallback as never, {
+        featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
+      });
+
+      expect(fallback).not.toHaveBeenCalled();
+      const [execution] = await executionsOf(RUN_AS_KIBANA_WORKFLOW_ID);
+      expect(execution.status).toBe('completed');
+      expect(kibanaRequests).toHaveLength(1);
+      expect(kibanaRequests[0].headers.authorization).toMatch(/^Bearer /);
+      expect(kibanaRequests[0].headers.authorization).not.toContain(apiKey);
+    });
+
+    it('fails the run of a workflow that is not bound to its service account, as Kibana does', async () => {
+      const fallback = jest.fn();
+      await expect(run(RUN_AS_UNBOUND_WORKFLOW_ID, fallback as never)).rejects.toThrow(
+        'No service account is bound to workload'
+      );
+
+      // It ran in the process, where nothing ran as anyone.
+      expect(fallback).not.toHaveBeenCalled();
+      const executions = await executionsOf(RUN_AS_UNBOUND_WORKFLOW_ID);
+      expect(executions.every(({ status }) => status !== 'completed')).toBe(true);
+    });
   });
 
   const stepsOf = async (executionId: string) => {

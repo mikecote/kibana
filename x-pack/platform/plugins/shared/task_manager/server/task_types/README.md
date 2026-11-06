@@ -476,6 +476,19 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** Clients are built with `DataStreamClient.fromDefinition` over the engine's shared
   definitions: nothing is installed.
+- **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
+  plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
+  `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
+  project type, for UIAM) and, with UIAM, the contents of the mTLS certificate, key and certificate
+  authorities (not their paths, so that a remote process can connect). The two hidden saved object types
+  (workload bindings, credentials) are registered by the plugin's own functions, and the service needs the
+  encrypted saved objects plugin, which a module gets by declaring encrypted saved object types (the
+  workflows module does). The engine's task plugin registers the `workflow` workload type and hands
+  `core.security.serviceAccounts` to the runtime, because Core scopes the workload methods to the plugin
+  that registered the type. Both backends are served: Elasticsearch service accounts (the credential is
+  read and decrypted in the process) and UIAM (the process exchanges the account for a token itself). Without
+  the encrypted saved objects plugin or with `serviceAccounts.enabled: false`, `canRunAs()` is false and the
+  workflow is declined.
 - **Metering.** The process reports the usage record itself. Kibana sends the Usage API connection (URL
   and TLS, setting `workflowsUsageApi`, only when it reports metering), the process builds the same
   `WorkflowsMeteringService` over the usage API's own `UsageReportingService` (the same retries, the same
@@ -508,8 +521,6 @@ flags and event log providers it needs to the module. Rules to follow:
   process does not know, a templated value, an input only Kibana can serve).
 - A step that emits events without waiting must flush them before it returns, because the process exits
   with the run.
-- `workflows` with `settings.run_as` are declined whatever `serviceAccounts.enabled` says (the process's
-  `canRunAs()` is false): service accounts are not supported in a process yet.
 - A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
   counts usage reads `host.usageCounters.getUsageCounter(domain)`.
 
