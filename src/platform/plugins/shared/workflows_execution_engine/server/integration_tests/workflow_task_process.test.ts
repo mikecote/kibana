@@ -69,6 +69,7 @@ const RESUME_TASK_TYPE = 'workflow:resume';
 const CONNECTOR_ID = 'webhook-1';
 const ES_WORKFLOW_ID = 'es-workflow';
 const CUSTOM_STEP_WORKFLOW_ID = 'custom-step-workflow';
+const RUN_AS_WORKFLOW_ID = 'run-as-workflow';
 const KIBANA_WORKFLOW_ID = 'kibana-workflow';
 const CONNECTOR_WORKFLOW_ID = 'connector-workflow';
 const FAILING_WORKFLOW_ID = 'failing-workflow';
@@ -405,6 +406,18 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         with: { method: 'GET', path: '/_cluster/health' },
       },
     ]);
+    await seedWorkflow(
+      RUN_AS_WORKFLOW_ID,
+      'run as workflow',
+      [
+        {
+          name: 'health',
+          type: 'elasticsearch.request',
+          with: { method: 'GET', path: '/_cluster/health' },
+        },
+      ],
+      { settings: { run_as: 'service-account' } }
+    );
     await seedWorkflow(CUSTOM_STEP_WORKFLOW_ID, 'custom step workflow', [
       { name: 'custom', type: 'unregistered.customStep', with: { value: 1 } },
     ]);
@@ -596,6 +609,17 @@ describe('the workflow:scheduled task type served from a bundle', () => {
 
     expect(fallback).toHaveBeenCalledTimes(1);
     expect(await executionsOf(CUSTOM_STEP_WORKFLOW_ID)).toHaveLength(0);
+  });
+
+  it('declines a run_as workflow before any side effect, even with service accounts enabled', async () => {
+    expect(settings().security.serviceAccounts.enabled).toBe(true);
+    const fallback = jest.fn(() => ({ run: async () => undefined }));
+    usageApiRecords.length = 0;
+    await run(RUN_AS_WORKFLOW_ID, fallback as never);
+
+    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(await executionsOf(RUN_AS_WORKFLOW_ID)).toHaveLength(0);
+    expect(usageApiRecords).toHaveLength(0);
   });
 
   const stepsOf = async (executionId: string) => {

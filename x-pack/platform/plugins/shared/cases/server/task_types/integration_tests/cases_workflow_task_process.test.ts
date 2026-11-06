@@ -23,6 +23,7 @@ const CREATE_WORKFLOW_ID = 'create-case-workflow';
 const DELETE_WORKFLOW_ID = 'delete-cases-workflow';
 const ON_CREATED_WORKFLOW_ID = 'on-case-created-workflow';
 const CASES_INDEX = '.kibana_alerting_cases';
+const USAGE_COUNTERS_INDEX = '.kibana_usage_counters';
 // How the saved object stores `critical`.
 const SEVERITY_CRITICAL = 30;
 
@@ -101,7 +102,24 @@ describe('cases workflow steps served from the workflow:scheduled bundle', () =>
         },
       },
       settings: { cases: casesSettings },
-      savedObjectTypes: getCasesTaskProcessSavedObjectTypes() as never,
+      // The usage counters index Kibana has: the process stores what the cases client counts.
+      savedObjectTypes: [
+        ...getCasesTaskProcessSavedObjectTypes(),
+        {
+          name: 'usage-counter',
+          indexPattern: USAGE_COUNTERS_INDEX,
+          mappings: {
+            dynamic: false,
+            properties: {
+              domainId: { type: 'keyword' },
+              counterName: { type: 'keyword' },
+              counterType: { type: 'keyword' },
+              source: { type: 'keyword' },
+              count: { type: 'integer' },
+            },
+          },
+        },
+      ] as never,
       // What Kibana has: the default space.
       seed: async ({ es }) => {
         await es.index({
@@ -177,6 +195,23 @@ describe('cases workflow steps served from the workflow:scheduled bundle', () =>
       query: { term: { 'task.taskType': 'workflow:run' } },
     });
     expect(JSON.stringify(tasks.hits.hits)).toContain(ON_CREATED_WORKFLOW_ID);
+
+    // The cases client counted the call with the usage counter of its domain, and the process stored
+    // it itself before it answered: Kibana got nothing back to apply.
+    await harness.es.indices.refresh({ index: USAGE_COUNTERS_INDEX });
+    const counters = await harness.es.search<{ 'usage-counter': Record<string, unknown> }>({
+      index: USAGE_COUNTERS_INDEX,
+      query: { term: { 'usage-counter.domainId': 'cases' } },
+    });
+    expect(counters.hits.hits.map((hit) => hit._source!['usage-counter'])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domainId: 'cases',
+          counterType: expect.stringMatching(/^cases_client\./),
+          count: expect.any(Number),
+        }),
+      ])
+    );
   });
 
   it('declines a workflow that deletes cases, writing nothing', async () => {
