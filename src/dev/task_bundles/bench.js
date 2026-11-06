@@ -20,6 +20,7 @@ const {
 
 // node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
 //   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>] [--node-defaults]
+//   [--run <request.json>] [--settings <settings.json>]
 // Processes start with the Node flags Kibana's supervisor gives them (a small young generation);
 // `--node-defaults` starts them with Node's own, to compare.
 // For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
@@ -32,6 +33,10 @@ const bundleDir = path.resolve(getArg('--dir', OUT_DIR));
 const nameFilter = getArg('--name');
 const runs = Number(getArg('--runs', 3));
 const settleMs = Number(getArg('--settle', 1500));
+const runFile = getArg('--run');
+const runRequest = runFile ? JSON.parse(fs.readFileSync(runFile, 'utf8')) : undefined;
+const settingsFile = getArg('--settings');
+const extraSettings = settingsFile ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {};
 const readyTimeoutMs = 60000;
 // The flags of a process as the supervisor starts it, without Kibana's own.
 const childOptions = args.includes('--node-defaults')
@@ -62,20 +67,23 @@ const getInit = (settingIds) => ({
     isDev: true,
   },
   encryptedSavedObjects: { encryptionKey: 'a'.repeat(32), decryptionOnlyKeys: [] },
-  settings: Object.fromEntries([
-    ...settingIds.map((id) => [id, {}]),
-    // What the security task plugin reads when it registers Core's security delegate.
-    [
-      'security',
-      {
-        audit: { enabled: false },
-        serviceAccounts: { enabled: false },
-        applicationName: 'kibana-.kibana',
-        kibanaServerResourceURL: 'http://localhost:5601',
-      },
-    ],
-    ['taskManager', { api_key_type: 'es', grant_uiam_api_keys: false }],
-  ]),
+  settings: {
+    ...Object.fromEntries([
+      ...settingIds.map((id) => [id, {}]),
+      // What the security task plugin reads when it registers Core's security delegate.
+      [
+        'security',
+        {
+          audit: { enabled: false },
+          serviceAccounts: { enabled: false },
+          applicationName: 'kibana-.kibana',
+          kibanaServerResourceURL: 'http://localhost:5601',
+        },
+      ],
+      ['taskManager', { api_key_type: 'es', grant_uiam_api_keys: false }],
+    ]),
+    ...extraSettings,
+  },
 });
 
 const rssMb = (pid) =>
@@ -89,14 +97,24 @@ const measureOnce = (file, settingIds) =>
     else delete env.NODE_OPTIONS;
     const child = fork(file, [], {
       env,
-      execArgv: childOptions.execArgv,
+      execArgv: [...childOptions.execArgv, '--require', path.join(__dirname, 'memory_probe.js')],
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     });
     let stderr = '';
     child.stderr.on('data', (chunk) => (stderr += chunk));
     const timers = {};
+    let finished = false;
+    let peakRss = 0;
+    let startupMs;
+    let readyRss;
+    let idleRss;
+    let runStatus;
+    const probes = {};
     const finish = (result) => {
+      if (finished) return;
+      finished = true;
       clearTimeout(timers.ready);
+      clearTimeout(timers.settle);
       child.kill('SIGKILL');
       resolve(result);
     };
@@ -112,19 +130,63 @@ const measureOnce = (file, settingIds) =>
       })
     );
     child.on('message', (message) => {
+      if (message?.kind === 'task-bundle-rss') {
+        peakRss = Math.max(peakRss, message.rss / 1048576);
+        return;
+      }
+      if (message?.kind === 'task-bundle-memory') {
+        probes[message.phase] = message;
+        peakRss = Math.max(peakRss, message.usage.rss / 1048576, message.peakRss / 1048576);
+        if ((message.phase === 'idle' && !runRequest) || message.phase === 'afterRun') {
+          finish({
+            startupMs,
+            readyRss,
+            idleRss,
+            peakRss: Math.max(peakRss, readyRss ?? 0, idleRss ?? 0),
+            probes,
+            runStatus,
+          });
+        }
+        return;
+      }
       if (message?.kind !== 'ready') return;
-      const startupMs = Number(process.hrtime.bigint() - started) / 1e6;
-      const readyRss = rssMb(child.pid);
+      startupMs = Number(process.hrtime.bigint() - started) / 1e6;
+      readyRss = rssMb(child.pid);
       // Let startup work that continues after the ready signal finish before reading idle memory.
-      setTimeout(() => {
-        let idleRss;
+      timers.settle = setTimeout(async () => {
         try {
           idleRss = rssMb(child.pid);
         } catch (e) {
           idleRss = undefined;
         }
-        child.removeAllListeners('exit');
-        finish({ startupMs, readyRss, idleRss });
+        child.send({ kind: 'task-bundle-memory', phase: 'idle' });
+        if (runRequest) {
+          try {
+            const response = await fetch(`http://127.0.0.1:${message.port}/run`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', authorization: 'Bearer bench' },
+              body: JSON.stringify(runRequest),
+            });
+            const body = await response.json();
+            runStatus = response.status;
+            if (!response.ok) {
+              child.removeAllListeners('exit');
+              finish({ error: `run returned HTTP ${response.status}` });
+              return;
+            }
+            if (body.kind !== 'result' || body.result?.error || body.result?.taskRunError) {
+              child.removeAllListeners('exit');
+              finish({ error: `task failed: ${JSON.stringify(body)}` });
+              return;
+            }
+            child.send({ kind: 'task-bundle-memory', phase: 'afterRun' });
+          } catch (error) {
+            child.removeAllListeners('exit');
+            finish({ error: `run failed: ${error.message}` });
+          }
+        } else {
+          child.removeAllListeners('exit');
+        }
       }, settleMs);
     });
     child.send(getInit(settingIds));
@@ -141,7 +203,7 @@ const measureOnce = (file, settingIds) =>
       !nameFilter || name.includes(nameFilter) || taskType.includes(nameFilter)
   );
   const results = [];
-  for (const [name, { file, taskType, bytes }] of selected) {
+  for (const [name, { file, taskType, bytes, startupBytes }] of selected) {
     // The settings ids the module declares are not in the manifest; any id it asks for at startup is
     // read from the bundle's own error, so retry once with the ids the error names.
     let settingIds = [];
@@ -164,12 +226,31 @@ const measureOnce = (file, settingIds) =>
       taskType,
       bundle: name,
       bundleMb: bytes ? Math.round(bytes / 1048576) : undefined,
+      startupSourceMb: startupBytes ? Math.round((startupBytes / 1048576) * 10) / 10 : undefined,
       ...(error
         ? { error }
         : {
             startupMs: Math.round(median(samples.map((s) => s.startupMs))),
             readyRssMb: Math.round(median(samples.map((s) => s.readyRss))),
             idleRssMb: Math.round(median(samples.map((s) => s.idleRss ?? s.readyRss))),
+            peakRssMb: Math.round(median(samples.map((s) => s.peakRss))),
+            heapUsedMb: Math.round(
+              median(samples.map((s) => s.probes.idle.usage.heapUsed)) / 1048576
+            ),
+            heapTotalMb: Math.round(
+              median(samples.map((s) => s.probes.idle.usage.heapTotal)) / 1048576
+            ),
+            externalMb: Math.round(
+              median(samples.map((s) => s.probes.idle.usage.external)) / 1048576
+            ),
+            ...(runRequest
+              ? {
+                  runStatus: samples[0].runStatus,
+                  afterRunHeapUsedMb: Math.round(
+                    median(samples.map((s) => s.probes.afterRun.usage.heapUsed)) / 1048576
+                  ),
+                }
+              : {}),
           }),
     };
     results.push(row);

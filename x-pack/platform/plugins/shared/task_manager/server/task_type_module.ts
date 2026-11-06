@@ -15,7 +15,7 @@ import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-s
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { HttpServiceStart } from '@kbn/core-http-server';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -205,7 +205,7 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * is the plugin's own slim implementation for a task process (`server/task_plugin.ts`), and the
    * runner reads what they return from `start` as `host.plugins[id]`. Kibana has the real plugins.
    */
-  taskPlugins?: ReadonlyArray<StaticPlugin>;
+  taskPlugins?: ReadonlyArray<TaskStaticPlugin>;
   /**
    * Feature flags the runner reads, with their fallbacks, as `host.featureFlags`. Kibana evaluates
    * them with its feature flags service when it dispatches a run and sends the values, so a flag

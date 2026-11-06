@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { type ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import {
   INPUT_MIME_TYPE,
   INPUT_VALUE,
@@ -33,7 +34,6 @@ import {
   PROMPT_TEMPLATE_TEMPLATE,
   LLM_TOOLS,
 } from '@arizeai/openinference-semantic-conventions';
-import type { tracing } from '@elastic/opentelemetry-node/sdk';
 import type { GenAIInputMessage, GenAIOutputMessage, GenAITextPart } from '../types';
 import type { GenAiToolDefinition } from '../gen_ai_tool_definitions';
 import { GenAISemanticConventions } from '../types';
@@ -41,7 +41,7 @@ import { flattenAttributes } from '../util/flatten_attributes';
 import { parseJsonAttr } from '../util/parse_json_attr';
 import { isTextPart, isToolCallPart, isToolCallResponsePart } from '../util/message_parts';
 
-export function getChatSpan(span: tracing.ReadableSpan) {
+export function getChatSpan(span: ReadableSpan) {
   const inputMessages = parseJsonAttr<GenAIInputMessage[]>(
     span.attributes[GenAISemanticConventions.GenAIInputMessages]
   );

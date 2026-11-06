@@ -170,7 +170,7 @@ describe('the security task plugin', () => {
   describe('lifecycle', () => {
     const boot = async (settings: unknown, { withEso = false }: { withEso?: boolean } = {}) => {
       startContext(settings);
-      const instance = await staticPlugin.definition.plugin!(initializerContext());
+      const instance = await staticPlugin.definition.taskPlugin!(initializerContext());
       const setup = coreMock.createSetup();
       const esoSetup = encryptedSavedObjectsMock.createSetup();
       (instance as any).setup(setup, withEso ? { encryptedSavedObjects: esoSetup } : {});
@@ -264,7 +264,7 @@ describe('the security task plugin', () => {
         definitions: new Map(),
         flushers: [],
       });
-      await expect(staticPlugin.definition.plugin!(initializerContext())).rejects.toThrow(
+      await expect(staticPlugin.definition.taskPlugin!(initializerContext())).rejects.toThrow(
         'The task process was not given the settings of: security'
       );
     });

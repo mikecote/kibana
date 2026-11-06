@@ -25,6 +25,8 @@ import type {
   PluginsServiceStartDeps,
 } from './plugins_service';
 import { RuntimePluginContractResolver } from './plugin_contract_resolver';
+import { createTaskPluginSetupContext, createTaskPluginStartContext } from './task_plugin_context';
+import type { TaskCoreSetupServices, TaskCoreStartServices } from './task_plugin';
 
 const Sec = 1000;
 
@@ -91,6 +93,31 @@ export class PluginsSystem<T extends PluginType> {
   public async setupPlugins(
     deps: T extends PluginType.preboot ? PluginsServicePrebootSetupDeps : PluginsServiceSetupDeps
   ): Promise<Map<string, unknown>> {
+    return this.setupPluginsWithContext((plugin, dependencies) => {
+      const context =
+        this.type === PluginType.preboot
+          ? createPluginPrebootSetupContext({
+              deps: deps as PluginsServicePrebootSetupDeps,
+              plugin,
+            })
+          : createPluginSetupContext({
+              deps: deps as PluginsServiceSetupDeps,
+              plugin,
+              runtimeResolver: this.runtimeResolver,
+            });
+      return plugin.setup(context, dependencies);
+    });
+  }
+
+  public async setupTaskPlugins(deps: TaskCoreSetupServices): Promise<Map<string, unknown>> {
+    return this.setupPluginsWithContext((plugin, dependencies) =>
+      plugin.setupTask(createTaskPluginSetupContext(deps, plugin), dependencies)
+    );
+  }
+
+  private async setupPluginsWithContext(
+    setup: (plugin: PluginWrapper, dependencies: Record<string, unknown>) => unknown
+  ): Promise<Map<string, unknown>> {
     const contracts = new Map<PluginName, unknown>();
     if (this.plugins.size === 0) {
       return contracts;
@@ -121,23 +148,9 @@ export class PluginsSystem<T extends PluginType> {
         return depContracts;
       }, {} as Record<PluginName, unknown>);
 
-      let pluginSetupContext;
-      if (this.type === PluginType.preboot) {
-        pluginSetupContext = createPluginPrebootSetupContext({
-          deps: deps as PluginsServicePrebootSetupDeps,
-          plugin,
-        });
-      } else {
-        pluginSetupContext = createPluginSetupContext({
-          deps: deps as PluginsServiceSetupDeps,
-          plugin,
-          runtimeResolver: this.runtimeResolver,
-        });
-      }
-
       await plugin.init();
       let contract: unknown;
-      const contractOrPromise = plugin.setup(pluginSetupContext, pluginDepContracts);
+      const contractOrPromise = setup(plugin, pluginDepContracts);
       if (isPromise(contractOrPromise)) {
         if (this.coreContext.env.mode.dev) {
           this.log.warn(
@@ -170,6 +183,23 @@ export class PluginsSystem<T extends PluginType> {
   }
 
   public async startPlugins(deps: PluginsServiceStartDeps) {
+    return this.startPluginsWithContext((plugin, dependencies) =>
+      plugin.start(
+        createPluginStartContext({ deps, plugin, runtimeResolver: this.runtimeResolver }),
+        dependencies
+      )
+    );
+  }
+
+  public async startTaskPlugins(deps: TaskCoreStartServices) {
+    return this.startPluginsWithContext((plugin, dependencies) =>
+      plugin.startTask(createTaskPluginStartContext(deps, plugin), dependencies)
+    );
+  }
+
+  private async startPluginsWithContext(
+    start: (plugin: PluginWrapper, dependencies: Record<string, unknown>) => unknown
+  ) {
     if (this.type === PluginType.preboot) {
       throw new Error('Preboot plugins cannot be started.');
     }
@@ -196,10 +226,7 @@ export class PluginsSystem<T extends PluginType> {
       }, {} as Record<PluginName, unknown>);
 
       let contract: unknown;
-      const contractOrPromise = plugin.start(
-        createPluginStartContext({ deps, plugin, runtimeResolver: this.runtimeResolver }),
-        pluginDepContracts
-      );
+      const contractOrPromise = start(plugin, pluginDepContracts);
       if (isPromise(contractOrPromise)) {
         if (this.coreContext.env.mode.dev) {
           this.log.warn(

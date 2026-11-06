@@ -5,9 +5,9 @@
  * 2.0.
  */
 
-import type { PluginInitializer } from '@kbn/core/server';
+import type { TaskPluginInitializer } from '@kbn/core-plugins-server-internal';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { TaskRegisterDefinition } from '../task_type_dictionary';
 import { getTaskProcessContext } from './context';
 
@@ -17,7 +17,10 @@ export interface TaskProcessTaskManagerSetup {
   registerTaskDefinitions: (definitions: Record<string, TaskRegisterDefinition>) => void;
 }
 
-const plugin: PluginInitializer<TaskProcessTaskManagerSetup, Record<string, never>> = async () => ({
+const plugin: TaskPluginInitializer<
+  TaskProcessTaskManagerSetup,
+  Record<string, never>
+> = async () => ({
   setup: () => ({
     registerTaskDefinitions: (definitions: Record<string, TaskRegisterDefinition>) => {
       const { definitions: registered } = getTaskProcessContext();
@@ -34,7 +37,7 @@ const plugin: PluginInitializer<TaskProcessTaskManagerSetup, Record<string, neve
  * Task Manager as a plugin of a task process: it collects the task definitions plugins register. It
  * claims, polls and schedules nothing, because Kibana does that and sends the process one run at a time.
  */
-export const createTaskManagerStaticPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createTaskManagerStaticPlugin = (kibanaVersion: string): TaskStaticPlugin => ({
   manifest: {
     id: 'taskManager',
     version: kibanaVersion,
@@ -49,5 +52,5 @@ export const createTaskManagerStaticPlugin = (kibanaVersion: string): StaticPlug
     ui: false,
     owner: { name: 'Response Ops', githubTeam: 'response-ops' },
   },
-  definition: { plugin },
+  definition: { taskPlugin: plugin },
 });

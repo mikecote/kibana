@@ -18,7 +18,6 @@ import type { FleetRunServices } from '@kbn/fleet-plugin/server/services/run_tim
 import { createActionService } from '../handlers/action/create_action_service';
 import type { OsqueryActionContext } from '../lib/osquery_app_context_services';
 import { OsqueryAppContextService } from '../lib/osquery_app_context_services';
-import { packType, savedQueryType, packAssetType } from '../lib/saved_query/saved_object_mappings';
 
 export interface OsqueryActionServiceDeps {
   fleetRunServices: Pick<
@@ -37,11 +36,7 @@ export interface OsqueryActionServiceDeps {
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
 }
 
-/**
- * The saved object types the live queries of rules read (saved queries and packs), for a task
- * process to register with Core.
- */
-export const getOsqueryRunSavedObjectTypes = () => [savedQueryType, packType, packAssetType];
+export { getOsqueryRunSavedObjectTypes } from './saved_objects';
 
 /**
  * The service rules use to create osquery live queries (what the plugin returns from `setup` as

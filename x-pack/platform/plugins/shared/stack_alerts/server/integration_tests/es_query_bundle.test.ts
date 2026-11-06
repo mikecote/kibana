@@ -12,55 +12,71 @@
 
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
+import type { Metafile } from 'esbuild';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getTaskBundleEntries, buildTaskBundle } = require(join(
+const { getTaskBundleEntries, buildTaskBundle, getStartupOutputs } = require(join(
   REPO_ROOT,
   'src/dev/task_bundles/build'
 ));
 
 /**
- * A bundle must hold what the task needs and not the plugins around it. The one plugin it does hold
- * is the encrypted saved objects plugin, which a task process runs as Kibana does. Plugin classes reach a bundle
- * through a barrel import or a constant that lives next to the class, and they bring everything the
- * class imports; this fails when that happens, and when the bundle grows past its budget.
+ * Startup imports must contain the task runtime without web plugins or connector executors.
+ * Deferred chunks retain the implementations needed by tasks that execute those capabilities.
  */
 describe('the .es-query bundle', () => {
   jest.setTimeout(300000);
 
-  it('has no plugin class, and stays within its size budget', async () => {
-    const entry = getTaskBundleEntries().find(
-      ({ name }: { name: string }) => name === 'stackAlerts__es_query'
-    );
-    const built = await buildTaskBundle({
-      entry,
-      outDir: mkdtempSync(join(tmpdir(), 'task-bundle-hygiene-')),
-      sourcemap: false,
-      metafile: true,
-    });
-    const inOutput = Object.entries(
-      Object.values(
-        built.metafile.outputs as Record<
-          string,
-          { inputs: Record<string, { bytesInOutput: number }> }
-        >
-      )[0].inputs
-    )
-      .filter(([, { bytesInOutput }]) => bytesInOutput > 0)
-      .map(([input]) => input);
+  it.each(['stackAlerts__es_query', 'securitySolution__query'])(
+    '%s starts without UI, plugin classes, or connector executor SDKs',
+    async (name) => {
+      const entry = getTaskBundleEntries().find(
+        (candidate: { name: string }) => candidate.name === name
+      );
+      const built = await buildTaskBundle({
+        entry,
+        outDir: mkdtempSync(join(tmpdir(), 'task-bundle-hygiene-')),
+        sourcemap: false,
+        metafile: true,
+      });
+      const metafile = built.metafile as Metafile;
+      const outputs = new Map(
+        Object.entries(metafile.outputs).map(([file, output]) => [resolve(REPO_ROOT, file), output])
+      );
+      const startupOutputs: string[] = getStartupOutputs(metafile, built.outfile);
+      const inOutput = startupOutputs
+        .flatMap((file) => {
+          const output = outputs.get(file);
+          if (!output) throw new Error(`Missing output metadata for ${file}`);
+          return Object.entries(output.inputs);
+        })
+        .filter(([, { bytesInOutput }]) => bytesInOutput > 0)
+        .map(([input]) => input);
+      expect(inOutput).toContain('src/core/packages/root/server-internal/src/task_root.ts');
 
-    const pluginClasses = inOutput.filter((input) =>
-      /\/plugins\/(shared|private)\/[^/]+\/server\/plugin\.ts$/.test(input)
-    );
-    expect(pluginClasses).toEqual([
-      'x-pack/platform/plugins/shared/encrypted_saved_objects/server/plugin.ts',
-    ]);
-    expect(inOutput.filter((input) => input.includes('/public/'))).toEqual([]);
-    expect(inOutput.filter((input) => input.includes('node_modules/@elastic/eui/'))).toEqual([]);
+      const pluginClasses = inOutput.filter((input) =>
+        /\/plugins\/(?:(?:shared|private)\/)?[^/]+\/server\/plugin\.ts$/.test(input)
+      );
+      expect(pluginClasses).toEqual([]);
+      expect(inOutput.filter((input) => input.includes('/public/'))).toEqual([]);
+      expect(inOutput.filter((input) => input.includes('node_modules/@elastic/eui/'))).toEqual([]);
+      expect(
+        inOutput.filter((input) =>
+          /node_modules\/(mongodb|mysql2|mssql|tedious|openai|gpt-tokenizer|@aws-sdk|@azure|@google-cloud)\//.test(
+            input
+          )
+        )
+      ).toEqual([]);
+      expect(
+        inOutput.filter((input) => input.includes('node_modules/@elastic/opamp-client-node/'))
+      ).toEqual([]);
 
-    // 27 MB when this was written: Core's internals and the connector types are most of it.
-    expect(built.bytes).toBeLessThan(35 * 1024 * 1024);
-  });
+      // Count deferred chunks too, separately from the startup dependency checks above.
+      expect(built.bytes).toBeLessThan(
+        (name === 'securitySolution__query' ? 40 : 35) * 1024 * 1024
+      );
+    }
+  );
 });

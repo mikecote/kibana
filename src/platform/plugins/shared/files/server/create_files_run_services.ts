@@ -15,6 +15,7 @@ import type { FileKind } from '../common/types';
 import { BlobStorageService } from './blob_storage_service';
 import { FileServiceFactoryImpl } from './file_service/file_service_factory';
 import { fileObjectType, fileShareObjectType } from './saved_objects';
+import type { FileAnalytics } from './performance/analytics';
 
 /** The saved object types the file service reads and writes: a task process declares them. */
 export const filesRunSavedObjectTypes = [fileObjectType, fileShareObjectType];
@@ -30,19 +31,22 @@ export const createFileServiceFactory = ({
   security,
   fileKindsRegistry,
   logger,
+  analytics,
 }: {
   savedObjects: SavedObjectsServiceStart;
   esClient: ElasticsearchClient;
   security?: SecurityPluginSetup;
   fileKindsRegistry: FileKindsRegistry;
   logger: Logger;
+  analytics?: FileAnalytics;
 }): FileServiceFactoryImpl =>
   new FileServiceFactoryImpl(
     savedObjects,
-    new BlobStorageService(esClient, logger.get('blob-storage-service')),
+    new BlobStorageService(esClient, logger.get('blob-storage-service'), analytics),
     security,
     fileKindsRegistry,
-    logger.get('files-service')
+    logger.get('files-service'),
+    analytics
   );
 
 /**
@@ -57,6 +61,7 @@ export const createFilesRunServices = ({
   esClient: ElasticsearchClient;
   security?: SecurityPluginSetup;
   logger: Logger;
+  analytics?: FileAnalytics;
   fileKinds: FileKind[];
 }): { fileServiceFactory: FileServiceFactoryImpl } => {
   const fileKindsRegistry = new FileKindsRegistryImpl();

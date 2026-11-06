@@ -22,7 +22,7 @@
  */
 
 // eslint-disable-next-line @kbn/eslint/require_kbn_fs
-import { mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
@@ -270,6 +270,8 @@ export class RuleProcessHarness {
     });
     // The bundles take most of the time: build them while Elasticsearch boots.
     const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+    const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
+    if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
     const names = new Set(options.rules.map(({ bundle }) => bundle));
     const entries = getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name));
     const missing = [...names].filter(
@@ -278,6 +280,14 @@ export class RuleProcessHarness {
     if (missing.length) throw new Error(`No task bundle entry named ${missing.join(', ')}`);
     // A few at a time: each build holds a lot of memory, and a file may serve a dozen rule types.
     const building = (async () => {
+      if (prebuiltDir) {
+        for (const { name } of entries) {
+          if (!existsSync(join(bundleDir, `${name}.mjs`))) {
+            throw new Error(`Missing prebuilt task bundle ${name} in ${prebuiltDir}`);
+          }
+        }
+        return entries;
+      }
       const built: unknown[] = [];
       for (let i = 0; i < entries.length; i += BUILD_CONCURRENCY) {
         built.push(
@@ -334,7 +344,7 @@ export class RuleProcessHarness {
         bundles: Object.fromEntries(
           options.rules.map(({ bundle, taskType }) => {
             const entry = built.find(({ name }) => name === bundle)!;
-            return [entry.name, { file: `${entry.name}.js`, taskType: taskType.type }];
+            return [entry.name, { file: `${entry.name}.mjs`, taskType: taskType.type }];
           })
         ),
       })

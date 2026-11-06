@@ -115,7 +115,7 @@ describe('side effects of a run in a task process', () => {
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
         bundles: {
-          [built.name]: { file: `${built.name}.js`, taskType: SIDE_EFFECTS_TASK_TYPE },
+          [built.name]: { file: `${built.name}.mjs`, taskType: SIDE_EFFECTS_TASK_TYPE },
         },
       })
     );

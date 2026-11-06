@@ -8,9 +8,13 @@
 import { of } from 'rxjs';
 
 import { schema } from '@kbn/config-schema';
-import type { CoreSetup, KibanaRequest, PluginInitializer } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type {
+  TaskCoreSetup as CoreSetup,
+  TaskPluginInitializer,
+  TaskStaticPlugin,
+} from '@kbn/core-plugins-server-internal';
 import type {
   CoreSecurityDelegateContract,
   CoreSecurityDelegateServiceAccounts,
@@ -131,7 +135,7 @@ type SpaceId = ReturnType<SpacesPluginSetup['spacesService']['getSpaceId']>;
 
 const configSchema = schema.object({ uiam: schema.maybe(uiamSchema) }, { unknowns: 'allow' });
 
-const plugin: PluginInitializer<void, SecurityTaskPluginStart, SetupDeps, StartDeps> = async (
+const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, StartDeps> = async (
   initializerContext
 ) => {
   const settings = reviveSettings(
@@ -290,7 +294,7 @@ const plugin: PluginInitializer<void, SecurityTaskPluginStart, SetupDeps, StartD
  * The security plugin as a plugin of a task process: Core's security delegate is the plugin's own
  * API keys (including UIAM), privilege checks and audit log, built by the same constructors.
  */
-export const createSecurityTaskPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createSecurityTaskPlugin = (kibanaVersion: string): TaskStaticPlugin => ({
   manifest: {
     id: 'security',
     version: kibanaVersion,
@@ -305,5 +309,5 @@ export const createSecurityTaskPlugin = (kibanaVersion: string): StaticPlugin =>
     ui: false,
     owner: { name: 'Kibana Security', githubTeam: 'kibana-security' },
   },
-  definition: { config: { schema: configSchema }, plugin: plugin as never },
+  definition: { config: { schema: configSchema }, taskPlugin: plugin },
 });

@@ -339,7 +339,7 @@ const startHarness = async (
   writeFileSync(
     join(bundleDir, 'manifest.json'),
     JSON.stringify({
-      bundles: { [built[0].name]: { file: `${built[0].name}.js`, taskType: TASK_TYPE } },
+      bundles: { [built[0].name]: { file: `${built[0].name}.mjs`, taskType: TASK_TYPE } },
     })
   );
   const supervisor = new TaskProcessSupervisor({

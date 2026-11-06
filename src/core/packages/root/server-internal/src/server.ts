@@ -60,12 +60,6 @@ import type { DiscoveredPlugins, StaticPlugin } from '@kbn/core-plugins-server-i
 import { PluginsService } from '@kbn/core-plugins-server-internal';
 import { CoreAppsService } from '@kbn/core-apps-server-internal';
 import { SecurityService } from '@kbn/core-security-server-internal';
-import {
-  ES_CLIENT_AUTHENTICATION_HEADER,
-  HTTPAuthorizationHeader,
-  isUiamCredential,
-  UIAM_INTERNAL_CALLER_ATTESTATION_HEADER,
-} from '@kbn/core-security-server';
 import { UserProfileService } from '@kbn/core-user-profile-server-internal';
 import { PricingService } from '@kbn/core-pricing-server-internal';
 import { CoreInjectionService } from '@kbn/core-di-server-internal';
@@ -73,6 +67,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import { withActiveSpan } from '@kbn/tracing-utils';
 import { UserStorageService } from '@kbn/core-user-storage-server-internal';
 import { setLazySchemaDisabled } from '@kbn/zod';
+import { configureSelfClientSecurity } from './configure_self_client_security';
 import { registerServiceConfig } from './register_service_config';
 import { MIGRATION_EXCEPTION_CODE } from './constants';
 import { coreConfig, type CoreConfigType } from './core_config';
@@ -622,38 +617,7 @@ export class Server {
     httpStart.setRedactedSessionIdGetter((request) =>
       securityStart.authc.getRedactedSessionId(request)
     );
-    const uiam = securityStart.authc.apiKeys.uiam;
-    if (uiam) {
-      httpStart.setSelfClientUiamAttestationGetter((request, outboundAuthorization) => {
-        const credential = outboundAuthorization
-          ? HTTPAuthorizationHeader.parseFromValue(outboundAuthorization)
-          : null;
-        if (!credential || !isUiamCredential(credential)) {
-          return undefined;
-        }
-        if (uiam.isExternalApiKey(request)) {
-          return undefined;
-        }
-
-        const inboundClientSecret = request.headers[ES_CLIENT_AUTHENTICATION_HEADER];
-        let inboundSecrets: string[] = [];
-        if (typeof inboundClientSecret === 'string') {
-          inboundSecrets = [inboundClientSecret];
-        } else if (Array.isArray(inboundClientSecret)) {
-          inboundSecrets = inboundClientSecret;
-        }
-        const hasUpstreamSecret = inboundSecrets.some(
-          (entry) => entry.length > 0 && !uiam.isOwnClientAuthentication(entry)
-        );
-        if (hasUpstreamSecret) {
-          return undefined;
-        }
-
-        return uiam.getInternalCallerAttestationHeaders(credential)[
-          UIAM_INTERNAL_CALLER_ATTESTATION_HEADER
-        ];
-      });
-    }
+    configureSelfClientSecurity(httpStart, securityStart);
     const coreUsageDataStart = this.coreUsageData.start({
       elasticsearch: elasticsearchStart,
       savedObjects: savedObjectsStart,

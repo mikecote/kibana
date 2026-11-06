@@ -2,23 +2,16 @@
   "extends": "@kbn/tsconfig-base/tsconfig.json",
   "compilerOptions": {
     "outDir": "target/types",
-    "types": [
-      "jest",
-      "node"
-    ]
+    "types": ["jest", "node"]
   },
-  "include": [
-    "**/*.ts"
-  ],
+  "include": ["**/*.ts"],
   "kbn_references": [
-    "@kbn/ebt-tools",
+    "@kbn/ebt-tools-common",
     "@kbn/core-base-server-internal",
     "@kbn/core-analytics-server",
     "@kbn/config-mocks",
     "@kbn/core-base-server-mocks",
     "@kbn/lazy-object"
   ],
-  "exclude": [
-    "target/**/*",
-  ]
+  "exclude": ["target/**/*"]
 }

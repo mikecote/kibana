@@ -616,7 +616,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         bundles: Object.fromEntries(
           Object.entries(bundleNames).map(([taskType_, name]) => {
             const { name: builtName } = built.find((bundle) => bundle.name === name)!;
-            return [builtName, { file: `${builtName}.js`, taskType: taskType_ }];
+            return [builtName, { file: `${builtName}.mjs`, taskType: taskType_ }];
           })
         ),
       })

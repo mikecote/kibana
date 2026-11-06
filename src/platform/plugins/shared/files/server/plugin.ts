@@ -15,7 +15,7 @@ import type {
   CoreStart,
 } from '@kbn/core/server';
 
-import type { AnalyticsServiceStart } from '@kbn/core/server';
+import { setFileAnalytics } from './performance/analytics';
 import { PLUGIN_ID } from '../common/constants';
 import {
   setFileKindsRegistry,
@@ -47,7 +47,6 @@ export class FilesPlugin
       FilesServerStartDependencies
     >
 {
-  private static analytics?: AnalyticsServiceStart;
   private readonly logger: Logger;
   private fileServiceFactory: undefined | FileServiceFactory;
   private securitySetup: FilesServerSetupDependencies['security'];
@@ -55,14 +54,6 @@ export class FilesPlugin
 
   constructor(initializerContext: PluginInitializerContext) {
     this.logger = initializerContext.logger.get();
-  }
-
-  public static getAnalytics() {
-    return this.analytics;
-  }
-
-  private static setAnalytics(analytics: AnalyticsServiceStart) {
-    this.analytics = analytics;
   }
 
   public setup(
@@ -114,7 +105,7 @@ export class FilesPlugin
   public start(coreStart: CoreStart, { security }: FilesServerStartDependencies): FilesServerStart {
     const { savedObjects, analytics } = coreStart;
     this.securityStart = security;
-    FilesPlugin.setAnalytics(analytics);
+    setFileAnalytics(analytics);
     const esClient = coreStart.elasticsearch.client.asInternalUser;
     this.fileServiceFactory = createFileServiceFactory({
       savedObjects,
@@ -122,6 +113,7 @@ export class FilesPlugin
       security: this.securitySetup,
       fileKindsRegistry: getFileKindsRegistry(),
       logger: this.logger,
+      analytics,
     });
 
     return {
@@ -129,7 +121,9 @@ export class FilesPlugin
     };
   }
 
-  public stop() {}
+  public stop() {
+    setFileAnalytics(undefined);
+  }
 
   private registerDefaultImageFileKind() {
     const registry = getFileKindsRegistry();

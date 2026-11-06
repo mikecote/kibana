@@ -17,11 +17,11 @@ import type { Server as HttpsServer } from 'https';
 import type { AddressInfo } from 'net';
 import type { TLSSocket } from 'tls';
 
-import type { CoreSetup, CoreStart } from '@kbn/core/server';
+import type { CoreStart } from '@kbn/core/server';
 import { PluginType } from '@kbn/core-base-common';
 import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import {
@@ -57,7 +57,7 @@ const ENCRYPTION_KEY = 'a'.repeat(32);
 
 // A plugin that owns a workload type, as the workflows engine does: Core scopes the workload methods of
 // service accounts to the plugin that registered the type, so this is what a run binds and assumes with.
-const workloadsPlugin: StaticPlugin = {
+const workloadsPlugin: TaskStaticPlugin = {
   manifest: {
     id: 'securityTestWorkloads',
     version: KIBANA_VERSION,
@@ -73,14 +73,14 @@ const workloadsPlugin: StaticPlugin = {
     owner: { name: 'Kibana Security', githubTeam: 'kibana-security' },
   },
   definition: {
-    plugin: (async () => ({
-      setup(core: CoreSetup) {
+    taskPlugin: async () => ({
+      setup(core) {
         core.security.serviceAccounts.registerWorkloadType({ type: 'job', name: 'Job' });
       },
-      start(core: CoreStart) {
+      start(core) {
         return { serviceAccounts: core.security.serviceAccounts };
       },
-    })) as never,
+    }),
   },
 };
 

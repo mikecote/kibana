@@ -2,19 +2,14 @@
   "extends": "@kbn/tsconfig-base/tsconfig.json",
   "compilerOptions": {
     "outDir": "target/types",
-    "types": [
-      "jest",
-      "node"
-    ]
+    "types": ["jest", "node"]
   },
-  "include": [
-    "**/*.ts",
-  ],
+  "include": ["**/*.ts"],
   "kbn_references": [
     "@kbn/utils",
     "@kbn/logging",
     "@kbn/config",
-    "@kbn/ebt-tools",
+    "@kbn/ebt-tools-common",
     "@kbn/core-base-server-internal",
     "@kbn/core-doc-links-server-internal",
     "@kbn/core-logging-server-internal",
@@ -88,9 +83,7 @@
     "@kbn/tracing-utils",
     "@kbn/core-user-activity-server-internal",
     "@kbn/core-user-storage-server-internal",
-    "@kbn/zod",
+    "@kbn/zod"
   ],
-  "exclude": [
-    "target/**/*",
-  ]
+  "exclude": ["target/**/*"]
 }

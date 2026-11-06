@@ -20,7 +20,7 @@ import {
   ConfigSchema,
   SecretsSchema,
 } from '@kbn/connector-schemas/xsoar';
-import { XSOARConnector } from './xsoar';
+
 import { renderParameterTemplates } from './render';
 
 export type XSOARConnectorType = SubActionConnectorType<Config, Secrets>;
@@ -30,7 +30,10 @@ export function getConnectorType(): XSOARConnectorType {
     id: CONNECTOR_ID,
     minimumLicenseRequired: 'platinum',
     name: CONNECTOR_NAME,
-    getService: (params) => new XSOARConnector(params),
+    getService: async (params) => {
+      const { XSOARConnector } = await import('./xsoar');
+      return new XSOARConnector(params);
+    },
     supportedFeatureIds: [
       SecurityConnectorFeatureId,
       WorkflowsConnectorFeatureId,

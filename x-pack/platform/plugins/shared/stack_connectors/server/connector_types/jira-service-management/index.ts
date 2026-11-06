@@ -22,7 +22,7 @@ import {
   SecretsSchema,
 } from '@kbn/connector-schemas/jira-service-management';
 import type { Config, Secrets } from '@kbn/connector-schemas/jira-service-management';
-import { JiraServiceManagementConnector } from './connector';
+
 import { renderParameterTemplates } from './render_template_variables';
 
 export const getJiraServiceManagementConnectorType = (): SubActionConnectorType<
@@ -30,7 +30,10 @@ export const getJiraServiceManagementConnectorType = (): SubActionConnectorType<
   Secrets
 > => {
   return {
-    getService: (params) => new JiraServiceManagementConnector(params),
+    getService: async (params) => {
+      const { JiraServiceManagementConnector } = await import('./connector');
+      return new JiraServiceManagementConnector(params);
+    },
     minimumLicenseRequired: 'platinum',
     name: CONNECTOR_NAME,
     id: CONNECTOR_ID,

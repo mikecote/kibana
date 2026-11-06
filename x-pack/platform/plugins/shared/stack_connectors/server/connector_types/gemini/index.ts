@@ -24,14 +24,17 @@ import {
   type Config,
   type Secrets,
 } from '@kbn/connector-schemas/gemini';
-import { GeminiConnector } from './gemini';
+
 import { renderParameterTemplates } from './render';
 import { validateGeminiSecrets } from './validators';
 
 export const getConnectorType = (): SubActionConnectorType<Config, Secrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new GeminiConnector(params),
+  getService: async (params) => {
+    const { GeminiConnector } = await import('./gemini');
+    return new GeminiConnector(params);
+  },
   schema: {
     config: ConfigSchema,
     secrets: SecretsSchema,

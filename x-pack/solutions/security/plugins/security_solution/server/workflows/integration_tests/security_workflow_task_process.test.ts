@@ -319,7 +319,7 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
-        bundles: { [built[0].name]: { file: `${built[0].name}.js`, taskType: TASK_TYPE } },
+        bundles: { [built[0].name]: { file: `${built[0].name}.mjs`, taskType: TASK_TYPE } },
       })
     );
     supervisor = new TaskProcessSupervisor({

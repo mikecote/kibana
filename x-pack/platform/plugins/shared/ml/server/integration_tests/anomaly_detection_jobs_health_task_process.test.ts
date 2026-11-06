@@ -234,7 +234,7 @@ describe('the anomaly detection jobs health rule type served from a bundle', () 
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
-        bundles: { [built.name]: { file: `${built.name}.js`, taskType: TASK_TYPE } },
+        bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: TASK_TYPE } },
       })
     );
     supervisor = new TaskProcessSupervisor({

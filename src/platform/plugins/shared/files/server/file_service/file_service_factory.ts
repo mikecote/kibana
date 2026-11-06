@@ -32,6 +32,7 @@ import { InternalFileService } from './internal_file_service';
 import type { FileServiceStart } from './file_service';
 import type { FileKindsRegistry } from '../../common/file_kinds_registry';
 import { SavedObjectsFileMetadataClient } from '../file_client';
+import type { FileAnalytics } from '../performance/analytics';
 
 /**
  * A simple interface for getting an instance of {@link FileServiceStart}
@@ -63,7 +64,8 @@ export class FileServiceFactoryImpl implements FileServiceFactory {
     private readonly blobStorageService: BlobStorageService,
     private readonly security: undefined | SecurityPluginSetup,
     private readonly fileKindRegistry: FileKindsRegistry,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly analytics?: FileAnalytics
   ) {}
 
   private createFileService(req?: KibanaRequest): FileServiceStart {
@@ -90,7 +92,8 @@ export class FileServiceFactoryImpl implements FileServiceFactory {
       internalFileShareService,
       auditLogger,
       this.fileKindRegistry,
-      this.logger
+      this.logger,
+      this.analytics
     );
 
     function bulkGetById<M>(

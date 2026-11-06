@@ -1,7 +1,7 @@
 {
   "extends": "@kbn/tsconfig-base/tsconfig.json",
   "compilerOptions": {
-    "outDir": "target/types",
+    "outDir": "target/types"
   },
   "include": ["common/**/*", "public/**/*", "server/**/*", ".storybook/**/*"],
   "kbn_references": [
@@ -20,7 +20,7 @@
     "@kbn/utility-types",
     "@kbn/es-query",
     "@kbn/core-test-helpers-kbn-server",
-    "@kbn/ebt-tools",
+    "@kbn/ebt-tools-common",
     "@kbn/core-http-router-server-internal",
     "@kbn/core-elasticsearch-server",
     "@kbn/std",
@@ -35,9 +35,7 @@
     "@kbn/core-lifecycle-server-internal",
     "@kbn/cbor",
     "@kbn/lazy-object",
-    "@kbn/core-http-server",
+    "@kbn/core-http-server"
   ],
-  "exclude": [
-    "target/**/*",
-  ]
+  "exclude": ["target/**/*"]
 }

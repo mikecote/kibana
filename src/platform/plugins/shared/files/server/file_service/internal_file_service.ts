@@ -30,6 +30,7 @@ import type {
 } from './file_action_types';
 import type { FileClientImpl } from '../file_client/file_client';
 import { createFileClient } from '../file_client/file_client';
+import type { FileAnalytics } from '../performance/analytics';
 
 const bulkDeleteConcurrency = pLimit(10);
 
@@ -47,7 +48,8 @@ export class InternalFileService {
     private readonly fileShareService: InternalFileShareService,
     private readonly auditLogger: undefined | AuditLogger,
     private readonly fileKindRegistry: FileKindsRegistry,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly analytics?: FileAnalytics
   ) {}
 
   public async createFile(args: CreateFileArgs): Promise<IFile> {
@@ -212,6 +214,7 @@ export class InternalFileService {
       internalFileShareService: this.fileShareService,
       logger: this.logger,
       metadataClient: this.metadataClient,
+      analytics: this.analytics,
     });
   }
 }

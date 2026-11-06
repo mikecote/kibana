@@ -7,9 +7,9 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreSetup, CoreStart } from '@kbn/core/server';
+import type { CoreStart } from '@kbn/core/server';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 
 import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 
@@ -33,7 +33,7 @@ export interface WorkflowsEngineTaskPluginStart {
  * has the services the engine needs (task scheduling, the license, feature flags, telemetry) that
  * Core's start contract does not.
  */
-export const createWorkflowsEngineTaskPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createWorkflowsEngineTaskPlugin = (kibanaVersion: string): TaskStaticPlugin => ({
   manifest: {
     id: 'workflowsExecutionEngine',
     version: kibanaVersion,
@@ -49,16 +49,16 @@ export const createWorkflowsEngineTaskPlugin = (kibanaVersion: string): StaticPl
     owner: { name: 'Workflows', githubTeam: 'workflows-eng' },
   },
   definition: {
-    plugin: (async () => ({
-      setup(core: CoreSetup) {
+    taskPlugin: async () => ({
+      setup(core) {
         core.security.serviceAccounts.registerWorkloadType({
           type: WORKFLOW_SERVICE_ACCOUNT_TYPE,
           name: WORKFLOW_WORKLOAD_TYPE_NAME,
         });
       },
-      start(core: CoreStart): WorkflowsEngineTaskPluginStart {
+      start(core): WorkflowsEngineTaskPluginStart {
         return { serviceAccounts: core.security.serviceAccounts };
       },
-    })) as never,
+    }),
   },
 });

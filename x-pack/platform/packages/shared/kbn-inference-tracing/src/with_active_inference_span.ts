@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { core } from '@elastic/opentelemetry-node/sdk';
+import { isTracingSuppressed } from '@opentelemetry/core';
 import { createWithActiveSpan, withActiveSpan } from '@kbn/tracing-utils';
 import { propagation } from '@opentelemetry/api';
 import { createInferenceContext } from './create_inference_context';
@@ -25,7 +25,7 @@ import { GenAISemanticConventions } from './types';
  */
 
 export const withActiveInferenceSpan = createWithActiveSpan({}, (name, opts, ctx, cb) => {
-  if (core.isTracingSuppressed(ctx)) {
+  if (isTracingSuppressed(ctx)) {
     return cb();
   }
 

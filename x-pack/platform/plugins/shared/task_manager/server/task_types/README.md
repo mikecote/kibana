@@ -10,9 +10,9 @@ import { defineTaskType } from '@kbn/task-manager-plugin/server';
 
 export const taskType = defineTaskType({
   type: 'myPlugin:my_task',
-  title: 'My task',                       // everything `registerTaskDefinitions` takes, but the runner
+  title: 'My task', // everything `registerTaskDefinitions` takes, but the runner
   timeout: '1m',
-  savedObjectTypes: [myType],             // only if the runner uses saved objects
+  savedObjectTypes: [myType], // only if the runner uses saved objects
   createTaskRunner: (context, { logger, elasticsearch, savedObjects }) => ({
     run: async () => ({ state: {} }),
     cancel: async () => {},
@@ -43,7 +43,7 @@ run in Kibana, and Kibana claims, validates, times out and reschedules every tas
 
 ```yaml
 xpack.task_manager.task_execution:
-  mode: in_process      # default: in Kibana's process
+  mode: in_process # default: in Kibana's process
 ```
 
 **`child_process`.** Each run forks the task type's bundle, sends it Kibana's own Elasticsearch
@@ -53,16 +53,16 @@ cannot be started, that run goes to Kibana.
 ```yaml
 xpack.task_manager.task_execution:
   mode: child_process
-  bundle_dir: target/task_bundles   # optional; the distributable uses its own task_bundles
+  bundle_dir: target/task_bundles # optional; the distributable uses its own task_bundles
 ```
 
 Build the bundles with `node scripts/task_bundle` (the distributable builds them for you).
 
 ```yaml
 xpack.task_manager.task_execution:
-  max_concurrent_processes: 8       # default: xpack.task_manager.max_workers
-  child_max_old_space_mb: 512       # optional
-  child_max_semi_space_mb: 2        # optional, the default: the young generation of each process
+  max_concurrent_processes: 8 # default: xpack.task_manager.max_workers
+  child_max_old_space_mb: 512 # optional
+  child_max_semi_space_mb: 2 # optional, the default: the young generation of each process
 ```
 
 ### Running processes in production
@@ -86,7 +86,8 @@ xpack.task_manager.task_execution:
 - **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
   `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
   not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
-  process costs about 299 MB resident idle for a rule bundle (`es_query`; security rules 411 MB, the Task Manager types 199 MB, measured on macOS with `node scripts/task_bundle_bench`). Every spawn and exit logs the number of live processes at debug.
+  process's memory depends on its task type and settings; the paired measurements below cover startup,
+  idle memory and the first real task. Every spawn and exit logs the number of live processes at debug.
 - **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
   stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
@@ -112,12 +113,12 @@ xpack.task_manager.task_execution:
   mode: remote
   remote:
     url: http://localhost:4100
-    token: secret                   # the process's TASK_PROCESS_TOKEN, if it has one
+    token: secret # the process's TASK_PROCESS_TOKEN, if it has one
 ```
 
 ```
 ES_URL=http://localhost:9200 ES_USERNAME=kibana_system ES_PASSWORD=secret PORT=4100 TASK_PROCESS_TOKEN=secret \
-  node target/task_bundles/taskManager__delete_inactive_nodes.js
+  node target/task_bundles/taskManager__delete_inactive_nodes.mjs
 ```
 
 A remote process does not receive Kibana's settings, so it takes `ES_URL`, `ES_API_KEY` or both of
@@ -127,10 +128,16 @@ version refuses runs.
 
 ## What a process is
 
-A task process is **Core**. It boots the same `Root` Kibana does, with a fixed set of plugins instead of
-plugin discovery, no HTTP listener, saved object migrations skipped and no translations. Everything a
-run touches is Core's own service: the Elasticsearch client, saved objects, ui settings, analytics,
-the security service, feature flags. Booting costs about 150 ms after the bundle loads.
+A task process boots Core's `TaskRoot` with a fixed set of task plugins. It shares Core's configuration,
+logging, Elasticsearch, saved objects, UI settings, analytics, security, status and plugin lifecycle
+implementations. It does not construct inbound HTTP servers, rendering, Core apps or browser assets.
+Index migration orchestration is skipped; document migrations, mappings, serialization and repository
+extensions remain available. Outbound HTTP uses Core's real self client, including base paths and UIAM.
+
+Task plugins implement `TaskPlugin` and export a `taskPlugin` initializer. `TaskCoreSetup` and
+`TaskCoreStart` expose the services available in this composition, so task plugins cannot accidentally
+depend on web setup contracts. The encrypted saved objects plugin shares its runtime initialization
+with normal Kibana and leaves key-rotation routes out of task startup.
 
 The plugins are Task Manager (it collects the task definitions), the encrypted saved objects plugin
 when the module declares encrypted types, any `taskPlugins` the module brings (such as the security
@@ -141,19 +148,19 @@ the module declares and gives the runner its `host` from Core's start contract.
 A module declares what it needs and the host has only that. In Kibana the plugin that registers the
 task type hands over its own service for the same capability.
 
-| Declare | `host` gets | In a process | In Kibana |
-| --- | --- | --- | --- |
-| `savedObjectTypes` | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request | Core |
-| `encryptedSavedObjectTypes` | `encryptedSavedObjects` | the real encrypted saved objects plugin, with the keys the process is sent | `hostExtensions.encryptedSavedObjects` |
-| `eventLog` | `eventLog` | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit | `hostExtensions.eventLog` |
-| `taskManager` | `taskManager` | writes `task` saved objects, only for `schedulableTypes` | Task Manager's start contract |
-| `uiSettings` | `uiSettings` | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core |
-| `licensing` | `licensing` | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares | the licensing plugin |
-| `usageCounters` | `usageCounters` | the usage collection plugin's own counters service, stored when the run ends | the usage collection plugin |
-| `settings: ['pluginId']` | `settings.pluginId` | the validated config Kibana sends | the getter passed to `registerTaskType` |
-| `featureFlags` | `featureFlags` | the values Kibana evaluated for this run | Core |
-| `contributions` | `contributions[key]` | what plugins export for the key | the plugins themselves |
-| `taskPlugins` | `plugins[id]` | the `start` contract of each plugin | the real plugins |
+| Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
+| --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
+| `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
+| `eventLog`                  | `eventLog`                    | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit                                                                    | `hostExtensions.eventLog`               |
+| `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
+| `uiSettings`                | `uiSettings`                  | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core                                    |
+| `licensing`                 | `licensing`                   | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares                                         | the licensing plugin                    |
+| `usageCounters`             | `usageCounters`               | the usage collection plugin's own counters service, stored when the run ends                                                                              | the usage collection plugin             |
+| `settings: ['pluginId']`    | `settings.pluginId`           | the validated config Kibana sends                                                                                                                         | the getter passed to `registerTaskType` |
+| `featureFlags`              | `featureFlags`                | the values Kibana evaluated for this run                                                                                                                  | Core                                    |
+| `contributions`             | `contributions[key]`          | what plugins export for the key                                                                                                                           | the plugins themselves                  |
+| `taskPlugins`               | `plugins[id]`                 | the `start` contract of each plugin                                                                                                                       | the real plugins                        |
 
 `host.analytics`, `host.security`, `host.elasticsearch` and `host.onRunEnd` (in a process) are always there.
 
@@ -244,21 +251,30 @@ process is not sent the settings Kibana reads per dispatch, so it skips the pari
 and the module. Workspace source is treated as free of import-time side effects, so a barrel costs only
 what is used from it. Two traps: import leaf files (a cycle through an `export *` barrel leaves names
 undefined in a bundle), and a module that reaches a plugin class through a barrel still pays for it.
-Bundle size and memory are not optimized yet (about 25 to 45 MB per bundle).
+Each entry is an ESM `.mjs` file with chunks under `chunks/<entry>/`. Connector definitions retain
+metadata, schemas and validation at startup; services and SDKs load asynchronously when execution
+needs them. Response-action implementations use the same boundary. Code splitting keeps those
+implementations out of the enqueue-only startup graph. CommonJS dependencies use Node's
+`createRequire` compatibility bridge. Every generated JavaScript file receives the Latin-1 transform.
 
 ### Distributable
 
 The `BuildTaskBundles` task of `node scripts/build` (after `BuildBundles`, before `InstallDependencies`) writes one
-bundle per `plugin.taskTypes` entry and `manifest.json` to `<build>/task_bundles`, and the archive copy
+entry and its chunks per `plugin.taskTypes` entry and `manifest.json` to `<build>/task_bundles`, and the archive copy
 step carries the directory into every platform folder. In a distributable `bundle_dir` defaults to
 `<install dir>/task_bundles` (`REPO_ROOT` is the install dir there; from a repository checkout it is
 `target/task_bundles`, which is where `node scripts/task_bundle` writes), and the manifest has
-`{ kibanaVersion, bundles: { <name>: { file, taskType, bytes } } }`, which is what the supervisor reads.
+`{ kibanaVersion, bundles: { <name>: { file, files, taskType, bytes, startupBytes } } }`.
+`bytes` counts all generated JavaScript; `startupBytes` counts the entry and its static imports.
+`files` lists the entry's complete output, including chunks and source maps. Copy the entire
+`task_bundles` directory when moving a build; copying the entry alone omits deferred implementations.
 
-Verified by running the task function against a temporary build directory (48 bundles, 1.4 GB, 29 minutes
-with four builds at a time) and booting the `es_query` bundle, copied alone with its manifest to a directory
-outside the repository, with the supervisor against a real Elasticsearch: Core and the module started and
-`/health` served `alerting:.es-query`.
+The bundle hygiene integration test checks both `.es-query` and detection rules for EUI, accidental
+plugin classes, exporter management code, tokenizer tables and connector executor SDKs in static
+startup imports. Runtime integration tests exercise task processes against Elasticsearch.
+Set `KBN_TASK_BUNDLE_TEST_DIR` to a freshly built bundle directory to run rule-process integration
+tests against those packaged artifacts. The harness copies the directory, including chunks, and
+requires every selected entry to exist; without the setting it builds the entries from source.
 
 - **Externals.** `re2` and `canvas` are external. `re2` is no longer a dependency of Kibana (`re2js` is
   JavaScript, so it is bundled) and no bundle requires it. No bundle needs a native module: `lmdb`, `sharp`
@@ -270,10 +286,34 @@ outside the repository, with the supervisor against a real Elasticsearch: Core a
   directory, so a bundle never walks up to find a repository; a task process does not read the paths
   `@kbn/utils` derives from it. The remaining `__dirname` and `readFileSync` uses are libraries' own
   (pino worker threads, `source-map`'s `mappings.wasm`) and are on paths a run does not take.
-- **Cost.** Every bundle carries Core and the plugins it needs: 28 to 31 MB each, so 1.4 GB for all 48 task
-  types, and a build of about half an hour. Bundle splitting (one shared Core) is the way to cut both, and
-  is not done.
+- **Cost.** Entries share chunks within a task type; Core is still duplicated between task types.
+  Artifact size includes deferred code and must be measured separately from startup memory.
 - **Not covered here.** The full archive build (`node scripts/build`), and Windows.
+
+### Memory measurements
+
+Measured on 2026-11-06 with Node 24.21.0 and `--max-semi-space-size=2`. Each cell is baseline → candidate,
+using the median of five interleaved runs per variant. The baseline includes PR #10's Latin-1 fix.
+Both variants use the same validated settings and an active trial security license. These real-rule
+fixtures differ from the minimal settings used for earlier startup-only measurements.
+
+| Platform | Task | Startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) | Peak RSS through first task (MiB) |
+| --- | --- | --- | --- | --- | --- |
+| macOS ARM64 | Task Manager | 504 → 337 | 200 → 158 | 87 → 49 | 201 → 158 |
+| macOS ARM64 | `.es-query` | 880 → 676 | 344 → 266 | 173 → 114 | 365 → 267 |
+| macOS ARM64 | `siem.queryRule` | 1363 → 870 | 483 → 312 | 263 → 156 | 495 → 327 |
+| Linux ARM64 | Task Manager | 575 → 381 | 181 → 142 | 86 → 49 | 181 → 142 |
+| Linux ARM64 | `.es-query` | 1065 → 805 | 301 → 235 | 150 → 115 | 314 → 238 |
+| Linux ARM64 | `siem.queryRule` | 1674 → 1036 | 394 → 276 | 247 → 153 | 419 → 291 |
+
+Linux used `node:24.21.0-bookworm-slim` containers with a 1 GiB memory limit and two CPUs. Each run
+started a fresh process and executed a real task against Elasticsearch; rule samples used fresh
+rule IDs. All 60 runs succeeded. Peak RSS combines lifetime maximum RSS with observed RSS samples.
+The bundles and their chunks ran in the containers without the repository or `node_modules`.
+
+`node scripts/task_bundle_bench --json <file>` also records heap capacity and external memory.
+Pass `--settings <settings.json>` for validated plugin settings and `--run <request.json>` for the
+first task's wire request. The benchmark's memory probe is not included in distributable bundles.
 
 ### Contributions
 
@@ -306,7 +346,7 @@ from explicit inputs. These are the steps, in the order most plugins need them.
    read). Installs a run itself triggers in Kibana, such as an alerts index for a new space, stay as
    they are and use the plugin's own idempotent code.
 4. **Send the config the factory reads.** Register it with `alerting.registerTaskProcessSettings(id,
-   () => config)` in `setup` and list the id in the module's `settings`. Send only what is read, in a
+() => config)` in `setup` and list the id in the module's `settings`. Send only what is read, in a
    form `serializeSettings` handles (plain values, durations, byte sizes and dates; no functions,
    `Map`, `Set` or `RegExp`), and read it as `host.settings[id]`. A plugin that cannot depend on
    alerting exposes a `getTaskProcessSettings()` on its setup contract and a plugin that can (alerting
@@ -420,19 +460,19 @@ its executor reads (indices and documents, saved objects such as data views, SLO
 learning jobs and results), asserts that the run was served by the process (never declined), wrote its alerts and a
 successful `execute` event, and equals the same rule run in the test process (`runBoth`: alerts, events, state):
 
-| Plugin | Test (`server/integration_tests/`) | Rule types |
-| --- | --- | --- |
-| stack alerts | `es_query_task_process`, `stack_alerts_task_process`, `rule_process_parity` | es query, index threshold, tracking containment |
-| stack monitoring | `monitoring_rules_task_process` | the 14 monitoring rule types |
-| transform, data quality | `transform_health_task_process`, `degraded_docs_task_process` | transform health, degraded docs |
-| ML | `anomaly_detection_alert_task_process`, `anomaly_detection_jobs_health_task_process` | anomaly detection, jobs health |
-| APM | `apm_rules_task_process` | error count, transaction duration, transaction error rate, anomaly |
-| infra | `infra_rules_task_process` | metric threshold, inventory, log threshold |
-| observability | `custom_threshold_task_process` | custom threshold |
-| SLO | `slo_burn_rate_task_process` | burn rate |
-| Synthetics, uptime | `synthetics_rules_task_process`, `uptime_rules_task_process` | monitor status and TLS of both, uptime TLS legacy and duration anomaly |
-| security solution | `security_rules_task_process` (`server/task_types/integration_tests`) | query (with exceptions and a response action that schedules the isolation of an Elastic Defend host), saved query, EQL, ES\|QL, threshold, new terms, indicator match, ML, legacy notifications |
-| elastic assistant | `attack_discovery_task_process` | attack discovery |
+| Plugin                  | Test (`server/integration_tests/`)                                                   | Rule types                                                                                                                                                                                      |
+| ----------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| stack alerts            | `es_query_task_process`, `stack_alerts_task_process`, `rule_process_parity`          | es query, index threshold, tracking containment                                                                                                                                                 |
+| stack monitoring        | `monitoring_rules_task_process`                                                      | the 14 monitoring rule types                                                                                                                                                                    |
+| transform, data quality | `transform_health_task_process`, `degraded_docs_task_process`                        | transform health, degraded docs                                                                                                                                                                 |
+| ML                      | `anomaly_detection_alert_task_process`, `anomaly_detection_jobs_health_task_process` | anomaly detection, jobs health                                                                                                                                                                  |
+| APM                     | `apm_rules_task_process`                                                             | error count, transaction duration, transaction error rate, anomaly                                                                                                                              |
+| infra                   | `infra_rules_task_process`                                                           | metric threshold, inventory, log threshold                                                                                                                                                      |
+| observability           | `custom_threshold_task_process`                                                      | custom threshold                                                                                                                                                                                |
+| SLO                     | `slo_burn_rate_task_process`                                                         | burn rate                                                                                                                                                                                       |
+| Synthetics, uptime      | `synthetics_rules_task_process`, `uptime_rules_task_process`                         | monitor status and TLS of both, uptime TLS legacy and duration anomaly                                                                                                                          |
+| security solution       | `security_rules_task_process` (`server/task_types/integration_tests`)                | query (with exceptions and a response action that schedules the isolation of an Elastic Defend host), saved query, EQL, ES\|QL, threshold, new terms, indicator match, ML, legacy notifications |
+| elastic assistant       | `attack_discovery_task_process`                                                      | attack discovery                                                                                                                                                                                |
 
 ### Running in a real Kibana (Scout)
 
@@ -442,11 +482,11 @@ loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_R
 and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
 records, with Task Manager at debug, so the tests can see where each run happened.
 
-| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`) | Proves |
-| --- | --- | --- |
-| `task_processes` | `scout_task_processes` | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
-| `task_processes_unknown_connector` | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`) |
-| `task_processes_es_tls` | `scout_task_processes_es_tls` | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster |
+| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
+| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`)                                                                                                                                                                                                                                                                                |
+| `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                 |
 
 ```
 node scripts/scout.js start-server --arch stateful --domain classic --serverConfigSet task_processes
@@ -559,10 +599,18 @@ are forwarded to the workflows triggers with the engine's runtime and flushed be
 ```ts
 export const contribution: AgentBuilderContribution = {
   // What the registrations read besides Core: merged into what the workflow task types declare.
-  declares: { settings: [MY_SETTINGS_ID], savedObjectTypes: [], uiSettings: [], featureFlags: {}, analyticsEventTypes: [] },
+  declares: {
+    settings: [MY_SETTINGS_ID],
+    savedObjectTypes: [],
+    uiSettings: [],
+    featureFlags: {},
+    analyticsEventTypes: [],
+  },
   register: (agentBuilder, { host, logger, settings, services }) => {
-    if (!settings[MY_SETTINGS_ID]) return;      // the plugin is not enabled in this Kibana
-    registerMyPluginAgentBuilder(agentBuilder, { /* services built from `host` and `services` */ });
+    if (!settings[MY_SETTINGS_ID]) return; // the plugin is not enabled in this Kibana
+    registerMyPluginAgentBuilder(agentBuilder, {
+      /* services built from `host` and `services` */
+    });
   },
 };
 ```
@@ -703,4 +751,3 @@ These steps are not registered in a process, so a workflow that uses one runs in
 
 The common cause is the registries. Agent builder's have a contribution mechanism now; the plugins above that
 register with it move into processes as they contribute.
-

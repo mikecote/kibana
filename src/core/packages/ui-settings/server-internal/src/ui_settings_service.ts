@@ -34,7 +34,6 @@ import type {
 } from './types';
 import type { InternalUiSettingsRequestHandlerContext } from './internal_types';
 import { uiSettingsType, uiSettingsGlobalType } from './saved_objects';
-import { registerRoutes, registerInternalRoutes } from './routes';
 import { getCoreSettings, getGlobalCoreSettings } from './settings';
 import { UiSettingsDefaultsClient } from './clients/ui_settings_defaults_client';
 import { NamespacedCache } from './namespaced_cache';
@@ -99,7 +98,21 @@ export class UiSettingsService
     };
   }
 
-  public async setup({ http, savedObjects }: SetupDeps): Promise<InternalUiSettingsServiceSetup> {
+  public async setup(deps: SetupDeps): Promise<InternalUiSettingsServiceSetup> {
+    return this.setupInternal(deps);
+  }
+
+  public async setupTask(
+    deps: Pick<SetupDeps, 'savedObjects'>
+  ): Promise<InternalUiSettingsServiceSetup> {
+    return this.setupInternal(deps);
+  }
+
+  private async setupInternal({
+    http,
+    savedObjects,
+  }: Pick<SetupDeps, 'savedObjects'> &
+    Partial<Pick<SetupDeps, 'http'>>): Promise<InternalUiSettingsServiceSetup> {
     this.log.debug('Setting up ui settings service');
 
     const config = await firstValueFrom(this.config$);
@@ -108,12 +121,15 @@ export class UiSettingsService
     savedObjects.registerType(uiSettingsType);
     savedObjects.registerType(uiSettingsGlobalType);
 
-    const router = http.createRouter<InternalUiSettingsRequestHandlerContext>('');
-    registerInternalRoutes(router);
+    if (http) {
+      const { registerRoutes, registerInternalRoutes } = await import('./routes');
+      const router = http.createRouter<InternalUiSettingsRequestHandlerContext>('');
+      registerInternalRoutes(router);
 
-    // Register public routes by default unless the publicApiEnabled config setting is set to false
-    if (!Object.hasOwn(config, 'publicApiEnabled') || config.publicApiEnabled === true) {
-      registerRoutes(router);
+      // Register public routes by default unless the publicApiEnabled config setting is set to false
+      if (!Object.hasOwn(config, 'publicApiEnabled') || config.publicApiEnabled === true) {
+        registerRoutes(router);
+      }
     }
 
     return {

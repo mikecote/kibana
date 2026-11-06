@@ -48,7 +48,7 @@ const { getTaskBundleEntries, buildTaskBundle } = require(join(
 const MARK_REMOVED = 'task_manager:mark_removed_tasks_as_unrecognized';
 const DELETE_NODES = 'task_manager:delete_inactive_background_task_nodes';
 const INDEX = backgroundTaskNodeType.indexPattern!;
-const DELETE_BUNDLE = 'taskManager__delete_inactive_nodes.js';
+const DELETE_BUNDLE = 'taskManager__delete_inactive_nodes.mjs';
 // Core, which a task process runs, refuses an Elasticsearch older than itself.
 const KIBANA_VERSION = kibanaPackageJson.version;
 
@@ -128,7 +128,7 @@ describe('task types served from bundles', () => {
         bundles: Object.fromEntries(
           built.map(({ name }: { name: string }) => [
             name,
-            { file: `${name}.js`, taskType: typeByBundle.get(name) },
+            { file: `${name}.mjs`, taskType: typeByBundle.get(name) },
           ])
         ),
       })
@@ -249,7 +249,7 @@ describe('task types served from bundles', () => {
       writeFileSync(
         join(plumbingDir, 'manifest.json'),
         JSON.stringify({
-          bundles: { [built.name]: { file: `${built.name}.js`, taskType: PLUMBING_TASK_TYPE } },
+          bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: PLUMBING_TASK_TYPE } },
         })
       );
       plumbing = new TaskProcessSupervisor({

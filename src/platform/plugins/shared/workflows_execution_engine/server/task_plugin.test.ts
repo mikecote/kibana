@@ -20,11 +20,9 @@ describe('the workflows execution engine task plugin', () => {
   });
 
   it('registers the workflow workload type of service accounts, as the plugin does in Kibana', async () => {
-    const instance = await plugin.definition.plugin!(
-      coreMock.createPluginInitializerContext() as never
-    );
+    const instance = await plugin.definition.taskPlugin(coreMock.createPluginInitializerContext());
     const setup = coreMock.createSetup();
-    (instance as { setup: (core: unknown) => void }).setup(setup);
+    await instance.setup(setup, {});
 
     expect(setup.security.serviceAccounts.registerWorkloadType).toHaveBeenCalledTimes(1);
     expect(setup.security.serviceAccounts.registerWorkloadType).toHaveBeenCalledWith({
@@ -34,11 +32,9 @@ describe('the workflows execution engine task plugin', () => {
   });
 
   it('provides the service accounts of the plugin to the runtime of a run', async () => {
-    const instance = await plugin.definition.plugin!(
-      coreMock.createPluginInitializerContext() as never
-    );
+    const instance = await plugin.definition.taskPlugin(coreMock.createPluginInitializerContext());
     const start = coreMock.createStart();
-    const contract = (instance as unknown as { start: (core: unknown) => unknown }).start(start);
+    const contract = await instance.start(start, {});
 
     expect(contract).toEqual({ serviceAccounts: start.security.serviceAccounts });
   });

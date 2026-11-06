@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { type Resource, resourceFromAttributes } from '@opentelemetry/resources';
 import { createSecureContext } from 'tls';
 import { isNil } from 'lodash';
 import { set } from '@kbn/safer-lodash-set';
@@ -29,7 +30,6 @@ import {
 } from '@opentelemetry/api';
 import type { AnyValueMap } from '@opentelemetry/api-logs';
 import { SeverityNumber, type Logger } from '@opentelemetry/api-logs';
-import { resources } from '@elastic/opentelemetry-node/sdk';
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs';
 import type {
   OtelAppenderConfig,
@@ -60,7 +60,7 @@ const isPromiseLike = (value: unknown): value is PromiseLike<unknown> =>
   typeof (value as { then?: unknown }).then === 'function';
 
 /** The value half of a raw resource-attribute entry: an AttributeValue, or a promise of one. */
-type ResolvedResourceValue = ReturnType<resources.Resource['getRawAttributes']>[number][1];
+type ResolvedResourceValue = ReturnType<Resource['getRawAttributes']>[number][1];
 
 /**
  * Captures the requested resource-attribute values from the resolved attribute map so they can be
@@ -349,7 +349,7 @@ export class OtelAppender implements DisposableAppender {
     const includeResources = config.includeResources ?? ['*'];
     const includeAll = includeResources.includes('*');
     const baseResource = buildOtelResources().merge(
-      resources.resourceFromAttributes(config.attributes ?? {})
+      resourceFromAttributes(config.attributes ?? {})
     );
 
     // The default appender (keep everything, no drops) uses the merged resource directly. Only when
@@ -357,7 +357,7 @@ export class OtelAppender implements DisposableAppender {
     // the attributes ourselves.
     const needsFilter = !includeAll || Boolean(config.dropResourceAttributes?.length);
     const needsPromotion = Boolean(config.promoteResourceAttributes?.length);
-    let resource: resources.Resource = baseResource;
+    let resource: Resource = baseResource;
     let promoted: Attributes = {};
 
     if (needsFilter || needsPromotion) {
@@ -389,7 +389,7 @@ export class OtelAppender implements DisposableAppender {
             ? !config.dropResourceAttributes?.includes(key)
             : includeResources.includes(key);
         const kept = [...resolved].filter(([key]) => keepAttribute(key));
-        resource = resources.resourceFromAttributes(Object.fromEntries(kept));
+        resource = resourceFromAttributes(Object.fromEntries(kept));
       }
     }
     this.promotedAttributes = promoted;

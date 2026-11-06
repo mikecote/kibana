@@ -13,7 +13,7 @@ import {
   type StreamlangStep,
 } from '../../../types/streamlang';
 
-const createId = htmlIdGenerator();
+let createId: ReturnType<typeof htmlIdGenerator> | undefined;
 
 export const convertStepsForUI = (dsl: StreamlangDSL): StreamlangStepWithUIAttributes[] => {
   const result: StreamlangStepWithUIAttributes[] = [];
@@ -53,7 +53,7 @@ export const convertStepToUIDefinition = <TStepDefinition extends StreamlangStep
   step: TStepDefinition,
   options: { parentId: StreamlangStepWithUIAttributes['parentId']; branch?: StreamlangUIBranch }
 ): StreamlangStepWithUIAttributes => {
-  const id = step.customIdentifier ?? createId();
+  const id = step.customIdentifier ?? (createId ??= htmlIdGenerator())();
   const branch = options.branch ?? 'if';
 
   // If this is a where step, remove condition.steps and condition.else.
