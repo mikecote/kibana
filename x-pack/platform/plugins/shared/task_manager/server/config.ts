@@ -250,6 +250,12 @@ export const configSchema = schema.object(
            * inherit the heap flags Kibana was started with, and Node picks the heap size.
            */
           child_max_old_space_mb: schema.maybe(schema.number({ min: 64, max: 65536 })),
+          /*
+           * child_process: `--max-semi-space-size` of each process, in MB (the young generation).
+           * Defaults to 2: a larger one costs resident memory in every process, a smaller one costs CPU
+           * in work that allocates a lot.
+           */
+          child_max_semi_space_mb: schema.maybe(schema.number({ min: 1, max: 256 })),
           /* remote: the task process, and the bearer token it was started with (`TASK_PROCESS_TOKEN`). */
           remote: schema.maybe(
             schema.object({
