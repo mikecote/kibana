@@ -22,13 +22,10 @@ export const registerTools = ({
   coreSetup,
   agentBuilder,
   organizationId,
-  productDocumentation,
 }: {
   coreSetup: AgentBuilderPlatformCoreSetup;
   agentBuilder: AgentBuilderPluginSetup;
   organizationId?: string;
-  /** Whether the LLM tasks plugin is there: the product documentation tool is only registered with it. */
-  productDocumentation: boolean;
 }) => {
   const tools: Array<StaticToolRegistration<any>> = [
     searchTool({ coreSetup, topSnippetsDefaults: agentBuilder.topSnippets }),
@@ -38,7 +35,7 @@ export const registerTools = ({
     getIndexMappingsTool(),
     listIndicesTool(),
     indexExplorerTool(),
-    ...(productDocumentation ? [productDocumentationTool(coreSetup)] : []),
+    productDocumentationTool(coreSetup),
     integrationKnowledgeTool(coreSetup),
   ];
 

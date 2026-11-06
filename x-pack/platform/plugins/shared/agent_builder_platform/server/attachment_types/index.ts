@@ -23,13 +23,10 @@ export const registerAttachmentTypes = ({
   coreSetup,
   agentBuilder,
   logger,
-  imageAttachments,
 }: {
   coreSetup: AgentBuilderPlatformCoreSetup;
   agentBuilder: AgentBuilderPluginSetup;
   logger: Logger;
-  /** Whether the files plugin is there: the image attachment type is only registered with it. */
-  imageAttachments: boolean;
 }) => {
   const getFilesPlugin = async (): Promise<FilesStart> => {
     const [, startDeps] = await coreSetup.getStartServices();
@@ -58,7 +55,7 @@ export const registerAttachmentTypes = ({
       logger: logger.get('connector-setup'),
     }),
     createSkillAttachmentType(),
-    ...(imageAttachments ? [createImageAttachmentType({ getFilesPlugin })] : []),
+    createImageAttachmentType({ getFilesPlugin }),
   ];
 
   attachmentTypes.forEach((attachmentType) => {

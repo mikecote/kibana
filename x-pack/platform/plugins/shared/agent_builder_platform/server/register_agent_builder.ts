@@ -18,12 +18,6 @@ export interface AgentBuilderPlatformRegistrationServices {
   coreSetup: AgentBuilderPlatformCoreSetup;
   logger: Logger;
   organizationId?: string;
-  /**
-   * What the plugin only registers when the service it reads is there: the product documentation tool
-   * needs the LLM tasks plugin and the image attachment type the files plugin, which a task process
-   * does not have. Kibana has both (when its plugins are enabled).
-   */
-  has: { llmTasks: boolean; files: boolean };
 }
 
 /**
@@ -33,15 +27,14 @@ export interface AgentBuilderPlatformRegistrationServices {
  */
 export const registerAgentBuilderPlatform = (
   agentBuilder: AgentBuilderPluginSetup,
-  { coreSetup, logger, organizationId, has }: AgentBuilderPlatformRegistrationServices
+  { coreSetup, logger, organizationId }: AgentBuilderPlatformRegistrationServices
 ) => {
   registerTools({
     coreSetup,
     agentBuilder,
     organizationId,
-    productDocumentation: has.llmTasks,
   });
-  registerAttachmentTypes({ coreSetup, agentBuilder, logger, imageAttachments: has.files });
+  registerAttachmentTypes({ coreSetup, agentBuilder, logger });
   registerConversationTemplates({ agentBuilder });
   registerConversationEventTypes({ agentBuilder });
   const getActionsStart = async () => {

@@ -52,6 +52,8 @@ export interface AgentBuilderContributionServices {
   >;
   /** The actions plugin as far as a run uses it (the actions client of a request); cast it to `ActionsPluginStart`. */
   getActionsStart: () => Promise<unknown>;
+  /** The inference plugin's start contract as a process has it (cast it to `InferenceServerStart`): chat models and clients built from the run's connectors. */
+  getInferenceStart: () => unknown;
   /** The actions client of a request: the one of the connectors the process runs. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
   /**
@@ -92,6 +94,13 @@ export interface AgentBuilderContributionContext {
   settings: Record<string, unknown>;
   /** The services a registration reads lazily, in place of Kibana's start services. */
   services: AgentBuilderContributionServices;
+  /**
+   * Registers an SML type (an `SmlTypeDefinition` of `@kbn/agent-builder-sml-plugin`), as
+   * `agentBuilderSml.registerType` does in `setup()`: pass `{ registerType: context.registerSmlType }`
+   * wherever the registration function takes the SML plugin's setup contract.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registerSmlType: (definition: any) => void;
 }
 
 /**

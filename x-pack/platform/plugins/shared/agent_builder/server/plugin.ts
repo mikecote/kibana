@@ -206,7 +206,11 @@ export class AgentBuilderPlugin
     // What a task process needs to register what this Kibana registered: the config, and the ids
     // of what the registries hold (read at each dispatch, because a plugin may register any time).
     const { registrations } = this.services;
-    registerAgentBuilderParity(setupDeps.workflowsExtensions, registrations.ids);
+    registerAgentBuilderParity(setupDeps.workflowsExtensions, () => ({
+      ...registrations.ids(),
+      // The SML plugin owns its registry: the types its dependents register, read at each dispatch.
+      smlTypes: setupDeps.agentBuilderSml.getRegisteredTypeIds(),
+    }));
     setupDeps.workflowsExtensions.registerTaskProcessSettings(AGENT_BUILDER_RUN_SETTINGS_ID, () =>
       getAgentBuilderRunSettings({
         config: this.config,

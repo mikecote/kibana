@@ -7,6 +7,7 @@
 
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import { registerVisualizationsAgentBuilder } from '../register_agent_builder';
+import { visualizationSmlType } from '../sml_types/visualization';
 
 /** The id of the settings the plugin sends a task process: sent whenever the plugin is enabled. */
 export const VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID = 'agentBuilderVisualizationsAgentBuilder';
@@ -18,8 +19,9 @@ export const VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID = 'agentBuilderVisualizati
  */
 export const contribution: AgentBuilderContribution = {
   declares: { settings: [VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID] },
-  register: (agentBuilder, { settings }) => {
+  register: (agentBuilder, { settings, registerSmlType }) => {
     if (!settings[VISUALIZATIONS_AGENT_BUILDER_SETTINGS_ID]) return;
     registerVisualizationsAgentBuilder(agentBuilder);
+    registerSmlType(visualizationSmlType);
   },
 };

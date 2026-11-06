@@ -31,13 +31,10 @@ const IDS_FILE = join(__dirname, 'agent_builder_contribution_ids.json');
  */
 const NOT_YET_CONTRIBUTED: Record<string, string> = {
   // Medium: one more service, built from explicit dependencies, or a registry of its own.
-  'x-pack/platform/plugins/shared/agent_builder_dashboards':
-    'the dashboard client (the dashboard state schema registry) and the embeddable plugin',
-  'x-pack/platform/plugins/shared/agent_builder_workflows':
-    'the SML type, and the workflows service of Kibana (validation, step and trigger definitions, connectors, execute step, resume, list, generate), which the process API does not serve',
-  'x-pack/platform/plugins/shared/alerting_v2': 'the v2 rules services',
+  'x-pack/platform/plugins/shared/alerting_v2':
+    'the rules, action policy and episodes clients, which are built by its dependency injection container (the task manager start, the event publishers, the artifact registry) per request, and the workflows service of Kibana for its skills',
   'x-pack/platform/plugins/shared/evals_skills':
-    'the evals task providers registry, and the workflows service of Kibana (save and cancel experiments)',
+    'the evals start contract (the dataset and score services over the data streams, the evaluator registry other plugins fill in their setup, the model connectors) and the workflows service of Kibana (save and cancel experiments)',
   // Hard: services that only exist in Kibana, or many registrations that read them.
   'x-pack/platform/plugins/shared/streams': 'the streams client and its asset services',
   'x-pack/solutions/security/plugins/security_solution':

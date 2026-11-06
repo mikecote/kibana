@@ -53,8 +53,9 @@ export const collectRegisteredIds = async ({
     getCoreStart: unavailable('Core') as never,
     getActionsStart: unavailable('The actions plugin') as never,
     getActionsClientWithRequest: unavailable('The actions client') as never,
+    getInferenceStart: unavailable('The inference plugin') as never,
     emitEvent: unavailable('Emitting workflow events') as never,
-    getWorkflowsManagement: unavailable('The workflows management API') as never,
+    getWorkflowsManagement: () => ({}),
     getAgentBuilderStart: unavailable('The agent builder start contract') as never,
   };
   for (const contribution of contributions) {
@@ -65,6 +66,8 @@ export const collectRegisteredIds = async ({
       kibanaVersion: '1.0.0',
       settings,
       services: contributionServices,
+      registerSmlType: (definition: { id: string }) =>
+        services.registrations.recordSmlType(definition.id),
     });
   }
   return services.registrations.ids();

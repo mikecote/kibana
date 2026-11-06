@@ -42,5 +42,8 @@
     "@kbn/files-plugin",
     "@kbn/cloud-plugin",
     "@kbn/task-manager-plugin",
+    "@kbn/security-plugin",
+    "@kbn/inference-plugin",
+    "@kbn/product-doc-base-plugin",
   ]
 }

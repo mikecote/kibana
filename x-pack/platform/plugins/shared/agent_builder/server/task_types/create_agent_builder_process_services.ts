@@ -21,6 +21,11 @@ import { InferenceFeatureRegistry } from '@kbn/search-inference-endpoints/server
 import { createSearchInferenceEndpointsStart } from '@kbn/search-inference-endpoints/server/create_search_inference_endpoints_start';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { createSmlService } from '@kbn/agent-builder-sml-plugin/server/services/sml/sml_service';
+import { createSmlStartContract } from '@kbn/agent-builder-sml-plugin/server/start_contract';
+import type { AgentBuilderSmlPluginStart } from '@kbn/agent-builder-sml-plugin/server';
+import type { SmlTypeDefinition } from '@kbn/agent-builder-sml-plugin/server';
+import type { AuthorizationServiceSetup } from '@kbn/security-plugin-types-server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import { AGENTBUILDER_USAGE_DOMAIN } from '../telemetry/usage_counters';
 import { AnalyticsService, TrackingService } from '../telemetry';
@@ -75,7 +80,7 @@ export const createAgentBuilderProcessServices = async ({
   logger: Logger;
   settings: Record<string, unknown>;
   contributions: AgentBuilderContribution[];
-  context: Omit<AgentBuilderContributionContext, 'services'>;
+  context: Omit<AgentBuilderContributionContext, 'services' | 'registerSmlType'>;
   /** The actions client of a request, from the engine's runtime. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
   /** The workflows management API of the process (`createWorkflowsProcessManagementApi`). */
@@ -142,8 +147,19 @@ export const createAgentBuilderProcessServices = async ({
     logger.get('telemetry').get('analytics')
   );
 
+  // The SML plugin's registry and service: the types the contributions register are served as in Kibana,
+  // and the SML tools read its start contract, built once the services are.
+  const sml = createSmlService();
+  const smlSetup = sml.setup({ logger: logger.get('sml') });
+  // eslint-disable-next-line prefer-const
+  let smlStart: AgentBuilderSmlPluginStart | undefined;
+
   const run = createAgentBuilderRunServices({
     config,
+    getAgentBuilderSml: () => {
+      if (!smlStart) throw new Error('SML is not started in this process yet');
+      return smlStart;
+    },
     logger,
     // The hooks that run an agent's workflows and the workflow tool type read the management API as
     // far as a process serves it (reading and running saved workflows).
@@ -166,10 +182,15 @@ export const createAgentBuilderProcessServices = async ({
   let startContract: AgentBuilderPluginStart | undefined;
   const context: AgentBuilderContributionContext = {
     ...baseContext,
+    registerSmlType: (definition: SmlTypeDefinition) => {
+      smlSetup.registerType(definition);
+      run.registrations.recordSmlType(definition.id);
+    },
     services: {
       getCoreStart,
       getActionsStart: async () => actionsStart,
       getActionsClientWithRequest,
+      getInferenceStart: () => inference,
       getWorkflowsManagement: () => workflowsManagement,
       emitEvent,
       getAgentBuilderStart: () => {
@@ -223,6 +244,19 @@ export const createAgentBuilderProcessServices = async ({
     deploymentInfo: runSettings.deploymentInfo,
     deductiveRegister: config.deductive?.register ?? false,
     conversationEventBus,
+  });
+  // Without security Kibana's SML runs without permission checks too; with it, the privileges of the
+  // request are checked as in Kibana.
+  smlStart = createSmlStartContract({
+    smlService: sml.start({
+      logger: logger.get('sml'),
+      securityAuthz: (host.plugins?.security as { authz?: AuthorizationServiceSetup } | undefined)
+        ?.authz,
+    }),
+    elasticsearch: { client: elasticsearch } as unknown as ElasticsearchServiceStart,
+    savedObjects: savedObjects as never,
+    spaces,
+    logger: logger.get('sml'),
   });
   startContract = createAgentBuilderStartContract({
     startServices,

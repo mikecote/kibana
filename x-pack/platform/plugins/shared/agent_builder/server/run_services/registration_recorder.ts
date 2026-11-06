@@ -23,6 +23,8 @@ export const REGISTRATION_KINDS = [
   'hooks',
   'plugins',
   'aiIndexResolvers',
+  /** The types plugins register with the SML plugin (`agentBuilderSml.registerType`). */
+  'smlTypes',
 ] as const;
 
 export type RegistrationKind = (typeof REGISTRATION_KINDS)[number];
@@ -32,6 +34,8 @@ export const getParityKind = (kind: RegistrationKind): string => `agentBuilder.$
 export interface RegistrationRecorder {
   /** The ids registered of each kind, sorted. */
   ids(): Record<RegistrationKind, string[]>;
+  /** Records an SML type registered with the SML plugin's registry (which is not one of the services'). */
+  recordSmlType(id: string): void;
   /** The same registries, recording what is registered with them. */
   record(setups: InternalSetupServices): InternalSetupServices;
 }
@@ -52,6 +56,10 @@ export const createRegistrationRecorder = (): RegistrationRecorder => {
   ) as Record<RegistrationKind, Set<string>>;
 
   return {
+    recordSmlType: (id) => {
+      registered.smlTypes.add(id);
+    },
+
     ids: () =>
       Object.fromEntries(
         REGISTRATION_KINDS.map((kind) => [kind, [...registered[kind]].sort()])

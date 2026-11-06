@@ -18,7 +18,7 @@ import type {
 import { registerAgentBuilderPlatform } from './register_agent_builder';
 import { AGENT_BUILDER_PLATFORM_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import type { AgentBuilderPlatformTaskProcessSettings } from './task_types/agent_builder_contribution';
-import { createConnectorSmlType } from './sml_types/connector';
+import { registerAgentBuilderPlatformSml } from './sml_types/register_sml';
 import { createConnectorLifecycleHandler } from './connector_lifecycle/connector_lifecycle_handler';
 import { setAgentBuilderDashboard } from './dashboard/install_dashboard';
 
@@ -32,6 +32,7 @@ export class AgentBuilderPlatformPlugin
     >
 {
   private logger: Logger;
+  private startDeps?: PluginStartDependencies;
 
   constructor(context: PluginInitializerContext<PluginConfig>) {
     this.logger = context.logger.get();
@@ -46,24 +47,20 @@ export class AgentBuilderPlatformPlugin
       AGENT_BUILDER_PLATFORM_SETTINGS_ID,
       (): AgentBuilderPlatformTaskProcessSettings => ({
         organizationId: setupDeps.cloud?.organizationId,
+        // The product documentation tool answers "not available" without the LLM tasks plugin.
+        llmTasks: Boolean(this.startDeps?.llmTasks),
       })
     );
     registerAgentBuilderPlatform(setupDeps.agentBuilder, {
       coreSetup: coreSetup as AgentBuilderPlatformCoreSetup,
       logger: this.logger,
       organizationId: setupDeps.cloud?.organizationId,
-      // Kibana has the LLM tasks plugin and the files plugin whenever they are enabled.
-      has: { llmTasks: true, files: true },
     });
 
-    const connectorSmlType = createConnectorSmlType({
-      getActionSavedObjectsClient: async (request) => {
-        const [coreStart] = await coreSetup.getStartServices();
-        return coreStart.savedObjects.getScopedClient(request, { includedHiddenTypes: ['action'] });
-      },
-      logger: this.logger.get('sml-connector'),
+    registerAgentBuilderPlatformSml(setupDeps.agentBuilderSml, {
+      getCoreStart: async () => (await coreSetup.getStartServices())[0],
+      logger: this.logger,
     });
-    setupDeps.agentBuilderSml.registerType(connectorSmlType);
 
     const connectorLifecycleHandler = createConnectorLifecycleHandler({
       logger: this.logger.get('connector-lifecycle'),
@@ -79,7 +76,8 @@ export class AgentBuilderPlatformPlugin
     return {};
   }
 
-  start(coreStart: CoreStart): AgentBuilderPlatformPluginStart {
+  start(coreStart: CoreStart, startDeps: PluginStartDependencies): AgentBuilderPlatformPluginStart {
+    this.startDeps = startDeps;
     return {
       tracingFeatures: {
         setDashboard: ({ enabled, spaceId }) =>
