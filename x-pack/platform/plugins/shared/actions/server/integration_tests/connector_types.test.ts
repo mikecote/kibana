@@ -118,14 +118,15 @@ describe('Connector type config checks', () => {
           };
         }
 
-        const subActions = getService({
+        const service = await getService({
           config: connectorConfig,
           configurationUtilities: actionsConfigMock.create(),
           connector: { id: 'foo', type: 'bar' },
           logger: loggerMock.create(),
           secrets: {},
           services: {} as Services,
-        }).getSubActions();
+        });
+        const subActions = service.getSubActions();
 
         subActions.forEach((subAction) => {
           // @ts-ignore

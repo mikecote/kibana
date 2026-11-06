@@ -7,5 +7,5 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-export { Server, registerServiceConfig, Root, bootstrap } from './src';
+export { Server, registerServiceConfig, Root, TaskRoot, bootstrap } from './src';
 export type { ServerOptions } from './src';

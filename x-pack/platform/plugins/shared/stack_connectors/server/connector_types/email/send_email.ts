@@ -26,7 +26,8 @@ import { AdditionalEmailServices } from '../../../common';
 import { sendEmailGraphApi } from './send_email_graph_api';
 
 // an email "service" which doesn't actually send, just returns what it would send
-export const JSON_TRANSPORT_SERVICE = '__json';
+import { JSON_TRANSPORT_SERVICE } from './constants';
+export { JSON_TRANSPORT_SERVICE } from './constants';
 // The value is the resource identifier (Application ID URI) of the resource you want, affixed with the .default suffix. For Microsoft Graph, the value is https://graph.microsoft.com/.default. This value informs the Microsoft identity platform endpoint that of all the application permissions you have configured for your app in the app registration portal, it should issue a token for the ones associated with the resource you want to use.
 
 export interface SendEmailOptions {

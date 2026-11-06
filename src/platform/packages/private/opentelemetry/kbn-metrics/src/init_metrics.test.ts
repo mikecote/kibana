@@ -11,20 +11,18 @@ import { OTLPMetricExporter as OTLPMetricExporterGrpc } from '@opentelemetry/exp
 import { OTLPMetricExporter as OTLPMetricExporterHttp } from '@opentelemetry/exporter-metrics-otlp-http';
 import { duration } from 'moment';
 
-jest.mock('@elastic/opentelemetry-node/sdk', () => {
-  const actual = jest.requireActual('@elastic/opentelemetry-node/sdk');
+jest.mock('@opentelemetry/sdk-metrics', () => {
+  const actual = jest.requireActual('@opentelemetry/sdk-metrics');
 
   return {
     ...actual,
-    metrics: {
-      ...actual.metrics,
-      MeterProvider: jest.fn((options) => {
-        return new actual.metrics.MeterProvider(options);
-      }),
-      PeriodicExportingMetricReader: jest.fn((options) => {
-        return new actual.metrics.PeriodicExportingMetricReader(options);
-      }),
-    },
+    ...actual,
+    MeterProvider: jest.fn((options) => {
+      return new actual.MeterProvider(options);
+    }),
+    PeriodicExportingMetricReader: jest.fn((options) => {
+      return new actual.PeriodicExportingMetricReader(options);
+    }),
   };
 });
 
@@ -37,7 +35,7 @@ describe('initMetrics', () => {
   let MeterProviderMock: jest.Mock;
   let PeriodicExportingMetricReader: jest.Mock;
 
-  const { metrics } = jest.requireActual('@elastic/opentelemetry-node/sdk');
+  const metrics = jest.requireActual('@opentelemetry/sdk-metrics');
 
   const exporters: MetricsExporterConfig[] = [
     {
@@ -57,9 +55,10 @@ describe('initMetrics', () => {
   ];
 
   beforeEach(() => {
-    MeterProviderMock = jest.requireMock('@elastic/opentelemetry-node/sdk').metrics.MeterProvider;
-    PeriodicExportingMetricReader = jest.requireMock('@elastic/opentelemetry-node/sdk').metrics
-      .PeriodicExportingMetricReader;
+    MeterProviderMock = jest.requireMock('@opentelemetry/sdk-metrics').MeterProvider;
+    PeriodicExportingMetricReader = jest.requireMock(
+      '@opentelemetry/sdk-metrics'
+    ).PeriodicExportingMetricReader;
   });
 
   afterEach(() => {

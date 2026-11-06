@@ -55,7 +55,7 @@ describe('#setupSavedObjects', () => {
     setupContract = setupSavedObjects({
       service: mockEncryptedSavedObjectsService,
       savedObjects: coreSetupMock.savedObjects,
-      getStartServices: coreSetupMock.getStartServices,
+      getCoreStart: async () => (await coreSetupMock.getStartServices())[0],
       logger: mockLogger,
     });
   });

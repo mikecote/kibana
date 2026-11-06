@@ -23,6 +23,7 @@ import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
+import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -86,6 +87,11 @@ describe('the attack discovery rule type served from a bundle', () => {
 
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
+    alertingRun: {
+      maintenanceWindowsEnabled: true,
+      dataViews: { scriptedFieldsEnabled: true },
+      search: { searchConfig: searchConfigSchema.validate({}), rollupsEnabled: false },
+    },
     actions: actionsConfigSchema.validate({
       allowedHosts: ['*'],
       enableFooterInEmail: false,
@@ -476,7 +482,7 @@ describe('the attack discovery rule type served from a bundle', () => {
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
-        bundles: { [built.name]: { file: `${built.name}.js`, taskType: TASK_TYPE } },
+        bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: TASK_TYPE } },
       })
     );
     supervisor = new TaskProcessSupervisor({

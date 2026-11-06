@@ -15,6 +15,7 @@ import {
   firstValueFrom,
   tap,
   BehaviorSubject,
+  of,
 } from 'rxjs';
 import { map, distinctUntilChanged, shareReplay, takeUntil, debounceTime } from 'rxjs';
 import { isDeepStrictEqual } from 'util';
@@ -38,7 +39,6 @@ import type { InternalSavedObjectsServiceSetup } from '@kbn/core-saved-objects-s
 import type { InternalCoreUsageDataSetup } from '@kbn/core-usage-data-base-server-internal';
 import { type ServiceStatus, type CoreStatus } from '@kbn/core-status-common';
 import type { ILoggingSystem } from '@kbn/core-logging-server-internal';
-import { registerStatusRoute, registerPrebootStatusRoute } from './routes';
 
 import { statusConfig as config, type StatusConfigType } from './status_config';
 import type { InternalStatusServiceSetup } from './types';
@@ -74,6 +74,11 @@ export interface StatusServiceSetupDeps {
   loggingSystem: Pick<ILoggingSystem, 'setGlobalContext'>;
 }
 
+type TaskStatusServiceSetupDeps = Pick<
+  StatusServiceSetupDeps,
+  'analytics' | 'elasticsearch' | 'pluginDependencies' | 'savedObjects' | 'loggingSystem'
+>;
+
 export class StatusService implements CoreService<InternalStatusServiceSetup> {
   private readonly logger: Logger;
   private readonly config$: Observable<StatusConfigType>;
@@ -90,12 +95,21 @@ export class StatusService implements CoreService<InternalStatusServiceSetup> {
   }
 
   public async preboot({ http }: StatusServicePrebootDeps) {
+    const { registerPrebootStatusRoute } = await import('./routes');
     http.registerRoutes('', (router) => {
       registerPrebootStatusRoute({ router });
     });
   }
 
-  public async setup({
+  public async setup(deps: StatusServiceSetupDeps) {
+    return this.setupInternal(deps);
+  }
+
+  public async setupTask(deps: TaskStatusServiceSetupDeps) {
+    return this.setupInternal(deps);
+  }
+
+  private async setupInternal({
     analytics,
     elasticsearch,
     pluginDependencies,
@@ -106,7 +120,8 @@ export class StatusService implements CoreService<InternalStatusServiceSetup> {
     environment,
     coreUsageData,
     loggingSystem,
-  }: StatusServiceSetupDeps) {
+  }: TaskStatusServiceSetupDeps &
+    Partial<Omit<StatusServiceSetupDeps, keyof TaskStatusServiceSetupDeps>>) {
     const statusConfig = await firstValueFrom(this.config$);
     const core$ = (this.core$ = this.setupCoreStatus({
       elasticsearch,
@@ -154,30 +169,33 @@ export class StatusService implements CoreService<InternalStatusServiceSetup> {
     // Create unused subscriptions to ensure all underlying lazy observables are started.
     this.subscriptions.push(this.overall$.subscribe(), coreOverall$.subscribe());
 
-    const commonRouteDeps = {
-      config: {
-        allowAnonymous: statusConfig.allowAnonymous,
-        statusPageBypassMonitorPrivilege: statusConfig.statusPageBypassMonitorPrivilege,
-        packageInfo: this.coreContext.env.packageInfo,
-        serverName: http.getServerInfo().name,
-        uuid: environment.instanceUuid,
-      },
-      metrics,
-      status: {
-        overall$: this.overall$,
-        plugins$: this.pluginsStatus.getAll$(),
-        core$,
-        coreOverall$,
-      },
-      incrementUsageCounter: coreUsageData.incrementUsageCounter,
-    };
+    if (http && metrics && environment && coreUsageData) {
+      const { registerStatusRoute } = await import('./routes');
+      const commonRouteDeps = {
+        config: {
+          allowAnonymous: statusConfig.allowAnonymous,
+          statusPageBypassMonitorPrivilege: statusConfig.statusPageBypassMonitorPrivilege,
+          packageInfo: this.coreContext.env.packageInfo,
+          serverName: http.getServerInfo().name,
+          uuid: environment.instanceUuid,
+        },
+        metrics,
+        status: {
+          overall$: this.overall$,
+          plugins$: this.pluginsStatus.getAll$(),
+          core$,
+          coreOverall$,
+        },
+        incrementUsageCounter: coreUsageData.incrementUsageCounter,
+      };
 
-    const router = http.createRouter<RequestHandlerContext>('');
-    registerStatusRoute({
-      router,
-      logger: this.logger.get('routes', 'status'),
-      ...commonRouteDeps,
-    });
+      const router = http.createRouter<RequestHandlerContext>('');
+      registerStatusRoute({
+        router,
+        logger: this.logger.get('routes', 'status'),
+        ...commonRouteDeps,
+      });
+    }
 
     return {
       core$,
@@ -216,13 +234,11 @@ export class StatusService implements CoreService<InternalStatusServiceSetup> {
     elasticsearch,
     httpRateLimiter,
     savedObjects,
-  }: Pick<
-    StatusServiceSetupDeps,
-    'elasticsearch' | 'httpRateLimiter' | 'savedObjects'
-  >): Observable<CoreStatus> {
+  }: Pick<StatusServiceSetupDeps, 'elasticsearch' | 'savedObjects'> &
+    Partial<Pick<StatusServiceSetupDeps, 'httpRateLimiter'>>): Observable<CoreStatus> {
     return combineLatest([
       elasticsearch.status$,
-      httpRateLimiter.status$,
+      httpRateLimiter?.status$ ?? of(undefined),
       savedObjects.status$,
     ]).pipe(
       map(

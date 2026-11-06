@@ -8,6 +8,7 @@
 import pMap from 'p-map';
 
 import {
+  type CoreStart,
   type ISavedObjectsPointInTimeFinder,
   type ISavedObjectsRepository,
   type ISavedObjectTypeRegistry,
@@ -18,7 +19,6 @@ import {
   type SavedObjectsCreatePointInTimeFinderOptions,
   SavedObjectsErrorHelpers,
   type SavedObjectsServiceSetup,
-  type StartServicesAccessor,
 } from '@kbn/core/server';
 import { errorContent } from '@kbn/core-saved-objects-server';
 import type {
@@ -37,7 +37,7 @@ export type { EncryptedSavedObjectsClient, EncryptedSavedObjectsClientOptions };
 interface SetupSavedObjectsParams {
   service: PublicMethodsOf<EncryptedSavedObjectsService>;
   savedObjects: SavedObjectsServiceSetup;
-  getStartServices: StartServicesAccessor;
+  getCoreStart: () => Promise<Pick<CoreStart, 'savedObjects' | 'security'>>;
   logger: Logger;
 }
 
@@ -56,7 +56,7 @@ export type ClientInstanciator = (
 export function setupSavedObjects({
   service,
   savedObjects,
-  getStartServices,
+  getCoreStart,
   logger,
 }: SetupSavedObjectsParams): ClientInstanciator {
   // Register custom saved object extension that will encrypt, decrypt and strip saved object
@@ -66,15 +66,15 @@ export function setupSavedObjects({
       baseTypeRegistry,
       service,
       getCurrentUser: async () => {
-        const [{ security }] = await getStartServices();
+        const { security } = await getCoreStart();
         return security.authc.getCurrentUser(request) ?? undefined;
       },
     });
   });
 
   return (clientOpts) => {
-    const internalRepositoryAndTypeRegistryPromise = getStartServices().then(
-      ([core]) =>
+    const internalRepositoryAndTypeRegistryPromise = getCoreStart().then(
+      (core) =>
         [
           core.savedObjects.createInternalRepository(clientOpts?.includedHiddenTypes),
           core.savedObjects.getTypeRegistry(),

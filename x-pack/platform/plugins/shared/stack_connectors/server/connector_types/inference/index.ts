@@ -24,7 +24,7 @@ import {
   SUB_ACTION,
 } from '@kbn/connector-schemas/inference';
 import type { Config, Secrets } from '@kbn/connector-schemas/inference';
-import { InferenceConnector, type InferenceConnectorDependencies } from './inference';
+import type { InferenceConnectorDependencies } from './inference';
 
 export type { InferenceConnectorDependencies };
 import { unflattenObject } from '../lib/unflatten_object';
@@ -56,7 +56,10 @@ export const getConnectorType = (
 ): SubActionConnectorType<Config, Secrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new InferenceConnector(params, dependencies),
+  getService: async (params) => {
+    const { InferenceConnector } = await import('./inference');
+    return new InferenceConnector(params, dependencies);
+  },
   schema: {
     config: ConfigSchema,
     secrets: SecretsSchema,

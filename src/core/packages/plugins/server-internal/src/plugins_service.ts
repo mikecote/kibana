@@ -38,6 +38,7 @@ import type { PluginsConfigType } from './plugins_config';
 import { PluginsConfig } from './plugins_config';
 import { PluginsSystem } from './plugins_system';
 import { createBrowserConfig } from './create_browser_config';
+import type { TaskCoreSetupServices, TaskCoreStartServices } from './task_plugin';
 
 /** @internal */
 export type DiscoveredPlugins = {
@@ -249,6 +250,22 @@ export class PluginsService
     }
 
     await this.standardPluginsSystem.stopPlugins();
+  }
+
+  public async setupTask(deps: TaskCoreSetupServices) {
+    const config = await firstValueFrom(this.config$);
+    const contracts = config.initialize
+      ? await this.standardPluginsSystem.setupTaskPlugins(deps)
+      : new Map<PluginName, unknown>();
+    return { initialized: config.initialize, contracts };
+  }
+
+  public async startTask(deps: TaskCoreStartServices) {
+    const config = await firstValueFrom(this.config$);
+    const contracts = config.initialize
+      ? await this.standardPluginsSystem.startTaskPlugins(deps)
+      : new Map<PluginName, unknown>();
+    return { contracts };
   }
 
   private generateUiPluginsConfigs(

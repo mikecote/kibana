@@ -52,7 +52,7 @@ import type { ActionsConfigurationUtilities } from '@kbn/actions-plugin/server/a
 import { emailSchema } from '@kbn/connector-schemas/email/schemas/latest';
 import { AdditionalEmailServices } from '../../../common';
 import type { SendEmailOptions, Transport } from './send_email';
-import { sendEmail, JSON_TRANSPORT_SERVICE } from './send_email';
+import { JSON_TRANSPORT_SERVICE } from './constants';
 
 export type EmailConnectorType = ConnectorType<
   ConnectorTypeConfigType,
@@ -520,6 +520,7 @@ async function executor(
   let result;
 
   try {
+    const { sendEmail } = await import('./send_email');
     result = await sendEmail(
       logger,
       sendEmailOptions,

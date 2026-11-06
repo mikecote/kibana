@@ -5,9 +5,13 @@
  * 2.0.
  */
 
-import type { CoreSetup, CoreStart, PluginInitializer } from '@kbn/core/server';
+import type {
+  TaskCoreSetup as CoreSetup,
+  TaskCoreStart as CoreStart,
+  TaskPluginInitializer,
+} from '@kbn/core-plugins-server-internal';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type {
   EncryptedSavedObjectsPluginSetup,
   EncryptedSavedObjectsPluginStart,
@@ -50,7 +54,9 @@ interface StartDeps {
  * ui settings and encrypted saved objects in Kibana. The module's runner gets its `TaskHost` from
  * Core's start contract, so a run uses Core's own services.
  */
-const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initializerContext) => {
+const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
+  initializerContext
+) => {
   const context = getTaskProcessContext();
   const { module, init } = context;
   const logger = initializerContext.logger.get('task-process');
@@ -258,7 +264,7 @@ const plugin: PluginInitializer<void, void, SetupDeps, StartDeps> = async (initi
 export const createModuleStaticPlugin = (
   kibanaVersion: string,
   taskPluginIds: string[] = []
-): StaticPlugin => ({
+): TaskStaticPlugin => ({
   manifest: {
     id: 'taskTypeModule',
     version: kibanaVersion,
@@ -273,5 +279,5 @@ export const createModuleStaticPlugin = (
     ui: false,
     owner: { name: 'Response Ops', githubTeam: 'response-ops' },
   },
-  definition: { plugin: plugin as never },
+  definition: { taskPlugin: plugin },
 });

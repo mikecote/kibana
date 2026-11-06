@@ -159,9 +159,31 @@ const peggyPlugin = {
   },
 };
 
+/** Returns the output files loaded before any asynchronous import is evaluated. */
+const getStartupOutputs = (metafile, outfile) => {
+  const outputs = new Map(
+    Object.entries(metafile.outputs).map(([file, output]) => [
+      path.resolve(REPO_ROOT, file),
+      output,
+    ])
+  );
+  const loaded = new Set();
+  const visit = (file) => {
+    if (loaded.has(file)) return;
+    const output = outputs.get(file);
+    if (!output) return;
+    loaded.add(file);
+    for (const dependency of output.imports) {
+      if (dependency.external || dependency.kind === 'dynamic-import') continue;
+      visit(path.resolve(REPO_ROOT, dependency.path));
+    }
+  };
+  visit(path.resolve(outfile));
+  return [...loaded];
+};
+
 /**
- * Bundles the task type file together with the task process entry into one file:
- * `node <name>.js` serves `/health`, `/run` and `/cancel` for Task Manager.
+ * Bundles a task type and its process entry, leaving asynchronous imports in separate chunks.
  */
 const buildTaskBundle = async ({
   entry,
@@ -171,7 +193,7 @@ const buildTaskBundle = async ({
   metafile = false,
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
-  const outfile = path.join(outDir, `${entry.name}.js`);
+  const outfile = path.join(outDir, `${entry.name}.mjs`);
   const loaded = loadTaskType(entry.file);
   // What the module says it takes from other plugins: every plugin's file under each key.
   const contributions = Object.fromEntries(
@@ -197,16 +219,20 @@ const buildTaskBundle = async ({
       sourcefile: `${entry.name}.entry.ts`,
       loader: 'ts',
     },
-    outfile,
+    outdir: outDir,
+    entryNames: entry.name,
+    chunkNames: `chunks/${entry.name}/[name]-[hash]`,
+    outExtension: { '.js': '.mjs' },
     bundle: true,
     platform: 'node',
     target: 'node24',
-    format: 'cjs',
+    format: 'esm',
+    splitting: true,
     absWorkingDir: REPO_ROOT,
     tsconfig: path.join(REPO_ROOT, 'tsconfig.base.json'),
     logLevel: 'silent',
     logLimit: 0,
-    metafile,
+    metafile: true,
     minifyWhitespace: true,
     minifySyntax: true,
     keepNames: true,
@@ -219,7 +245,14 @@ const buildTaskBundle = async ({
       __KBN_VERSION__: JSON.stringify(version),
     },
     banner: {
-      js: '"use strict";var __kbn_import_meta_url=require("url").pathToFileURL(__filename).href;',
+      js: [
+        'import { createRequire as __kbn_createRequire } from "node:module";',
+        'import { fileURLToPath as __kbn_fileURLToPath } from "node:url";',
+        'import { dirname as __kbn_dirname } from "node:path";',
+        'var require=__kbn_createRequire(import.meta.url),',
+        '__filename=__kbn_fileURLToPath(import.meta.url),',
+        '__dirname=__kbn_dirname(__filename),__kbn_import_meta_url=import.meta.url;',
+      ].join(''),
     },
     loader: {
       '.md': 'text',
@@ -233,12 +266,23 @@ const buildTaskBundle = async ({
     },
     plugins: [uiSharedDepsStubPlugin, pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
   });
-  // V8 holds the source of the bundle in memory, at two bytes per character when one character is not Latin-1.
-  fs.writeFileSync(outfile, escapeNonLatin1(fs.readFileSync(outfile, 'utf8')));
+  const files = Object.keys(result.metafile.outputs).map((file) => path.resolve(REPO_ROOT, file));
+  for (const file of files) {
+    if (!file.endsWith('.mjs')) continue;
+    // V8 retains each loaded chunk's source; keep every chunk at one byte per character.
+    fs.writeFileSync(file, escapeNonLatin1(fs.readFileSync(file, 'utf8')));
+  }
   return {
     name: entry.name,
     outfile,
-    bytes: fs.statSync(outfile).size,
+    bytes: files
+      .filter((file) => file.endsWith('.mjs'))
+      .reduce((total, file) => total + fs.statSync(file).size, 0),
+    files,
+    startupBytes: getStartupOutputs(result.metafile, outfile).reduce(
+      (total, file) => total + fs.statSync(file).size,
+      0
+    ),
     entry,
     ...(metafile ? { metafile: result.metafile } : {}),
   };
@@ -252,12 +296,14 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   const manifest = {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
     bundles: Object.fromEntries(
-      results.map(({ entry, name, bytes }) => [
+      results.map(({ entry, name, bytes, outfile, files, startupBytes }) => [
         name,
         {
-          file: `${name}.js`,
+          file: path.relative(outDir, outfile),
+          files: files.map((file) => path.relative(outDir, file)),
           taskType: readTaskType(entry.file),
           bytes,
+          startupBytes,
         },
       ])
     ),
@@ -270,6 +316,7 @@ module.exports = {
   OUT_DIR,
   getTaskBundleEntries,
   getContributionFiles,
+  getStartupOutputs,
   buildTaskBundle,
   writeManifest,
 };

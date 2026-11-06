@@ -15,4 +15,10 @@ export type {
   InternalPluginsServiceStart,
   DiscoveredPlugins,
   PluginDependencies,
+  TaskCoreSetup,
+  TaskCoreStart,
+  TaskCoreSetupServices,
+  TaskCoreStartServices,
+  TaskPluginInitializer,
+  TaskStaticPlugin,
 } from './src';

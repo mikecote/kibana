@@ -13,7 +13,6 @@ import type {
   SavedObjectsServiceStart,
   SecurityServiceStart,
 } from '@kbn/core/server';
-import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
 
 import type { ExperimentalFeatures } from '../../../common';
@@ -29,8 +28,6 @@ import {
   type ScheduleNotificationResponseActionsService,
 } from '../../lib/detection_engine/rule_response_actions/schedule_notification_response_actions';
 import type { SetupPlugins } from '../../plugin_contract';
-import { referenceDataSavedObjectType } from '../lib/reference_data';
-import { scriptsLibrarySavedObjectType } from '../lib/scripts_library';
 
 export interface EndpointResponseActionsRunServicesDeps {
   /** `createFleetRunServices()` of Fleet */
@@ -57,18 +54,7 @@ export interface EndpointResponseActionsRunServices {
   stop: () => void;
 }
 
-/**
- * The saved object types the response actions use besides Fleet's and Osquery's, for a task process
- * to register with Core.
- */
-export const getEndpointResponseActionsRunSavedObjectTypes = (
-  experimentalFeatures: Pick<ExperimentalFeatures, 'responseActionsScriptLibraryManagement'>
-): SavedObjectsType[] => [
-  referenceDataSavedObjectType,
-  ...(experimentalFeatures.responseActionsScriptLibraryManagement
-    ? [scriptsLibrarySavedObjectType]
-    : []),
-];
+export { getEndpointResponseActionsRunSavedObjectTypes } from './saved_objects';
 
 /**
  * The services the response actions of rules run on, from explicit dependencies: what a task process

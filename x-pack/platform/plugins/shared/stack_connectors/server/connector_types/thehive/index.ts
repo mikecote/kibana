@@ -24,7 +24,7 @@ import {
   TheHiveSecretsSchema,
 } from '@kbn/connector-schemas/thehive';
 import type { TheHiveConfig, TheHiveSecrets } from '@kbn/connector-schemas/thehive';
-import { TheHiveConnector } from './thehive';
+
 import { renderParameterTemplates } from './render';
 
 export type TheHiveConnectorType = SubActionConnectorType<TheHiveConfig, TheHiveSecrets>;
@@ -34,7 +34,10 @@ export function getConnectorType(): TheHiveConnectorType {
     id: CONNECTOR_ID,
     minimumLicenseRequired: 'platinum',
     name: CONNECTOR_NAME,
-    getService: (params) => new TheHiveConnector(params, PushToServiceIncidentSchema),
+    getService: async (params) => {
+      const { TheHiveConnector } = await import('./thehive');
+      return new TheHiveConnector(params, PushToServiceIncidentSchema);
+    },
     supportedFeatureIds: [
       AlertingConnectorFeatureId,
       SecurityConnectorFeatureId,

@@ -5,201 +5,53 @@
  * 2.0.
  */
 
-import nodeCrypto from '@elastic/node-crypto';
-import { createHash } from 'crypto';
-
-import type {
-  CoreSetup,
-  ISavedObjectTypeRegistry,
-  Logger,
-  Plugin,
-  PluginInitializerContext,
-} from '@kbn/core/server';
+import type { CoreSetup, Logger, Plugin, PluginInitializerContext } from '@kbn/core/server';
 
 import type { ConfigType } from './config';
-import {
-  type CreateEncryptedSavedObjectsMigrationFn,
-  getCreateMigration,
-} from './create_migration';
-import { type CreateEsoModelVersionFn, getCreateEsoModelVersion } from './create_model_version';
-import type { EncryptedSavedObjectTypeRegistration } from './crypto';
-import {
-  EncryptedSavedObjectsService,
-  EncryptionError,
-  EncryptionKeyRotationService,
-} from './crypto';
+import { createEncryptedSavedObjectsRuntime } from './create_runtime';
+import { EncryptionKeyRotationService } from './crypto';
 import { defineRoutes } from './routes';
-import type { ClientInstanciator } from './saved_objects';
-import { SavedObjectsEncryptionExtension, setupSavedObjects } from './saved_objects';
+import type { EncryptedSavedObjectsPluginSetup, EncryptedSavedObjectsPluginStart } from './types';
+export type { EncryptedSavedObjectsPluginSetup, EncryptedSavedObjectsPluginStart } from './types';
 
-export interface EncryptedSavedObjectsPluginSetup {
-  /**
-   * Indicates if Saved Object encryption is possible. Requires an encryption key to be explicitly set via `xpack.encryptedSavedObjects.encryptionKey`.
-   */
-  canEncrypt: boolean;
-  registerType: (typeRegistration: EncryptedSavedObjectTypeRegistration) => void;
-  createMigration: CreateEncryptedSavedObjectsMigrationFn;
-  createModelVersion: CreateEsoModelVersionFn;
-  /**
-   * The keys a task process needs to decrypt what Kibana encrypts, which Kibana sends it over the
-   * fork channel. Only for Task Manager's task type modules: whoever has the keys can decrypt any
-   * encrypted saved object, so never log or persist the result.
-   */
-  getKeysForTaskProcesses: () => { encryptionKey?: string; decryptionOnlyKeys: string[] };
-  /**
-   * This function is exposed for Core migration testing purposes only.
-   */
-  __testCreateDangerousExtension: (
-    typeRegistry: ISavedObjectTypeRegistry,
-    typeRegistrationOverrides?: EncryptedSavedObjectTypeRegistration[]
-  ) => SavedObjectsEncryptionExtension;
-}
-
-export interface EncryptedSavedObjectsPluginStart {
-  isEncryptionError: (error: Error) => boolean;
-  getClient: ClientInstanciator;
-}
-
-/**
- * Represents EncryptedSavedObjects Plugin instance that will be managed by the Kibana plugin system.
- */
 export class EncryptedSavedObjectsPlugin
   implements Plugin<EncryptedSavedObjectsPluginSetup, EncryptedSavedObjectsPluginStart>
 {
   private readonly logger: Logger;
-  private savedObjectsSetup!: ClientInstanciator;
-  #service?: Readonly<EncryptedSavedObjectsService>;
-
+  private runtime?: ReturnType<typeof createEncryptedSavedObjectsRuntime>;
   constructor(private readonly initializerContext: PluginInitializerContext) {
-    this.logger = this.initializerContext.logger.get();
+    this.logger = initializerContext.logger.get();
   }
-
   public setup(core: CoreSetup): EncryptedSavedObjectsPluginSetup {
     const config = this.initializerContext.config.get<ConfigType>();
-    const canEncrypt = config.encryptionKey !== undefined;
-    if (!canEncrypt) {
-      this.logger.warn(
-        'Saved objects encryption key is not set. This will severely limit Kibana functionality. ' +
-          'Please set xpack.encryptedSavedObjects.encryptionKey in the kibana.yml or use the bin/kibana-encryption-keys command.'
-      );
-    } else {
-      const hashedEncryptionKey = createHash('sha3-256')
-        .update(config.encryptionKey)
-        .digest('base64');
-
-      this.logger.info(
-        `Hashed 'xpack.encryptedSavedObjects.encryptionKey' for this instance: ${hashedEncryptionKey}`
-      );
-    }
-
-    const readOnlyKeys = config.keyRotation?.decryptionOnlyKeys;
-
-    if (readOnlyKeys !== undefined && readOnlyKeys.length > 0) {
-      const readOnlyKeyHashses = readOnlyKeys.map((readOnlyKey, i) =>
-        createHash('sha3-256').update(readOnlyKey).digest('base64')
-      );
-
-      this.logger.info(
-        `Hashed 'xpack.encryptedSavedObjects.keyRotation.decryptionOnlyKeys' for this instance: ${readOnlyKeyHashses}`
-      );
-    }
-
-    const primaryCrypto = config.encryptionKey
-      ? nodeCrypto({ encryptionKey: config.encryptionKey })
-      : undefined;
-    const decryptionOnlyCryptos = config.keyRotation.decryptionOnlyKeys.map((decryptionKey) =>
-      nodeCrypto({ encryptionKey: decryptionKey })
-    );
-
-    this.#service = Object.freeze(
-      new EncryptedSavedObjectsService({
-        primaryCrypto,
-        decryptionOnlyCryptos,
-        logger: this.logger,
-      })
-    );
-
-    this.savedObjectsSetup = setupSavedObjects({
-      service: this.#service,
-      savedObjects: core.savedObjects,
-      getStartServices: core.getStartServices,
+    const runtime = createEncryptedSavedObjectsRuntime({
+      config,
       logger: this.logger,
+      savedObjects: core.savedObjects,
+      getCoreStart: async () => (await core.getStartServices())[0],
     });
-
-    // Expose the key rotation route for both stateful and serverless environments
-    // The endpoint requires admin privileges, and is internal only in serverless
+    this.runtime = runtime;
     defineRoutes({
       router: core.http.createRouter(),
       logger: this.initializerContext.logger.get('routes'),
       encryptionKeyRotationService: Object.freeze(
         new EncryptionKeyRotationService({
           logger: this.logger.get('key-rotation-service'),
-          service: this.#service,
+          service: runtime.service,
           getStartServices: core.getStartServices,
         })
       ),
       config,
       buildFlavor: this.initializerContext.env.packageInfo.buildFlavor,
     });
-
-    return {
-      canEncrypt,
-      registerType: (typeRegistration: EncryptedSavedObjectTypeRegistration) => {
-        this.#service?.registerType(typeRegistration);
-      },
-      createMigration: getCreateMigration(
-        this.#service,
-        (typeRegistration: EncryptedSavedObjectTypeRegistration) => {
-          const serviceForMigration = new EncryptedSavedObjectsService({
-            primaryCrypto,
-            decryptionOnlyCryptos,
-            logger: this.logger,
-          });
-          serviceForMigration.registerType(typeRegistration);
-          return serviceForMigration;
-        }
-      ),
-      createModelVersion: getCreateEsoModelVersion(
-        this.#service,
-        (typeRegistration: EncryptedSavedObjectTypeRegistration) => {
-          const serviceForMigration = new EncryptedSavedObjectsService({
-            primaryCrypto,
-            decryptionOnlyCryptos,
-            logger: this.logger,
-          });
-          serviceForMigration.registerType(typeRegistration);
-          return serviceForMigration;
-        }
-      ),
-      getKeysForTaskProcesses: () => ({
-        encryptionKey: config.encryptionKey,
-        decryptionOnlyKeys: [...(readOnlyKeys ?? [])],
-      }),
-      __testCreateDangerousExtension: (
-        typeRegistry: ISavedObjectTypeRegistry,
-        typeRegistrationOverrides?: EncryptedSavedObjectTypeRegistration[]
-      ): SavedObjectsEncryptionExtension => {
-        if (!this.#service) {
-          throw new Error('EncryptedSavedObjectsPlugin setup has not been called');
-        }
-        return new SavedObjectsEncryptionExtension({
-          baseTypeRegistry: typeRegistry,
-          service: this.#service.__dangerousClone(typeRegistrationOverrides),
-          getCurrentUser: async () => undefined,
-        });
-      },
-    };
+    return runtime.setup;
   }
-
-  public start() {
+  public start(): EncryptedSavedObjectsPluginStart {
+    if (!this.runtime) throw new Error('Encrypted saved objects must be set up before start.');
     this.logger.debug('Starting plugin');
-    return {
-      isEncryptionError: (error: Error) => error instanceof EncryptionError,
-      getClient: (options = {}) => this.savedObjectsSetup(options),
-    };
+    return this.runtime.start;
   }
-
-  public stop() {
+  public stop(): void {
     this.logger.debug('Stopping plugin');
   }
 }

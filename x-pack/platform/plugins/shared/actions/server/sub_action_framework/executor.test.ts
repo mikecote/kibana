@@ -27,7 +27,7 @@ describe('Executor', () => {
   let mockedActionsConfig: jest.Mocked<ActionsConfigurationUtilities>;
   let connectorUsageCollector: ConnectorUsageCollector;
 
-  const createExecutor = (Service: IService<TestConfig, TestSecrets>) => {
+  const createExecutor = (Service: IService<TestConfig, TestSecrets>, asynchronous = false) => {
     const connector = {
       id: '.test',
       name: 'Test',
@@ -38,7 +38,7 @@ describe('Executor', () => {
         secrets: TestSecretsSchema,
       },
       getService: (serviceParams: ServiceParams<TestConfig, TestSecrets>) =>
-        new Service(serviceParams),
+        asynchronous ? Promise.resolve(new Service(serviceParams)) : new Service(serviceParams),
     };
 
     return buildExecutor({ configurationUtilities: mockedActionsConfig, logger, connector });
@@ -57,28 +57,31 @@ describe('Executor', () => {
     });
   });
 
-  it('should execute correctly', async () => {
-    const executor = createExecutor(TestExecutor);
+  it.each([false, true])(
+    'executes with an asynchronous service factory: %s',
+    async (asynchronous) => {
+      const executor = createExecutor(TestExecutor, asynchronous);
 
-    const res = await executor({
-      actionId,
-      params: { subAction: 'echo', subActionParams: { id: 'test-id' } },
-      config,
-      secrets,
-      services,
-      configurationUtilities: mockedActionsConfig,
-      logger,
-      connectorUsageCollector,
-    });
+      const res = await executor({
+        actionId,
+        params: { subAction: 'echo', subActionParams: { id: 'test-id' } },
+        config,
+        secrets,
+        services,
+        configurationUtilities: mockedActionsConfig,
+        logger,
+        connectorUsageCollector,
+      });
 
-    expect(res).toEqual({
-      actionId: 'test-action-id',
-      data: {
-        id: 'test-id',
-      },
-      status: 'ok',
-    });
-  });
+      expect(res).toEqual({
+        actionId: 'test-action-id',
+        data: {
+          id: 'test-id',
+        },
+        status: 'ok',
+      });
+    }
+  );
 
   it('should execute correctly without schema validation', async () => {
     const executor = createExecutor(TestExecutor);

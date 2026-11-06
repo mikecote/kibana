@@ -24,7 +24,6 @@ import {
   ExternalIncidentServiceSecretConfigurationSchema,
   PushToServiceIncidentSchema,
 } from '@kbn/connector-schemas/resilient';
-import { ResilientConnector } from './resilient';
 
 export const getResilientConnectorType = (): SubActionConnectorType<
   ResilientConfig,
@@ -33,7 +32,10 @@ export const getResilientConnectorType = (): SubActionConnectorType<
   id: CONNECTOR_ID,
   minimumLicenseRequired: 'platinum',
   name: CONNECTOR_NAME,
-  getService: (params) => new ResilientConnector(params, PushToServiceIncidentSchema),
+  getService: async (params) => {
+    const { ResilientConnector } = await import('./resilient');
+    return new ResilientConnector(params, PushToServiceIncidentSchema);
+  },
   schema: {
     config: ExternalIncidentServiceConfigurationSchema,
     secrets: ExternalIncidentServiceSecretConfigurationSchema,

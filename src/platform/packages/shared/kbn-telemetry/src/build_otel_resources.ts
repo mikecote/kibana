@@ -7,8 +7,16 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import {
+  type ResourceDetector,
+  processDetector as otelProcessDetector,
+  detectResources,
+  envDetector,
+  hostDetector,
+  osDetector,
+  resourceFromAttributes,
+} from '@opentelemetry/resources';
 import { getConfiguration } from '@kbn/apm-config-loader';
-import { resources } from '@elastic/opentelemetry-node/sdk';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import {
   ATTR_SERVICE_INSTANCE_ID,
@@ -19,9 +27,9 @@ import {
 /**
  * We are not interested in the CLI arguments, so this omits `process.command_args` and keeps only a count.
  */
-const processDetector: resources.ResourceDetector = {
+const processDetector: ResourceDetector = {
   detect(config) {
-    const detected = resources.processDetector.detect(config);
+    const detected = otelProcessDetector.detect(config);
     const { [ATTR_PROCESS_COMMAND_ARGS]: commandArgs, ...attributes } = detected.attributes || {};
     if (Array.isArray(commandArgs)) {
       attributes['process.args_count'] = commandArgs.length;
@@ -35,16 +43,9 @@ const processDetector: resources.ResourceDetector = {
  * @returns The OpenTelemetry resource
  */
 export function buildOtelResources(serviceName: string = 'kibana') {
-  const resource = resources
-    .detectResources({
-      detectors: [
-        resources.envDetector,
-        resources.hostDetector,
-        resources.osDetector,
-        processDetector,
-      ],
-    })
-    .merge(resources.resourceFromAttributes(deriveAttributesFromApmConfig(serviceName)));
+  const resource = detectResources({
+    detectors: [envDetector, hostDetector, osDetector, processDetector],
+  }).merge(resourceFromAttributes(deriveAttributesFromApmConfig(serviceName)));
   // TODO: Merge resource from attributes from the telemetry config (when available)
 
   return resource;

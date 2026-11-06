@@ -42,6 +42,7 @@ import { withReportPerformanceMetric, FILE_DOWNLOAD_PERFORMANCE_EVENT_NAME } fro
 import { createFileHashTransform } from './stream_transforms/file_hash_transform';
 import { isFileHashTransform } from './stream_transforms/file_hash_transform/file_hash_transform';
 import type { SupportedFileHashAlgorithm } from '../saved_objects/file';
+import type { FileAnalytics } from '../performance/analytics';
 
 export type UploadOptions = Omit<BlobUploadOptions, 'id'>;
 
@@ -54,6 +55,7 @@ export function createFileClient({
   internalFileShareService,
   logger,
   metadataClient,
+  analytics,
 }: {
   fileKindDescriptor: FileKind;
   metadataClient: FileMetadataClient;
@@ -61,6 +63,7 @@ export function createFileClient({
   internalFileShareService: undefined | InternalFileShareService;
   auditLogger: undefined | AuditLogger;
   logger: Logger;
+  analytics?: FileAnalytics;
 }) {
   return new FileClientImpl(
     fileKindDescriptor,
@@ -68,7 +71,8 @@ export function createFileClient({
     blobStorageClient,
     internalFileShareService,
     auditLogger,
-    logger
+    logger,
+    analytics
   );
 }
 
@@ -90,7 +94,8 @@ export class FileClientImpl implements FileClient {
     private readonly blobStorageClient: BlobStorageClient,
     private readonly internalFileShareService: undefined | InternalFileShareService,
     auditLogger: undefined | AuditLogger,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly analytics?: FileAnalytics
   ) {
     this.logAuditEvent = (e) => {
       if (auditLogger) {
@@ -263,6 +268,7 @@ export class FileClientImpl implements FileClient {
     this.incrementUsageCounter('DOWNLOAD');
     try {
       const perf: PerfArgs = {
+        analytics: this.analytics,
         eventData: {
           eventName: FILE_DOWNLOAD_PERFORMANCE_EVENT_NAME,
           key1: 'size',

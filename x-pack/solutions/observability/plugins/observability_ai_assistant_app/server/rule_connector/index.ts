@@ -30,6 +30,7 @@ import type { ChatCompletionChunkEvent } from '@kbn/observability-ai-assistant-p
 import {
   MessageRole,
   StreamingChatResponseEventType,
+  EXECUTE_CONNECTOR_FUNCTION_NAME,
 } from '@kbn/observability-ai-assistant-plugin/common';
 import { AIChatExperience } from '@kbn/ai-assistant-common';
 import { AI_CHAT_EXPERIENCE_TYPE } from '@kbn/management-settings-ids';
@@ -37,7 +38,6 @@ import { concatenateChatCompletionChunks } from '@kbn/observability-ai-assistant
 import type { CompatibleJSONSchema } from '@kbn/observability-ai-assistant-plugin/common/functions/types';
 import type { AlertDetailsContextualInsightsService } from '@kbn/observability-plugin/server/services';
 import type { ObservabilityAIAssistantClient } from '@kbn/observability-ai-assistant-plugin/server';
-import { EXECUTE_CONNECTOR_FUNCTION_NAME } from '@kbn/observability-ai-assistant-plugin/server';
 import type { ChatFunctionClient } from '@kbn/observability-ai-assistant-plugin/server/service/chat_function_client';
 import type { ActionsClient } from '@kbn/actions-plugin/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';

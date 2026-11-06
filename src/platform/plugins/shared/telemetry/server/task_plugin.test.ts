@@ -24,10 +24,10 @@ const start = async (settings?: TelemetryTaskProcessSettings) => {
   };
   setTaskProcessContext(context);
   const core = coreMock.createSetup();
-  const instance = await createTelemetryTaskPlugin('9.9.9').definition.plugin!(
+  const instance = await createTelemetryTaskPlugin('9.9.9').definition.taskPlugin!(
     coreMock.createPluginInitializerContext()
   );
-  (instance as { setup: (core: unknown) => void }).setup(core);
+  await instance.setup(core, {});
   return { core, context };
 };
 

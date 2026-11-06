@@ -12,6 +12,7 @@ import type { BlobStorageSettings } from '../../common';
 import { ES_FIXED_SIZE_INDEX_BLOB_STORE } from '../../common';
 import type { BlobStorageClient } from './types';
 import { ElasticsearchBlobStorageClient, MAX_BLOB_STORE_SIZE_BYTES } from './adapters';
+import type { FileAnalytics } from '../performance/analytics';
 
 interface ElasticsearchBlobStorageSettings {
   index?: string;
@@ -29,7 +30,11 @@ export class BlobStorageService {
    */
   private readonly concurrentDownloadsFromES = 5;
 
-  constructor(private readonly esClient: ElasticsearchClient, private readonly logger: Logger) {
+  constructor(
+    private readonly esClient: ElasticsearchClient,
+    private readonly logger: Logger,
+    private readonly analytics?: FileAnalytics
+  ) {
     ElasticsearchBlobStorageClient.configureConcurrentTransfers([
       this.concurrentUploadsToES,
       this.concurrentDownloadsFromES,
@@ -44,7 +49,11 @@ export class BlobStorageService {
       this.esClient,
       index,
       chunkSize,
-      this.logger.get('elasticsearch-blob-storage')
+      this.logger.get('elasticsearch-blob-storage'),
+      undefined,
+      undefined,
+      false,
+      this.analytics
     );
   }
 

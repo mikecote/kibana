@@ -21,8 +21,8 @@ import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugi
 import {
   getFleetRunEncryptedSavedObjectTypes,
   getFleetRunSavedObjectTypes,
-} from '@kbn/fleet-plugin/server/services/run_time';
-import { getOsqueryRunSavedObjectTypes } from '@kbn/osquery-plugin/server/run_time/create_osquery_action_service';
+} from '@kbn/fleet-plugin/server/services/run_time/saved_objects';
+import { getOsqueryRunSavedObjectTypes } from '@kbn/osquery-plugin/server/run_time/saved_objects';
 import { querySavedObjectType } from '@kbn/data-plugin/server/saved_objects/query';
 import { createEntityStoreRunServices } from '@kbn/entity-store/server';
 import {
@@ -40,7 +40,7 @@ import { RuleExecutionEventType } from '../../common/api/detection_engine/rule_m
 import { APP_ID } from '../../common/constants';
 import { TASK_PROCESS_SETTINGS_ID } from '../config';
 import type { SecurityRuleRunConfig } from '../config';
-import { getEndpointResponseActionsRunSavedObjectTypes } from '../endpoint/run_time/create_endpoint_response_actions_run_services';
+import { getEndpointResponseActionsRunSavedObjectTypes } from '../endpoint/run_time/saved_objects';
 import { createSecurityRuleRunServices } from '../lib/detection_engine/rule_types/create_security_rule_run_services';
 import { createSecurityRuleTypeWrapper } from '../lib/detection_engine/rule_types/create_security_rule_type_wrapper';
 import type { CreateSecurityRuleTypeWrapperProps } from '../lib/detection_engine/rule_types/types';

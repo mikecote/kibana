@@ -8,9 +8,13 @@
 import { of } from 'rxjs';
 
 import { schema } from '@kbn/config-schema';
-import type { CoreSetup, KibanaRequest, PluginInitializer } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type {
+  TaskCoreSetup as CoreSetup,
+  TaskPluginInitializer,
+  TaskStaticPlugin,
+} from '@kbn/core-plugins-server-internal';
 import type { CoreSecurityDelegateContract } from '@kbn/core-security-server';
 import { License } from '@kbn/licensing-plugin/common/license';
 import type { ILicense } from '@kbn/licensing-types';
@@ -88,7 +92,7 @@ type SpaceId = ReturnType<SpacesPluginSetup['spacesService']['getSpaceId']>;
 
 const configSchema = schema.object({ uiam: schema.maybe(uiamSchema) }, { unknowns: 'allow' });
 
-const plugin: PluginInitializer<void, SecurityTaskPluginStart> = async (initializerContext) => {
+const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (initializerContext) => {
   const settings = reviveSettings(
     getTaskProcessContext().init.settings?.security ?? null
   ) as SecurityTaskProcessSettings | null;
@@ -194,7 +198,7 @@ const plugin: PluginInitializer<void, SecurityTaskPluginStart> = async (initiali
  * The security plugin as a plugin of a task process: Core's security delegate is the plugin's own
  * API keys (including UIAM), privilege checks and audit log, built by the same constructors.
  */
-export const createSecurityTaskPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createSecurityTaskPlugin = (kibanaVersion: string): TaskStaticPlugin => ({
   manifest: {
     id: 'security',
     version: kibanaVersion,
@@ -209,5 +213,5 @@ export const createSecurityTaskPlugin = (kibanaVersion: string): StaticPlugin =>
     ui: false,
     owner: { name: 'Kibana Security', githubTeam: 'kibana-security' },
   },
-  definition: { config: { schema: configSchema }, plugin: plugin as never },
+  definition: { config: { schema: configSchema }, taskPlugin: plugin },
 });

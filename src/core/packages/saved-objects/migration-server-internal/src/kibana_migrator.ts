@@ -36,9 +36,7 @@ import {
 import { createCummulativeLogger } from './create_cummulative_logger';
 import { buildActiveMappings, buildTypesMappings } from './core';
 import { DocumentMigrator } from './document_migrator';
-import { runZeroDowntimeMigration } from './zdt';
 import { ALLOWED_CONVERT_VERSION } from './kibana_migrator_constants';
-import { runV2Migration } from './run_v2_migration';
 
 export interface KibanaMigratorOptions {
   client: ElasticsearchClient;
@@ -184,6 +182,7 @@ export class KibanaMigrator implements IKibanaMigrator {
     try {
       const migrationAlgorithm = this.soMigrationsConfig.algorithm;
       if (migrationAlgorithm === 'zdt') {
+        const { runZeroDowntimeMigration } = await import('./zdt');
         return await runZeroDowntimeMigration({
           kibanaVersion: this.kibanaVersion,
           kibanaIndexPrefix: this.kibanaIndex,
@@ -199,6 +198,7 @@ export class KibanaMigrator implements IKibanaMigrator {
           meter: this.soMigrationMeter,
         });
       } else {
+        const { runV2Migration } = await import('./run_v2_migration');
         return await runV2Migration({
           kibanaVersion: this.kibanaVersion,
           kibanaIndexPrefix: this.kibanaIndex,

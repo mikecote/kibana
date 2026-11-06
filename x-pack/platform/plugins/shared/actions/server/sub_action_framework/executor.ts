@@ -44,7 +44,7 @@ export const buildExecutor = <
     const subAction = params.subAction;
     const subActionParams = params.subActionParams;
 
-    const service = connector.getService({
+    const service = await connector.getService({
       connector: { id: actionId, type: connector.id },
       config,
       secrets,

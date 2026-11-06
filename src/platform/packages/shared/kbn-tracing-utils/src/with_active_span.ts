@@ -7,10 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { isTracingSuppressed } from '@opentelemetry/core';
 import { isPromise } from '@kbn/std';
 import type { Context, Span, SpanOptions, Tracer } from '@opentelemetry/api';
 import { SpanStatusCode, context } from '@opentelemetry/api';
-import { core } from '@elastic/opentelemetry-node/sdk';
 import { Observable, isObservable } from 'rxjs';
 import { getDefaultTracer } from '@kbn/default-tracer';
 
@@ -67,7 +67,7 @@ export function withActiveSpan(...args: Args) {
 
   const tracer = opts.tracer || getDefaultTracer();
 
-  if (!tracer || core.isTracingSuppressed(ctx)) {
+  if (!tracer || isTracingSuppressed(ctx)) {
     return cb();
   }
 

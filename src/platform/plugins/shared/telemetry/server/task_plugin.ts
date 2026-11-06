@@ -9,9 +9,12 @@
 
 import { of } from 'rxjs';
 import { schema } from '@kbn/config-schema';
-import type { CoreSetup, PluginInitializer } from '@kbn/core/server';
+import type {
+  TaskCoreSetup as CoreSetup,
+  TaskPluginInitializer,
+} from '@kbn/core-plugins-server-internal';
 import { PluginType } from '@kbn/core-base-common';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { ILicense } from '@kbn/licensing-types';
 import { ElasticV3ServerShipper } from '@elastic/ebt/shippers/elastic_v3/server';
 import { getTaskProcessContext } from '@kbn/task-manager-plugin/server/task_process/context';
@@ -40,7 +43,7 @@ const labelsSchema = {
   },
 };
 
-const plugin: PluginInitializer<void, void> = async (initializerContext) => {
+const plugin: TaskPluginInitializer<void, void> = async (initializerContext) => {
   const context = getTaskProcessContext();
   const settings = reviveSettings(
     context.init.settings?.['telemetry'] ?? null
@@ -117,7 +120,7 @@ const plugin: PluginInitializer<void, void> = async (initializerContext) => {
  * that Kibana registers, opted in as Kibana is and with the same context, so the events of a run
  * leave from the process, which flushes them before it answers.
  */
-export const createTelemetryTaskPlugin = (kibanaVersion: string): StaticPlugin => ({
+export const createTelemetryTaskPlugin = (kibanaVersion: string): TaskStaticPlugin => ({
   manifest: {
     id: 'telemetry',
     version: kibanaVersion,
@@ -134,6 +137,6 @@ export const createTelemetryTaskPlugin = (kibanaVersion: string): StaticPlugin =
   },
   definition: {
     config: { schema: schema.object({}, { unknowns: 'allow' }) },
-    plugin: plugin as never,
+    taskPlugin: plugin,
   },
 });

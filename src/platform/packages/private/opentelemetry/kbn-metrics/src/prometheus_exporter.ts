@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { metrics } from '@elastic/opentelemetry-node/sdk';
+import { MetricReader, AggregationTemporality } from '@opentelemetry/sdk-metrics';
 import {
   PrometheusExporter as OpenTelemetryPrometheusExporter,
   PrometheusSerializer,
@@ -21,7 +21,7 @@ import type { KibanaResponseFactory } from '@kbn/core-http-server';
  * The Prometheus HTTP endpoint is registered in the plugin monitoringCollection.
  * @privateRemarks x-pack/platform/plugins/private/monitoring_collection/server/routes/api/v1/prometheus/get_metrics.ts
  */
-export class PrometheusExporter extends metrics.MetricReader {
+export class PrometheusExporter extends MetricReader {
   /**
    * The singleton PrometheusExporter instance.
    * @private
@@ -62,8 +62,8 @@ export class PrometheusExporter extends metrics.MetricReader {
   /**
    * Forces the AggregationTemporality to be CUMULATIVE (as required by the Prometheus format).
    */
-  selectAggregationTemporality(): metrics.AggregationTemporality {
-    return metrics.AggregationTemporality.CUMULATIVE;
+  selectAggregationTemporality(): AggregationTemporality {
+    return AggregationTemporality.CUMULATIVE;
   }
 
   /**

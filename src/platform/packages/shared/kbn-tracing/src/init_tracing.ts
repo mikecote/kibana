@@ -6,8 +6,18 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
-import type { resources } from '@elastic/opentelemetry-node/sdk';
-import { core, node, tracing } from '@elastic/opentelemetry-node/sdk';
+import { type Resource } from '@opentelemetry/resources';
+import {
+  CompositePropagator,
+  W3CTraceContextPropagator,
+  W3CBaggagePropagator,
+} from '@opentelemetry/core';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import {
+  type SpanProcessor,
+  TraceIdRatioBasedSampler,
+  ParentBasedSampler,
+} from '@opentelemetry/sdk-trace-base';
 import {
   EXECUTION_ID_BAGGAGE_KEY,
   EVAL_EXPERIMENT_ID_BAGGAGE_KEY,
@@ -32,7 +42,7 @@ export function initTracing({
   resource,
   tracingConfig,
 }: {
-  resource: resources.Resource;
+  resource: Resource;
   tracingConfig: TracingConfig;
 }) {
   // this is used for late-binding of span processors
@@ -45,21 +55,21 @@ export function initTracing({
     ])
   );
 
-  const allSpanProcessors: tracing.SpanProcessor[] = [lateBindingProcessor];
+  const allSpanProcessors: SpanProcessor[] = [lateBindingProcessor];
 
   propagation.setGlobalPropagator(
-    new core.CompositePropagator({
-      propagators: [new core.W3CTraceContextPropagator(), new core.W3CBaggagePropagator()],
+    new CompositePropagator({
+      propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
     })
   );
 
-  const traceIdSampler = new tracing.TraceIdRatioBasedSampler(tracingConfig.sample_rate);
+  const traceIdSampler = new TraceIdRatioBasedSampler(tracingConfig.sample_rate);
 
-  const baseSampler = new tracing.ParentBasedSampler({
+  const baseSampler = new ParentBasedSampler({
     root: traceIdSampler,
   });
 
-  const nodeTracerProvider = new node.NodeTracerProvider({
+  const nodeTracerProvider = new NodeTracerProvider({
     sampler: baseSampler,
     spanProcessors: allSpanProcessors,
     resource,

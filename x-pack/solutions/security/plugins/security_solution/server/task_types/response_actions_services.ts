@@ -9,17 +9,11 @@ import type { LoggerFactory } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { RuleTypeModuleDeps } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import type { FleetConfigType } from '@kbn/fleet-plugin/common/types';
-import {
-  createFleetRunServices,
-  startFleetRunAppContext,
-} from '@kbn/fleet-plugin/server/services/run_time';
-import { createOsqueryActionService } from '@kbn/osquery-plugin/server/run_time/create_osquery_action_service';
 import type { SecurityRuleRunConfig } from '../config';
 import {
   getIsEndpointExceptionsPerPolicyEnabled,
   REFERENCE_DATA_SAVED_OBJECT_TYPE,
 } from '../endpoint/lib/reference_data';
-import { createEndpointResponseActionsRunServices } from '../endpoint/run_time/create_endpoint_response_actions_run_services';
 import type { SecurityRuleRunServicesDeps } from '../lib/detection_engine/rule_types/create_security_rule_run_services';
 
 /** The id of Fleet's settings in a task process, `host.settings[id]`. */
@@ -63,6 +57,15 @@ export const getResponseActionsServices = (
     if (!host.licensing || !host.encryptedSavedObjects) {
       throw new Error('The module must declare the licensing and encrypted saved objects');
     }
+    const [
+      { createFleetRunServices, startFleetRunAppContext },
+      { createOsqueryActionService },
+      { createEndpointResponseActionsRunServices },
+    ] = await Promise.all([
+      import('@kbn/fleet-plugin/server/services/run_time'),
+      import('@kbn/osquery-plugin/server/run_time/create_osquery_action_service'),
+      import('../endpoint/run_time/create_endpoint_response_actions_run_services'),
+    ]);
     const { license$, featureUsage } = host.licensing;
     const loggerFactory = {
       get: (...parts: string[]) => host.logger.get(...parts),

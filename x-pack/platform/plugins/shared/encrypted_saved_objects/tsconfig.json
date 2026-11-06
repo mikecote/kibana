@@ -1,13 +1,11 @@
 {
   "extends": "@kbn/tsconfig-base/tsconfig.json",
   "compilerOptions": {
-    "outDir": "target/types",
+    "outDir": "target/types"
   },
-  "include": [
-    "server/**/*",
-    "integration_tests/**/*"
-  ],
+  "include": ["server/**/*", "integration_tests/**/*"],
   "kbn_references": [
+    "@kbn/core-plugins-server-internal",
     "@kbn/config-schema",
     "@kbn/core",
     "@kbn/utility-types",
@@ -22,9 +20,7 @@
     "@kbn/core-root-server-internal",
     "@kbn/core-test-helpers-kbn-server",
     "@kbn/core-test-helpers-so-type-serializer",
-    "@kbn/std",
+    "@kbn/std"
   ],
-  "exclude": [
-    "target/**/*",
-  ]
+  "exclude": ["target/**/*"]
 }

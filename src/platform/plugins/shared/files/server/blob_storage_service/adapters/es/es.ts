@@ -15,10 +15,11 @@ import type { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import { promisify } from 'util';
 import { lastValueFrom, defer, firstValueFrom } from 'rxjs';
-import type { PerformanceMetricEvent } from '@kbn/ebt-tools';
-import { reportPerformanceMetricEvent } from '@kbn/ebt-tools';
+import type { PerformanceMetricEvent } from '@kbn/ebt-tools-common';
+import { reportPerformanceMetricEvent } from '@kbn/ebt-tools-common';
 import { memoize } from 'lodash';
-import { FilesPlugin } from '../../../plugin';
+import type { FileAnalytics } from '../../../performance/analytics';
+import { getFileAnalytics } from '../../../performance/analytics';
 import { FILE_UPLOAD_PERFORMANCE_EVENT_NAME } from '../../../performance';
 import type { BlobStorageClient } from '../../types';
 import type { ReadableContentStream } from './content_stream';
@@ -73,7 +74,8 @@ export class ElasticsearchBlobStorageClient implements BlobStorageClient {
      */
     private readonly downloadSemaphore = ElasticsearchBlobStorageClient.defaultDownloadSemaphore,
     /** Indicates that the index provided is an alias (changes how content is retrieved internally) */
-    private readonly indexIsAlias: boolean = false
+    private readonly indexIsAlias: boolean = false,
+    private readonly analytics?: FileAnalytics
   ) {
     assert(
       this.uploadSemaphore,
@@ -142,7 +144,7 @@ export class ElasticsearchBlobStorageClient implements BlobStorageClient {
 
     const processUpload = async () => {
       try {
-        const analytics = FilesPlugin.getAnalytics();
+        const analytics = this.analytics ?? getFileAnalytics();
         const dest = getWritableContentStream({
           id,
           client: this.esClient,

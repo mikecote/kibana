@@ -8,12 +8,10 @@
 import { BehaviorSubject } from 'rxjs';
 import { Env } from '@kbn/config';
 import { PluginType } from '@kbn/core-base-common';
-import { Root } from '@kbn/core-root-server-internal';
-import type { StaticPlugin } from '@kbn/core-plugins-server-internal';
-import {
-  config as esoConfig,
-  plugin as esoPlugin,
-} from '@kbn/encrypted-saved-objects-plugin/server';
+import { TaskRoot } from '@kbn/core-root-server-internal';
+import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
+import { config as esoConfig } from '@kbn/encrypted-saved-objects-plugin/server';
+import { taskPlugin as esoTaskPlugin } from '@kbn/encrypted-saved-objects-plugin/server/task_plugin';
 import { buildCoreConfig } from './core_config';
 import { setTaskProcessContext } from './context';
 import type { TaskProcessContext } from './context';
@@ -28,8 +26,8 @@ import type { TaskRegisterDefinition } from '../task_type_dictionary';
  * The plugins a task process runs besides Core: Task Manager (it collects the task definitions),
  * the encrypted saved objects plugin when the module needs it, and the module itself.
  */
-const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): StaticPlugin[] => {
-  const plugins: StaticPlugin[] = [createTaskManagerStaticPlugin(kibanaVersion)];
+const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): TaskStaticPlugin[] => {
+  const plugins: TaskStaticPlugin[] = [createTaskManagerStaticPlugin(kibanaVersion)];
   if (module.encryptedSavedObjectTypes?.length) {
     plugins.push({
       manifest: {
@@ -46,7 +44,7 @@ const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): Static
         ui: false,
         owner: { name: 'Kibana Security', githubTeam: 'kibana-security' },
       },
-      definition: { config: esoConfig, plugin: esoPlugin as never },
+      definition: { config: esoConfig, taskPlugin: esoTaskPlugin },
     });
   }
   plugins.push(...(module.taskPlugins ?? []));
@@ -64,7 +62,7 @@ export interface TaskProcessCore {
   definitions: Map<string, TaskRegisterDefinition>;
   /** What the module's runner gets, which is also how a test seeds data the way a run reads it. */
   host: TaskHost;
-  logger: ReturnType<Root['logger']['get']>;
+  logger: ReturnType<TaskRoot['logger']['get']>;
   /**
    * Finishes what the run left to do before the process answers, such as shipping its analytics
    * events. Bounded: a slow endpoint holds a run for a few seconds at most.
@@ -129,12 +127,23 @@ export const startTaskProcessCore = async ({
       },
     }
   );
-  const root = new Root({ getConfig$: () => new BehaviorSubject(settings) }, env, undefined, {
-    staticPlugins: getStaticPlugins(applied, init.kibanaVersion),
-  });
-  await root.preboot();
-  await root.setup();
-  await root.start();
+  const root = new TaskRoot(
+    { getConfig$: () => new BehaviorSubject(settings) },
+    env,
+    getStaticPlugins(applied, init.kibanaVersion)
+  );
+  try {
+    await root.preboot();
+    await root.setup();
+    await root.start();
+  } catch (error) {
+    try {
+      await root.shutdown();
+    } finally {
+      cleanup();
+    }
+    throw error;
+  }
 
   const logger = root.logger.get('task-process');
   return {
@@ -143,8 +152,11 @@ export const startTaskProcessCore = async ({
     logger,
     flush: () => runFlushers(context.flushers, logger),
     stop: async () => {
-      await root.shutdown();
-      cleanup();
+      try {
+        await root.shutdown();
+      } finally {
+        cleanup();
+      }
     },
   };
 };

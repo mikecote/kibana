@@ -25,13 +25,16 @@ import {
 } from '@kbn/connector-schemas/openai';
 import type { Config, Secrets } from '@kbn/connector-schemas/openai';
 import { nonPkiSecretsValidator, pkiSecretsValidator } from './lib/other_openai_utils';
-import { OpenAIConnector } from './openai';
+
 import { renderParameterTemplates } from './render';
 
 export const getConnectorType = (): SubActionConnectorType<Config, Secrets> => ({
   id: CONNECTOR_ID,
   name: CONNECTOR_NAME,
-  getService: (params) => new OpenAIConnector(params),
+  getService: async (params) => {
+    const { OpenAIConnector } = await import('./openai');
+    return new OpenAIConnector(params);
+  },
   schema: {
     config: ConfigSchema,
     secrets: SecretsSchema,

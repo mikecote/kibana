@@ -17,6 +17,7 @@ project:
   owner: '@elastic/kibana-core'
   sourceRoot: src/platform/packages/shared/kbn-ebt-tools
 dependsOn:
+  - '@kbn/ebt-tools-common'
   - '@kbn/logging-mocks'
   - '@kbn/timerange'
   - '@kbn/logging'
