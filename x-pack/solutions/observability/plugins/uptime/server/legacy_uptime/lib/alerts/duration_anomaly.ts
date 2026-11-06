@@ -203,7 +203,7 @@ export const durationAnomalyAlertFactory: UptimeAlertTypeFactory<ActionGroupIds>
         });
 
         alertsClient.setAlertData({
-          id: DURATION_ANOMALY.id,
+          id: alertId,
           context: {
             [ALERT_DETAILS_URL]: await getAlertUrl(
               uuid,
