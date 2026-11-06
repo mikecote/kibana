@@ -408,4 +408,23 @@ process does not, so a rule can be created by a user who may or may not execute 
 privileges of the executor, timeout and cancel (and the in-memory metrics observer), a forked run against one in
 the test process, and `alert.status.changed` with a fake workflows client contribution.
 
+Every `alerting:*` task type has a real run in the test of its plugin. Each test seeds what
+its executor reads (indices and documents, saved objects such as data views, SLOs, monitors and exception lists, machine
+learning jobs and results), asserts that the run was served by the process (never declined), wrote its alerts and a
+successful `execute` event, and equals the same rule run in the test process (`runBoth`: alerts, events, state):
+
+| Plugin | Test (`server/integration_tests/`) | Rule types |
+| --- | --- | --- |
+| stack alerts | `es_query_task_process`, `stack_alerts_task_process`, `rule_process_parity` | es query, index threshold, tracking containment |
+| stack monitoring | `monitoring_rules_task_process` | the 14 monitoring rule types |
+| transform, data quality | `transform_health_task_process`, `degraded_docs_task_process` | transform health, degraded docs |
+| ML | `anomaly_detection_alert_task_process`, `anomaly_detection_jobs_health_task_process` | anomaly detection, jobs health |
+| APM | `apm_rules_task_process` | error count, transaction duration, transaction error rate, anomaly |
+| infra | `infra_rules_task_process` | metric threshold, inventory, log threshold |
+| observability | `custom_threshold_task_process` | custom threshold |
+| SLO | `slo_burn_rate_task_process` | burn rate |
+| Synthetics, uptime | `synthetics_rules_task_process`, `uptime_rules_task_process` | monitor status and TLS of both, uptime TLS legacy and duration anomaly |
+| security solution | `security_rules_task_process` (`server/task_types/integration_tests`) | query (with exceptions and a response action that schedules the isolation of an Elastic Defend host), saved query, EQL, ES\|QL, threshold, new terms, indicator match, ML, legacy notifications |
+| elastic assistant | `attack_discovery_task_process` | attack discovery |
+
 The distributable builds the bundles into `task_bundles/`.
