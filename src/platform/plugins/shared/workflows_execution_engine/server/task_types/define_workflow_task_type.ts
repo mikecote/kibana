@@ -11,6 +11,7 @@ import {
   EVENT_LOG_ACTIONS as ACTIONS_EVENT_LOG_ACTIONS,
   EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER,
 } from '@kbn/actions-plugin/server/constants/event_log';
+import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
 import { getRuleRunDeclarations } from '@kbn/alerting-plugin/server/task_types/rule_run_saved_object_types';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
 import { kibanaPackageJson } from '@kbn/repo-info';
@@ -18,6 +19,7 @@ import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugi
 import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '@kbn/task-manager-plugin/server/task_process/host_capabilities/task_scheduling';
 import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import { defineTaskType } from '@kbn/task-manager-plugin/server/task_type_module';
+import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import {
@@ -27,6 +29,7 @@ import {
   WORKFLOWS_ENGINE_SETTINGS_ID,
 } from './constants';
 import type { WorkflowRuntime, WorkflowTaskFunction } from '../create_workflow_runtime';
+import { workflowExecutionEventSchemas } from '../lib/telemetry/events/workflows_execution';
 import { createWorkflowsEngineTaskPlugin } from '../task_plugin';
 
 /** The id of the engine's plugin, which a module reads the runtime of as `host.plugins[id]`. */
@@ -83,6 +86,18 @@ export const defineWorkflowTaskType = (
     // Reads and schedules the `workflow:*` tasks (and the `actions:*` tasks that run connectors).
     taskManager: { schedulableTypes: [/^workflow:/, /^actions:/] },
     licensing: true,
+    // Cases and the other steps count usage with the counters of their domain.
+    usageCounters: true,
+    // A run reports analytics events (its own, the connectors' and the steps'): Core requires the
+    // event types to be registered in the process, as the plugins do in Kibana.
+    analyticsEventTypes: [
+      ...Object.entries(workflowExecutionEventSchemas).map(([eventType, schema]) => ({
+        eventType,
+        schema: schema as never,
+      })),
+      ...actionsEventTypes,
+      ...declared.flatMap(({ analyticsEventTypes }) => analyticsEventTypes ?? []),
+    ],
     featureFlags: Object.assign(
       { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false },
       ...declared.map(({ featureFlags }) => featureFlags ?? {})
@@ -124,6 +139,8 @@ export const defineWorkflowTaskType = (
     },
     taskPlugins: [
       createSecurityTaskPlugin(kibanaPackageJson.version),
+      // The analytics shipper, opted in as Kibana is: the process ships its events before it answers.
+      createTelemetryTaskPlugin(kibanaPackageJson.version),
       createWorkflowsEngineTaskPlugin(kibanaPackageJson.version),
     ],
     createTaskRunner: (context, host) => {

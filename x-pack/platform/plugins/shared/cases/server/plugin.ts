@@ -59,7 +59,6 @@ import { registerCaseFileKinds } from './files';
 import type { ConfigType } from './config';
 import { registerConnectorTypes } from './connectors';
 import type { CasesTaskProcessSettings } from './task_types/cases_task_process_settings';
-import { CASES_USAGE_COUNTER_TELEMETRY_KIND } from './task_types/cases_task_process_settings';
 import { createCasesWorkflowsProcessSettings } from './task_types/create_cases_workflows_process_settings';
 import { registerSavedObjects } from './saved_object_types';
 import type { ServerlessProjectType } from '../common/constants/types';
@@ -328,15 +327,6 @@ export class CasePlugin
     });
     plugins.alerting.registerTaskProcessSettings('cases', getTaskProcessSettings);
     plugins.workflowsExtensions?.registerTaskProcessSettings('cases', getTaskProcessSettings);
-
-    // A task process returns what it counted with the usage counter of the run's client.
-    plugins.taskManager?.registerTaskProcessTelemetrySink(
-      CASES_USAGE_COUNTER_TELEMETRY_KIND,
-      (payload) =>
-        this.usageCounter?.incrementCounter(
-          payload as Parameters<IUsageCounter['incrementCounter']>[0]
-        )
-    );
 
     registerCaseWorkflowSteps(plugins.workflowsExtensions, {
       getCasesClient: getCasesClient('workflow'),

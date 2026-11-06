@@ -464,8 +464,10 @@ the same module code the engine's runtime as `hostExtensions.plugins`, so a modu
 What a workflow run needs beyond a rule run, and where it comes from in a process:
 
 - **Calls to Kibana.** `host.http` is Core's self client aimed at the Kibana that dispatched the run:
-  Kibana sends its public URL (or its own address) and `server.basePath` in `init`. `callKibanaApi`,
-  `kibana.*` steps and the `kibanaUrl` template variable use it with the credential of the run.
+  Kibana sends the address where a process reaches it (`kibanaUrl`) and `server.basePath` in `init`.
+  `callKibanaApi` and `kibana.*` steps use it with the credential of the run. Links (the `kibanaUrl`
+  template variable, execution and approval links, rule URLs) are built from Kibana's own
+  `server.publicBaseUrl`, which a process gets raw, so they are what Kibana builds.
 - **Task Manager.** `host.taskManager` has `schedule`, `bulkSchedule`, `get`, `bulkGet`, `fetch`, `remove`,
   `removeIfExists`, `bulkRemove`, `runSoon` and `ensureScheduled`, written over the same `task` saved
   objects as `TaskStore`, including the invalidation of the API keys of removed tasks. `runSoon` sets
@@ -474,8 +476,15 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** Clients are built with `DataStreamClient.fromDefinition` over the engine's shared
   definitions: nothing is installed.
-- **Metering.** The usage record is returned with the run (`host.telemetry`, kind `workflows.metering`)
-  and Kibana sends it.
+- **Metering.** The process reports the usage record itself. Kibana sends the Usage API connection (URL
+  and TLS, setting `workflowsUsageApi`, only when it reports metering), the process builds the same
+  `WorkflowsMeteringService` over the usage API's own `UsageReportingService` (the same retries, the same
+  deduplicating record id, the same error log when the endpoint is down) and flushes it with
+  `host.onRunEnd` before it answers. Without a connection, nothing is metered, as in Kibana.
+- **Side effects.** Analytics events (the telemetry task plugin, the event types of the engine, the
+  connectors and every step contribution's `declares.analyticsEventTypes`) and usage counters
+  (`usageCounters: true`, such as the cases counter) are the process's own; nothing is returned to Kibana.
+  A run's answer holds the result and nothing else, and Kibana only reschedules.
 - **Connector steps.** The actions executor is initialized as for attack discovery, with the connector
   types of the `alerting-rule-run` contributions.
 - **Steps.** The process step registry (`createServerStepRegistry`) holds the internal `data.*` steps and
@@ -499,7 +508,10 @@ flags and event log providers it needs to the module. Rules to follow:
   process does not know, a templated value, an input only Kibana can serve).
 - A step that emits events without waiting must flush them before it returns, because the process exits
   with the run.
-- `workflows` with `settings.run_as` are declined: service accounts are not supported in a process.
+- `workflows` with `settings.run_as` are declined whatever `serviceAccounts.enabled` says (the process's
+  `canRunAs()` is false): service accounts are not supported in a process yet.
+- A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
+  counts usage reads `host.usageCounters.getUsageCounter(domain)`.
 
 ### What stays in Kibana
 

@@ -370,7 +370,6 @@ const startHarness = async (
       },
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
-      reportTelemetry: jest.fn(),
       fallback,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();

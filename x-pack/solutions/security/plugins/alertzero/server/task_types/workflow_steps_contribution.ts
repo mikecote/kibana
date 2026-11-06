@@ -12,6 +12,7 @@ import type { ManagedWorkflowStateApi } from '@kbn/workflows/server/types';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { createWorkflowsReadApi } from '@kbn/workflows-management-plugin/server/api/workflows_read_api';
 import type { WorkflowAccessCore } from '@kbn/workflows-management-plugin/server/services/workflow_access_control';
+import { ALERTZERO_TELEMETRY_EVENT_TYPES } from '../telemetry/event_types';
 import { registerAlertZeroStepDefinitions, registerTriageStepDefinitions } from '../step_types';
 import {
   ALERTZERO_TASK_PROCESS_SETTINGS_ID,
@@ -30,8 +31,8 @@ const onlyInKibana = (what: string) => () => {
  * `taskTypeContributions['workflow-steps']` in `kibana.jsonc`. The steps are registered by the
  * functions `plugin.ts` calls: the triage steps over `taskManager.aggregate` of the host and the
  * Kibana API of the run, and `alertzero.reportWorkerOutcome` over the reads of the workflows
- * management plugin on the engine's storage, the analytics of the host (the process returns the
- * events and Kibana reports them) and what Kibana knew when it dispatched the run
+ * management plugin on the engine's storage, the analytics of the host (the process ships the
+ * events itself) and what Kibana knew when it dispatched the run
  * (`settings.alertzero`: service accounts, the managed workflows client, the telemetry opt-in).
  *
  * Served in a process: `alertzero.triage.headroom`, `alertzero.triage.planSweep`,
@@ -44,7 +45,11 @@ const onlyInKibana = (what: string) => () => {
  * - `alertzero.investigation.summarize`: reads the conversation and runs the agent execution loop.
  */
 export const contribution: WorkflowStepsContribution = {
-  declares: { settings: [ALERTZERO_TASK_PROCESS_SETTINGS_ID] },
+  declares: {
+    settings: [ALERTZERO_TASK_PROCESS_SETTINGS_ID],
+    // The events of the report step; the process ships them itself.
+    analyticsEventTypes: ALERTZERO_TELEMETRY_EVENT_TYPES as never,
+  },
   register: (registry, { host, logger, services, settings }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const alertZero = settings[ALERTZERO_TASK_PROCESS_SETTINGS_ID] as

@@ -13,6 +13,7 @@ import type {
   WorkflowStepsRegistry,
   WorkflowTriggerEmitterSource,
 } from '@kbn/workflows-extensions/server';
+import { APP_ID } from '../../common/constants';
 import { CasesEventBus } from '../events/event_bus';
 import { registerCaseWorkflowSteps } from '../workflows';
 import { registerCaseWorkflowTriggers } from '../workflows/triggers';
@@ -93,10 +94,18 @@ export const contribution: WorkflowStepsContribution = {
     // Cases is disabled in Kibana, which then sends no settings: nothing to register, and a workflow
     // that uses a cases step is declined for the missing step.
     if (!workflows) return;
-    const { elasticsearch, savedObjects, licensing, userProfile, security, telemetry, plugins } =
-      host as TaskHost;
+    const {
+      elasticsearch,
+      savedObjects,
+      licensing,
+      userProfile,
+      security,
+      usageCounters,
+      plugins,
+    } = host as TaskHost;
     const securityPlugin = plugins?.security as SecurityTaskPluginStart | undefined;
     if (!securityPlugin) throw new Error('The task process did not get the security plugin');
+    if (!usageCounters) throw new Error('The workflows task module did not get usage counters');
     if (!licensing) throw new Error('The workflows task module did not get the license');
     if (!userProfile) {
       throw new Error('The task process host did not lend Core user profile service');
@@ -114,7 +123,7 @@ export const contribution: WorkflowStepsContribution = {
       userProfile,
       licensing,
       getActionsClientWithRequest: services.getActionsClientWithRequest,
-      telemetry,
+      usageCounter: usageCounters.getUsageCounter(APP_ID),
       publicBaseUrl,
       casesEventBus,
     });

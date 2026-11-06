@@ -98,7 +98,7 @@ describe('workflow:resume task runner event fields', () => {
       {
         taskManager: taskManagerStart,
         actions: {} as never,
-        workflowsExtensions: {} as never,
+        workflowsExtensions: { getTaskProcessSettings: jest.fn(() => ({})) } as never,
         licensing: licensingMock.createStart(),
       },
       {} as never,

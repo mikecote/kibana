@@ -216,6 +216,11 @@ export interface WorkflowRuntimeDeps {
   dataClients: Pick<DataClientBundle, 'createWorkflowDataClient' | 'createStepDataClient'>;
   /** Where metering records go; none for no metering (self-managed, or no usage API). */
   metering?: MeteringSink;
+  /**
+   * Whether this runtime can run a workflow as a service account. Kibana's is the security plugin's
+   * `serviceAccounts.isEnabled()`; a task process says false until it can resolve the bindings.
+   */
+  canRunAs?: () => boolean;
   /** The cloud fields used for links to Kibana and by metering. */
   cloud?: WorkflowCloudInfo;
   /** Run-time state that is module-global otherwise. */
@@ -347,6 +352,7 @@ export const createWorkflowRuntime = (deps: WorkflowRuntimeDeps): WorkflowRuntim
     isConnectorStepType: deps.isConnectorStepType,
     checkStep: deps.checkStep,
     canRunAs: () => {
+      if (deps.canRunAs) return deps.canRunAs();
       try {
         return security.serviceAccounts.isEnabled();
       } catch {

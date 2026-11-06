@@ -72,8 +72,14 @@ describe('workflow task type modules', () => {
       expect(module.contributions?.keys).toEqual(['alerting-rule-run', 'workflow-steps']);
       expect(module.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',
+        'telemetry',
         'workflowsExecutionEngine',
       ]);
+      expect(module.usageCounters).toBe(true);
+      // The event types a run reports must be registered in the process.
+      expect(module.analyticsEventTypes?.map(({ eventType }) => eventType)).toEqual(
+        expect.arrayContaining(['workflows_execution_workflow_completed'])
+      );
       expect(module.encryptedSavedObjectTypes?.map(({ type }) => type)).toEqual(
         expect.arrayContaining(['action', 'action_task_params', 'task'])
       );

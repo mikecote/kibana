@@ -8,14 +8,22 @@
  */
 
 import { firstValueFrom } from 'rxjs';
+import { ACTIONS_FEATURE_ID } from '@kbn/actions-plugin/common';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
 import { EVENT_LOG_PROVIDER as ACTIONS_EVENT_LOG_PROVIDER } from '@kbn/actions-plugin/server/constants/event_log';
 import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  type ActionsTaskProcessSettings,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
 import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
+import { kibanaPackageJson } from '@kbn/repo-info';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { UsageReportingService } from '@kbn/usage-api-plugin/server/usage_reporting';
+import type { UsageReportingConfig } from '@kbn/usage-api-plugin/server/usage_reporting';
 import { SystemConnectorsMap } from '@kbn/workflows';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
 import type {
@@ -27,7 +35,7 @@ import {
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
   WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID,
   WORKFLOWS_ENGINE_SETTINGS_ID,
-  WORKFLOWS_METERING_TELEMETRY_KIND,
+  WORKFLOWS_USAGE_API_SETTINGS_ID,
 } from './constants';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import { createWorkflowRuntime } from '../create_workflow_runtime';
@@ -36,9 +44,10 @@ import { getWorkflowDataStreamDefinitions } from '../data_streams';
 import { assertRunnableInProcessPreflight } from '../lib/assert_runnable_in_process';
 import { createRetryingEsClient } from '../lib/create_retrying_es_client';
 import type { WorkflowMeteringCloud } from '../metering';
+import { WorkflowsMeteringService } from '../metering/metering_service';
 import { createDataStreamDataClients } from '../repositories/data_access_layer/implementations/data_stream/data_stream_data_client_bundle';
 import { createPlainIndexDataClients } from '../repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
-import type { WorkflowDataStreamsAdapter } from '../workflow_core_services';
+import type { WorkflowCoreStart, WorkflowDataStreamsAdapter } from '../workflow_core_services';
 
 const onlyInKibana = (what: string) => () => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);
@@ -129,13 +138,19 @@ export const createWorkflowRuntimeFromHost = async (
     getEncryptedSavedObjectsClient: encryptedSavedObjects.getClient,
     taskManager: taskManager as never,
     publicBaseUrl: host.server.publicBaseUrl,
+    // Kibana's final connectors, not rebuilt from the config.
+    inMemoryConnectors: (
+      settings[ACTIONS_CONNECTORS_SETTINGS_ID] as ActionsTaskProcessSettings | undefined
+    )?.inMemoryConnectors,
+    usageCounter: host.usageCounters?.getUsageCounter(ACTIONS_FEATURE_ID),
+    featureUsage: licensing.featureUsage,
+    authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
     executor: {
       security: host.security as SecurityServiceStart,
       eventLogger: eventLog.getLogger({
         event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
       }) as IEventLogger,
       analyticsService: host.analytics as never,
-      authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
       createInternalRepository: host.savedObjects.createInternalRepository,
     },
     registerConnectorTypes: (actions) => {
@@ -147,6 +162,7 @@ export const createWorkflowRuntimeFromHost = async (
           kibanaVersion: host.server.version,
           publicBaseUrl: host.server.publicBaseUrl,
           settings,
+          host,
         })
       );
     },
@@ -191,6 +207,40 @@ export const createWorkflowRuntimeFromHost = async (
     )
   );
 
+  // Links are built from Kibana's own public base URL (Core's `publicBaseUrl` is where the process
+  // reaches Kibana), and calls go to `kibanaUrl`.
+  const { basePath } = host.http;
+  const http: WorkflowCoreStart['http'] = {
+    selfClient: host.http.selfClient,
+    getServerInfo: host.http.getServerInfo,
+    kibanaUrl: basePath.publicBaseUrl,
+    basePath: {
+      serverBasePath: basePath.serverBasePath,
+      publicBaseUrl: host.server.publicBaseUrl,
+      get: basePath.get.bind(basePath),
+      prepend: basePath.prepend.bind(basePath),
+      remove: basePath.remove.bind(basePath),
+    },
+  };
+
+  const usageApiSettings = settings[WORKFLOWS_USAGE_API_SETTINGS_ID] as
+    | { url?: string; tls?: UsageReportingConfig['tls'] }
+    | null
+    | undefined;
+  let metering: WorkflowsMeteringService | undefined;
+  if (usageApiSettings?.url) {
+    metering = new WorkflowsMeteringService(
+      new UsageReportingService({
+        config: { enabled: true, url: usageApiSettings.url, tls: usageApiSettings.tls },
+        kibanaVersion: kibanaPackageJson.version,
+        logger: logger.get('usageApi', 'usageReporting'),
+      }),
+      logger.get('workflowsMetering')
+    );
+    const meteringService = metering;
+    host.onRunEnd?.(() => meteringService.flush());
+  }
+
   const runtime = createWorkflowRuntime({
     logger,
     config,
@@ -202,7 +252,7 @@ export const createWorkflowRuntimeFromHost = async (
         (host.security as Partial<SecurityServiceStart>).serviceAccounts ?? noServiceAccounts(),
     },
     userProfile,
-    http: host.http,
+    http,
     analytics: host.analytics,
     dataStreams,
     featureFlags,
@@ -216,10 +266,12 @@ export const createWorkflowRuntimeFromHost = async (
     workflowsExtensions,
     licensing: { getLicense: () => firstValueFrom(licensing.license$) as never },
     dataClients,
-    // A process cannot send to the usage API: Kibana does, from what the run returns.
-    metering: {
-      report: (record) => host.telemetry.report(WORKFLOWS_METERING_TELEMETRY_KIND, record),
-    },
+    // The process meters itself, with the Usage API connection Kibana sent (none when Kibana does
+    // not meter), and finishes sending before it answers.
+    metering,
+    // Service accounts need Kibana's workload bindings: until a process can resolve them, a
+    // `run_as` workflow is declined whatever `serviceAccounts.enabled` says.
+    canRunAs: () => false,
     cloud,
     preflight: assertRunnableInProcessPreflight,
     checkStep: (step) => {

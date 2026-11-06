@@ -271,6 +271,25 @@ describe('createWorkflowRuntime', () => {
       expect(mockRunWorkflow).not.toHaveBeenCalled();
     });
 
+    it('cannot run as a service account when the deps say so, even when service accounts are enabled', async () => {
+      const coreStart = coreMock.createStart();
+      const security = {
+        ...coreStart.security,
+        serviceAccounts: { ...coreStart.security.serviceAccounts, isEnabled: () => true },
+      };
+      const seen: boolean[] = [];
+      const preflight = jest.fn(async ({ capabilities }) => {
+        seen.push(capabilities.canRunAs());
+      });
+      const base = createDeps({ preflight, security });
+      await createWorkflowRuntime(base.deps).runWorkflowTask(context()).run();
+      await createWorkflowRuntime({ ...base.deps, canRunAs: () => false })
+        .runWorkflowTask(context())
+        .run();
+      // Kibana's runtime follows the security plugin; a task process's never does.
+      expect(seen).toEqual([true, false]);
+    });
+
     it('gives the preflight the capabilities and the persisted definition of the run', async () => {
       const definition = { name: 'wf', steps: [], triggers: [] };
       mockGetWorkflowExecutionById.mockResolvedValue({

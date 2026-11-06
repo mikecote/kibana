@@ -37,6 +37,8 @@
     "@kbn/workflows-extensions",
     "@kbn/licensing-plugin",
     "@kbn/usage-api-plugin",
+    "@kbn/telemetry-plugin",
+    "@kbn/usage-collection-plugin",
     "@kbn/logging-mocks",
     "@kbn/std",
     "@kbn/crypto",

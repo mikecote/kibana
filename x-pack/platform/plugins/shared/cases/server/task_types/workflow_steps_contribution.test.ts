@@ -70,7 +70,9 @@ const registerContribution = async (
       security: { authc: {} },
       userProfile: {},
       licensing: { license$: of(license), featureUsage: { notifyUsage: jest.fn() } },
-      telemetry: { report: jest.fn() },
+      usageCounters: {
+        getUsageCounter: jest.fn(() => ({ domainId: 'cases', incrementCounter: jest.fn() })),
+      },
       plugins: { security: { authz: { actions: {} }, audit: {} } },
     },
     logger: loggerMock.create(),

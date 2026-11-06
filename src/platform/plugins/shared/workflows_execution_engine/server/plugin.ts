@@ -7,6 +7,10 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import {
+  ACTIONS_CONNECTORS_SETTINGS_ID,
+  type ActionsTaskProcessSettings,
+} from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type {
   CoreSetup,
   CoreStart,
@@ -15,6 +19,7 @@ import type {
   PluginInitializerContext,
 } from '@kbn/core/server';
 import type { TaskTypeRegistrationOptions } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { TelemetryTaskProcessSettings } from '@kbn/telemetry-plugin/server/task_process_settings';
 import { WorkflowRepository } from '@kbn/workflows';
 import type { WorkflowsExecutionEngineConfig } from './config';
 import { createWorkflowRuntime } from './create_workflow_runtime';
@@ -22,13 +27,12 @@ import type { WorkflowRuntime } from './create_workflow_runtime';
 import { registerWorkflowDataStreams } from './data_streams';
 import { ensureWorkflowsDataStreamsRolledOver } from './lib/data_streams/ensure_data_streams_rolled_over';
 import { WorkflowExecutionTelemetryClient } from './lib/telemetry/workflow_execution_telemetry_client';
-import type { WorkflowMeteringRecord } from './metering';
 import { WorkflowsMeteringService } from './metering/metering_service';
 import { createDataClientBundle, type DataClientBundle } from './repositories/data_access_layer';
 import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 import { resolveWorkflowWorkloads } from './service_account_workload_resolver';
 import { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
-import { WORKFLOWS_METERING_TELEMETRY_KIND } from './task_types/constants';
+import { WORKFLOWS_USAGE_API_SETTINGS_ID } from './task_types/constants';
 import { taskType as resumeTaskType } from './task_types/workflow_resume.task';
 import { taskType as runTaskType } from './task_types/workflow_run.task';
 import { taskType as scheduledTaskType } from './task_types/workflow_scheduled.task';
@@ -185,16 +189,42 @@ export class WorkflowsExecutionEnginePlugin
           : null;
       },
       security: () => plugins.security?.getTaskProcessSettings() ?? null,
+      // What a process reports metering with: the Usage API connection, only when Kibana reports
+      // metering at all (the same condition as `this.meteringService`).
+      [WORKFLOWS_USAGE_API_SETTINGS_ID]: () =>
+        plugins.usageApi?.usageReporting
+          ? {
+              url: plugins.usageApi.config.url,
+              tls: plugins.usageApi.config.tls,
+            }
+          : null,
       actions: () => plugins.actions?.getConfig(),
+      // Kibana's final connectors as it has them now, not rebuilt from the config.
+      [ACTIONS_CONNECTORS_SETTINGS_ID]: (): ActionsTaskProcessSettings => ({
+        inMemoryConnectors: plugins.actions?.getTaskProcessSettings().inMemoryConnectors ?? [],
+      }),
     });
+    // How a process ships analytics events and counts usage, as this Kibana does: the process does
+    // its side effects itself, so it is told what Kibana would apply.
+    if (plugins.telemetry?.getTaskProcessSettings) {
+      const { telemetry } = plugins;
+      let license: TelemetryTaskProcessSettings['license'];
+      plugins.licensing?.license$.subscribe((next) => {
+        license = { uid: next.uid, status: next.status, type: next.type };
+      });
+      this.taskTypeSettings.telemetry = () => ({
+        ...telemetry.getTaskProcessSettings(),
+        license,
+        cloud: plugins.cloud?.analyticsMetadata,
+      });
+    }
+    if (plugins.usageCollection?.getTaskProcessSettings) {
+      const { usageCollection } = plugins;
+      this.taskTypeSettings.usageCollection = () => usageCollection.getTaskProcessSettings();
+    }
     for (const taskType of [runTaskType, resumeTaskType, scheduledTaskType]) {
       plugins.taskManager.registerTaskType(taskType, taskTypeOptions);
     }
-    // What a task process measured goes to the usage API from here.
-    plugins.taskManager.registerTaskProcessTelemetrySink(
-      WORKFLOWS_METERING_TELEMETRY_KIND,
-      (record) => this.meteringService?.report(record as WorkflowMeteringRecord)
-    );
 
     return {};
   }

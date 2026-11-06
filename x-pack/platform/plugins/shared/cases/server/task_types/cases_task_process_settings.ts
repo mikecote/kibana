@@ -39,6 +39,3 @@ export interface CasesTaskProcessSettings {
   /** What the workflow steps need of cases; absent until Kibana has started. */
   workflows?: CasesWorkflowsProcessSettings;
 }
-
-/** The channel of the task process telemetry on which usage counters are returned to Kibana. */
-export const CASES_USAGE_COUNTER_TELEMETRY_KIND = 'cases.usageCounter';

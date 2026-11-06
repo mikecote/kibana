@@ -25,8 +25,9 @@ import { WORKFLOWS_USAGE_TYPE } from './constants';
  * them to the Usage API. Uses event-based metering: reports immediately after
  * each workflow reaches a terminal state (fire-and-forget with inline retry).
  *
- * This is Kibana's {@link MeteringSink}: a task process forwards records to Kibana, which sends
- * them here.
+ * This is the {@link MeteringSink} of Kibana and of a task process alike: a process builds it from
+ * the Usage API connection Kibana sent and flushes it (`flush`) before it answers, so a record is
+ * sent, retried and, past the retries, logged and dropped exactly as in Kibana.
  *
  * Key design decisions:
  * - quantity=1 for each execution (simple count). Transform function decides billing.
@@ -35,6 +36,9 @@ import { WORKFLOWS_USAGE_TYPE } from './constants';
  * - Supports both Serverless (projectId) and ECH (deploymentId).
  */
 export class WorkflowsMeteringService implements MeteringSink {
+  /** The records being sent, so that a task process can wait for them before it ends. */
+  private readonly pending = new Set<Promise<void>>();
+
   constructor(
     private readonly usageReportingService: UsageReportingService,
     private readonly logger: Logger
@@ -42,7 +46,20 @@ export class WorkflowsMeteringService implements MeteringSink {
 
   /** Sends a record without waiting for it: all errors are caught and logged. */
   public report(record: WorkflowMeteringRecord): void {
-    void this.send(record);
+    this.track(this.send(record));
+  }
+
+  /** Resolves when every record reported so far was sent or given up on (`send` never rejects). */
+  public async flush(): Promise<void> {
+    while (this.pending.size > 0) {
+      await Promise.all([...this.pending]);
+    }
+  }
+
+  private track(sending: Promise<void>): void {
+    this.pending.add(sending);
+    const done = () => this.pending.delete(sending);
+    sending.then(done, done);
   }
 
   /**
@@ -58,7 +75,9 @@ export class WorkflowsMeteringService implements MeteringSink {
   ): Promise<void> {
     const record = buildWorkflowMeteringRecord(execution, cloudSetup);
     if (record) {
-      await this.send(record);
+      const sending = this.send(record);
+      this.track(sending);
+      await sending;
     }
   }
 

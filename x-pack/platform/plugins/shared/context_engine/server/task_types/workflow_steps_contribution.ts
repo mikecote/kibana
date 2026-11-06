@@ -16,6 +16,7 @@ import { AiIndexService } from '../ai_indices/service';
 import { registerStepDefinitions } from '../step_types';
 import { createVerifyKi } from '../step_types/verify_ki';
 import { ContextEngineAnalyticsService } from '../telemetry';
+import { contextEngineServerEbtEvents } from '../telemetry/events';
 import { createPrivilegeChecks } from '../utils/create_privilege_checks';
 import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import { checkContextEngineStep } from './context_engine_workflow_run_checks';
@@ -35,8 +36,8 @@ const contextEngineEnabledSetting: UiSettingsParams<boolean> = {
  * The Context Engine steps in the task process of the workflow task types. Listed under
  * `taskTypeContributions['workflow-steps']` in `kibana.jsonc`. The steps are registered by the
  * function `plugin.ts` calls (`registerStepDefinitions`), over the same classes: the AI index service
- * over the internal client, the verification service, the analytics service (its events are returned
- * with the run and Kibana reports them), the audit logger of Core's security service and the
+ * over the internal client, the verification service, the analytics service (its events are shipped
+ * by the process, which registers their types), the audit logger of Core's security service and the
  * privilege checks of the security task plugin. The plugin has no config and cannot be disabled, so
  * there are no settings to wait for.
  *
@@ -54,6 +55,8 @@ const contextEngineEnabledSetting: UiSettingsParams<boolean> = {
 export const contribution: WorkflowStepsContribution = {
   declares: {
     uiSettings: [{ [CONTEXT_ENGINE_ENABLED_SETTING_ID]: contextEngineEnabledSetting }],
+    // The events of the analytics service; the process ships them itself.
+    analyticsEventTypes: contextEngineServerEbtEvents,
   },
   register: (registry, { host, logger, registerRunCheck }) => {
     const { elasticsearch, savedObjects, uiSettings, security, analytics, plugins } =
@@ -65,7 +68,7 @@ export const contribution: WorkflowStepsContribution = {
     const aiIndexLogger = logger.get('context_engine', 'ai_indices');
     const stepsLogger = logger.get('context_engine', 'context_steps');
     const analyticsService = new ContextEngineAnalyticsService(
-      // Reports go through the host: the process returns them and Kibana reports them.
+      // Reports go through the host: the process ships them itself before it answers.
       analytics as unknown as AnalyticsServiceSetup,
       logger.get('context_engine', 'telemetry')
     );

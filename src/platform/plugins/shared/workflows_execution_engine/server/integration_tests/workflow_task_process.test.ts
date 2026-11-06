@@ -92,16 +92,33 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   let kibanaUrl: string;
   let webhookStub: Server;
   let webhookUrl: string;
+  let usageApiStub: Server;
+  let usageApiUrl: string;
+  const usageApiRecords: Array<Record<string, any>> = [];
   const kibanaRequests: Array<{ url?: string; method?: string; headers: IncomingHttpHeaders }> = [];
   const webhookRequests: string[] = [];
 
   const engineConfig = engineConfigDescriptor.schema.validate({});
+
+  // The bodies of what the process answered: a run's answer carries no telemetry.
+  const responseBodies: Array<Record<string, unknown>> = [];
+  const capturingFetch = (async (input: unknown, init: unknown) => {
+    const response = await undiciFetch(input as never, init as never);
+    try {
+      responseBodies.push((await response.clone().json()) as Record<string, unknown>);
+    } catch {
+      // not JSON
+    }
+    return response;
+  }) as unknown as typeof fetch;
 
   const settings = () => ({
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
+    // The process meters itself, against this stand-in for the usage API.
+    workflowsUsageApi: { url: usageApiUrl },
     security: getSecurityTaskProcessSettings({
       license: new License({
         license: {
@@ -138,7 +155,6 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     featureFlags?: Record<string, boolean>;
     fallback?: () => never;
     signal?: AbortSignal;
-    telemetry?: Array<{ kind: string; payload: unknown }>;
     timeoutMs?: number;
   }
 
@@ -173,9 +189,8 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       timeoutMs: options.timeoutMs ?? 120000,
       signal: options.signal,
       setCustomTaskRunEventFields: jest.fn(),
-      reportTelemetry: (telemetry) => options.telemetry?.push(...telemetry.custom),
       fallback: options.fallback,
-      fetchFn: undiciFetch as unknown as typeof fetch,
+      fetchFn: capturingFetch,
     }).run();
 
   const run = (workflowId: string, fallback?: () => never, options: RunOptions = {}) =>
@@ -250,6 +265,17 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     await new Promise<void>((resolve) => kibanaStub.listen(0, '127.0.0.1', resolve));
     kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
     // What a webhook connector calls.
+    usageApiStub = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => chunks.push(chunk));
+      req.on('end', () => {
+        usageApiRecords.push(...JSON.parse(Buffer.concat(chunks).toString() || '[]'));
+        res.writeHead(200).end('{}');
+      });
+    });
+    await new Promise<void>((resolve) => usageApiStub.listen(0, '127.0.0.1', resolve));
+    usageApiUrl = `http://127.0.0.1:${(usageApiStub.address() as AddressInfo).port}/api/v1/usage`;
+
     webhookStub = createServer((req, res) => {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -503,12 +529,14 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     await esServer?.stop();
     await new Promise((resolve) => kibanaStub?.close(resolve));
     await new Promise((resolve) => webhookStub?.close(resolve));
+    await new Promise((resolve) => usageApiStub?.close(resolve));
   });
 
   it('runs a scheduled workflow with an elasticsearch step to completion, in the process', async () => {
     const fallback = jest.fn();
-    const telemetry: Array<{ kind: string; payload: unknown }> = [];
-    await run(ES_WORKFLOW_ID, fallback as never, { telemetry });
+    usageApiRecords.length = 0;
+    responseBodies.length = 0;
+    await run(ES_WORKFLOW_ID, fallback as never);
 
     expect(fallback).not.toHaveBeenCalled();
     const executions = await executionsOf(ES_WORKFLOW_ID);
@@ -540,10 +568,9 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     });
     expect(logs.hits.hits.length).toBeGreaterThan(0);
 
-    // Metering: the process cannot send to the usage API, so the record rides back with the run.
-    const metering = telemetry.filter(({ kind }) => kind === 'workflows.metering');
-    expect(metering).toHaveLength(1);
-    expect(metering[0].payload).toEqual(
+    // Metering: the process sent the record to the usage API itself, before it answered...
+    expect(usageApiRecords).toHaveLength(1);
+    expect(usageApiRecords[0]).toEqual(
       expect.objectContaining({
         id: `workflow-execution-${executions[0].id}`,
         source: expect.objectContaining({
@@ -556,6 +583,11 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         }),
       })
     );
+    // ...and its answer carries nothing for Kibana to apply but the result.
+    expect(responseBodies.length).toBeGreaterThan(0);
+    for (const body of responseBodies) {
+      expect(Object.keys(body)).not.toContain('telemetry');
+    }
   });
 
   it('declines a workflow that uses a step the process does not have, writing nothing', async () => {

@@ -142,7 +142,7 @@ describe('workflow:scheduled task runner', () => {
       {
         taskManager: taskManagerMock.createStart(),
         actions: {} as never,
-        workflowsExtensions: {} as never,
+        workflowsExtensions: { getTaskProcessSettings: jest.fn(() => ({})) } as never,
         licensing: licensingMock.createStart(),
       },
       {} as never,
@@ -161,7 +161,7 @@ describe('workflow:scheduled task runner', () => {
       taskManager: taskManagerMock.createStart(),
       actions: {} as never,
       cloud: {} as never,
-      workflowsExtensions: {} as never,
+      workflowsExtensions: { getTaskProcessSettings: jest.fn(() => ({})) } as never,
       licensing: licensingMock.createStart(),
     });
   };

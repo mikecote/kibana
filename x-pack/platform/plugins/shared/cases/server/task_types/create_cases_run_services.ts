@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type { Observable } from 'rxjs';
 import type {
   IClusterClient,
@@ -43,7 +44,6 @@ import { registerInternalAttachments } from '../internal_attachments';
 import type { CasesAlertsClient } from '../services/alerts';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { taskProcessLensEmbeddableFactory } from './cases_saved_object_types';
-import { CASES_USAGE_COUNTER_TELEMETRY_KIND } from './cases_task_process_settings';
 
 const SPACE_SAVED_OBJECT_TYPE = 'space';
 
@@ -86,8 +86,11 @@ export interface CasesRunServicesDeps {
     featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
   };
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
-  /** What the run reports to Kibana: usage counters go back on a channel Kibana's cases sink reads. */
-  telemetry: { report: (kind: string, payload: unknown) => void };
+  /**
+   * The usage counter of the `cases` domain, as `usageCollection.createUsageCounter` gives Kibana:
+   * in a process the process counts and stores it itself when the run ends.
+   */
+  usageCounter: IUsageCounter;
   publicBaseUrl?: string;
   /** The bus the client emits its events on: the caller bridges it to the workflow triggers. */
   casesEventBus: CasesEventBus;
@@ -117,7 +120,7 @@ export const createCasesRunServices = ({
   userProfile,
   licensing,
   getActionsClientWithRequest,
-  telemetry,
+  usageCounter,
   publicBaseUrl,
   casesEventBus,
 }: CasesRunServicesDeps): CasesRunServices => {
@@ -214,10 +217,7 @@ export const createCasesRunServices = ({
           ),
       },
     },
-    usageCounter: {
-      domainId: 'cases',
-      incrementCounter: (params) => telemetry.report(CASES_USAGE_COUNTER_TELEMETRY_KIND, params),
-    },
+    usageCounter,
     config,
     casesEventBus,
     // A run that sets a close reason is declined when a plugin registered a validator.

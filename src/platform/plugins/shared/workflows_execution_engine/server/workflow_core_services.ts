@@ -29,7 +29,13 @@ export interface WorkflowCoreStart {
   security: Pick<SecurityServiceStart, 'authc' | 'audit' | 'serviceAccounts'>;
   userProfile: Pick<UserProfileServiceStart, 'getCurrentProfileId'>;
   /** `callKibanaApi`, `kibana.*` steps and links: the self client and the address of Kibana. */
-  http: Pick<HttpServiceStart, 'basePath' | 'selfClient' | 'getServerInfo'>;
+  http: Pick<HttpServiceStart, 'basePath' | 'selfClient' | 'getServerInfo'> & {
+    /**
+     * A task process only: where the process reaches Kibana (Core's self client calls it). Then
+     * `basePath.publicBaseUrl` is Kibana's own public base URL, which links are built from.
+     */
+    kibanaUrl?: string;
+  };
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
   /** The logs and trigger events data streams (see {@link WorkflowDataStreamsAdapter}). */
   dataStreams: WorkflowDataStreamsAdapter;

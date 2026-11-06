@@ -121,6 +121,30 @@ describe('WorkflowsMeteringService as a sink', () => {
     expect(usage.reportUsage).toHaveBeenCalledWith([record]);
   });
 
+  it('flushes what it reported: a task process waits for the records before it answers', async () => {
+    let finish!: () => void;
+    const usage = {
+      reportUsage: jest.fn(() => new Promise<void>((resolve) => (finish = resolve))),
+    };
+    const service = new WorkflowsMeteringService(usage as never, logger);
+    service.report(buildWorkflowMeteringRecord(execution(), serverless)!);
+    let flushed = false;
+    const flushing = service.flush().then(() => (flushed = true));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(flushed).toBe(false);
+    finish();
+    await flushing;
+    expect(flushed).toBe(true);
+  });
+
+  it('flushes after a failure too, having logged it as Kibana does', async () => {
+    const usage = { reportUsage: jest.fn().mockRejectedValue(new Error('down')) };
+    const service = new WorkflowsMeteringService(usage as never, logger);
+    service.report(buildWorkflowMeteringRecord(execution(), serverless)!);
+    await expect(service.flush()).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
   it('logs instead of throwing when the usage API fails', async () => {
     const usage = { reportUsage: jest.fn().mockRejectedValue(new Error('down')) };
     const service = new WorkflowsMeteringService(usage as never, logger);

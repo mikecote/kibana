@@ -12,6 +12,11 @@ import {
   ATTACK_DISCOVERY_EVENT_PROVIDER,
 } from '@kbn/discoveries/impl/attack_discovery/persistence/event_logging/constants';
 import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
+import {
+  ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
+  ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
+  ATTACK_DISCOVERY_STEP_FAILURE_EVENT,
+} from '@kbn/discoveries/impl/lib/telemetry/event_based_telemetry';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
@@ -62,6 +67,12 @@ export const contribution: WorkflowStepsContribution = {
     settings: [DISCOVERIES_TASK_PROCESS_SETTINGS_ID],
     featureFlags: { [ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG]: true },
     uiSettings: [{ [ENABLE_ATTACK_DISCOVERY_WORKFLOWS_SETTING]: workflowsSettingDefinition }],
+    // The events the steps report; the process ships them itself.
+    analyticsEventTypes: [
+      ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
+      ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
+      ATTACK_DISCOVERY_STEP_FAILURE_EVENT,
+    ],
     eventLogProviders: [
       {
         provider: ATTACK_DISCOVERY_EVENT_PROVIDER,

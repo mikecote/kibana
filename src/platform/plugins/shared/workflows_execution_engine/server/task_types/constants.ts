@@ -11,8 +11,11 @@
 export const WORKFLOWS_ENGINE_SETTINGS_ID = 'workflowsExecutionEngine';
 /** The id the cloud fields of the engine (links to Kibana, metering) are sent to a task process under. */
 export const WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID = 'workflowsExecutionEngineCloud';
-/** The telemetry channel a task process hands its metering records to Kibana on. */
-export const WORKFLOWS_METERING_TELEMETRY_KIND = 'workflows.metering';
+/**
+ * The id the Usage API connection (url and TLS) is sent to a task process under, so that the process
+ * reports metering itself. Absent when Kibana does not report metering.
+ */
+export const WORKFLOWS_USAGE_API_SETTINGS_ID = 'workflowsUsageApi';
 /** The contribution keys of the plugins that add connector types and workflow steps to a task process. */
 export const RULE_RUN_CONTRIBUTIONS_KEY = 'alerting-rule-run';
 export const WORKFLOW_STEPS_CONTRIBUTIONS_KEY = 'workflow-steps';

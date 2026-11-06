@@ -7,7 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { KibanaRequest, SavedObjectsType } from '@kbn/core/server';
+import type { EventTypeOpts, KibanaRequest, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { Logger } from '@kbn/logging';
@@ -84,6 +84,12 @@ export interface WorkflowStepsContribution {
     featureFlags?: Record<string, boolean | string | number>;
     /** Event log providers (and their actions) the steps write events with. */
     eventLogProviders?: Array<{ provider: string; actions: string[] }>;
+    /**
+     * The analytics event types the steps report (`analytics.reportEvent`), which Core requires to be
+     * registered in the process as the plugin registers them in Kibana.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    analyticsEventTypes?: Array<EventTypeOpts<any>>;
   };
   register(
     registry: WorkflowStepsRegistry,

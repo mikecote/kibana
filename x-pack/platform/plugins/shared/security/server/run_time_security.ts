@@ -49,7 +49,10 @@ export interface RunTimeSecurityOptions {
 export interface RunTimeSecurity {
   authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser'>;
   authz: ReturnType<typeof checkPrivilegesFactory> & {
-    /** Checks at the space of the request: a run's fake request names its space. */
+    /**
+     * Checks at the space of the request (a run's fake request names its space), as the actions
+     * plugin does for connectors.
+     */
     checkPrivilegesDynamicallyWithRequest: ReturnType<
       typeof checkPrivilegesDynamicallyWithRequestFactory
     >;
@@ -59,10 +62,6 @@ export interface RunTimeSecurity {
     mode: ReturnType<typeof authorizationModeFactory>;
     checkSavedObjectsPrivilegesWithRequest: ReturnType<
       typeof checkSavedObjectsPrivilegesWithRequestFactory
-    >;
-    /** Checks the privileges of a request in its own space, as the actions plugin does for connectors. */
-    checkPrivilegesDynamicallyWithRequest: ReturnType<
-      typeof checkPrivilegesDynamicallyWithRequestFactory
     >;
   };
   audit: AuditServiceSetup;

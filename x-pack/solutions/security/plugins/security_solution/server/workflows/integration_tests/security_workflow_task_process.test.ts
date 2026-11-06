@@ -145,7 +145,6 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
       },
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
-      reportTelemetry: jest.fn(),
       fallback,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
