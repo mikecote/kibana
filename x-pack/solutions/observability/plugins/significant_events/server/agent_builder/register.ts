@@ -32,15 +32,26 @@ export const registerStreamsAgentBuilder = async ({
   server,
   logger,
   telemetry,
+  onToolRegistered,
+  onAttachmentRegistered,
 }: {
   agentBuilder: AgentBuilderPluginSetup;
   getScopedClients: GetScopedClients;
   server: SignificantEventsServer;
   logger: Logger;
   telemetry: EbtTelemetryClient;
+  onToolRegistered?: (id: string) => void;
+  onAttachmentRegistered?: (id: string) => void;
 }): Promise<void> => {
-  registerAgentBuilderAttachments({ agentBuilder, getScopedClients, server, logger });
+  registerAgentBuilderAttachments({
+    agentBuilder,
+    getScopedClients,
+    server,
+    logger,
+    onRegistered: onAttachmentRegistered,
+  });
   registerAgentBuilderTools({
+    onRegistered: onToolRegistered,
     assertAccess: (licensing = server.licensing) =>
       assertSignificantEventsAccess({ server, licensing }),
     agentBuilder,

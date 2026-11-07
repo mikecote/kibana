@@ -17,34 +17,39 @@ export const registerAgentBuilderAttachments = ({
   agentBuilder,
   getScopedClients,
   server,
+  attachmentTypeIds,
+  onRegistered,
   logger,
 }: {
   agentBuilder: AgentBuilderPluginSetup;
   getScopedClients: GetScopedClients;
   server: SignificantEventsAuthorizationServices;
+  attachmentTypeIds?: readonly string[];
+  onRegistered?: (id: string) => void;
   logger: Logger;
 }): void => {
-  agentBuilder.attachments.registerType(
+  const attachments = [
     createSignificantEventAttachmentType({
       logger: logger.get('significant_event_attachment'),
       getScopedClients,
       server,
-    }) as Parameters<typeof agentBuilder.attachments.registerType>[0]
-  );
-
-  agentBuilder.attachments.registerType(
+    }),
     createSignificantEventFeatureAttachmentType({
       logger: logger.get('significant_event_feature_attachment'),
       getScopedClients,
       server,
-    }) as Parameters<typeof agentBuilder.attachments.registerType>[0]
-  );
-
-  agentBuilder.attachments.registerType(
+    }),
     createSignificantEventDetectionAttachmentType({
       logger: logger.get('significant_event_detection_attachment'),
       getScopedClients,
       server,
-    }) as Parameters<typeof agentBuilder.attachments.registerType>[0]
-  );
+    }),
+  ];
+  for (const attachment of attachments) {
+    if (attachmentTypeIds && !attachmentTypeIds.includes(attachment.id)) continue;
+    agentBuilder.attachments.registerType(
+      attachment as Parameters<typeof agentBuilder.attachments.registerType>[0]
+    );
+    onRegistered?.(attachment.id);
+  }
 };

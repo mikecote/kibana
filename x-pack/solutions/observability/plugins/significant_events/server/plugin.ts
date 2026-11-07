@@ -94,14 +94,17 @@ import { removeLegacyDefaultSpaceWorkflows } from './lib/workflows/setup/remove_
 import { registerSignificantEventsWorkflowSteps } from './workflows/register_significant_events_workflow_steps';
 import {
   installDiscoveryAgents,
+  SIGNIFICANT_EVENTS_DISCOVERY_AGENT_TYPE_ID,
   registerSignificantEventsDiscoveryAgentTypes,
 } from './agent_builder/agents/discovery';
 import {
   installFeatureIdentificationAgent,
+  FEATURE_IDENTIFICATION_AGENT_TYPE_ID,
   registerSignificantEventsFeatureIdentificationAgentTypes,
 } from './agent_builder/agents/feature_identification';
 import {
   installKIQueryGenerationAgent,
+  KI_QUERY_GENERATION_AGENT_TYPE_ID,
   registerSignificantEventsKIQueryGenerationAgentTypes,
 } from './agent_builder/agents/ki_query_generation';
 import { createSignificantEventsAvailability } from './agent_builder/tools/significant_events_availability';
@@ -109,11 +112,19 @@ import { SIGNIFICANT_EVENT_TIERED_FEATURES } from '../common/constants';
 import {
   assertSignificantEventsAccess,
   isSignificantEventsAvailable,
+  isObservabilityDeployment,
 } from './routes/utils/assert_significant_events_access';
 import type { SignificantEventsKIsOnboardingClient } from './lib/workflows/onboarding_workflow_client';
 import { WorkflowExecutionService } from './lib/workflows/workflow_execution_service';
 import { createSourceChangeListener } from './routes/internal/knowledge_indicators/reconcile_source_catalog';
 import { isSignificantEventsSemanticCodeSearchGroundingEnabled } from './lib/semantic_code_search_grounding/is_significant_events_semantic_code_search_grounding_enabled';
+
+import { SIGNIFICANT_EVENTS_REQUIRED_PLUGINS, SIGNIFICANT_EVENTS_TIERED_FEATURE } from '../common';
+import {
+  createSignificantEventsRegistrationState,
+  getSignificantEventsTaskProcessSettings,
+  SIGNIFICANT_EVENTS_TASK_PROCESS_SETTINGS_ID,
+} from './task_types/significant_events_task_process_settings';
 
 const SIGNIFICANT_EVENTS_MANAGED_WORKFLOW_OWNER = 'significantEvents';
 const SLACK_CONNECTOR_RECONCILE_INTERVAL_MS = 60_000;
@@ -138,6 +149,7 @@ export class SignificantEventsPlugin
   private managedWorkflowsInstaller?: ManagedWorkflowsInstaller;
   private removeLegacyWorkflows?: () => Promise<void>;
   private maintenanceService?: SignificantEventsMaintenanceService;
+  private readonly taskProcessRegistrations = createSignificantEventsRegistrationState();
 
   constructor(context: PluginInitializerContext) {
     this.isDev = context.env.mode.dev;
@@ -156,6 +168,28 @@ export class SignificantEventsPlugin
       kibanaVersion: this.kibanaVersion,
     } as SignificantEventsServer;
     this.server.workflowsManagement = plugins.workflowsManagement;
+
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      SIGNIFICANT_EVENTS_TASK_PROCESS_SETTINGS_ID,
+      () => {
+        const server = this.server;
+        if (!server?.core)
+          throw new Error('Significant Events start services are required for task settings');
+        return getSignificantEventsTaskProcessSettings({
+          cpsEnabled: plugins.cps?.getCpsEnabled() ?? false,
+          availability: {
+            deploymentSupported: isObservabilityDeployment({ cloud: server.cloud }),
+            pricingTierAvailable: server.core.pricing.isFeatureAvailable(
+              SIGNIFICANT_EVENTS_TIERED_FEATURE.id
+            ),
+            requiredPlugins: SIGNIFICANT_EVENTS_REQUIRED_PLUGINS.filter((plugin) =>
+              Boolean(server[plugin])
+            ),
+          },
+          registrations: this.taskProcessRegistrations,
+        });
+      }
+    );
 
     core.savedObjects.registerType(getRelayAppConnectionSavedObjectType());
     core.savedObjects.registerType(getSignificantEventsMaintenanceStateSavedObjectType());
@@ -211,6 +245,7 @@ export class SignificantEventsPlugin
 
     if (plugins.agentBuilderSml && this.getScopedClients) {
       registerAgentBuilderSmlTypes({
+        onRegistered: (id) => this.taskProcessRegistrations.smlTypeIds.add(id),
         agentBuilderSml: plugins.agentBuilderSml,
         getScopedClients: this.getScopedClients,
         isAvailable: async () => {
@@ -227,9 +262,11 @@ export class SignificantEventsPlugin
 
     if (plugins.agentBuilder) {
       registerSignificantEventsDiscoveryAgentTypes({ agentBuilder: plugins.agentBuilder });
+      this.taskProcessRegistrations.agentTypeIds.add(SIGNIFICANT_EVENTS_DISCOVERY_AGENT_TYPE_ID);
       registerSignificantEventsFeatureIdentificationAgentTypes({
         agentBuilder: plugins.agentBuilder,
       });
+      this.taskProcessRegistrations.agentTypeIds.add(FEATURE_IDENTIFICATION_AGENT_TYPE_ID);
       registerSignificantEventsKIQueryGenerationAgentTypes({
         agentBuilder: plugins.agentBuilder,
         isSemanticCodeSearchGroundingEnabled: async () =>
@@ -237,12 +274,15 @@ export class SignificantEventsPlugin
             ? isSignificantEventsSemanticCodeSearchGroundingEnabled(this.server.core.featureFlags)
             : false,
       });
+      this.taskProcessRegistrations.agentTypeIds.add(KI_QUERY_GENERATION_AGENT_TYPE_ID);
       void core
         .getStartServices()
         .then(async () => {
           const { getScopedClients, server } = this;
           if (!getScopedClients || !server) return;
           await registerStreamsAgentBuilder({
+            onToolRegistered: (id) => this.taskProcessRegistrations.toolIds.add(id),
+            onAttachmentRegistered: (id) => this.taskProcessRegistrations.attachmentTypeIds.add(id),
             agentBuilder: plugins.agentBuilder!,
             getScopedClients,
             server,
@@ -578,6 +618,7 @@ export class SignificantEventsPlugin
       // Core skills (including investigation): registered through the start-phase skills API, gated
       // by the availability flag and (re)registered when the flag flips on.
       registerSignificantEventsSkills({
+        onRegistered: (id) => this.taskProcessRegistrations.skillIds.add(id),
         agentBuilder,
         telemetry,
         streamsKIsOnboardingClient: this.streamsKIsOnboardingClient,

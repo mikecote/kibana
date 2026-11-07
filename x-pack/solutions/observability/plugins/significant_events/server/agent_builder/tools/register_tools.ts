@@ -36,6 +36,8 @@ export function registerAgentBuilderTools({
   getScopedClients,
   server,
   assertAccess,
+  toolIds,
+  onRegistered,
   logger,
   telemetry,
 }: {
@@ -43,6 +45,8 @@ export function registerAgentBuilderTools({
   getScopedClients: GetScopedClients;
   server: SignificantEventsAuthorizationServices;
   assertAccess: AssertSignificantEventsAccess;
+  toolIds?: readonly string[];
+  onRegistered?: (id: string) => void;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): void {
@@ -116,6 +120,8 @@ export function registerAgentBuilderTools({
   ];
 
   for (const tool of tools) {
+    if (toolIds && !toolIds.includes(tool.id)) continue;
     agentBuilder.tools.register(tool as Parameters<typeof agentBuilder.tools.register>[0]);
+    onRegistered?.(tool.id);
   }
 }

@@ -19,7 +19,7 @@ export const installKIQueryGenerationAgent = async ({
   spaceId,
   availability,
 }: {
-  agentBuilder: AgentBuilderPluginStart;
+  agentBuilder: { agents: Pick<AgentBuilderPluginStart['agents'], 'ensure'> };
   spaceId: string;
   availability?: AgentAvailabilityConfig;
 }): Promise<void> => {

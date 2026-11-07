@@ -42,6 +42,7 @@ const createSetupDeps = ({
     registerStepDefinition: jest.Mock;
     registerManagedWorkflowOwner: jest.Mock;
     registerTriggerDefinition: jest.Mock;
+    registerTaskProcessSettings: jest.Mock;
   };
 } = {}) =>
   ({
@@ -77,6 +78,7 @@ describe('SignificantEventsPlugin setup', () => {
       registerStepDefinition: jest.fn(),
       registerManagedWorkflowOwner: jest.fn(),
       registerTriggerDefinition: jest.fn(),
+      registerTaskProcessSettings: jest.fn(),
     };
 
     createPlugin().setup(createCoreSetup(), createSetupDeps({ workflowsExtensions }));
