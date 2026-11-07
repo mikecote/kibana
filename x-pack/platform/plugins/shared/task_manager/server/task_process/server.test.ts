@@ -11,6 +11,7 @@
  */
 
 import type { Server } from 'http';
+import { executionContextServiceMock } from '@kbn/core-execution-context-server-mocks';
 import { fetch as undiciFetch } from 'undici';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { createRetryableError, DeclinedRunError } from '../task_running/errors';
@@ -61,6 +62,7 @@ describe('task process server', () => {
       cleanup,
     });
     server = startTaskProcessServer({
+      executionContext: executionContextServiceMock.createSetupContract(),
       taskDefinitions: new Map([
         [
           TYPE,
@@ -89,6 +91,7 @@ describe('task process server', () => {
 
   it('listens on the loopback address only when given a host', async () => {
     const loopback = startTaskProcessServer({
+      executionContext: executionContextServiceMock.createSetupContract(),
       taskDefinitions: new Map(),
       port: 0,
       host: '127.0.0.1',
@@ -544,6 +547,7 @@ describe('remote task worker', () => {
     acquire.mockReset();
     const flags = createHostFeatureFlags();
     child = startTaskProcessServer({
+      executionContext: executionContextServiceMock.createSetupContract(),
       taskDefinitions: new Map([
         [
           TYPE,

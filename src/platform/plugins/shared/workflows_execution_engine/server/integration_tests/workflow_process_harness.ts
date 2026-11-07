@@ -45,6 +45,10 @@ import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_p
 import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
+import type {
+  TaskProcessInit,
+  TaskProcessRunRequest,
+} from '@kbn/task-manager-plugin/server/task_process/wire';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
 import type { TaskExecutionPool } from '@kbn/task-manager-plugin/server/task_scheduling';
 import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
@@ -186,6 +190,8 @@ export interface WorkflowProcessHarnessOptions {
   claimNudge?: boolean;
   executionTask?: ExecutionTaskFixture;
   middlewareIds?: string[];
+  instrumentation?: TaskProcessInit['instrumentation'];
+  executionContext?: TaskProcessInit['executionContext'];
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   additionalContributions?: Record<string, string[]>;
   featureFlags?: Record<string, boolean | string | number>;
@@ -342,6 +348,8 @@ const startHarness = async (
   });
 
   const initFor = () => ({
+    instrumentation: options.instrumentation,
+    executionContext: options.executionContext,
     server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false, publicBaseUrl: kibanaUrl },
     encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
     ...(options.parity ? { parity: options.parity } : {}),
@@ -587,12 +595,14 @@ const startHarness = async (
     taskType: string,
     task: { id: string; params: Record<string, string> },
     onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
-    credentials?: { apiKey: string; userName?: string; spaceId?: string }
+    credentials?: { apiKey: string; userName?: string; spaceId?: string },
+    tracing?: TaskProcessRunRequest['tracing']
   ) =>
     new RemoteTaskRunner({
       route: getRoute(taskType),
       request: {
         taskType,
+        tracing,
         ...(options.mode === 'remote'
           ? {
               snapshot: {

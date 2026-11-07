@@ -23,6 +23,7 @@ import { ExecutionContextContainer, getParentContextFrom } from './execution_con
  * @internal
  */
 export interface IExecutionContext {
+  getConfig(): ExecutionContextConfigType;
   getParentContextFrom(
     headers: Record<string, string | string[] | undefined>
   ): KibanaExecutionContext | undefined;
@@ -86,6 +87,7 @@ export class ExecutionContextService
       });
 
     return {
+      getConfig: () => ({ enabled: this.enabled }),
       getParentContextFrom,
       set: this.set.bind(this),
       withContext: this.withContext.bind(this),
@@ -98,6 +100,7 @@ export class ExecutionContextService
 
   start(): InternalExecutionContextStart {
     return {
+      getConfig: () => ({ enabled: this.enabled }),
       getParentContextFrom,
       set: this.set.bind(this),
       setRequestId: this.setRequestId.bind(this),

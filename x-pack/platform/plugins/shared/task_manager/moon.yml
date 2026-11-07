@@ -82,6 +82,8 @@ dependsOn:
   - '@kbn/core-ui-settings-server'
   - '@kbn/core-ui-settings-server-internal'
   - '@kbn/encrypted-saved-objects-plugin'
+  - '@kbn/apm-config-loader'
+  - '@kbn/telemetry'
 tags:
   - plugin
   - prod

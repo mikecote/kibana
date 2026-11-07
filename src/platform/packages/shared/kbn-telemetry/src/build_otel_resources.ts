@@ -16,6 +16,7 @@ import {
   osDetector,
   resourceFromAttributes,
 } from '@opentelemetry/resources';
+import type { TelemetryConfiguration } from '@kbn/apm-config-loader';
 import { getConfiguration } from '@kbn/apm-config-loader';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import {
@@ -42,10 +43,13 @@ const processDetector: ResourceDetector = {
  * @param serviceName The service name used to look up APM config (defaults to 'kibana').
  * @returns The OpenTelemetry resource
  */
-export function buildOtelResources(serviceName: string = 'kibana') {
+export function buildOtelResources(
+  serviceName: string = 'kibana',
+  apmConfig: TelemetryConfiguration['apm'] | undefined = getConfiguration(serviceName)
+) {
   const resource = detectResources({
     detectors: [envDetector, hostDetector, osDetector, processDetector],
-  }).merge(resourceFromAttributes(deriveAttributesFromApmConfig(serviceName)));
+  }).merge(resourceFromAttributes(deriveAttributesFromApmConfig(apmConfig)));
   // TODO: Merge resource from attributes from the telemetry config (when available)
 
   return resource;
@@ -55,12 +59,13 @@ export function buildOtelResources(serviceName: string = 'kibana') {
  * Derives OTel service resource attributes from the APM configuration that was
  * already loaded at bootstrap time.
  */
-const deriveAttributesFromApmConfig = (serviceName: string): Record<string, string> => {
+const deriveAttributesFromApmConfig = (
+  apmConfig: TelemetryConfiguration['apm'] | undefined
+): Record<string, string> => {
   // telemetry.sdk.language is always known for this Node.js process.
   const attrs: Record<string, string> = { 'telemetry.sdk.language': 'nodejs' };
 
   // TODO: Since we are deprecating `elastic.apm.*` settings, we should provide a way to set these attributes in the `telemetry.*` config.
-  const apmConfig = getConfiguration(serviceName);
   if (!apmConfig) {
     return attrs;
   }

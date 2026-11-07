@@ -6,6 +6,7 @@
  */
 
 import { Agent } from 'undici';
+import { captureTaskRunTrace } from '../task_running/task_tracing';
 import type { TaskExecutionPool } from '../task_scheduling';
 import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
 import {
@@ -131,7 +132,17 @@ export class RemoteTaskRunner implements CancellableTask {
   private cancellation?: Promise<void>;
 
   public async run(): Promise<RunResult | undefined | void> {
-    const { route, request, timeoutMs, signal, setCustomTaskRunEventFields } = this.params;
+    const {
+      route,
+      request: originalRequest,
+      timeoutMs,
+      signal,
+      setCustomTaskRunEventFields,
+    } = this.params;
+    const request = {
+      ...originalRequest,
+      tracing: originalRequest.tracing ?? captureTaskRunTrace(),
+    };
     signal?.throwIfAborted();
     if (this.cancelled)
       throw createRetryableError(new Error('Task process run was cancelled'), false);

@@ -37,3 +37,21 @@ export const watchParent = ({
   (timer as { unref?: () => void }).unref?.();
   return () => clearInterval(timer);
 };
+
+/** Watches the parent before initialization and binds native shutdown once Core has started. */
+export const createTaskProcessParentWatcher = (): ((stop: () => Promise<void>) => void) => {
+  let stopCore: (() => Promise<void>) | undefined;
+  if (process.send) {
+    watchParent({
+      onParentGone: (reason) => {
+        process.stderr.write(`Task process stopping: its parent is gone (${reason})\n`);
+        const forceExit = setTimeout(() => process.exit(1), 5000);
+        forceExit.unref();
+        (stopCore?.() ?? Promise.resolve()).finally(() => process.exit(0));
+      },
+    });
+  }
+  return (stop) => {
+    stopCore = stop;
+  };
+};

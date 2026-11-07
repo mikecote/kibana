@@ -106,6 +106,7 @@ export const buildCoreConfig = (
       | undefined) ?? {};
   const settings: Record<string, unknown> = {
     core: { lifecycle: { disablePreboot: true } },
+    ...(init.executionContext ? { execution_context: init.executionContext } : {}),
     elasticsearch: toElasticsearchSettings(init.elasticsearch, dir),
     path: { data: join(dir, 'data') },
     server: {

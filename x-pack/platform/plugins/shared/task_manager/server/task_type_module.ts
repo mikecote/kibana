@@ -69,7 +69,7 @@ export interface TaskHost {
   elasticsearch: Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
   /** Core's native saved objects clients and import/export services. */
   savedObjects: SavedObjectsServiceStart;
-  /** A pass-through in a task process. */
+  /** Native Core execution context in Main and task workers. */
   executionContext: Pick<ExecutionContextStart, 'withContext' | 'getAsLabels'>;
   /** Core's security delegate and the FIPS service supplied during Core setup. */
   security: SecurityServiceStart & Pick<SecurityServiceSetup, 'fips'>;

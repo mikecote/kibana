@@ -14,6 +14,7 @@ const { build } = require('esbuild');
 const { REPO_ROOT } = require('@kbn/repo-info');
 const { getPackages } = require('@kbn/repo-packages');
 const { escapeNonLatin1 } = require('./escape_non_latin1');
+const { copyTaskRuntimeDependencies } = require('./copy_runtime_dependencies');
 
 const OUT_DIR = path.join(REPO_ROOT, 'target', 'task_bundles');
 const RUNTIME_ENTRY = path.join(
@@ -115,6 +116,22 @@ const uiSharedDepsStubPlugin = {
   },
 };
 
+/** The native APM agent loads instrumentation files relative to its installed package. */
+const nativeApmAgentPlugin = {
+  name: 'native-apm-agent',
+  setup(b) {
+    b.onResolve({ filter: /^elastic-apm-node$/ }, (args) =>
+      args.namespace === 'task-process-native-apm'
+        ? { path: args.path, external: true }
+        : { path: args.path, namespace: 'task-process-native-apm' }
+    );
+    b.onLoad({ filter: /.*/, namespace: 'task-process-native-apm' }, () => ({
+      contents: `module.exports = require('elastic-apm-node');`,
+      loader: 'js',
+    }));
+  },
+};
+
 /** Imports kept for their side effects, which the pure workspace plugin would otherwise drop. */
 const SIDE_EFFECT_FILES = /hapi_request_refs|[\\/]kbn-security-hardening[\\/]prototype\.[jt]s$/;
 
@@ -159,7 +176,7 @@ const peggyPlugin = {
   },
 };
 
-/** Returns the output files loaded before any asynchronous import is evaluated. */
+/** Returns static startup imports and the generated entry's imports awaited before readiness. */
 const getStartupOutputs = (metafile, outfile) => {
   const outputs = new Map(
     Object.entries(metafile.outputs).map(([file, output]) => [
@@ -167,6 +184,8 @@ const getStartupOutputs = (metafile, outfile) => {
       output,
     ])
   );
+  const entryFile = path.resolve(outfile);
+  const taskEntry = outputs.get(entryFile)?.entryPoint?.endsWith('.entry.ts') === true;
   const loaded = new Set();
   const visit = (file) => {
     if (loaded.has(file)) return;
@@ -174,11 +193,22 @@ const getStartupOutputs = (metafile, outfile) => {
     if (!output) return;
     loaded.add(file);
     for (const dependency of output.imports) {
-      if (dependency.external || dependency.kind === 'dynamic-import') continue;
+      if (dependency.external) continue;
+      if (dependency.kind === 'dynamic-import' && !(taskEntry && file === entryFile)) continue;
       visit(path.resolve(REPO_ROOT, dependency.path));
     }
   };
-  visit(path.resolve(outfile));
+  visit(entryFile);
+  if (taskEntry) {
+    for (const [file, output] of outputs) {
+      if (
+        Object.keys(output.inputs ?? {}).some((input) =>
+          input.endsWith('/task_process/instrumentation.ts')
+        )
+      )
+        visit(file);
+    }
+  }
   return [...loaded];
 };
 
@@ -195,6 +225,7 @@ const buildTaskBundle = async ({
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.mjs`);
+  const runtime = copyTaskRuntimeDependencies(outDir);
   const loaded = loadTaskType(entry.file);
   // What the module says it takes from other plugins: every plugin's file under each key.
   const contributions = Object.fromEntries(
@@ -207,14 +238,22 @@ const buildTaskBundle = async ({
   const result = await build({
     stdin: {
       contents: [
-        `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
-        `import { taskType } from ${JSON.stringify(entry.file)};`,
-        ...contributionImports.map(
-          (file, i) => `import { contribution as contribution${i} } from ${JSON.stringify(file)};`
-        ),
-        `runTaskProcess(taskType, { contributions: {`,
+        `import { bootstrapTaskProcess } from ${JSON.stringify(
+          path.join(path.dirname(RUNTIME_ENTRY), 'bootstrap')
+        )};`,
+        `const initialization = await bootstrapTaskProcess();`,
+        `const [runtime, taskModule, ${contributionImports
+          .map((_, i) => `contributionModule${i}`)
+          .join(', ')}] = await Promise.all([`,
+        `  import(${JSON.stringify(RUNTIME_ENTRY)}),`,
+        `  import(${JSON.stringify(entry.file)}),`,
+        ...contributionImports.map((file) => `  import(${JSON.stringify(file)}),`),
+        `]);`,
+        `runtime.runTaskProcess(taskModule.taskType, { ...initialization, contributions: {`,
         ...Object.entries(contributions).map(([key, files]) => {
-          const names = files.map((file) => `contribution${contributionImports.indexOf(file)}`);
+          const names = files.map(
+            (file) => `contributionModule${contributionImports.indexOf(file)}.contribution`
+          );
           return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
         }),
         `} });`,
@@ -269,7 +308,13 @@ const buildTaskBundle = async ({
       '.png': 'empty',
       '.node': 'empty',
     },
-    plugins: [uiSharedDepsStubPlugin, pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
+    plugins: [
+      uiSharedDepsStubPlugin,
+      nativeApmAgentPlugin,
+      pureWorkspacePlugin,
+      peggyPlugin,
+      repoInfoPlugin(version),
+    ],
   });
   const files = Object.keys(result.metafile.outputs).map((file) => path.resolve(REPO_ROOT, file));
   for (const file of files) {
@@ -279,6 +324,7 @@ const buildTaskBundle = async ({
   }
   return {
     name: entry.name,
+    runtime,
     outfile,
     bytes: files
       .filter((file) => file.endsWith('.mjs'))
@@ -300,6 +346,7 @@ const readTaskType = (file) => createRequire(__filename)(file).taskType.type;
 const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   const manifest = {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
+    runtime: results[0]?.runtime,
     bundles: Object.fromEntries(
       results.map(({ entry, name, bytes, outfile, files, startupBytes }) => [
         name,

@@ -305,8 +305,10 @@ step carries the directory into every platform folder. In a distributable `bundl
 `<install dir>/task_bundles` (`REPO_ROOT` is the install dir there; from a repository checkout it is
 `target/task_bundles`, which is where `node scripts/task_bundle` writes), and the manifest has
 `{ kibanaVersion, bundles: { <name>: { file, files, taskType, bytes, startupBytes } } }`.
-`bytes` counts all generated JavaScript; `startupBytes` counts the entry and its static imports.
-`files` lists the entry's complete output, including chunks and source maps. Copy the entire
+`bytes` counts all generated JavaScript; `startupBytes` counts generated imports required before readiness,
+including the entry's awaited runtime imports and instrumentation initialization.
+The shared `runtime` entry records the native APM SDK dependency files and their total bytes separately.
+`files` lists the entry's generated output, including chunks and source maps. Copy the entire
 `task_bundles` directory when moving a build; copying the entry alone omits deferred implementations.
 
 The bundle hygiene integration test checks both `.es-query` and detection rules for EUI, accidental
@@ -322,10 +324,15 @@ requires every selected entry to exist; without the setting it builds the entrie
   (`zstd`, `kerberos`, `snappy`) are optional requires inside `try`/`catch` of MongoDB and AWS clients that
   Kibana's own `node_modules` would serve. If a native module is ever needed, add it to `EXTERNALS` and it
   resolves from the distributable's `node_modules`, since a bundle sits at `<install dir>/task_bundles`.
+- **Native instrumentation runtime.** The artifact includes the installed APM SDK and its production
+  dependency closure under `task_bundles/node_modules`. The SDK loads its own instrumentation files
+  from that packaged directory. Its resolver starts from the bundle, so a moved artifact needs no
+  external Kibana installation or `node_modules`. The packaging test starts the genuine agent and a
+  transaction from an artifact with an unrelated working directory and empty `NODE_PATH`.
 - **Nothing reads the source tree.** `@kbn/repo-info` is replaced with a stub that answers with the working
   directory, so a bundle never walks up to find a repository; a task process does not read the paths
-  `@kbn/utils` derives from it. The remaining `__dirname` and `readFileSync` uses are libraries' own
-  (pino worker threads, `source-map`'s `mappings.wasm`) and are on paths a run does not take.
+  `@kbn/utils` derives from it. Libraries read their own packaged runtime assets, including the native
+  APM instrumentation files, pino workers and source-map assets.
 - **Cost.** Entries share chunks within a task type; Core is still duplicated between task types.
   Artifact size includes deferred code and must be measured separately from startup memory.
 - **Not covered here.** The full archive build (`node scripts/build`), and Windows.
@@ -346,6 +353,7 @@ fixtures differ from the minimal settings used for earlier startup-only measurem
 | Linux ARM64 | `.es-query`      | 1065 → 805   | 301 → 235      | 150 → 115            | 314 → 238                         |
 | Linux ARM64 | `siem.queryRule` | 1674 → 1036  | 394 → 276      | 247 → 153            | 419 → 291                         |
 
+These historical measurements predate native worker instrumentation.
 Linux used `node:24.21.0-bookworm-slim` containers with a 1 GiB memory limit and two CPUs. Each run
 started a fresh process and executed a real task against Elasticsearch; rule samples used fresh
 rule IDs. All 60 runs succeeded. Peak RSS combines lifetime maximum RSS with observed RSS samples.
@@ -473,13 +481,21 @@ reschedule, the task state, the retries). What differs, and why:
   reads feature flags in a run registers them with `alerting.registerTaskProcessFeatureFlags`.
 - **License feature usage** is reported by the process for the rule types and connector types that need a
   license, to the store every node shares.
-- **Not reproduced.** OpenTelemetry counters (`kibana.alerting.rule_run.count`, the connector counters): a
-  process has no meter provider, Kibana's is created by its command line from `telemetry.metrics`, and a
-  short-lived process cannot export the same series (cumulative counters of one resource from many
-  processes overwrite each other, and Prometheus cannot scrape them). A rule that uses a connector type or
-  adapter the process does not know, or a workflow rule whose executions are stored where the process cannot
-  store them, fails explicitly. Fresh workers pay for the encryption service, license and alerts resource
-  checks at startup. Reused workers retain Core while rebuilding execution services for each run.
+- **Native instrumentation.** Main sends its resolved APM, OpenTelemetry and monitoring settings and
+  instrumentation environment. Workers initialize the same native SDK factories before importing task
+  code. Task transactions, business spans and Core execution context share Main's factories. A dispatch
+  continues its APM and W3C trace parents through remote supervisors. Native scheduling retains its active
+  APM span parent. Each worker has a distinct OpenTelemetry `service.instance.id`; reused executions keep
+  that identity. The task span ends before native exporters are force-flushed, and shutdown drains the
+  providers. Startup settings, including Core's current `execution_context.enabled`, participate in reuse
+  compatibility. `native_task_tracing_process` verifies actual APM and OTLP HTTP exports, scheduling span
+  lineage and enabled/disabled Core labels across fresh and reused child and remote workers.
+- **Instrumentation work remaining.** Portable exporter certificate files, real rule and connector counter
+  export proofs, and aggregation for Main's Prometheus endpoint still need completion.
+- **Execution limits.** A rule that uses a connector type or adapter the process does not know, or a workflow
+  rule whose executions are stored where the process cannot store them, fails explicitly. Fresh workers
+  pay for the encryption service, license and alerts resource checks at startup. Reused workers retain
+  Core while rebuilding execution services for each run.
 
 ### Testing a rule type in a process
 

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { getTelemetryConfiguration } from '@kbn/apm-config-loader';
 import type { Observable } from 'rxjs';
 import { combineLatest, firstValueFrom, Subject, BehaviorSubject } from 'rxjs';
 import { map, distinctUntilChanged } from 'rxjs';
@@ -415,12 +416,15 @@ export class TaskManagerPlugin
       const init: Pick<
         TaskProcessInit,
         | 'server'
+        | 'instrumentation'
+        | 'executionContext'
         | 'encryptedSavedObjects'
         | 'settings'
         | 'parity'
         | 'uiSettingsOverrides'
         | 'uiSettingsGlobalOverrides'
       > = {
+        executionContext: core.executionContext.getConfig(),
         server: {
           ...getServerInfo(this.publicBaseUrl),
           kibanaUrl: this.getKibanaAddress?.(),
@@ -428,6 +432,16 @@ export class TaskManagerPlugin
           isDev: this.initContext.env.mode.dev,
         } as TaskProcessInit['server'],
       };
+      const instrumentation = getTelemetryConfiguration('kibana');
+      if (instrumentation) {
+        init.instrumentation = {
+          environment: instrumentation.environment,
+          apm: serializeSettings(instrumentation.apm),
+          redactUsers: instrumentation.redactUsers,
+          telemetry: serializeSettings(instrumentation.telemetry),
+          monitoringCollection: serializeSettings(instrumentation.monitoringCollection),
+        };
+      }
       // Every process gets them: the module Kibana registered may not declare the ui settings the
       // module of the process does, and an override is Kibana's whether or not it is registered.
       const { overrides, globalOverrides } = await readUiSettingsOverrides();

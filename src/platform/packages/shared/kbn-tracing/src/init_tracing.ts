@@ -44,7 +44,10 @@ export function initTracing({
 }: {
   resource: Resource;
   tracingConfig: TracingConfig;
-}) {
+}): {
+  forceFlush: () => Promise<void>;
+  shutdown: () => Promise<void>;
+} {
   // this is used for late-binding of span processors
   const lateBindingProcessor = LateBindingSpanProcessor.get();
 
@@ -102,9 +105,9 @@ export function initTracing({
 
   trace.setGlobalTracerProvider(nodeTracerProvider);
 
-  const shutdown = async () => {
-    await Promise.all(allSpanProcessors.map((processor) => processor.shutdown()));
-  };
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => (shutdownPromise ??= nodeTracerProvider.shutdown());
 
-  cleanupBeforeExit(() => shutdown(), { blockExit: true, timeout: 30_000 });
+  cleanupBeforeExit(shutdown, { blockExit: true, timeout: 30_000 });
+  return { forceFlush: () => nodeTracerProvider.forceFlush(), shutdown };
 }

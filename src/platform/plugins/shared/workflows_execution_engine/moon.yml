@@ -70,6 +70,8 @@ dependsOn:
   - '@kbn/field-formats-plugin'
   - '@kbn/agent-builder-server'
   - '@kbn/data-plugin'
+  - '@kbn/telemetry-config'
+  - '@kbn/metrics-config'
 tags:
   - plugin
   - prod

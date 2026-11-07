@@ -10,6 +10,7 @@
  * the task process can bundle it without pulling in the rest of Task Manager.
  */
 
+import type { TaskRunTrace } from '../task_running/task_tracing';
 import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
 import type { ConcreteTaskInstance, RunResult, TaskRunAs } from '../task';
@@ -30,6 +31,14 @@ export const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 export interface TaskProcessInit {
   kind: 'init';
+  executionContext?: { enabled: boolean };
+  instrumentation?: {
+    environment: Record<string, string>;
+    apm: SerializedValue;
+    redactUsers: boolean;
+    telemetry: SerializedValue;
+    monitoringCollection: SerializedValue;
+  };
   elasticsearch: SerializedElasticsearchConfig;
   kibanaVersion: string;
   authToken: string;
@@ -88,6 +97,7 @@ export interface TaskProcessDispatchSnapshot {
 }
 
 export interface TaskProcessRunRequest {
+  tracing?: TaskRunTrace;
   taskType: string;
   /** `ConcreteTaskInstance` with credential fields stripped; dates are ISO strings. */
   taskInstance: Record<string, unknown>;

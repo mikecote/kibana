@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { ExecutionContextSetup } from '@kbn/core-execution-context-server';
 import { schema } from '@kbn/config-schema';
 import type { TypeOf } from '@kbn/config-schema';
 import { timingSafeEqual } from 'node:crypto';
@@ -12,6 +13,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import { withTaskProcessTrace } from './task_tracing';
 import { ActiveTaskPoolRequests } from './active_task_pool_requests';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import {
@@ -107,6 +109,7 @@ const isSameSecret = (received: string | undefined, expected: string) => {
 
 export const startTaskProcessServer = ({
   taskDefinitions,
+  executionContext,
   port,
   host,
   logger,
@@ -120,6 +123,7 @@ export const startTaskProcessServer = ({
   enrichFakeRequest,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
+  executionContext?: Pick<ExecutionContextSetup, 'withContext'>;
   port: number;
   /**
    * The address to listen on. A process Kibana forked listens on `127.0.0.1` only: the run request
@@ -226,35 +230,47 @@ export const startTaskProcessServer = ({
     try {
       const { value, error } = await runInRunContext(
         async () => {
-          try {
-            if (forwardRun) {
-              task = forwardRun(body, {
+          const runTask = async () => {
+            try {
+              if (forwardRun) {
+                task = forwardRun(body, {
+                  signal: abortController.signal,
+                  setCustomTaskRunEventFields: (fields) => customFields.push(fields),
+                });
+                return await task.run();
+              }
+              if (!definition) throw new Error(`Unregistered task type ${body.taskType}`);
+              if (
+                body.runAs &&
+                !definition.runAs?.workloadTypes.includes(body.runAs.workloadType)
+              ) {
+                throwUnrecoverableError(
+                  new Error(
+                    `Task type ${body.taskType} does not support workload ${body.runAs.workloadType}`
+                  )
+                );
+              }
+              task = definition.createTaskRunner({
+                taskInstance: reviveTaskInstance(body.taskInstance),
+                ...(body.runAs && definition.runAs
+                  ? { runAs: createRunAsContext(definition.runAs, body.runAs) }
+                  : { fakeRequest, enrichRequest }),
                 signal: abortController.signal,
-                setCustomTaskRunEventFields: (fields) => customFields.push(fields),
+                executionUuid: body.executionUuid,
+                setCustomTaskRunEventFields: (fields: Record<string, unknown>) =>
+                  customFields.push(fields),
               });
               return await task.run();
+            } finally {
+              await cleanupTask();
             }
-            if (!definition) throw new Error(`Unregistered task type ${body.taskType}`);
-            if (body.runAs && !definition.runAs?.workloadTypes.includes(body.runAs.workloadType)) {
-              throwUnrecoverableError(
-                new Error(
-                  `Task type ${body.taskType} does not support workload ${body.runAs.workloadType}`
-                )
-              );
-            }
-            task = definition.createTaskRunner({
-              taskInstance: reviveTaskInstance(body.taskInstance),
-              ...(body.runAs && definition.runAs
-                ? { runAs: createRunAsContext(definition.runAs, body.runAs) }
-                : { fakeRequest, enrichRequest }),
-              signal: abortController.signal,
-              executionUuid: body.executionUuid,
-              setCustomTaskRunEventFields: (fields: Record<string, unknown>) =>
-                customFields.push(fields),
-            });
-            return await task.run();
+          };
+          try {
+            if (forwardRun) return await runTask();
+            if (!executionContext)
+              throw new Error('Task execution requires native Core execution context');
+            return await withTaskProcessTrace(body, runTask, executionContext);
           } finally {
-            await cleanupTask();
             await flushEffects();
           }
         },

@@ -15,6 +15,19 @@ import type { InternalExecutionContextSetup } from './execution_context_service'
 import { ExecutionContextService } from './execution_context_service';
 
 describe('ExecutionContextService', () => {
+  it('reports the live native configuration through setup and start contracts', () => {
+    const core = mockCoreContext.create();
+    const configuration = new BehaviorSubject({ enabled: true });
+    core.configService.atPath.mockReturnValue(configuration);
+    const service = new ExecutionContextService(core);
+    const setup = service.setup();
+    const start = service.start();
+    expect(setup.getConfig()).toEqual({ enabled: true });
+    configuration.next({ enabled: false });
+    expect(setup.getConfig()).toEqual({ enabled: false });
+    expect(start.getConfig()).toEqual({ enabled: false });
+    service.stop();
+  });
   describe('setup', () => {
     let service: InternalExecutionContextSetup;
     let core: ReturnType<typeof mockCoreContext.create>;

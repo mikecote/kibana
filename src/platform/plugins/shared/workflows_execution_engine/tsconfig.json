@@ -66,7 +66,9 @@
     "@kbn/security-authorization-core",
     "@kbn/field-formats-plugin",
     "@kbn/agent-builder-server",
-    "@kbn/data-plugin"
+    "@kbn/data-plugin",
+    "@kbn/telemetry-config",
+    "@kbn/metrics-config"
   ],
   "exclude": ["target/**/*"]
 }

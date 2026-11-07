@@ -49,7 +49,10 @@ export interface InitMetricsOptions {
  * Initialize the OpenTelemetry meter provider
  * @param initMetricsOptions {@link InitMetricsOptions}
  */
-export function initMetrics(initMetricsOptions: InitMetricsOptions) {
+export function initMetrics(initMetricsOptions: InitMetricsOptions): {
+  forceFlush: () => Promise<void>;
+  shutdown: () => Promise<void>;
+} {
   const { resource, metricsConfig, monitoringCollectionConfig } = initMetricsOptions;
 
   const globalExportIntervalMillis = metricsConfig.interval.asMilliseconds();
@@ -168,5 +171,8 @@ export function initMetrics(initMetricsOptions: InitMetricsOptions) {
 
   metricsApi.setGlobalMeterProvider(meterProvider);
 
-  cleanupBeforeExit(() => meterProvider.shutdown());
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => (shutdownPromise ??= meterProvider.shutdown());
+  cleanupBeforeExit(shutdown);
+  return { forceFlush: () => meterProvider.forceFlush(), shutdown };
 }
