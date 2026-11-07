@@ -19,11 +19,14 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
+import type { Logger } from '@kbn/core/server';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
+import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
 import { License } from '@kbn/licensing-plugin/common/license';
+import { featureUsageSavedObjectType } from '@kbn/licensing-plugin/server/services/feature_usage_store';
 import { kibanaPackageJson, REPO_ROOT } from '@kbn/repo-info';
 import {
   createConfig as createSecurityConfig,
@@ -39,6 +42,7 @@ import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { registerUsageCountersSavedObjectTypes } from '@kbn/usage-collection-plugin/server/usage_counters/saved_objects';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
 import { config as engineConfigDescriptor } from '../config';
@@ -115,6 +119,7 @@ export interface StubRequest {
 }
 
 export interface WorkflowProcessHarnessOptions {
+  logger?: Logger;
   mode?: 'child_process' | 'remote';
   reuse?: boolean;
   includeRunTask?: boolean;
@@ -244,7 +249,15 @@ const startHarness = async (
 
   // The saved object indices Kibana has: what the module declares, `config` and `task`.
   const indexMappings = new Map<string, Record<string, unknown>>();
+  const usageCounterTypes: SavedObjectsType[] = [];
+  registerUsageCountersSavedObjectTypes({
+    registerType: (type) => {
+      usageCounterTypes.push(type);
+    },
+  });
   for (const type of [
+    ...usageCounterTypes,
+    featureUsageSavedObjectType,
     ...(scheduledTaskType.savedObjectTypes ?? []),
     ...(options.savedObjectTypes ?? []),
   ]) {
@@ -311,7 +324,7 @@ const startHarness = async (
   await es.indices.createDataStream({ name: '.kibana-event-log-ds' });
 
   // What Kibana installs for the engine: the execution indices, the data stream templates and the workflows index.
-  const logger = loggingSystemMock.createLogger();
+  const logger = options.logger ?? loggingSystemMock.createLogger();
   await createOrUpdateIndex({
     esClient: es,
     indexName: WORKFLOWS_EXECUTIONS_INDEX,
@@ -422,7 +435,7 @@ const startHarness = async (
   if (options.mode === 'remote') {
     const worker = startTaskProcessWorker({
       settings: workerSettings,
-      logger: loggingSystemMock.createLogger(),
+      logger,
       authToken: 'workflow-test-worker',
       port: 0,
       host: '127.0.0.1',
@@ -437,7 +450,7 @@ const startHarness = async (
   } else {
     const supervisor = new TaskProcessSupervisor({
       settings: { ...workerSettings, getElasticsearchConfig: esConfig, getInitFor: initFor },
-      logger: loggingSystemMock.createLogger(),
+      logger,
     });
     supervisor.start();
     cleanups.push(() => supervisor.stop());

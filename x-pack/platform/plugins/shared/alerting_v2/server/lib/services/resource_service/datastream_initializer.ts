@@ -31,7 +31,8 @@ export class DatastreamInitializer implements IResourceInitializer {
   constructor(
     private readonly logger: Logger,
     private readonly esClient: ElasticsearchClient,
-    private readonly resourceDefinition: ResourceDefinition
+    private readonly resourceDefinition: ResourceDefinition,
+    private readonly install = true
   ) {
     const { dataStreamName, forceReset, version } = resourceDefinition;
     if (forceReset && forceReset.version >= version) {
@@ -42,6 +43,10 @@ export class DatastreamInitializer implements IResourceInitializer {
   }
 
   public async initialize(): Promise<void> {
+    if (!this.install) {
+      await this.assertReady();
+      return;
+    }
     // The template references the pipeline, so it must exist first.
     await this.installIngestPipeline();
 
@@ -87,6 +92,40 @@ export class DatastreamInitializer implements IResourceInitializer {
     }
 
     await this.updateExistingIndicesReplicaSettings();
+  }
+
+  private async assertReady(): Promise<void> {
+    const { dataStreamName, version, forceReset, finalPipeline } = this.resourceDefinition;
+    const dataStream = await this.getExistingDataStream();
+    if (!dataStream) throw new Error(`Required data stream ${dataStreamName} is missing`);
+    const createdVersion = dataStream._meta?.version;
+    if (
+      forceReset &&
+      (typeof createdVersion !== 'number' || createdVersion <= forceReset.version)
+    ) {
+      throw new Error(`Required data stream ${dataStreamName} has not completed its reset`);
+    }
+    const templateVersion = await this.getIndexTemplateVersion();
+    if (templateVersion === undefined || templateVersion < version) {
+      throw new Error(`Required data stream ${dataStreamName} needs template v${version}`);
+    }
+    const pipelineVersion = await this.getDeployedPipelineVersion(finalPipeline.id);
+    if (pipelineVersion === undefined || pipelineVersion < finalPipeline.version) {
+      throw new Error(`Required ingest pipeline ${finalPipeline.id} is missing or outdated`);
+    }
+    const settings = await this.esClient.indices.getSettings({
+      index: dataStreamName,
+      name: 'index.final_pipeline',
+      flat_settings: true,
+    });
+    if (
+      Object.keys(settings).length === 0 ||
+      Object.values(settings).some(
+        (index) => index.settings?.['index.final_pipeline'] !== finalPipeline.id
+      )
+    ) {
+      throw new Error(`Required data stream ${dataStreamName} has an incorrect final pipeline`);
+    }
   }
 
   private async initializeDataStream(

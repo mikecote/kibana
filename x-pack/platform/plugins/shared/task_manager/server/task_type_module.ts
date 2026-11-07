@@ -50,7 +50,7 @@ export interface TaskEventLogCapability {
     kibanaUuid?: string;
     kibanaVersion: string;
     providers: TaskEventLogCapability['providers'];
-  }) => { eventLog: TaskHostEventLog; stop: () => Promise<void> };
+  }) => { eventLog: TaskHostEventLog; flush: () => Promise<void>; stop: () => Promise<void> };
 }
 
 /**
@@ -71,7 +71,7 @@ export interface TaskHost {
   >;
   /** A pass-through in a task process. */
   executionContext: Pick<ExecutionContextStart, 'withContext' | 'getAsLabels'>;
-  /** Core's default implementation in a task process: no user, no audit, no UIAM. */
+  /** Core's security API, backed by the module's security task plugin when declared. */
   security: Pick<SecurityServiceStart, 'authc' | 'audit'>;
   /** Kibana's identity and public address. */
   server: {

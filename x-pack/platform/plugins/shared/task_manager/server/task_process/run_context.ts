@@ -72,23 +72,31 @@ export const runFlushers = async (
 ): Promise<boolean> => {
   if (!flushers.length) return true;
   let successful = true;
+  const pending = new Map(
+    flushers.map((flusher, index) => [index, flusher.name || `flusher ${index}`])
+  );
   let timer: NodeJS.Timeout | undefined;
   const timedOut = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), timeoutMs);
   });
   const flushed = Promise.all(
-    flushers.map((flusher) =>
+    flushers.map((flusher, index) =>
       Promise.resolve()
         .then(flusher)
         .catch((error) => {
           successful = false;
           logger.warn(`Flush failed: ${(error as Error).message}`);
         })
+        .finally(() => pending.delete(index))
     )
   );
   try {
     if ((await Promise.race([flushed, timedOut])) === 'timeout') {
-      logger.warn(`Flushing did not finish in ${timeoutMs}ms; the run answers without waiting`);
+      logger.warn(
+        `Flushing did not finish in ${timeoutMs}ms; pending: ${[...pending.values()].join(
+          ', '
+        )}; the run answers without waiting`
+      );
       return false;
     }
     return successful;

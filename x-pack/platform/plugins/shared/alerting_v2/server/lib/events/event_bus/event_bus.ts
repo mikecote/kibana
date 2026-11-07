@@ -66,7 +66,7 @@ const RESERVED_EVENT_TYPES: ReadonlySet<string> = new Set([
  *    back to the bus. See
  *    https://nodejs.org/api/events.html#class-eventseventemitterasyncresource-extends-eventemitter
  *    and https://nodejs.org/api/events.html#error-events.
- *  - The bus owns no per-event state. Replays/persistence are out of scope.
+ *  - Pending handlers can be drained before task cleanup. Replays/persistence are out of scope.
  *  - The default `EventEmitter` listener-limit warning (10 per event) is
  *    kept intentionally. It is a useful memory-leak signal.
  *
@@ -88,6 +88,7 @@ export class AsyncDomainEventBus<TEvent extends DomainEvent = DomainEvent, TCont
   });
 
   private readonly logger: LoggerServiceContract;
+  private readonly pending = new Set<Promise<void>>();
 
   constructor(@inject(LoggerServiceToken) loggerService: LoggerServiceContract) {
     this.logger = loggerService.forSubsystem('events');
@@ -139,15 +140,21 @@ export class AsyncDomainEventBus<TEvent extends DomainEvent = DomainEvent, TCont
     handler: (...args: EventBusHandlerArgs<E, TContext>) => Promise<void> | void
   ): Subscription {
     const wrapped: AnyHandler = (event, ...extra) => {
-      setImmediate(async () => {
-        try {
-          await (handler as (...args: unknown[]) => Promise<void> | void)(event, ...extra);
-        } catch (err) {
-          this.#logError(err, ALERTING_LOG_CODES.EVENTS_BUS_HANDLER_FAILED, {
-            event_type: event.type,
-          });
-        }
+      const completed = new Promise<void>((resolve) => {
+        setImmediate(async () => {
+          try {
+            await (handler as (...args: unknown[]) => Promise<void> | void)(event, ...extra);
+          } catch (err) {
+            this.#logError(err, ALERTING_LOG_CODES.EVENTS_BUS_HANDLER_FAILED, {
+              event_type: event.type,
+            });
+          } finally {
+            resolve();
+          }
+        });
       });
+      this.pending.add(completed);
+      void completed.then(() => this.pending.delete(completed));
     };
 
     this.#emitter.on(type, wrapped);
@@ -161,6 +168,16 @@ export class AsyncDomainEventBus<TEvent extends DomainEvent = DomainEvent, TCont
         this.#emitter.off(type, wrapped);
       },
     };
+  }
+
+  public async flush(): Promise<void> {
+    while (this.pending.size > 0) await Promise.all(this.pending);
+  }
+
+  public async stop(): Promise<void> {
+    await this.flush();
+    this.#emitter.removeAllListeners();
+    this.#emitter.emitDestroy();
   }
 
   #logError(error: unknown, code: EventBusErrorCode, labels?: AlertingLabels): void {

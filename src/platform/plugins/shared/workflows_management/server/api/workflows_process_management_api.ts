@@ -50,7 +50,7 @@ export const createWorkflowsProcessServices = ({
   );
   const api = new WorkflowsManagementApi(runtime, isWorkflowsAvailable, logger);
   api.setAuditLog(new WorkflowManagementAuditLog({ service: runtime }));
-  onRunEnd(async () => {
+  onRunEnd(async function flushWorkflowsManagement() {
     try {
       await api.flush();
     } finally {

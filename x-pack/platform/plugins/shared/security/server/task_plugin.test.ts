@@ -10,6 +10,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { coreMock } from '@kbn/core/server/mocks';
+import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/server/mocks';
 import { setTaskProcessContext } from '@kbn/task-manager-plugin/server/task_process/context';
@@ -190,6 +191,21 @@ describe('the security task plugin', () => {
       expect(delegate.authc.apiKeys.uiam).toBeNull();
       expect(delegate.audit.withoutRequest.enabled).toBe(false);
       expect(typeof delegate.fakeRequestEnricher).toBe('function');
+      expect(setup.userProfile.registerUserProfileDelegate).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes enriched task identity through the plugin authentication contract', async () => {
+      const { setup, contract } = await boot(buildSettings());
+      const delegate = setup.security.registerSecurityDelegate.mock.calls[0][0];
+      const request = kibanaRequestFactory({
+        headers: { authorization: 'ApiKey task-credential' },
+      });
+      expect(contract.authc.getCurrentUser(request)).toBeNull();
+      delegate.fakeRequestEnricher(request, { username: 'task-user', profileId: 'task-profile' });
+      const user = contract.authc.getCurrentUser(request);
+      expect(user?.username).toBe('task-user');
+      expect(user?.profile_uid).toBe('task-profile');
+      expect(user?.authentication_type).toBeUndefined();
     });
 
     it('serves API keys through the delegate once Core has started', async () => {
@@ -203,7 +219,13 @@ describe('the security task plugin', () => {
     it('returns the authc, authz and audit contracts for modules', async () => {
       const { contract } = await boot(buildSettings());
 
-      expect(Object.keys(contract).sort()).toEqual(['audit', 'authc', 'authz', 'serviceAccounts']);
+      expect(Object.keys(contract).sort()).toEqual([
+        'audit',
+        'authc',
+        'authz',
+        'serviceAccounts',
+        'userProfile',
+      ]);
       expect(contract.serviceAccounts).toBeNull();
       expect(contract.authc.apiKeys.uiam).toBeNull();
       expect(contract.authz.checkPrivilegesWithRequest).toEqual(expect.any(Function));

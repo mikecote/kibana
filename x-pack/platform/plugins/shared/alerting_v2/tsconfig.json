@@ -32,6 +32,8 @@
     "@kbn/core-di",
     "@kbn/core-di-browser",
     "@kbn/core-di-server",
+    "@kbn/core-di-server-internal",
+    "@kbn/repo-info",
     "@kbn/esql",
     "@kbn/esql-utils",
     "@kbn/response-ops-retry-service",

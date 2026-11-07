@@ -25,6 +25,7 @@ export interface InitializeResourcesOptions {
   changeHistoryClient: ChangeHistoryClient;
   retention: RetentionConfig;
   userProfileService: UserProfileServiceStart;
+  install?: boolean;
 }
 
 export function initializeResources({
@@ -34,13 +35,14 @@ export function initializeResources({
   changeHistoryClient,
   retention,
   userProfileService,
+  install,
 }: InitializeResourcesOptions): void {
-  registerDatastreams({ resourceManager, esClient, logger: coreLogger, retention });
-  registerEsqlViews({ resourceManager, esClient, logger: coreLogger });
+  registerDatastreams({ resourceManager, esClient, logger: coreLogger, retention, install });
+  registerEsqlViews({ resourceManager, esClient, logger: coreLogger, install });
 
   resourceManager.registerResource(
     RULE_CHANGES_HISTORY_RESOURCE_KEY,
-    new RuleChangesHistoryInitializer(changeHistoryClient, esClient, userProfileService),
+    new RuleChangesHistoryInitializer(changeHistoryClient, esClient, userProfileService, install),
     { optional: true }
   );
 

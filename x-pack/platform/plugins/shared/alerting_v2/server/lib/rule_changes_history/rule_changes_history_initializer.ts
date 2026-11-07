@@ -23,10 +23,14 @@ export class RuleChangesHistoryInitializer implements IResourceInitializer {
   constructor(
     private readonly client: ChangeHistoryClient,
     private readonly esClient: ElasticsearchClient,
-    private readonly userProfileService: UserProfileServiceStart
+    private readonly userProfileService: UserProfileServiceStart,
+    private readonly install = true
   ) {}
 
   public async initialize(): Promise<void> {
-    await this.client.initialize(this.esClient, { userProfileService: this.userProfileService });
+    await this.client.initialize(this.esClient, {
+      userProfileService: this.userProfileService,
+      install: this.install,
+    });
   }
 }

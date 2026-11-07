@@ -103,6 +103,7 @@ export const runTaskProcess = async (
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      enrichFakeRequest: core.enrichFakeRequest,
       port: Number(process.env.PORT ?? 0),
       // Only a forked process is Kibana's own; its runs carry credentials, so it is loopback only.
       host: process.send ? '127.0.0.1' : process.env.HOST || undefined,

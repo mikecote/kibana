@@ -51,7 +51,7 @@ const getPluginRuntime = (host: TaskHost): WorkflowRuntime | undefined =>
 /** Resolves the plugin runtime or creates the services of one process execution. */
 const getRuntime = async (
   host: TaskHost
-): Promise<{ runtime: WorkflowRuntime; stop?: () => void }> => {
+): Promise<{ runtime: WorkflowRuntime; stop?: () => Promise<void> }> => {
   const runtime = getPluginRuntime(host);
   if (runtime) return { runtime };
   // Loaded here so that Kibana, which never gets here, does not load it.
@@ -115,7 +115,13 @@ export const defineWorkflowTaskType = (
     ...definition,
     cancelGracePeriodMs: 5000,
     // Reads and schedules the `workflow:*` tasks (and the `actions:*` tasks that run connectors).
-    taskManager: { schedulableTypes: [/^workflow:/, /^actions:/] },
+    taskManager: {
+      schedulableTypes: [
+        /^workflow:/,
+        /^actions:/,
+        ...declared.flatMap(({ schedulableTypes }) => schedulableTypes ?? []),
+      ],
+    },
     licensing: true,
     // Cases and the other steps count usage with the counters of their domain.
     usageCounters: true,

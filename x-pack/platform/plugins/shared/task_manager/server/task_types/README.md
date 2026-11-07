@@ -186,7 +186,7 @@ task type hands over its own service for the same capability.
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
-| `eventLog`                  | `eventLog`                    | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit                                                                    | `hostExtensions.eventLog`               |
+| `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                                    | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
 | `uiSettings`                | `uiSettings`                  | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core                                    |
 | `licensing`                 | `licensing`                   | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares                                         | the licensing plugin                    |
@@ -215,6 +215,9 @@ by a few seconds, so a slow endpoint cannot hold the run; a warning is logged on
   object (`licensing-feature-usage`, one per feature) that every node and process writes, and
   `/api/licensing/feature_usage` and `getLastUsages()` read it merged with the node's memory.
   `host.licensing.featureUsage.notifyUsage` writes through the same store.
+- **Connector execution logs.** The Actions client uses the native Event Log reader with the
+  execution request's saved-object authorization and space. The writer drains queued batches before
+  replying and remains open for later runs of a reused worker.
 - **Anything else with a queue.** `host.onRunEnd(flusher)` registers what has to finish before the
   process answers. Security telemetry builds its own sender from a snapshot of Kibana's telemetry
   settings (opt-in, endpoint, cluster and license) and flushes its queue there.
@@ -597,8 +600,9 @@ flags and event log providers it needs to the module. Rules to follow:
 - `context.registerRunCheck(check)` verifies required registrations and capabilities before a run writes.
   Templated values resolve through the handler at execution time, as in Kibana. A missing capability fails
   the task without changing executors.
-- A step that emits events without waiting must flush them before it returns, because the process exits
-  with the run.
+- A service that queues events registers a drain with `services.registerRunCompletion`. These drains
+  finish before execution-service cleanup and before telemetry and event-log flushing. Drains added by
+  other drains are awaited too; a drain failure is reported after all pending work settles.
 - A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
   counts usage reads `host.usageCounters.getUsageCounter(domain)`.
 
@@ -613,6 +617,11 @@ services and license checks as Kibana. The `spaces` provider uses the real space
 wrapper over stored space documents, with the captured feature registry, solution visibility and CPS
 routing. `nightshiftSources` uses the source catalog's shared client factory; its change emitter awaits
 subscribers before writes return.
+
+`alertingVTwo` uses the plugin's dependency-injection modules for its request-scoped clients. Resource
+initializers check deployed data streams, templates and pipelines; Kibana owns installing and upgrading
+them. Its event bus drains queued handlers, including nested events, before the run completes. Event
+subscribers and the response-format subscription are released for each execution.
 
 Evals exposes its executable registry as `evals.taskProviders`. A plugin that calls `registerTaskProvider`
 in Kibana also registers the same provider from its workflow contribution through that service. The
@@ -766,10 +775,7 @@ does not write it. An availability that holds a callback is sent as data (the re
 dispatch) and rebuilt by the registration as a handler that answers it, or is the process-side equivalent built by the
 same factory. Test it with `collectRegisteredIds`, which runs `registerAtStart` too.
 
-Not yet, with what each needs: alerting_v2 (its rules, action policy and episodes clients are built per request by an
-inversify container with about a dozen bindings: the task manager start, the user and API key services over security,
-the spaces service, the event publishers, the artifact type registry; the container has to be built in the process
-from the same module graph, and its skills use the workflows service), and the hard tier: security_solution,
+Not yet, with what each needs: security_solution,
 discoveries, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
 ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
 registry that has to be fed through the same mechanism), significant_events (its scoped clients over the knowledge

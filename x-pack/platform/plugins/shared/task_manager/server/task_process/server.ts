@@ -9,6 +9,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
+import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import {
   isDeclinedRunError,
   serializeTaskRunError,
@@ -17,7 +18,10 @@ import {
 import { createRunAsContext } from '../task_running/run_as_context';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
-import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
+import {
+  buildTaskFakeRequest,
+  buildChildRequestEnricher,
+} from '../task_running/fake_request_factory';
 import { runFlushers, runInRunContext } from './run_context';
 import type { RunContext, CancellableTask, TaskRunAsDefinition } from '../task';
 
@@ -87,6 +91,7 @@ export const startTaskProcessServer = ({
   flush,
   forwardRun,
   getTaskTypes,
+  enrichFakeRequest,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   port: number;
@@ -115,6 +120,7 @@ export const startTaskProcessServer = ({
     context: Pick<RunContext, 'signal' | 'setCustomTaskRunEventFields'>
   ) => CancellableTask;
   getTaskTypes?: () => string[];
+  enrichFakeRequest?: FakeRequestEnricher;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
@@ -151,6 +157,12 @@ export const startTaskProcessServer = ({
       uiamApiKeyExternal: body.uiamApiKeyExternal,
       userProfileId: body.userProfileId,
       userName: body.userName,
+      enrichFakeRequest,
+    });
+    const enrichRequest = buildChildRequestEnricher({
+      userProfileId: body.userProfileId,
+      userName: body.userName,
+      enrichFakeRequest,
     });
 
     let task: CancellableTask | undefined;
@@ -162,42 +174,17 @@ export const startTaskProcessServer = ({
       finished,
     });
     const flushers: Array<() => Promise<void>> = [];
-    let response: TaskProcessRunResponse | undefined;
     let flushed = true;
-    try {
-      const { value, error } = await runInRunContext(
-        async () => {
-          if (forwardRun) {
-            task = forwardRun(body, {
-              signal: abortController.signal,
-              setCustomTaskRunEventFields: (fields) => customFields.push(fields),
-            });
-            return task.run();
-          }
-          if (!definition) throw new Error(`Unregistered task type ${body.taskType}`);
-          if (body.runAs && !definition.runAs?.workloadTypes.includes(body.runAs.workloadType)) {
-            throwUnrecoverableError(
-              new Error(
-                `Task type ${body.taskType} does not support workload ${body.runAs.workloadType}`
-              )
-            );
-          }
-          task = definition.createTaskRunner({
-            taskInstance: reviveTaskInstance(body.taskInstance),
-            ...(body.runAs && definition.runAs
-              ? { runAs: createRunAsContext(definition.runAs, body.runAs) }
-              : { fakeRequest }),
-            signal: abortController.signal,
-            executionUuid: body.executionUuid,
-            setCustomTaskRunEventFields: (fields: Record<string, unknown>) =>
-              customFields.push(fields),
-          });
-          return task.run();
-        },
-        { featureFlags: body.featureFlags, flushers }
-      );
-      // What the run produced (analytics events, usage) leaves this process before it answers,
-      // whether the run returned or threw.
+    let cleanupSucceeded = true;
+    const cleanupTask = async (): Promise<void> => {
+      try {
+        await task?.cleanup?.();
+      } catch (cleanupError) {
+        cleanupSucceeded = false;
+        logger.warn(`Cleanup of ${body.taskType} failed: ${(cleanupError as Error).message}`);
+      }
+    };
+    const flushEffects = async (): Promise<void> => {
       try {
         const results = await Promise.all([runFlushers(flushers, logger), flush?.()]);
         flushed = results.every((result) => result !== false);
@@ -205,6 +192,44 @@ export const startTaskProcessServer = ({
         flushed = false;
         logger.warn(`Flushing after ${body.taskType} failed: ${(flushError as Error).message}`);
       }
+    };
+    try {
+      const { value, error } = await runInRunContext(
+        async () => {
+          try {
+            if (forwardRun) {
+              task = forwardRun(body, {
+                signal: abortController.signal,
+                setCustomTaskRunEventFields: (fields) => customFields.push(fields),
+              });
+              return await task.run();
+            }
+            if (!definition) throw new Error(`Unregistered task type ${body.taskType}`);
+            if (body.runAs && !definition.runAs?.workloadTypes.includes(body.runAs.workloadType)) {
+              throwUnrecoverableError(
+                new Error(
+                  `Task type ${body.taskType} does not support workload ${body.runAs.workloadType}`
+                )
+              );
+            }
+            task = definition.createTaskRunner({
+              taskInstance: reviveTaskInstance(body.taskInstance),
+              ...(body.runAs && definition.runAs
+                ? { runAs: createRunAsContext(definition.runAs, body.runAs) }
+                : { fakeRequest, enrichRequest }),
+              signal: abortController.signal,
+              executionUuid: body.executionUuid,
+              setCustomTaskRunEventFields: (fields: Record<string, unknown>) =>
+                customFields.push(fields),
+            });
+            return await task.run();
+          } finally {
+            await cleanupTask();
+            await flushEffects();
+          }
+        },
+        { featureFlags: body.featureFlags, flushers }
+      );
       if (error !== undefined) {
         if (isDeclinedRunError(error)) {
           throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
@@ -215,24 +240,17 @@ export const startTaskProcessServer = ({
           customTaskRunEventFields: customFields.at(-1),
         } as TaskProcessRunResponse;
       }
-      response = {
+      const response = {
         kind: 'result',
         result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
-        reusable: flushed && !abortController.signal.aborted,
+        reusable: cleanupSucceeded && flushed && !abortController.signal.aborted,
       } as TaskProcessRunResponse;
       return response;
     } finally {
       clearTimeout(deadlineTimer);
-      try {
-        await task?.cleanup?.();
-      } catch (error) {
-        if (response) response.reusable = false;
-        logger.warn(`Cleanup of ${body.taskType} failed: ${(error as Error).message}`);
-      } finally {
-        inFlight.delete(body.executionUuid);
-        finish();
-      }
+      inFlight.delete(body.executionUuid);
+      finish();
     }
   };
 

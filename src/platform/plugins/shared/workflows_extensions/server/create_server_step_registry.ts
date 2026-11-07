@@ -77,6 +77,7 @@ export interface WorkflowStepsContribution {
    * the plugins listed in `settings` and the feature flags with their fallbacks).
    */
   declares?: {
+    schedulableTypes?: RegExp[];
     savedObjectTypes?: SavedObjectsType[];
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
     settings?: string[];
@@ -106,6 +107,8 @@ export interface WorkflowStepsContribution {
  * Kibana from the start contracts of the actions and workflows plugins.
  */
 export interface WorkflowStepsContributionServices {
+  /** Waits for work queued by a step before task cleanup and effect flushing begin. */
+  registerRunCompletion: (complete: () => Promise<void>) => void;
   stepRegistry: WorkflowStepsRegistryView;
   registerService: (id: string, service: object) => void;
   /** Resolves one run's contributed service; providers must return the same public contract as Kibana. */

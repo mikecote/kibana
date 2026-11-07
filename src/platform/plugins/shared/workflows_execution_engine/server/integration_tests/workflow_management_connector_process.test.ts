@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { join } from 'node:path';
 import {
   startWorkflowProcessHarness,
   WORKFLOW_PROCESS_TEST_MODES,
@@ -25,7 +26,13 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         mode,
         reuse,
         includeRunTask: true,
+        additionalContributions: {
+          'workflow-steps': [join(__dirname, 'fixtures/event_log_contribution.ts')],
+        },
         workflows: {
+          'read-execution-logs': {
+            steps: [{ name: 'read', type: 'test.actions.execution_logs', with: {} }],
+          },
           [PARENT_ID]: {
             steps: [
               {
@@ -73,12 +80,21 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           Array.from({ length: run + 1 }, () => ({ status: 'completed', error: undefined }))
         );
       }
+      await harness.es.indices.refresh({ index: '.kibana-event-log-ds' });
+      await harness.run('read-execution-logs');
+      const [reader] = await harness.executionsOf('read-execution-logs');
+      expect({ status: reader.status, error: reader.error }).toEqual({
+        status: 'completed',
+        error: undefined,
+      });
+      const [readStep] = await harness.stepsOf(reader.id);
+      expect((readStep.output.output ?? readStep.output).total).toBeGreaterThanOrEqual(2);
       const childTask = await harness.waitForRunTask(CHILD_ID);
       await harness.runTask('workflow:run', childTask);
       const children = await harness.executionsOf(CHILD_ID);
       expect(children).toHaveLength(2);
       expect(children.some(({ status }) => status === 'completed')).toBe(true);
-      expect(harness.getWorkerStats().spawned).toBe(reuse ? 2 : 3);
+      expect(harness.getWorkerStats().spawned).toBe(reuse ? 2 : 4);
       expect(harness.kibanaRequests).toEqual([]);
     }, 120000);
   }

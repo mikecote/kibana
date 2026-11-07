@@ -21,15 +21,18 @@ const plugin: TaskPluginInitializer<
   TaskProcessTaskManagerSetup,
   Record<string, never>
 > = async () => ({
-  setup: () => ({
-    registerTaskDefinitions: (definitions: Record<string, TaskRegisterDefinition>) => {
-      const { definitions: registered } = getTaskProcessContext();
-      for (const [type, definition] of Object.entries(definitions)) {
-        if (registered.has(type)) throw new Error(`Task type ${type} is already registered`);
-        registered.set(type, definition);
-      }
-    },
-  }),
+  setup: (core) => {
+    getTaskProcessContext().enrichFakeRequest = core.security.acquireFakeRequestEnricher();
+    return {
+      registerTaskDefinitions: (definitions: Record<string, TaskRegisterDefinition>) => {
+        const { definitions: registered } = getTaskProcessContext();
+        for (const [type, definition] of Object.entries(definitions)) {
+          if (registered.has(type)) throw new Error(`Task type ${type} is already registered`);
+          registered.set(type, definition);
+        }
+      },
+    };
+  },
   start: () => ({}),
 });
 

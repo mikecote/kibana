@@ -102,7 +102,7 @@ export const createStandaloneRuleRunRuntime = ({
   /** The ids of the connector types and connector adapters this process registered. */
   getRegisteredConnectorTypeIds: () => string[];
   getRegisteredConnectorAdapterIds: () => string[];
-  stop: () => void;
+  stop: () => Promise<void>;
 } => {
   const settings = host.settings ?? {};
   const config = settings.alerting as AlertingConfig;
@@ -318,9 +318,9 @@ export const createStandaloneRuleRunRuntime = ({
     getRegisteredConnectorAdapterIds: () => connectorAdapterRegistry.getIds(),
     getUnsupportedActionTypes: (actionTypeIds) =>
       actionTypeIds.filter((id) => !hasActionType(id) && !connectorAdapterRegistry.has(id)),
-    stop: () => {
-      stop();
+    stop: async () => {
       licenseState.clean();
+      await stop();
     },
   };
 };

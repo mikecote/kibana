@@ -30,9 +30,6 @@ const IDS_FILE = join(__dirname, 'agent_builder_contribution_ids.json');
  * process. Move a plugin out of this list when it gets a contribution.
  */
 const NOT_YET_CONTRIBUTED: Record<string, string> = {
-  // Medium: one more service, built from explicit dependencies, or a registry of its own.
-  'x-pack/platform/plugins/shared/alerting_v2':
-    'the rules, action policy and episodes clients, which are built by its dependency injection container (the task manager start, the event publishers, the artifact registry) per request, and the workflows service of Kibana for its skills',
   // Hard: services that only exist in Kibana, or many registrations that read them.
   'x-pack/solutions/security/plugins/security_solution':
     'endpoint, detections and entity analytics services',

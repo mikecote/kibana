@@ -10,20 +10,15 @@ import { OnSetup, OnStart, PluginSetup, PluginStart } from '@kbn/core-di';
 import { CoreStart } from '@kbn/core-di-server';
 import { ALERTING_V2_ENABLED_SETTING_ID } from '@kbn/alerting-v2-constants';
 import type { Container, ContainerModuleLoadOptions } from 'inversify';
-import { createActionPolicyAttachmentType } from '../agent_builder/attachments/action_policy_attachment_type';
-import { createAlertAttachmentType } from '../agent_builder/attachments/alert_attachment_type';
-import { createRuleAttachmentType } from '../agent_builder/attachments/rule_attachment_type';
 import { resolveRequestScoped } from '../agent_builder/resolve_request_scoped';
 import { registerSkills } from '../agent_builder/skills/register_skills';
 import { createAlertingV2Availability } from '../agent_builder/skills/alerting_v2_availability';
-import { createActionPolicySmlType } from '../agent_builder/sml/action_policy_sml_type';
-import { createRuleSmlType } from '../agent_builder/sml/rule_sml_type';
+import {
+  createAlertingV2AttachmentTypes,
+  createAlertingV2SmlTypes,
+} from '../agent_builder/create_integrations';
 import { AttachmentTypeToken } from '../agent_builder/tokens';
-import { ActionPolicyClient } from '../lib/action_policy_client';
 import { WorkflowsManagementApiToken } from '../lib/dispatcher/steps/dispatch_step_tokens';
-import { EpisodesClient } from '../lib/episodes_client';
-import { PrivilegeChecker } from '../lib/services/privilege_checker/privilege_checker';
-import { RulesClient } from '../lib/rules_client';
 import {
   LoggerServiceToken,
   type LoggerServiceContract,
@@ -56,35 +51,23 @@ function getAgentBuilder(container: Container): AgentBuilderSetup | undefined {
  * since they run outside the HTTP route scope.
  */
 export function bindAgentBuilder({ bind }: ContainerModuleLoadOptions) {
-  bind(AttachmentTypeToken).toResolvedValue(
-    (loggerService: LoggerServiceContract, injection) =>
-      createRuleAttachmentType({
-        logger: loggerService.forSubsystem('agentBuilder'),
-        getRulesClient: (context) => resolveRequestScoped(injection, context.request, RulesClient),
-      }) as AttachmentTypeDefinition,
-    [LoggerServiceToken, CoreStart('injection')]
-  );
-  bind(AttachmentTypeToken).toResolvedValue(
-    (loggerService: LoggerServiceContract, injection) =>
-      createActionPolicyAttachmentType({
-        logger: loggerService.forSubsystem('agentBuilder'),
-        getActionPolicyClient: (context) =>
-          resolveRequestScoped(injection, context.request, ActionPolicyClient),
-      }) as AttachmentTypeDefinition,
-    [LoggerServiceToken, CoreStart('injection')]
-  );
-  bind(AttachmentTypeToken).toResolvedValue(
-    (loggerService: LoggerServiceContract, injection) =>
-      createAlertAttachmentType({
-        logger: loggerService.forSubsystem('agentBuilder'),
-        getEpisodesClient: (context) =>
-          resolveRequestScoped(injection, context.request, EpisodesClient),
-        getRulesClient: (context) => resolveRequestScoped(injection, context.request, RulesClient),
-        getPrivilegeChecker: (context) =>
-          resolveRequestScoped(injection, context.request, PrivilegeChecker),
-      }) as AttachmentTypeDefinition,
-    [LoggerServiceToken, CoreStart('injection')]
-  );
+  const attachmentTypesToken = Symbol('alertingVTwo.attachmentTypes');
+  bind<AttachmentTypeDefinition[]>(attachmentTypesToken)
+    .toResolvedValue(
+      (loggerService: LoggerServiceContract, injection) =>
+        createAlertingV2AttachmentTypes({
+          logger: loggerService.forSubsystem('agentBuilder'),
+          resolve: (request, token) => resolveRequestScoped(injection, request, token),
+        }),
+      [LoggerServiceToken, CoreStart('injection')]
+    )
+    .inSingletonScope();
+  for (const index of [0, 1, 2]) {
+    bind(AttachmentTypeToken).toResolvedValue(
+      (types: AttachmentTypeDefinition[]) => types[index],
+      [attachmentTypesToken]
+    );
+  }
 
   bind(OnSetup).toConstantValue((container) => {
     if (!getAgentBuilder(container)) {
@@ -110,20 +93,13 @@ export function bindAgentBuilder({ bind }: ContainerModuleLoadOptions) {
     // SML types are registered inline (not via a token registry like attachments):
     // registration happens at setup, but their clients must be resolved lazily at
     // crawl time (start phase), so deps cannot be eagerly injected at bind time.
-    agentBuilderSml.registerType(
-      createRuleSmlType({
-        getScopedRulesClient: (request) =>
-          resolveRequestScoped(container.get(CoreStart('injection')), request, RulesClient),
-        getIsAlertingV2Enabled,
-      })
-    );
-    agentBuilderSml.registerType(
-      createActionPolicySmlType({
-        getScopedActionPolicyClient: (request) =>
-          resolveRequestScoped(container.get(CoreStart('injection')), request, ActionPolicyClient),
-        getIsAlertingV2Enabled,
-      })
-    );
+    for (const definition of createAlertingV2SmlTypes({
+      resolve: (request, token) =>
+        resolveRequestScoped(container.get(CoreStart('injection')), request, token),
+      getIsAlertingV2Enabled,
+    })) {
+      agentBuilderSml.registerType(definition);
+    }
   });
 
   bind(OnStart).toConstantValue((container) => {

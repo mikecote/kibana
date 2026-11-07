@@ -31,7 +31,7 @@ import { getTaskProcessContext } from '@kbn/task-manager-plugin/server/task_proc
 import { reviveSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 
 import { AuditService } from './audit/audit_service';
-import { buildSecurityApi } from './build_delegate_apis';
+import { buildSecurityApi, buildUserProfileApi } from './build_delegate_apis';
 import type { ConfigType, UiamConfigType } from './config';
 import type { RunTimeSecurity } from './run_time_security';
 import { createRunTimeSecurity } from './run_time_security';
@@ -44,6 +44,8 @@ import {
 } from './service_accounts';
 import type { UiamTlsMaterial } from './uiam';
 import { readUiamTlsMaterial } from './uiam';
+import type { UserProfileServiceStartInternal } from './user_profile/user_profile_service';
+import { UserProfileService } from './user_profile/user_profile_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 import { SecurityLicenseService } from '../common/licensing/license_service';
 
@@ -108,6 +110,7 @@ export const getTaskProcessSettings = ({
 
 /** What the security task plugin returns from `start`, as `host.plugins.security`. */
 export type SecurityTaskPluginStart = Pick<RunTimeSecurity, 'authc' | 'authz'> & {
+  userProfile: UserProfileServiceStartInternal;
   audit: AuditServiceSetup;
   /** The service accounts of the plugin, when they are enabled and the process can serve them. */
   serviceAccounts: ServiceAccountsServiceStart | null;
@@ -154,13 +157,17 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
   let license: SecurityLicense | undefined;
   let auditSetup: AuditServiceSetup | undefined;
   let delegate: CoreSecurityDelegateContract | undefined;
-  // A process has no session: the user is what the run's fake request was enriched with, which the
-  // delegate reads the same way, so this must not go back through the delegate.
-  const getCurrentUser = (request: KibanaRequest) =>
+  // The delegate adds trusted task identity over this base authentication state without recursion.
+  const getUnenrichedUser = (request: KibanaRequest) =>
     (request as { auth?: { credentials?: AuthenticatedUser } }).auth?.credentials ?? null;
+  const getCurrentUser = (request: KibanaRequest): AuthenticatedUser | null => {
+    if (!delegate) throw new Error('The security task delegate has not initialized');
+    return delegate.authc.getCurrentUser(request);
+  };
   let runTime: RunTimeSecurity | undefined;
   let workloadTypes: CoreSecurityDelegateServiceAccounts | undefined;
   let serviceAccounts: ServiceAccountsServiceStart | null = null;
+  let userProfile: UserProfileServiceStartInternal | undefined;
   let canEncrypt = false;
   // Whether this process serves service accounts, which Core reports through the delegate.
   let serviceAccountsAvailable = false;
@@ -192,7 +199,10 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
       });
 
       delegate = buildSecurityApi({
-        getAuthc: () => getRunTime().authc,
+        getAuthc: () => ({
+          apiKeys: getRunTime().authc.apiKeys,
+          getCurrentUser: getUnenrichedUser,
+        }),
         getSession: () => ({ getSID: async () => undefined }),
         getServiceAccounts: () => serviceAccounts,
         audit,
@@ -207,6 +217,14 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
         logger,
       });
       ({ serviceAccounts: workloadTypes } = core.security.registerSecurityDelegate(delegate));
+      core.userProfile.registerUserProfileDelegate(
+        buildUserProfileApi({
+          getUserProfile: () => {
+            if (!userProfile) throw new Error('The task user profile service has not started');
+            return userProfile;
+          },
+        })
+      );
 
       // The two hidden types service accounts keep their bindings and credentials in, registered by
       // the plugin's own functions as in Kibana. Without the encrypted saved objects plugin (a module
@@ -260,6 +278,13 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
         getCurrentUser,
       });
       const { authc, authz, audit } = runTime;
+      const profiles = new UserProfileService(logger.get('user-profile'));
+      profiles.setup({ authz, license: license! });
+      const profileClient = profiles.start({
+        clusterClient: core.elasticsearch.client,
+        getCurrentUser,
+      });
+      userProfile = profileClient;
 
       if (settings.serviceAccounts.enabled && deps.encryptedSavedObjects && workloadTypes) {
         serviceAccounts = new ServiceAccountsService(logger.get('service-accounts')).start({
@@ -276,7 +301,7 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
           canEncrypt,
           getCurrentUser,
           // Only a request that binds a workload reads the profile, which is Kibana's to serve.
-          getCurrentUserProfileId: async () => null,
+          getCurrentUserProfileId: (request) => profileClient.getCurrentProfileId({ request }),
           getSpaceId: (request) => (request as { spaceId?: string }).spaceId ?? 'default',
           workloadTypes,
         });
@@ -285,7 +310,7 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
           'Service accounts are not available: the process has no encrypted saved objects'
         );
       }
-      return { authc, authz, audit, serviceAccounts };
+      return { authc, authz, audit, serviceAccounts, userProfile };
     },
   };
 };

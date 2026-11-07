@@ -10,7 +10,8 @@
     "server": true,
     "configPath": ["xpack", "alerting_v2"],
     "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"],
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
     },
     "requiredPlugins": [
       "taskManager",

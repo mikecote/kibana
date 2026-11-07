@@ -82,7 +82,7 @@ const noServiceAccounts = (): SecurityServiceStart['serviceAccounts'] =>
  */
 export const createWorkflowRuntimeFromHost = async (
   taskHost: TaskHost
-): Promise<{ runtime: WorkflowRuntime; stop: () => void }> => {
+): Promise<{ runtime: WorkflowRuntime; stop: () => Promise<void> }> => {
   const host: TaskHost = {
     ...taskHost,
     // These services belong to one workflow execution; Core's hooks survive worker reuse.
@@ -110,7 +110,15 @@ export const createWorkflowRuntimeFromHost = async (
   }
   if (!eventLog) throw new Error('The workflows task module did not get the event log');
 
-  const stops: Array<() => void> = [];
+  const stops: Array<() => void | Promise<void>> = [];
+  const stopServices = async () => {
+    const results = await Promise.allSettled(stops.map(async (cleanup) => cleanup()));
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length)
+      throw new AggregateError(errors, 'Failed to stop workflow execution services');
+  };
   const esClient = createRetryingEsClient(host.elasticsearch.asInternalUser, logger);
 
   // Data streams: clients over the shared definitions, nothing installed.
@@ -202,6 +210,7 @@ export const createWorkflowRuntimeFromHost = async (
     actions: actionsPlugin,
   });
   const services: WorkflowStepsContributionServices = {
+    registerRunCompletion: runServices.registerRunCompletion,
     stepRegistry: workflowsExtensions,
     registerService: runServices.registerService,
     getService: runServices.getService,
@@ -230,7 +239,7 @@ export const createWorkflowRuntimeFromHost = async (
     );
   } catch (error) {
     engineReady.reject(error);
-    stops.forEach((cleanup) => cleanup());
+    await stopServices();
     throw error;
   }
 
@@ -337,14 +346,20 @@ export const createWorkflowRuntimeFromHost = async (
     });
   } catch (error) {
     engineReady.reject(error);
-    stops.forEach((cleanup) => cleanup());
+    await stopServices();
     throw error;
   }
   engineReady.resolve(runtime.contract);
 
   return {
     runtime,
-    stop: () => stops.forEach((fn) => fn()),
+    stop: async () => {
+      try {
+        await runServices.complete();
+      } finally {
+        await stopServices();
+      }
+    },
   };
 };
 

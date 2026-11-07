@@ -8,7 +8,7 @@
 import type { ContainerModuleLoadOptions } from 'inversify';
 import { OnSetup, PluginSetup, PluginStart, Start } from '@kbn/core-di';
 import type { ServiceToken } from '@kbn/core-di';
-import { CoreSetup, CoreStart } from '@kbn/core-di-server';
+import { CoreSetup, CoreStart, PluginInitializer } from '@kbn/core-di-server';
 import type { KibanaRequest } from '@kbn/core/server';
 import { resolveRequestScoped } from '../agent_builder/resolve_request_scoped';
 import { PrivilegeChecker } from '../lib/services/privilege_checker/privilege_checker';
@@ -30,6 +30,8 @@ import {
 } from '../lib/dispatcher/steps/constants';
 import { registerAlertingAdvancedSettings } from '../settings/advanced_settings';
 import { registerTelemetryEvents } from '../lib/telemetry/register_rule_ebt_events';
+import type { PluginConfig } from '../config';
+import { ALERTING_V2_TASK_PROCESS_SETTINGS_ID } from '../task_types/task_process_settings';
 
 /**
  * Core platform setup-phase registrations (feature privileges, saved objects,
@@ -77,6 +79,21 @@ export function bindOnSetup({ bind }: ContainerModuleLoadOptions) {
       PluginSetup<AlertingServerSetupDependencies['workflowsExtensions']>('workflowsExtensions')
     );
     registerAlertingV2ManagedWorkflowOwner(workflowsExtensionsSetup);
+    workflowsExtensionsSetup.registerTaskProcessSettings(
+      ALERTING_V2_TASK_PROCESS_SETTINGS_ID,
+      () => {
+        const cloudToken =
+          PluginSetup<NonNullable<AlertingServerSetupDependencies['cloud']>>('cloud');
+        return {
+          config: container.get(PluginInitializer('config')).get<PluginConfig>(),
+          projectType: container.isBound(cloudToken)
+            ? container.get(cloudToken).serverless.projectType
+            : undefined,
+          agentBuilderEnabled: container.isBound(PluginSetup('agentBuilder')),
+          smlEnabled: container.isBound(PluginSetup('agentBuilderSml')),
+        };
+      }
+    );
 
     const getAlertEventsClient = (request: KibanaRequest) =>
       container

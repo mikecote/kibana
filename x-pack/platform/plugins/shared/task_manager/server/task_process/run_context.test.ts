@@ -94,6 +94,15 @@ describe('task process run context', () => {
       expect(logger.warn).toHaveBeenCalledWith('Flush failed: endpoint down');
     });
 
+    it('identifies only the callbacks still pending at the deadline', async () => {
+      const blocked = () => new Promise<void>(() => {});
+      const completed = async () => {};
+
+      await expect(runFlushers([blocked, completed], logger, 20)).resolves.toBe(false);
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('pending: blocked;'));
+    });
+
     it('gives up after the timeout, with a warning', async () => {
       const startedAt = Date.now();
 

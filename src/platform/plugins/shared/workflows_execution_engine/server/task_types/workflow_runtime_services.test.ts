@@ -29,6 +29,43 @@ const contribution = (
 });
 
 describe('workflow runtime services', () => {
+  it('waits for asynchronous effects and any completion work they register', async () => {
+    const services = new WorkflowRuntimeServices([], () => context);
+    const pending = Promise.withResolvers<void>();
+    const done = jest.fn();
+    services.registerRunCompletion(async () => {
+      await pending.promise;
+      services.registerRunCompletion(async () => {
+        done();
+      });
+    });
+    const completed = services.complete();
+    expect(done).not.toHaveBeenCalled();
+    pending.resolve();
+    await completed;
+    expect(done).toHaveBeenCalledTimes(1);
+    await services.complete();
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for other effects before reporting a completion failure', async () => {
+    const services = new WorkflowRuntimeServices([], () => context);
+    const pending = Promise.withResolvers<void>();
+    const done = jest.fn();
+    services.registerRunCompletion(async () => {
+      throw new Error('failed effect');
+    });
+    services.registerRunCompletion(async () => {
+      await pending.promise;
+      done();
+    });
+    const completed = services.complete();
+    const asserted = expect(completed).rejects.toThrow('Workflow service completion failed');
+    expect(done).not.toHaveBeenCalled();
+    pending.resolve();
+    await asserted;
+    expect(done).toHaveBeenCalledTimes(1);
+  });
   it('creates a service lazily once per execution and passes the current context', () => {
     const provide = jest.fn(() => ({ value: 1 }));
     const first = new WorkflowRuntimeServices([contribution({ test: provide })], () => context);

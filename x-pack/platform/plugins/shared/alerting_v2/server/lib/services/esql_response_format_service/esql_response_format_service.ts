@@ -6,6 +6,7 @@
  */
 
 import { inject, injectable } from 'inversify';
+import type { Subscription } from 'rxjs';
 import type { FeatureFlagsStart } from '@kbn/core/server';
 import { CoreStart } from '@kbn/core-di-server';
 import { ESQL_RESPONSE_FORMAT_FEATURE_FLAG } from '../../../../common/feature_flags';
@@ -41,14 +42,13 @@ export interface EsqlResponseFormatServiceContract {
 @injectable()
 export class EsqlResponseFormatService implements EsqlResponseFormatServiceContract {
   private format: EsqlResponseFormat = DEFAULT_ESQL_RESPONSE_FORMAT;
+  private readonly subscription: Subscription;
 
   constructor(
     @inject(CoreStart('featureFlags')) featureFlags: FeatureFlagsStart,
     @inject(LoggerServiceToken) private readonly logger: LoggerServiceContract
   ) {
-    // Core exposes no plugin-stop hook to the DI container, so the subscription
-    // intentionally lives for the lifetime of the process.
-    featureFlags
+    this.subscription = featureFlags
       .getStringValue$(ESQL_RESPONSE_FORMAT_FEATURE_FLAG, DEFAULT_ESQL_RESPONSE_FORMAT.name)
       .subscribe((name) => {
         this.format = this.resolveFormat(name);
@@ -57,6 +57,10 @@ export class EsqlResponseFormatService implements EsqlResponseFormatServiceContr
 
   public get(): EsqlResponseFormat {
     return this.format;
+  }
+
+  public stop(): void {
+    this.subscription.unsubscribe();
   }
 
   private resolveFormat(name: string): EsqlResponseFormat {

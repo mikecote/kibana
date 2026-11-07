@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import type { TaskRegisterDefinition } from '../task_type_dictionary';
 import type { TaskHost, TaskTypeModule } from '../task_type_module';
 import type { TaskProcessInit } from './wire';
@@ -21,6 +22,7 @@ export interface TaskProcessContext {
   contributions: Record<string, unknown[]>;
   /** The task definitions plugins registered through Task Manager's contract. */
   definitions: Map<string, TaskRegisterDefinition>;
+  enrichFakeRequest?: FakeRequestEnricher;
   /**
    * What plugins ask the process to finish before it answers a run, such as shipping the events the
    * run reported. Added by plugins at setup, run by `flushTaskProcess`.

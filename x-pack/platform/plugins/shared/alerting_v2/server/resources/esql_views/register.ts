@@ -17,15 +17,17 @@ export interface RegisterEsqlViewsOptions {
   resourceManager: ResourceManagerContract;
   esClient: ElasticsearchClient;
   logger: Logger;
+  install?: boolean;
 }
 
 export function registerEsqlViews({
   resourceManager,
   esClient,
   logger,
+  install,
 }: RegisterEsqlViewsOptions): void {
   for (const viewDefinition of getEsqlViewDefinitions()) {
-    const initializer = new ESQLViewInitializer(logger, esClient, viewDefinition);
+    const initializer = new ESQLViewInitializer(logger, esClient, viewDefinition, install);
 
     resourceManager.registerResource(viewDefinition.key, initializer, { optional: true });
   }

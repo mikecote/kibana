@@ -10,6 +10,7 @@ import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
 import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { registerAlertingV2WorkflowSteps } from '../lib/workflow_extensions/register_alerting_v2_workflow_steps';
 import { contribution } from './workflow_steps_contribution';
+import { ALERTING_V2_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 
 /** The ids Kibana registers: what `bind_on_setup` registers through the same function. */
 const registeredByKibana = () => {
@@ -41,7 +42,8 @@ describe('alerting_v2 workflow-steps contribution', () => {
       logger: loggerMock.create(),
       isServerless: false,
       kibanaVersion: '1.0.0',
-      settings: {},
+      settings: { [ALERTING_V2_TASK_PROCESS_SETTINGS_ID]: {} },
+      services: { getService: jest.fn() } as never,
     });
     await registry.isReady();
 

@@ -19,6 +19,7 @@ export interface RegisterDatastreamsOptions {
   esClient: ElasticsearchClient;
   logger: Logger;
   retention: RetentionConfig;
+  install?: boolean;
 }
 
 export function registerDatastreams({
@@ -26,9 +27,10 @@ export function registerDatastreams({
   esClient,
   logger,
   retention,
+  install,
 }: RegisterDatastreamsOptions): void {
   for (const resourceDefinition of getDataStreamResourceDefinitions(retention)) {
-    const initializer = new DatastreamInitializer(logger, esClient, resourceDefinition);
+    const initializer = new DatastreamInitializer(logger, esClient, resourceDefinition, install);
 
     resourceManager.registerResource(resourceDefinition.key, initializer);
   }

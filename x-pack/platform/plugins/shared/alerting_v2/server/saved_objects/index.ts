@@ -6,8 +6,11 @@
  */
 
 import { ALERTING_CASES_SAVED_OBJECT_INDEX } from '@kbn/core-saved-objects-server';
-import type { SavedObject, SavedObjectsServiceSetup } from '@kbn/core/server';
-import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
+import type { SavedObject, SavedObjectsServiceSetup, SavedObjectsType } from '@kbn/core/server';
+import type {
+  EncryptedSavedObjectTypeRegistration,
+  EncryptedSavedObjectsPluginSetup,
+} from '@kbn/encrypted-saved-objects-plugin/server';
 import {
   actionPolicyModelVersions,
   apiKeyPendingInvalidationModelVersions,
@@ -75,6 +78,60 @@ const registerType = ({
   }
 };
 
+export const getAlertingV2SavedObjectTypes = (): [
+  SavedObjectsType,
+  SavedObjectsType,
+  SavedObjectsType
+] => [
+  {
+    name: RULE_SAVED_OBJECT_TYPE,
+    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+    hidden: true,
+    namespaceType: 'multiple-isolated',
+    mappings: ruleMappings,
+    management: {
+      importableAndExportable: false,
+      getTitle(esqlRuleSavedObject: SavedObject<RuleSavedObjectAttributes>) {
+        return `Rule: [${esqlRuleSavedObject.attributes.metadata.name}]`;
+      },
+    },
+    modelVersions: ruleModelVersions,
+  },
+  {
+    name: ACTION_POLICY_SAVED_OBJECT_TYPE,
+    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+    hidden: true,
+    namespaceType: 'multiple-isolated',
+    mappings: actionPolicyMappings,
+    management: {
+      importableAndExportable: false,
+      getTitle(so: SavedObject<ActionPolicySavedObjectAttributes>) {
+        return `Action Policy: [${so.attributes.name}]`;
+      },
+    },
+    modelVersions: actionPolicyModelVersions,
+  },
+  {
+    name: API_KEY_PENDING_INVALIDATION_TYPE,
+    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+    hidden: true,
+    namespaceType: 'agnostic',
+    mappings: apiKeyPendingInvalidationMappings,
+    modelVersions: apiKeyPendingInvalidationModelVersions,
+  },
+];
+
+export const getAlertingV2EncryptedSavedObjectTypes = (): [
+  EncryptedSavedObjectTypeRegistration
+] => [
+  {
+    type: ACTION_POLICY_SAVED_OBJECT_TYPE,
+    enforceRandomId: false,
+    attributesToEncrypt: new Set(ActionPolicyAttributesToEncrypt),
+    attributesToIncludeInAAD: new Set(ActionPolicyAttributesIncludedInAAD),
+  },
+];
+
 export function registerSavedObjects({
   savedObjects,
   encryptedSavedObjects,
@@ -84,74 +141,27 @@ export function registerSavedObjects({
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
   logger: LoggerServiceContract;
 }) {
+  const [rule, actionPolicy, pendingInvalidation] = getAlertingV2SavedObjectTypes();
+  const [encryptedActionPolicy] = getAlertingV2EncryptedSavedObjectTypes();
   registerType({
-    resource: RULE_SAVED_OBJECT_TYPE,
+    resource: rule.name,
     logger,
-    register: () => {
-      savedObjects.registerType({
-        name: RULE_SAVED_OBJECT_TYPE,
-        indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-        hidden: true,
-        namespaceType: 'multiple-isolated',
-        mappings: ruleMappings,
-        management: {
-          importableAndExportable: false,
-          getTitle(esqlRuleSavedObject: SavedObject<RuleSavedObjectAttributes>) {
-            return `Rule: [${esqlRuleSavedObject.attributes.metadata.name}]`;
-          },
-        },
-        modelVersions: ruleModelVersions,
-      });
-    },
+    register: () => savedObjects.registerType(rule),
   });
-
   registerType({
-    resource: ACTION_POLICY_SAVED_OBJECT_TYPE,
+    resource: actionPolicy.name,
     logger,
-    register: () => {
-      savedObjects.registerType({
-        name: ACTION_POLICY_SAVED_OBJECT_TYPE,
-        indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-        hidden: true,
-        namespaceType: 'multiple-isolated',
-        mappings: actionPolicyMappings,
-        management: {
-          importableAndExportable: false,
-          getTitle(so: SavedObject<ActionPolicySavedObjectAttributes>) {
-            return `Action Policy: [${so.attributes.name}]`;
-          },
-        },
-        modelVersions: actionPolicyModelVersions,
-      });
-    },
+    register: () => savedObjects.registerType(actionPolicy),
   });
-
   registerType({
-    resource: API_KEY_PENDING_INVALIDATION_TYPE,
+    resource: pendingInvalidation.name,
     logger,
-    register: () => {
-      savedObjects.registerType({
-        name: API_KEY_PENDING_INVALIDATION_TYPE,
-        indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-        hidden: true,
-        namespaceType: 'agnostic',
-        mappings: apiKeyPendingInvalidationMappings,
-        modelVersions: apiKeyPendingInvalidationModelVersions,
-      });
-    },
+    register: () => savedObjects.registerType(pendingInvalidation),
   });
-
   registerType({
-    resource: `${ACTION_POLICY_SAVED_OBJECT_TYPE}.encrypted`,
+    resource: `${encryptedActionPolicy.type}.encrypted`,
     logger,
-    register: () => {
-      encryptedSavedObjects.registerType({
-        type: ACTION_POLICY_SAVED_OBJECT_TYPE,
-        enforceRandomId: false,
-        attributesToEncrypt: new Set(ActionPolicyAttributesToEncrypt),
-        attributesToIncludeInAAD: new Set(ActionPolicyAttributesIncludedInAAD),
-      });
-    },
+    register: () => encryptedSavedObjects.registerType(encryptedActionPolicy),
   });
 }
 

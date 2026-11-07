@@ -109,25 +109,19 @@ export const contribution: WorkflowStepsContribution = {
     );
 
     // The conversation triggers: a run emits them with the engine's runtime, and finishes before it answers.
-    const pending = new Set<Promise<unknown>>();
-    registerConversationWorkflowEventBridge(
+    const completeConversationEvents = registerConversationWorkflowEventBridge(
       processServices.conversationEventBus,
       {
         getClient: async (request: never) => ({
           emitEvent: (triggerId: string, payload: Record<string, unknown>) => {
-            const emitted = services.emitEvent({ triggerId, payload, request });
-            pending.add(emitted);
-            void emitted.finally(() => pending.delete(emitted)).catch(() => {});
-            return emitted;
+            return services.emitEvent({ triggerId, payload, request });
           },
         }),
       } as never,
       context.logger,
       processServices.conversationUpdatedOptIns
     );
-    host.onRunEnd?.(async () => {
-      await Promise.allSettled([...pending]);
-    });
+    services.registerRunCompletion(completeConversationEvents);
 
     let gap: string | undefined | null = null;
     const getGap = () => {

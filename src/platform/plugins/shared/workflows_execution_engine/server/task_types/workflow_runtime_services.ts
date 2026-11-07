@@ -19,6 +19,7 @@ export class WorkflowRuntimeServices {
   >();
   private readonly instances = new Map<string, object>();
   private readonly creating = new Set<string>();
+  private readonly completions: Array<() => Promise<void>> = [];
 
   constructor(
     contributions: readonly WorkflowStepsContribution[],
@@ -42,6 +43,27 @@ export class WorkflowRuntimeServices {
     }
     this.instances.set(id, instance);
   };
+
+  public readonly registerRunCompletion = (complete: () => Promise<void>): void => {
+    this.completions.push(complete);
+  };
+
+  public async complete(): Promise<void> {
+    const errors: Error[] = [];
+    while (this.completions.length > 0) {
+      const results = await Promise.allSettled(
+        this.completions.splice(0).map((complete) => Promise.resolve().then(complete))
+      );
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          errors.push(
+            result.reason instanceof Error ? result.reason : new Error(String(result.reason))
+          );
+        }
+      }
+    }
+    if (errors.length > 0) throw new AggregateError(errors, 'Workflow service completion failed');
+  }
 
   public readonly getService = <T extends object>(id: string): T => {
     const existing = this.instances.get(id);

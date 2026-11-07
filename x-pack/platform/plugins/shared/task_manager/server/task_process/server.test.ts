@@ -24,6 +24,7 @@ import { startTaskProcessWorker } from './worker';
 import type { TaskProcessDispatchSnapshot } from './wire';
 import { createHostFeatureFlags, registerRunFlusher } from './run_context';
 import { firstValueFrom } from 'rxjs';
+import type { FakeRequestEnricher } from '@kbn/core-security-server';
 
 const TYPE = 'test:type';
 const TOKEN = 'secret';
@@ -36,9 +37,11 @@ describe('task process server', () => {
   const order: string[] = [];
   let createTask: (context: RunContext) => CancellableTask;
   let runAsDefinition: TaskRunAsDefinition | undefined;
+  let enrichFakeRequest: jest.MockedFunction<FakeRequestEnricher>;
 
   beforeEach(async () => {
     runAsDefinition = undefined;
+    enrichFakeRequest = jest.fn();
     cleanup.mockReset();
     order.length = 0;
     flush.mockReset().mockImplementation(async () => {
@@ -68,6 +71,7 @@ describe('task process server', () => {
       kibanaVersion: '9.9.9',
       authToken: TOKEN,
       flush,
+      enrichFakeRequest,
     });
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
     url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -109,8 +113,76 @@ describe('task process server', () => {
     expect(((await response.json()) as { taskTypes: string[] }).taskTypes).toEqual([TYPE]);
   });
 
+  it('enriches the primary and child requests with this execution identity', async () => {
+    createTask = ({ fakeRequest, enrichRequest }) => ({
+      run: async () => {
+        expect(fakeRequest?.isFakeRequest).toBe(true);
+        expect(enrichRequest).toBeDefined();
+        const child = buildTaskFakeRequest({ apiKey: 'child-test-key' });
+        if (!child || !enrichRequest) throw new Error('Missing child request enrichment');
+        enrichRequest(child);
+        return { state: {} };
+      },
+    });
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'enriched-task',
+        apiKey: 'primary-test-key',
+        userName: 'originating-user',
+        userProfileId: 'originating-profile',
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(enrichFakeRequest).toHaveBeenCalledTimes(2);
+    expect(enrichFakeRequest).toHaveBeenNthCalledWith(1, expect.anything(), {
+      username: 'originating-user',
+      profileId: 'originating-profile',
+    });
+    expect(enrichFakeRequest).toHaveBeenNthCalledWith(2, expect.anything(), {
+      username: 'originating-user',
+      profileId: 'originating-profile',
+    });
+  });
+
   it('runs a task and returns its result, then cleans it up', async () => {
     await expect(runner().run()).resolves.toEqual({ state: { ran: true } });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes runner cleanup in the execution context before flushing effects', async () => {
+    const pending = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const flags = createHostFeatureFlags();
+    cleanup.mockImplementation(async () => {
+      order.push('cleanup');
+      expect(await firstValueFrom(flags.getBooleanValue$('test.flag', false))).toBe(true);
+      registerRunFlusher(async () => {
+        order.push('queued effect');
+      });
+      entered.resolve();
+      await pending.promise;
+    });
+    const running = undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'complete-before-flush',
+        featureFlags: { 'test.flag': true },
+      }),
+    });
+    await entered.promise;
+    expect(order).toEqual(['run', 'cleanup']);
+    expect(flush).not.toHaveBeenCalled();
+    pending.resolve();
+    expect((await running).status).toBe(200);
+    expect(order.slice(0, 2)).toEqual(['run', 'cleanup']);
+    expect(order.slice(2).sort()).toEqual(['flush', 'queued effect']);
     expect(cleanup).toHaveBeenCalledTimes(1);
   });
 

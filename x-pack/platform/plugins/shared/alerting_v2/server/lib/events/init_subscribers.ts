@@ -19,10 +19,14 @@ import { RuleTelemetrySubscriber } from './rule_telemetry_subscriber/rule_teleme
  * never run against partially-initialised collaborators.
  *
  */
-export function initSubscribers(container: Container): void {
-  container.get(AlertActionWorkflowSubscriber).start();
-  container.get(RuleWorkflowSubscriber).start();
-  container.get(RuleChangesHistorySubscriber).start();
-  container.get(RuleExecutorWorkflowSubscriber).start();
-  container.get(RuleTelemetrySubscriber).start();
+export function initSubscribers(container: Container): () => void {
+  const subscribers = [
+    container.get(AlertActionWorkflowSubscriber),
+    container.get(RuleWorkflowSubscriber),
+    container.get(RuleChangesHistorySubscriber),
+    container.get(RuleExecutorWorkflowSubscriber),
+    container.get(RuleTelemetrySubscriber),
+  ];
+  subscribers.forEach((subscriber) => subscriber.start());
+  return () => subscribers.forEach((subscriber) => subscriber.stop());
 }

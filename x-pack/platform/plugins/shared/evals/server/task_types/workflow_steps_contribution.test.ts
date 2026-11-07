@@ -43,6 +43,7 @@ const registerContribution = async (expected?: string[]) => {
     services: {
       stepRegistry: registry,
       registerService: jest.fn(),
+      registerRunCompletion: jest.fn(),
       getService: jest.fn().mockReturnValue(taskProviders),
       getExecutionEngine: jest.fn(),
       getUnsecuredActionsClient: jest.fn(),

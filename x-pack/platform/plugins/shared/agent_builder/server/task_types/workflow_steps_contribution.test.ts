@@ -127,6 +127,7 @@ describe('agent_builder workflow-steps contribution with the services of a proce
         getActionsClientWithRequest: jest.fn(),
         emitEvent: jest.fn(),
         registerService: jest.fn(),
+        registerRunCompletion: jest.fn(),
         getService: jest.fn(),
       } as never,
       registerRunCheck: (check) => checks.push(check),

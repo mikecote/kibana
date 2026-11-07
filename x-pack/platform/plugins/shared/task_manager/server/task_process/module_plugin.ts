@@ -177,7 +177,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         };
       }
       if (module.eventLog) {
-        const { eventLog, stop } = module.eventLog.create({
+        const { eventLog, flush, stop } = module.eventLog.create({
           asInternalUser: core.elasticsearch.client.asInternalUser,
           logger: initializerContext.logger.get('eventLog'),
           kibanaUuid: init.server?.uuid,
@@ -185,6 +185,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           providers: module.eventLog.providers,
         });
         host.eventLog = eventLog;
+        context.flushers.push(flush);
         // Flushes what the adapter still buffers before the process exits.
         stops.push(stop);
       }
@@ -222,7 +223,9 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       if (usageCounters) {
         host.usageCounters = usageCounters.start(core.savedObjects);
         // What the run counted is stored before the run answers, and once more on the way out.
-        context.flushers.push(usageCounters.flush);
+        const counters = usageCounters;
+        const flushUsageCounters = () => counters.flush();
+        context.flushers.push(flushUsageCounters);
         stops.push(async () => {
           await usageCounters!.flush();
           usageCounters!.stop();
@@ -236,7 +239,8 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           logger: initializerContext.logger.get('licensing'),
         });
         // What the run used is stored before it answers.
-        context.flushers.push(flush);
+        const flushFeatureUsage = () => flush();
+        context.flushers.push(flushFeatureUsage);
         host.licensing = {
           ...createStandaloneLicensing({
             asInternalUser: core.elasticsearch.client.asInternalUser,
