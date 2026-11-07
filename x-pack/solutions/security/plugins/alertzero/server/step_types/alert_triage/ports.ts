@@ -6,7 +6,9 @@
  */
 
 import { set } from '@kbn/safer-lodash-set';
+import { ExecutionStatus } from '@kbn/workflows';
 import type { StepHandlerContext } from '@kbn/workflows-extensions/server';
+import type { WorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import {
   ALERT_FETCH_LIMIT,
@@ -33,13 +35,13 @@ const WORKFLOW_RUN_TASK_TYPE = 'workflow:run';
 
 /** Statuses in which a batch holds or waits for work, as `coverage_worker.yaml` lists them. */
 const LIVE_STATUSES = [
-  'pending',
-  'queued',
-  'waiting',
-  'waiting_for_input',
-  'waiting_for_child',
-  'running',
-];
+  ExecutionStatus.PENDING,
+  ExecutionStatus.QUEUED,
+  ExecutionStatus.WAITING,
+  ExecutionStatus.WAITING_FOR_INPUT,
+  ExecutionStatus.WAITING_FOR_CHILD,
+  ExecutionStatus.RUNNING,
+] as const;
 
 const ALERT_FIELDS = {
   ruleId: 'kibana.alert.rule.uuid',
@@ -83,19 +85,19 @@ const toTriageAlert = ({ _id, _source = {} }: AlertHit): TriageAlert => {
 };
 
 export const listLiveExecutionIds = async (
-  { callKibanaApi }: KibanaApi,
+  reader: WorkflowExecutionReader,
+  context: Pick<StepHandlerContext['contextManager'], 'getFakeRequest'>,
   batchWorkflowId: string,
   logger?: Pick<StepHandlerContext['logger'], 'warn'>
 ): Promise<Set<string> | undefined> => {
   try {
-    const statuses = LIVE_STATUSES.map((status) => `statuses=${status}`).join('&');
-    const { body } = await callKibanaApi<{ results?: Array<{ id: string }> }>({
-      method: 'GET',
-      path: `/api/workflows/workflow/${encodeURIComponent(
-        batchWorkflowId
-      )}/executions?${statuses}&size=100`,
+    const body = await reader.getWorkflowExecutions({
+      workflowId: batchWorkflowId,
+      statuses: [...LIVE_STATUSES],
+      size: 100,
+      request: context.getFakeRequest(),
     });
-    return Array.isArray(body?.results) ? new Set(body.results.map(({ id }) => id)) : undefined;
+    return new Set(body.results.map(({ id }) => id));
   } catch (error) {
     logger?.warn(
       `Could not list live executions of ${batchWorkflowId}: ${

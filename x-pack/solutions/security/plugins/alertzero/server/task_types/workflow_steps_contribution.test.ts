@@ -21,7 +21,10 @@ const settings = {
   telemetryOptedIn: true,
 };
 
-const registerContribution = async (alertzero: typeof settings | null = settings) => {
+const registerContribution = async (
+  alertzero: typeof settings | null = settings,
+  agentBuilderAvailable = true
+) => {
   const registry = createServerStepRegistry(loggerMock.create());
   const internalSteps = registry.getAllStepDefinitions().length;
   const checks: WorkflowStepRunCheck[] = [];
@@ -38,7 +41,9 @@ const registerContribution = async (alertzero: typeof settings | null = settings
     logger: loggerMock.create(),
     isServerless: false,
     kibanaVersion: '1.0.0',
-    settings: alertzero ? { alertzero } : {},
+    settings: alertzero
+      ? { alertzero, ...(agentBuilderAvailable ? { agentBuilderRun: {} } : {}) }
+      : {},
     registerRunCheck: (check) => checks.push(check),
     services: {
       stepRegistry: createServerStepRegistry(loggerMock.create()),
@@ -71,6 +76,7 @@ const registeredByKibana = (): string[] => {
     getHuntServices: jest.fn(),
     isContextEngineEnabled: jest.fn(),
     getTaskManager: jest.fn(),
+    getWorkflowExecutionReader: jest.fn(),
   });
   registerAlertZeroStepDefinitions({
     workflowsExtensions: registry,
@@ -105,6 +111,14 @@ describe('alertzero workflow-steps contribution', () => {
 
   it('declares its settings', () => {
     expect(contribution.declares?.settings).toEqual(['alertzero']);
+  });
+
+  it('declines native agent steps before writes when the dispatching Agent Builder is absent', async () => {
+    const { checks, getService } = await registerContribution(settings, false);
+    expect(checks[0]?.({ type: 'hunt.packageReport', config: {} })).toContain(
+      'Agent Builder services are not available'
+    );
+    expect(getService).not.toHaveBeenCalled();
   });
 
   it.each(['alertzero.investigation.summarize', 'hunt.packageReport'])(

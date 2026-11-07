@@ -902,6 +902,12 @@ current Context Engine setting through native scoped UI settings. Execution test
 task's proposal-read privileges and agent enrollment between runs, including a same-named agent
 in another space, across fresh and retained local and remote workers.
 
+Triage reads live workflow executions through the same native authorized reader in Kibana and
+workers. It shares the HTTP license policy and managed-execution gate, checks API privileges for
+each read, and delegates ACL filtering to the management API. The reader derives its space from
+the native request. Tests cover changing privileges, private workflows, current execution statuses,
+and actual default and non-default-space dispatches in every worker mode.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services) and nightshift_investigations (investigations, sandbox and agent execution services).
 
@@ -916,8 +922,7 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **alertzero:** native adapters for the triage steps' workflow-execution reads and
-  detection-alert search/tag operations, which still
+- **alertzero:** native adapters for detection-alert search/tag operations, which still
   call Kibana routes.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).

@@ -1,8 +1,3 @@
-/**
- * @jest-environment node
- */
-
-/* eslint-disable @kbn/eslint/require-license-header, @typescript-eslint/no-non-null-assertion */
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
  * or more contributor license agreements. Licensed under the Elastic License
@@ -19,8 +14,7 @@ const PACKAGE_WORKFLOW_ID = 'package-report-workflow';
 /**
  * Runs `workflow:scheduled` workflows with AlertZero steps from the real bundle in a real task
  * process: the steps come from the `workflow-steps` contribution of AlertZero. The triage headroom
- * step reads Task Manager's tasks with the aggregation of the host and the live batches through
- * Kibana's API (the stub); the outcome step answers from what Kibana sent. The steps that read the
+ * step reads Task Manager's tasks with native task aggregation and execution reads; the outcome step answers from what Kibana sent. The steps that read the
  * investigation conversation with Agent Builder are declined.
  */
 describe('alertzero workflow steps served from the workflow:scheduled bundle', () => {
@@ -29,6 +23,9 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
   beforeAll(async () => {
     harness = await startWorkflowProcessHarness({
       workflows: {
+        'batch-workflow': {
+          steps: [{ name: 'done', type: 'console', with: { message: 'Native batch' } }],
+        },
         [HEADROOM_WORKFLOW_ID]: {
           steps: [
             {
@@ -62,8 +59,6 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
           telemetryOptedIn: false,
         },
       },
-      // No batch of the workflow is running.
-      kibanaHandler: () => ({ body: { results: [] } }),
     });
   });
 
@@ -71,7 +66,7 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
     await harness?.stop();
   });
 
-  it('reads the headroom with the aggregation of the host and the Kibana API of the run', async () => {
+  it('reads headroom through native task aggregation and workflow management', async () => {
     const onDispatchFailure = jest.fn();
     await harness.run(HEADROOM_WORKFLOW_ID, onDispatchFailure);
 
@@ -83,14 +78,7 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
     const [step] = await harness.stepsOf(execution.id);
     expect(step).toEqual(expect.objectContaining({ stepId: 'headroom', status: 'completed' }));
     expect(step.output).toEqual(expect.objectContaining({ status: 'ok', in_flight: 0 }));
-    // The live batches were read from Kibana with the credential of the run.
-    expect(
-      harness.kibanaRequests.some(
-        ({ url, headers }) =>
-          url?.includes('/api/workflows/workflow/batch-workflow/executions') &&
-          String(headers.authorization).startsWith('ApiKey ')
-      )
-    ).toBe(true);
+    expect(harness.kibanaRequests).toEqual([]);
   });
 
   it('answers the outcome step from what Kibana sent: telemetry is opted out, so it skips', async () => {
@@ -104,7 +92,7 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
     expect(step).toEqual(expect.objectContaining({ stepId: 'report', status: 'completed' }));
   });
 
-  it('declines a workflow that packages a hunt report, writing nothing', async () => {
+  it('declines hunt packaging when the dispatching Agent Builder is absent, writing nothing', async () => {
     const onDispatchFailure = jest.fn();
     await expect(harness.run(PACKAGE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import { ExecutionError } from '@kbn/workflows/server';
@@ -27,6 +28,7 @@ import {
 
 export interface AlertTriageStepDependencies {
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: () => WorkflowExecutionReader;
 }
 
 const toApiError = (error: unknown, action: string): ExecutionError =>
@@ -37,7 +39,10 @@ const toApiError = (error: unknown, action: string): ExecutionError =>
         message: error instanceof Error ? error.message : `Failed to ${action}`,
       });
 
-export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageStepDependencies) =>
+export const getTriageHeadroomStepDefinition = ({
+  getTaskManager,
+  getWorkflowExecutionReader,
+}: AlertTriageStepDependencies) =>
   createServerStepDefinition({
     ...triageHeadroomStepCommonDefinition,
     handler: async ({ input, contextManager, logger }) => {
@@ -46,6 +51,7 @@ export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageS
           readTmLagMs: () => readWorkflowRunLagMs(getTaskManager(), Date.now()),
           countInFlight: async () => {
             const live = await listLiveExecutionIds(
+              getWorkflowExecutionReader(),
               contextManager,
               input.batch_workflow_id,
               logger
@@ -68,7 +74,9 @@ export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageS
     },
   });
 
-export const getTriagePlanSweepStepDefinition = () =>
+export const getTriagePlanSweepStepDefinition = ({
+  getWorkflowExecutionReader,
+}: Pick<AlertTriageStepDependencies, 'getWorkflowExecutionReader'>) =>
   createServerStepDefinition({
     ...triagePlanSweepStepCommonDefinition,
     handler: async ({ input, contextManager, logger }) => {
@@ -106,7 +114,12 @@ export const getTriagePlanSweepStepDefinition = () =>
                 filters
               ),
             listLiveExecutionIds: () =>
-              listLiveExecutionIds(contextManager, input.batch_workflow_id, logger),
+              listLiveExecutionIds(
+                getWorkflowExecutionReader(),
+                contextManager,
+                input.batch_workflow_id,
+                logger
+              ),
             tagAlerts: tagAlerts(contextManager),
           },
           {

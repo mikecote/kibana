@@ -9,12 +9,14 @@
 
 import { firstValueFrom } from 'rxjs';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowsExecutionEnginePluginStart } from '@kbn/workflows-execution-engine/server';
 import type {
   WorkflowsExtensionsServerPluginStart,
   WorkflowStepsContribution,
 } from '@kbn/workflows-extensions/server';
+import { createWorkflowExecutionReader } from '../api/create_workflow_execution_reader';
 import type { WorkflowsProcessServices } from '../api/workflows_process_management_api';
 import { createWorkflowsProcessServices } from '../api/workflows_process_management_api';
 import type { WorkflowManagementStartServices } from '../runtime/dependencies';
@@ -94,6 +96,20 @@ export const contribution: WorkflowStepsContribution = {
     'workflows.management': ({ services }) => {
       if (!services) throw new Error('Workflow execution services are required');
       return services.getService<WorkflowsProcessServices>('workflows.runtime').management;
+    },
+    'workflows.executionReader': ({ host: taskHost, services }) => {
+      const host = taskHost as TaskHost;
+      const { licensing } = host;
+      if (!services || !licensing)
+        throw new Error('Native execution reads require workflow services and licensing');
+      return createWorkflowExecutionReader({
+        getSpaceId: async (request) =>
+          services.getService<SpacesPluginStart>('spaces').spacesService.getSpaceId(request),
+        getManagement: () =>
+          services.getService<WorkflowsProcessServices['management']>('workflows.management'),
+        getLicense: () => firstValueFrom(licensing.license$),
+        getSecurity: async () => host.plugins?.security as SecurityTaskPluginStart | undefined,
+      });
     },
     'workflows.extensions': ({
       services,

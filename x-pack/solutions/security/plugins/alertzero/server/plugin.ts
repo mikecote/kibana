@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { createWorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import {
   DEFAULT_APP_CATEGORIES,
   type CoreSetup,
@@ -269,6 +270,14 @@ export class AlertZeroPlugin
       isContextEngineEnabled: makeIsContextEngineEnabled(() => this.requireCoreStart()),
       getInternalEsClient: () => this.requireCoreStart().elasticsearch.client.asInternalUser,
       getTaskManager: () => this.requireStarted(this.taskManager, 'Task Manager'),
+      getWorkflowExecutionReader: () =>
+        createWorkflowExecutionReader({
+          getSpaceId: async (request) => this.getSpaceId(request),
+          getManagement: () =>
+            this.requireStarted(this.workflowsManagementApi, 'Workflows Management'),
+          getLicense: async () => (await coreSetup.getStartServices())[1].licensing.getLicense(),
+          getSecurity: async () => (await coreSetup.getStartServices())[1].security,
+        }),
       logger: stepsLogger,
     });
 

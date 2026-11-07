@@ -486,7 +486,7 @@ const startHarness = async (
     taskType: string,
     task: { id: string; params: Record<string, string> },
     onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
-    credentials?: { apiKey: string; userName?: string }
+    credentials?: { apiKey: string; userName?: string; spaceId?: string }
   ) =>
     new RemoteTaskRunner({
       route: getRoute(taskType),
@@ -519,7 +519,7 @@ const startHarness = async (
         },
         executionUuid: `${task.id}-${Date.now()}`,
         apiKey: credentials?.apiKey ?? apiKey,
-        spaceId: 'default',
+        spaceId: credentials?.spaceId ?? 'default',
         userName: credentials?.userName ?? 'elastic',
         featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true, ...options.featureFlags },
         kibanaVersion: KIBANA_VERSION,
@@ -534,7 +534,7 @@ const startHarness = async (
   const run = (
     workflowId: string,
     onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
-    credentials?: { apiKey: string; userName?: string }
+    credentials?: { apiKey: string; userName?: string; spaceId?: string }
   ) =>
     runTask(
       TASK_TYPE,

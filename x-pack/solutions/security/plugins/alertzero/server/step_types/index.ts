@@ -12,6 +12,7 @@ import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { ActionsService } from '../services/actions/actions_service';
 import type { HuntServices } from '../services/watches/hunt/types';
 import {
+  type AlertTriageStepDependencies,
   getTriageHeadroomStepDefinition,
   getTriageLoadAlertsStepDefinition,
   getTriagePlanSweepStepDefinition,
@@ -26,18 +27,23 @@ import type { ReportWorkerOutcomeStepDeps } from './report_worker_outcome/report
 import { getReportWorkerOutcomeStepDefinition } from './report_worker_outcome/report_worker_outcome_step';
 
 /**
- * Registers the alert triage steps, which only need Task Manager's aggregation and the Kibana API of
- * the run: Kibana and the task process of the workflow task types register them with this function.
+ * Registers alert triage steps with native task aggregation and execution reads: Kibana and the task process of the workflow task types register them with this function.
  */
 export const registerTriageStepDefinitions = ({
   workflowsExtensions,
   getTaskManager,
+  getWorkflowExecutionReader,
 }: {
   workflowsExtensions: WorkflowStepsRegistry;
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
 }) => {
-  workflowsExtensions.registerStepDefinition(getTriageHeadroomStepDefinition({ getTaskManager }));
-  workflowsExtensions.registerStepDefinition(getTriagePlanSweepStepDefinition());
+  workflowsExtensions.registerStepDefinition(
+    getTriageHeadroomStepDefinition({ getTaskManager, getWorkflowExecutionReader })
+  );
+  workflowsExtensions.registerStepDefinition(
+    getTriagePlanSweepStepDefinition({ getWorkflowExecutionReader })
+  );
   workflowsExtensions.registerStepDefinition(getTriageLoadAlertsStepDefinition());
 };
 
@@ -52,6 +58,7 @@ export const registerStepDefinitions = ({
   isContextEngineEnabled,
   getInternalEsClient,
   getTaskManager,
+  getWorkflowExecutionReader,
   logger,
 }: {
   workflowsExtensions: WorkflowStepsRegistry;
@@ -64,6 +71,7 @@ export const registerStepDefinitions = ({
   isContextEngineEnabled: PackageReportStepDependencies['isContextEngineEnabled'];
   getInternalEsClient?: () => ElasticsearchClient;
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
   logger?: Logger;
 }) => {
   workflowsExtensions.registerStepDefinition(
@@ -84,7 +92,11 @@ export const registerStepDefinitions = ({
       resolveConnectorId,
     })
   );
-  registerTriageStepDefinitions({ workflowsExtensions, getTaskManager });
+  registerTriageStepDefinitions({
+    workflowsExtensions,
+    getTaskManager,
+    getWorkflowExecutionReader,
+  });
 };
 
 export { getPackageReportStepDefinition } from './package_report';
