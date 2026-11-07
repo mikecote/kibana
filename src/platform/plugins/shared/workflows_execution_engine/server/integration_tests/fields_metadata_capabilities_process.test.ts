@@ -101,6 +101,7 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         fleetv2: boolean;
         disabledFeatures: string[];
         ecsSource: string;
+        fipsEnabled: boolean;
       }> = [];
       const seen = new Set<string>();
       const run = async (apiKey: string) => {
@@ -128,10 +129,16 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       });
       await run(harness.apiKey);
       expect(results).toEqual([
-        { fleet: true, fleetv2: true, disabledFeatures: [], ecsSource: 'ecs' },
-        { fleet: true, fleetv2: false, disabledFeatures: [], ecsSource: 'ecs' },
-        { fleet: true, fleetv2: true, disabledFeatures: [], ecsSource: 'ecs' },
-        { fleet: false, fleetv2: true, disabledFeatures: ['fleet'], ecsSource: 'ecs' },
+        { fleet: true, fleetv2: true, disabledFeatures: [], ecsSource: 'ecs', fipsEnabled: false },
+        { fleet: true, fleetv2: false, disabledFeatures: [], ecsSource: 'ecs', fipsEnabled: false },
+        { fleet: true, fleetv2: true, disabledFeatures: [], ecsSource: 'ecs', fipsEnabled: false },
+        {
+          fleet: false,
+          fleetv2: true,
+          disabledFeatures: ['fleet'],
+          ecsSource: 'ecs',
+          fipsEnabled: false,
+        },
       ]);
       expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 4);
       expect(harness.kibanaRequests).toEqual([]);

@@ -20,12 +20,17 @@ import { ConfigSchema, createConfig } from './config';
 import { SERVICE_ACCOUNT_WORKLOAD_BINDING_TYPE } from './service_accounts/bindings';
 import { SERVICE_ACCOUNT_CREDENTIAL_TYPE } from './service_accounts/credentials';
 import { createSecurityTaskPlugin, getTaskProcessSettings } from './task_plugin';
+import type { SecurityTaskProcessSettings } from './task_plugin';
 
 const KIBANA_VERSION = '9.5.0';
 
 const buildSettings = (
   uiam?: Record<string, unknown>,
-  extra: { serviceAccounts?: Record<string, unknown>; cloudProjectContext?: any } = {}
+  extra: {
+    serviceAccounts?: { enabled?: boolean; requestLifetime?: string };
+    cloudProjectContext?: SecurityTaskProcessSettings['cloudProjectContext'];
+    fipsMode?: SecurityTaskProcessSettings['fipsMode'];
+  } = {}
 ) => {
   const config = createConfig(
     ConfigSchema.validate(
@@ -33,6 +38,7 @@ const buildSettings = (
         audit: { enabled: false },
         ...(uiam ? { uiam } : {}),
         ...(extra.serviceAccounts ? { serviceAccounts: extra.serviceAccounts } : {}),
+        ...(extra.fipsMode ? { fipsMode: extra.fipsMode } : {}),
       },
       { serverless: !!uiam }
     ),
@@ -102,6 +108,10 @@ describe('the security task plugin', () => {
       );
     });
 
+    it.each([false, true])('carries the actual Core FIPS mode (enabled: %s)', (enabled) => {
+      expect(buildSettings(undefined, { fipsMode: { enabled } }).fipsMode).toEqual({ enabled });
+    });
+
     it('carry the UIAM settings, with durations revived', () => {
       const settings = buildSettings({
         enabled: true,
@@ -123,7 +133,7 @@ describe('the security task plugin', () => {
         organizationId: 'org',
         projectId: 'project',
         projectType: 'security',
-      };
+      } satisfies NonNullable<SecurityTaskProcessSettings['cloudProjectContext']>;
       const serialized = serializeSettings(
         buildSettings(undefined, {
           serviceAccounts: { requestLifetime: '2m' },

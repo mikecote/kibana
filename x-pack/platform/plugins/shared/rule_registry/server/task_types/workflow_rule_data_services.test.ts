@@ -31,7 +31,7 @@ const setup = () => {
     elasticsearch: core.elasticsearch.client,
     savedObjects: core.savedObjects,
     executionContext: core.executionContext,
-    security: core.security,
+    security: { ...core.security, fips: coreMock.createSetup().security.fips },
     http: core.http,
     analytics: core.analytics,
     settings: {

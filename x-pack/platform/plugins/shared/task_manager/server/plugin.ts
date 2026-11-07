@@ -323,7 +323,7 @@ export class TaskManagerPlugin
             elasticsearch: coreStart.elasticsearch.client,
             savedObjects: coreStart.savedObjects,
             executionContext: coreStart.executionContext,
-            security: coreStart.security,
+            security: { ...coreStart.security, fips: core.security.fips },
             server: getServerInfo(coreStart.http.basePath.publicBaseUrl),
           };
           if (module.encryptedSavedObjectTypes?.length) {

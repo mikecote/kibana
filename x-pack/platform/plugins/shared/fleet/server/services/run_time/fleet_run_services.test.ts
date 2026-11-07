@@ -14,6 +14,7 @@ import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/s
 import { securityMock } from '@kbn/security-plugin/server/mocks';
 import type { ILicense } from '@kbn/licensing-types';
 
+import { parseExperimentalConfigValue } from '../../../common/experimental_features';
 import type { FleetConfigType } from '../../../common/types';
 import { FleetActionsClient } from '../actions';
 import { agentPolicyService } from '../agent_policy';
@@ -79,11 +80,11 @@ describe('Fleet run services', () => {
   });
 
   describe('startFleetRunAppContext', () => {
-    const config = {
+    const config: FleetConfigType = {
       enabled: true,
       agents: { enabled: true, elasticsearch: {} },
       enableExperimental: [],
-    } as unknown as FleetConfigType;
+    };
 
     it('starts the app context with what the services read', async () => {
       const { elasticsearch, savedObjects, encryptedSavedObjects, loggerFactory } = setup();
@@ -108,6 +109,7 @@ describe('Fleet run services', () => {
         kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
         isProductionMode: false,
+        isFipsEnabled: true,
       });
 
       expect(appContextService.getInternalUserESClient()).toBe(elasticsearch.client.asInternalUser);
@@ -117,6 +119,7 @@ describe('Fleet run services', () => {
       expect(appContextService.getEncryptedSavedObjectsSetup()?.canEncrypt).toBe(true);
       expect(appContextService.getSecuritySetup().audit).toBe(security.audit);
       expect(appContextService.getKibanaVersion()).toBe('9.9.0');
+      expect(appContextService.getIsFipsEnabled()).toBe(true);
       expect(licenseService.isEnterprise()).toBe(true);
 
       // The hidden types Fleet's internal clients ask for, of those registered where it runs
@@ -124,6 +127,33 @@ describe('Fleet run services', () => {
       expect(savedObjects.getUnsafeInternalClient).toHaveBeenLastCalledWith({
         includedHiddenTypes: ['fleet-uninstall-tokens', 'alerting_rule_template', 'slo_template'],
       });
+    });
+
+    it('releases the previous configuration subscription when an execution is replaced or stopped', () => {
+      const { elasticsearch, savedObjects, loggerFactory } = setup();
+      const security = securityMock.createSetup();
+      const first = new BehaviorSubject<FleetConfigType>(config);
+      const second = new BehaviorSubject<FleetConfigType>(config);
+      const context = {
+        elasticsearch: elasticsearch.client,
+        savedObjects,
+        securitySetup: { audit: security.audit },
+        configInitialValue: config,
+        experimentalFeatures: parseExperimentalConfigValue([], {}),
+        logger: loggerFactory.get(),
+        kibanaVersion: '9.9.0',
+        kibanaBranch: 'main',
+        kibanaInstanceId: 'uuid',
+        isProductionMode: false,
+        isFipsEnabled: false,
+      };
+      appContextService.startExecution({ ...context, config$: first });
+      expect(first.observed).toBe(true);
+      appContextService.startExecution({ ...context, config$: second });
+      expect(first.observed).toBe(false);
+      expect(second.observed).toBe(true);
+      appContextService.stop();
+      expect(second.observed).toBe(false);
     });
 
     it('writes a Fleet action with the services, with the audit of the host', async () => {
@@ -144,6 +174,7 @@ describe('Fleet run services', () => {
         kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
         isProductionMode: false,
+        isFipsEnabled: false,
       });
 
       await createFleetRunServices(deps)
@@ -184,6 +215,7 @@ describe('Fleet run services', () => {
         kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
         isProductionMode: false,
+        isFipsEnabled: false,
       });
       appContextService.getInternalUserSOClient();
 
@@ -207,6 +239,7 @@ describe('Fleet run services', () => {
         kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
         isProductionMode: false,
+        isFipsEnabled: false,
       });
 
       expect(() => appContextService.getData()).toThrow('Data start service not set.');

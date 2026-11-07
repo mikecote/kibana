@@ -772,6 +772,12 @@ capabilities are evaluated with the task's credentials by the shared Security sw
 by the current authorized space and native solution gate. The Streams extractor is available through
 this registry; migrating its existing local metadata setup also requires Fleet's package runtime.
 
+Fleet's shared execution initializer now takes genuine Core saved objects services and explicit security
+and encryption capabilities. Core's FIPS setting is carried into worker boot and exposed through the task
+host. Its package-material capture helper snapshots the native bundled archives and cached signing key;
+the archive decoder reads captured bytes and checks their SHA-256 digest. The Fleet workflow service
+provider still needs to consume this material.
+
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
 feature flag flips on). A contribution adds `registerAtStart(start, context)`, which calls the function the plugin

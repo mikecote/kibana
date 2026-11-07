@@ -272,6 +272,7 @@ describe('the response action services built from a task host', () => {
       kibanaBranch: 'main',
       kibanaInstanceId: host.server.uuid,
       isProductionMode: false,
+      isFipsEnabled: host.security.fips.isEnabled(),
     });
     const fleetRunServices = createFleetRunServices(fleetDeps);
 

@@ -188,7 +188,7 @@ describe('TaskManagerPlugin', () => {
       const startServices = coreMock.createStart();
       core.getStartServices.mockResolvedValue([startServices, {} as never, {} as never]);
       const setup = plugin.setup(core, { usageCollection: undefined });
-      return { plugin, setup, startServices, logger: pluginInitializerContext.logger.get() };
+      return { plugin, setup, core, startServices, logger: pluginInitializerContext.logger.get() };
     };
 
     test('registers the task types of Task Manager itself as modules', () => {
@@ -200,7 +200,7 @@ describe('TaskManagerPlugin', () => {
     });
 
     test('runs a module with Core as its host', async () => {
-      const { plugin, setup, startServices, logger } = setupPlugin();
+      const { plugin, setup, core, startServices, logger } = setupPlugin();
       const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
       setup.registerTaskType(defineTaskType({ type: 'test:module', createTaskRunner }));
 
@@ -223,7 +223,7 @@ describe('TaskManagerPlugin', () => {
           elasticsearch: startServices.elasticsearch.client,
           savedObjects: startServices.savedObjects,
           executionContext: startServices.executionContext,
-          security: startServices.security,
+          security: { ...startServices.security, fips: core.security.fips },
           server: expect.objectContaining({ version: expect.any(String), isServerless: false }),
         })
       );

@@ -6,7 +6,7 @@
  */
 
 import { firstValueFrom, of, Subject } from 'rxjs';
-import type { Logger, SavedObjectsServiceStart, SecurityServiceStart } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server';
@@ -127,8 +127,8 @@ export const createStandaloneRuleRunRuntime = ({
   const rulesSettingsClientFactory = new RulesSettingsClientFactory();
   rulesSettingsClientFactory.initialize({
     logger,
-    savedObjectsService: savedObjects as SavedObjectsServiceStart,
-    securityService: host.security as SecurityServiceStart,
+    savedObjectsService: savedObjects,
+    securityService: host.security,
     isServerless,
   });
   const rulesSettingsService = new RulesSettingsService({
@@ -146,8 +146,8 @@ export const createStandaloneRuleRunRuntime = ({
   const maintenanceWindowClientFactory = new MaintenanceWindowClientFactory();
   maintenanceWindowClientFactory.initialize({
     logger,
-    savedObjectsService: savedObjects as SavedObjectsServiceStart,
-    securityService: host.security as SecurityServiceStart,
+    savedObjectsService: savedObjects,
+    securityService: host.security,
     uiSettings,
   });
   const maintenanceWindowsService = new MaintenanceWindowsService({
@@ -210,7 +210,7 @@ export const createStandaloneRuleRunRuntime = ({
     getAuditLoggerWithRequest: (request) => host.security.audit.asScoped(request),
     executor: executeConnectors
       ? {
-          security: host.security as SecurityServiceStart,
+          security: host.security,
           eventLogger: host.eventLog!.getLogger({
             event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
           }) as IEventLogger,

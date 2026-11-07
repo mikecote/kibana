@@ -13,3 +13,12 @@ export {
   type FleetRunAppContextDeps,
 } from './fleet_run_services';
 export { getFleetRunSavedObjectTypes, getFleetRunEncryptedSavedObjectTypes } from './saved_objects';
+export {
+  FLEET_PACKAGE_METADATA_SETTINGS_ID,
+  getFleetPackageMetadataTaskProcessSettings,
+  createBundledPackagesFromSnapshot,
+} from './package_metadata_settings';
+export type {
+  FleetPackageMetadataAssets,
+  FleetPackageMetadataTaskProcessSettings,
+} from './package_metadata_settings';

@@ -43,7 +43,7 @@ const create = (metadata: FieldsMetadataTaskProcessSettings = {}) => {
     logger: loggerMock.create(),
     elasticsearch: core.elasticsearch.client,
     savedObjects: core.savedObjects,
-    security: core.security,
+    security: { ...core.security, fips: coreMock.createSetup().security.fips },
     executionContext: core.executionContext,
     http: core.http,
     analytics: core.analytics,

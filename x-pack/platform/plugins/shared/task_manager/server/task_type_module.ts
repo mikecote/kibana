@@ -10,7 +10,7 @@ import type { Logger } from '@kbn/logging';
 import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
-import type { SecurityServiceStart } from '@kbn/core-security-server';
+import type { SecurityServiceStart, SecurityServiceSetup } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
 import type { DataStreamsSetup, DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
@@ -62,18 +62,12 @@ export interface TaskEventLogCapability {
 export interface TaskHost {
   logger: Logger;
   elasticsearch: Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
-  savedObjects: Pick<
-    SavedObjectsServiceStart,
-    | 'createInternalRepository'
-    | 'createScopedRepository'
-    | 'getScopedClient'
-    | 'getUnsafeInternalClient'
-    | 'getTypeRegistry'
-  >;
+  /** Core's native saved objects clients and import/export services. */
+  savedObjects: SavedObjectsServiceStart;
   /** A pass-through in a task process. */
   executionContext: Pick<ExecutionContextStart, 'withContext' | 'getAsLabels'>;
-  /** Core's security API, backed by the module's security task plugin when declared. */
-  security: Pick<SecurityServiceStart, 'authc' | 'audit'>;
+  /** Core's security delegate and the FIPS service supplied during Core setup. */
+  security: SecurityServiceStart & Pick<SecurityServiceSetup, 'fips'>;
   /** Kibana's identity and public address. */
   server: {
     uuid: string;

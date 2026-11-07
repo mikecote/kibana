@@ -50,6 +50,7 @@ export const contribution: WorkflowStepsContribution = {
           fleetv2: z.boolean(),
           disabledFeatures: z.array(z.string()),
           ecsSource: z.string(),
+          fipsEnabled: z.boolean(),
         }),
         handler: async (context) => {
           const request = context.contextManager.getFakeRequest();
@@ -67,6 +68,7 @@ export const contribution: WorkflowStepsContribution = {
               fleetv2: capabilities.fleetv2?.read === true,
               disabledFeatures: space.disabledFeatures,
               ecsSource: source,
+              fipsEnabled: taskHost.security.fips.isEnabled(),
             },
           };
         },

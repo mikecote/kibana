@@ -61,6 +61,7 @@ export interface SecurityTaskProcessSettings {
   /** The contents of the files `xpack.security.uiam.ssl` names, so that a remote process can connect. */
   uiamTls?: UiamTlsMaterial;
   audit: ConfigType['audit'];
+  fipsMode: ConfigType['fipsMode'];
   serviceAccounts: {
     enabled: boolean;
     requestLifetime: ConfigType['serviceAccounts']['requestLifetime'];
@@ -86,7 +87,7 @@ export const getTaskProcessSettings = ({
   cloudProjectContext,
 }: {
   license?: ILicense;
-  config: Pick<ConfigType, 'uiam' | 'audit' | 'serviceAccounts'>;
+  config: Pick<ConfigType, 'uiam' | 'audit' | 'serviceAccounts' | 'fipsMode'>;
   applicationName: string;
   kibanaServerResourceURL: string;
   elasticsearchUrl?: string;
@@ -98,6 +99,7 @@ export const getTaskProcessSettings = ({
     : config.uiam,
   uiamTls: config.uiam?.enabled ? readUiamTlsMaterial(config.uiam.ssl) : undefined,
   audit: config.audit,
+  fipsMode: config.fipsMode,
   serviceAccounts: {
     enabled: config.serviceAccounts.enabled,
     requestLifetime: config.serviceAccounts.requestLifetime,

@@ -65,11 +65,13 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
   let resolveHost!: (host: TaskHost) => void;
   const hostPromise = new Promise<TaskHost>((resolve) => (resolveHost = resolve));
   context.host = hostPromise;
+  let fips: CoreSetup['security']['fips'] | undefined;
   let encryption: EncryptedSavedObjectsPluginSetup | undefined;
   let usageCounters: StandaloneUsageCounters | undefined;
 
   return {
     setup(core: CoreSetup, deps: SetupDeps) {
+      fips = core.security.fips;
       const types: SavedObjectsType[] = [];
       const seen = new Set<string>();
       for (const type of module.savedObjectTypes ?? []) {
@@ -136,6 +138,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
     },
 
     start(core: CoreStart, deps: StartDeps) {
+      if (!fips) throw new Error('Core FIPS service has not initialized');
       const { env } = initializerContext;
       const host: TaskHost = {
         analytics: {
@@ -156,7 +159,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,
-        security: core.security,
+        security: { ...core.security, fips },
         userProfile: core.userProfile,
         http: {
           selfClient: core.http.selfClient,

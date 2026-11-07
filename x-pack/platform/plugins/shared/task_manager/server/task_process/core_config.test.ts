@@ -41,6 +41,23 @@ describe('buildCoreConfig', () => {
     cleanup();
   });
 
+  it.each([false, true])(
+    'preserves Core FIPS mode alongside UIAM authentication (enabled: %s)',
+    (enabled) => {
+      const uiam = { enabled: true, sharedSecret: 'test-secret' };
+      const { settings, cleanup } = buildCoreConfig(
+        init({
+          settings: {
+            security: { fipsMode: { enabled }, uiam },
+          },
+        }),
+        {}
+      );
+      expect(settings.xpack).toEqual({ security: { fipsMode: { enabled }, uiam } });
+      cleanup();
+    }
+  );
+
   it('gives Core the ui settings overrides and global overrides Kibana has', () => {
     const { settings, cleanup } = buildCoreConfig(
       init({

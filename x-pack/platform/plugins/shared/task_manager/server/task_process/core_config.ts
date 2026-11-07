@@ -91,8 +91,10 @@ export const buildCoreConfig = (
   const keys = module.encryptedSavedObjectTypes?.length ? init.encryptedSavedObjects : undefined;
   // Core reads the UIAM client authentication of Elasticsearch requests from `xpack.security.uiam`,
   // so the settings the security plugin registers for task processes carry it.
-  const uiam = (reviveSettingsByPlugin(init.settings).security as { uiam?: unknown } | undefined)
-    ?.uiam;
+  const { uiam, fipsMode } =
+    (reviveSettingsByPlugin(init.settings).security as
+      | { uiam?: unknown; fipsMode?: { enabled: boolean } }
+      | undefined) ?? {};
   const settings: Record<string, unknown> = {
     core: { lifecycle: { disablePreboot: true } },
     elasticsearch: toElasticsearchSettings(init.elasticsearch, dir),
@@ -135,7 +137,7 @@ export const buildCoreConfig = (
           },
         }
       : {}),
-    ...(keys || uiam
+    ...(keys || uiam || fipsMode
       ? {
           xpack: {
             ...(keys
@@ -146,7 +148,9 @@ export const buildCoreConfig = (
                   },
                 }
               : {}),
-            ...(uiam ? { security: { uiam } } : {}),
+            ...(uiam || fipsMode
+              ? { security: { ...(uiam ? { uiam } : {}), ...(fipsMode ? { fipsMode } : {}) } }
+              : {}),
           },
         }
       : {}),

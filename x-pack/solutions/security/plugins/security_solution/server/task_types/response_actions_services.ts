@@ -86,6 +86,7 @@ export const getResponseActionsServices = (
       kibanaBranch: 'main',
       kibanaInstanceId: host.server.uuid,
       isProductionMode: true,
+      isFipsEnabled: host.security.fips.isEnabled(),
     });
     const fleetRunServices = createFleetRunServices(fleetDeps);
     const osqueryActionService = await createOsqueryActionService({
