@@ -172,8 +172,8 @@ export interface WorkflowStepsContributionServices {
 
 /**
  * A check a contribution registers on the steps of a workflow before a task process runs it: it
- * returns why the process cannot serve the step as Kibana would (the run is then declined and Kibana
- * runs it), or `undefined`.
+ * returns why the process cannot serve the step as Kibana would (the run then fails without
+ * executing in Kibana), or `undefined`.
  */
 export type WorkflowStepRunCheck = (step: {
   type: string;

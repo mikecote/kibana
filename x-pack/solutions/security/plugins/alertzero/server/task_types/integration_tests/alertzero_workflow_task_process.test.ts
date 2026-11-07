@@ -55,6 +55,7 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
         alertzero: {
           serviceAccountsEnabled: true,
           managedWorkflowsReady: true,
+          searchInferenceEndpointsAvailable: false,
           telemetryOptedIn: false,
         },
       },

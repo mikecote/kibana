@@ -6,6 +6,8 @@
  */
 
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
+import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
 import type { ManagedWorkflowStateApi } from '@kbn/workflows/server/types';
 import type {
   WorkflowStepsContribution,
@@ -15,6 +17,8 @@ import type { WorkflowExecutionReader } from '../step_types/report_worker_outcom
 import { registerAlertZeroTelemetryEvents } from '../telemetry';
 import { registerUiSettings } from '../ui_settings';
 import { registerAlertZeroStepDefinitions, registerTriageStepDefinitions } from '../step_types';
+import { getSummarizeInvestigationStepDefinition } from '../step_types/summarize_investigation';
+import { createResolveSummaryConnectorId } from '../services/investigation_summary/resolve_summary_connector';
 import {
   ALERTZERO_TASK_PROCESS_SETTINGS_ID,
   type AlertZeroTaskProcessSettings,
@@ -33,13 +37,13 @@ const ALERTZERO_PLUGIN_ID = 'alertzero';
  * (`settings.alertzero`: service accounts, the managed workflows client, the telemetry opt-in).
  *
  * Served in a process: `alertzero.triage.headroom`, `alertzero.triage.planSweep`,
- * `alertzero.triage.loadAlerts` and `alertzero.reportWorkerOutcome`.
+ * `alertzero.triage.loadAlerts`, `alertzero.reportWorkerOutcome` and
+ * `alertzero.investigation.summarize` (native conversations, agent execution and connector policy).
  *
  * Not registered yet (a workflow that uses one fails for the missing capability):
  * - `hunt.packageReport`: reads the investigation conversation and its attachments with Agent
  *   Builder's conversations client, which needs registries that other plugins fill in `setup()`
  *   (agents, attachment types), and the hunt services (proposals, fleet agents).
- * - `alertzero.investigation.summarize`: reads the conversation and runs the agent execution loop.
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
@@ -50,7 +54,7 @@ export const contribution: WorkflowStepsContribution = {
     // The events of the report step; the process ships them itself.
     registerAnalyticsEventTypes: registerAlertZeroTelemetryEvents,
   },
-  register: (registry, { host, logger, services, settings }) => {
+  register: (registry, { host, logger, services, settings, registerRunCheck }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const alertZero = settings[ALERTZERO_TASK_PROCESS_SETTINGS_ID] as
       | AlertZeroTaskProcessSettings
@@ -64,6 +68,26 @@ export const contribution: WorkflowStepsContribution = {
 
     const alertZeroLogger = logger.get('alertzero');
     let managedWorkflowState: Promise<ManagedWorkflowStateApi> | undefined;
+    const getAgentBuilder = () => services.getService<AgentBuilderPluginStart>('agentBuilder');
+    registry.registerStepDefinition(
+      getSummarizeInvestigationStepDefinition({
+        getConversationClient: (request) =>
+          getAgentBuilder().conversations.getScopedClient({ request }),
+        executeAgent: (params) => getAgentBuilder().execution.executeAgent(params),
+        resolveConnectorId: createResolveSummaryConnectorId(
+          () =>
+            alertZero.searchInferenceEndpointsAvailable
+              ? services.getService<SearchInferenceEndpointsPluginStart>('searchInferenceEndpoints')
+              : undefined,
+          alertZeroLogger
+        ),
+      })
+    );
+    registerRunCheck?.((step) =>
+      step.type === 'alertzero.investigation.summarize'
+        ? services.getService<() => string | undefined>('agentBuilder.parity')()
+        : undefined
+    );
 
     registerTriageStepDefinitions({
       workflowsExtensions: registry,

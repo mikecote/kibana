@@ -7,19 +7,22 @@
 
 import { loggerMock } from '@kbn/logging-mocks';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepRunCheck, WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { registerAlertZeroStepDefinitions, registerStepDefinitions } from '../step_types';
 import { contribution } from './workflow_steps_contribution';
 
 const settings = {
   serviceAccountsEnabled: true,
   managedWorkflowsReady: true,
+  searchInferenceEndpointsAvailable: false,
   telemetryOptedIn: true,
 };
 
 const registerContribution = async (alertzero: Record<string, unknown> | null = settings) => {
   const registry = createServerStepRegistry(loggerMock.create());
   const internalSteps = registry.getAllStepDefinitions().length;
+  const checks: WorkflowStepRunCheck[] = [];
+  const getService = jest.fn();
   await contribution.register(registry, {
     host: {
       elasticsearch: { asInternalUser: {}, asScoped: jest.fn() },
@@ -33,11 +36,12 @@ const registerContribution = async (alertzero: Record<string, unknown> | null = 
     isServerless: false,
     kibanaVersion: '1.0.0',
     settings: alertzero ? { alertzero } : {},
+    registerRunCheck: (check) => checks.push(check),
     services: {
       stepRegistry: createServerStepRegistry(loggerMock.create()),
       registerService: jest.fn(),
       registerRunCompletion: jest.fn(),
-      getService: jest.fn(),
+      getService,
       getExecutionEngine: jest.fn(),
       getUnsecuredActionsClient: jest.fn(),
       executionDataClients: {
@@ -49,7 +53,7 @@ const registerContribution = async (alertzero: Record<string, unknown> | null = 
     },
   });
   await registry.isReady();
-  return { registry, internalSteps };
+  return { registry, internalSteps, checks, getService };
 };
 
 /** The ids Kibana registers: what `plugin.ts` registers through the same functions. */
@@ -81,10 +85,10 @@ const registeredByKibana = (): string[] => {
 };
 
 /** They read the investigation conversation with Agent Builder's conversations client and executions. */
-const KIBANA_ONLY_STEPS = ['hunt.packageReport', 'alertzero.investigation.summarize'];
+const KIBANA_ONLY_STEPS = ['hunt.packageReport'];
 
 describe('alertzero workflow-steps contribution', () => {
-  it('registers every step Kibana registers, except the ones that need Agent Builder', async () => {
+  it('registers every step Kibana registers except hunt packaging', async () => {
     const { registry, internalSteps } = await registerContribution();
     const kibana = registeredByKibana();
 
@@ -106,5 +110,16 @@ describe('alertzero workflow-steps contribution', () => {
 
   it('declares its settings', () => {
     expect(contribution.declares?.settings).toEqual(['alertzero']);
+  });
+
+  it('checks native Agent Builder parity before a summary runs', async () => {
+    const { checks, getService } = await registerContribution();
+    getService.mockReturnValue(() => 'missing native tool registration');
+    expect(checks[0]?.({ type: 'console', config: {} })).toBeUndefined();
+    expect(getService).not.toHaveBeenCalled();
+    expect(checks[0]?.({ type: 'alertzero.investigation.summarize', config: {} })).toBe(
+      'missing native tool registration'
+    );
+    expect(getService).toHaveBeenCalledWith('agentBuilder.parity');
   });
 });

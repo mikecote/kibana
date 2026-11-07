@@ -881,6 +881,13 @@ The owning workflow contribution registers the same native UI setting when Alert
 Outcome reporting uses the native owner-bound managed-workflows client and the request-scoped
 execution reader to verify persisted lineage. Its event schemas use the same registration helper
 as Kibana. Worker tests change and restore the workflow owner before accepting another report.
+`alertzero.investigation.summarize` reads the native conversation timeline, runs the native agent
+with structured output, and patches the conversation's metadata. Kibana and workers share its
+connector resolver, including the configured AlertZero frontier feature policy. The step checks
+the shared `agentBuilder.parity` preflight before executing. Agent Builder declares the native
+inference-settings type its model-policy client reads, independently of the optional inference
+workflow steps. Real summary tests cover private-conversation denial, persisted metadata and
+feature-specific connector selection in fresh and retained local and remote workers.
 
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services) and nightshift_investigations (investigations, sandbox and agent execution services).
@@ -896,7 +903,7 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`, and native adapters for
+- **alertzero:** `hunt.packageReport` and native adapters for
   the triage steps' workflow-execution reads and detection-alert search/tag operations, which still
   call Kibana routes.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox

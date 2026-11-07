@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import { ALERTZERO_FRONTIER_INFERENCE_FEATURE_ID } from '@kbn/alertzero-common';
 import {
   DEFAULT_APP_CATEGORIES,
   type CoreSetup,
@@ -29,6 +28,7 @@ import {
   ALERTZERO_PLUGIN_NAME,
 } from '../common/constants';
 import type { AlertZeroConfig } from './config';
+import { createResolveSummaryConnectorId } from './services/investigation_summary/resolve_summary_connector';
 
 // The investigation and escalation flyouts and AlertZero's queue use the shared
 // `agenticInvestigations` routes, which require these API privileges. Cross-plugin server imports
@@ -197,6 +197,7 @@ export class AlertZeroPlugin
         serviceAccountsEnabled: this.serviceAccountsEnabled,
         managedWorkflowsReady: this.managedWorkflowsReady,
         telemetryOptedIn: this.telemetryOptedIn,
+        searchInferenceEndpointsAvailable: this.searchInferenceEndpoints !== undefined,
       })
     );
 
@@ -504,24 +505,10 @@ export class AlertZeroPlugin
   }
 
   private async resolveSummaryConnectorId(request: KibanaRequest): Promise<string | undefined> {
-    const searchInferenceEndpoints = this.searchInferenceEndpoints;
-    if (!searchInferenceEndpoints) {
-      return undefined;
-    }
-    try {
-      const { endpoints } = await searchInferenceEndpoints.endpoints.getForFeature(
-        ALERTZERO_FRONTIER_INFERENCE_FEATURE_ID,
-        request
-      );
-      return endpoints[0]?.connectorId;
-    } catch (error) {
-      this.logger.warn(
-        `AlertZero investigation summary connector could not be resolved. ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-      return undefined;
-    }
+    return createResolveSummaryConnectorId(
+      () => this.searchInferenceEndpoints,
+      this.logger
+    )(request);
   }
 
   private requireHuntServices(): HuntServices {

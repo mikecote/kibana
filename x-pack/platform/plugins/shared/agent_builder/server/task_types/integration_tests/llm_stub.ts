@@ -43,12 +43,15 @@ const toolCallChunk = (name: string, args: Record<string, unknown>, id = 'call_1
   ],
 });
 
-const answerTo = (request: ChatRequest) => {
+const answerTo = (request: ChatRequest, finalAnswer: string) => {
   const system = String(request.messages.find(({ role }) => role === 'system')?.content ?? '');
   const toolChoice = (request.tool_choice as { function?: { name?: string } } | undefined)?.function
     ?.name;
   if (toolChoice === 'set_title' || system.includes('You are a title-generation utility')) {
     return toolCallChunk('set_title', { title: 'A tool call' });
+  }
+  if (toolChoice === 'structured_answer') {
+    return toolCallChunk('structured_answer', JSON.parse(finalAnswer));
   }
   const lastUser = [...request.messages].reverse().find(({ role }) => role === 'user')?.content;
   const text = typeof lastUser === 'string' ? lastUser : JSON.stringify(lastUser);
@@ -67,7 +70,7 @@ const answerTo = (request: ChatRequest) => {
   }
   return {
     choices: [
-      { index: 0, delta: { role: 'assistant', content: FINAL_ANSWER }, finish_reason: null },
+      { index: 0, delta: { role: 'assistant', content: finalAnswer }, finish_reason: null },
     ],
   };
 };
@@ -76,7 +79,11 @@ const answerTo = (request: ChatRequest) => {
  * A stub of an OpenAI-compatible LLM: the message of the `ai.agent` step tells it which tools to call
  * (`CALL <tool id> <json arguments>`, one per line), and it answers `FINAL_ANSWER` once it has.
  */
-export const startLlmStub = async () => {
+export const startLlmStub = async ({
+  getFinalAnswer = () => FINAL_ANSWER,
+}: {
+  getFinalAnswer?: (request: ChatRequest) => string;
+} = {}) => {
   const requests: ChatRequest[] = [];
   const server: Server = createServer((req, res) => {
     let body = '';
@@ -85,9 +92,10 @@ export const startLlmStub = async () => {
       const request = JSON.parse(body || '{}') as ChatRequest;
       requests.push(request);
       const base = { id: 'chatcmpl-1', created: 1, model: 'gpt-4' };
-      const chunk = answerTo(request);
+      const finalAnswer = getFinalAnswer(request);
+      const chunk = answerTo(request, finalAnswer);
       const finish =
-        (chunk.choices[0].delta as { content?: string }).content === FINAL_ANSWER
+        (chunk.choices[0].delta as { content?: string }).content === finalAnswer
           ? 'stop'
           : 'tool_calls';
       const usage = { prompt_tokens: 7, completion_tokens: 5, total_tokens: 12 };

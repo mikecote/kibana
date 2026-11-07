@@ -19,4 +19,6 @@ export interface AlertZeroTaskProcessSettings {
   managedWorkflowsReady: boolean;
   /** Whether telemetry is opted in right now. */
   telemetryOptedIn: boolean;
+  /** Whether the dispatching plugin has the native inference feature endpoint service. */
+  searchInferenceEndpointsAvailable: boolean;
 }

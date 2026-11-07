@@ -36,6 +36,7 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           alertzero: {
             serviceAccountsEnabled: true,
             managedWorkflowsReady: true,
+            searchInferenceEndpointsAvailable: false,
             telemetryOptedIn: true,
           },
           workflowsManagementRuntime: { available: true, managedWorkflowPluginIds: ['alertzero'] },

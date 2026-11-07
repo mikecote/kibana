@@ -53,6 +53,7 @@ export interface AgentBuilderProcessServices extends AgentBuilderRunServices {
   conversationEventBus: ConversationEventBus;
   /** The authorized spaces service of this execution. */
   spaces: SpacesPluginStart;
+  searchInferenceEndpoints: ReturnType<typeof createSearchInferenceEndpointsStart>;
   /** The inference features sent by Kibana for this execution. */
   inferenceFeatureIds: () => string[];
   /** `xpack.agentBuilder.deductive.register`: the global settings of that agent only exist in Kibana. */
@@ -293,6 +294,7 @@ export const createAgentBuilderProcessServices = async ({
     conversationEventBus,
     spaces,
     inferenceFeatureIds: () => features.getAll().map(({ featureId }) => featureId),
+    searchInferenceEndpoints,
     deductiveRegistered: config.deductive?.register ?? false,
   };
 };

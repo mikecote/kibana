@@ -9,6 +9,7 @@ import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module'
 import { agentBuilderServerEbtEvents } from '@kbn/agent-builder-common';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from '@kbn/search-inference-endpoints/server/task_process_settings';
+import { createInferenceSettingsSavedObjectType } from '@kbn/search-inference-endpoints/server/saved_objects/inference_settings';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { DEDUCTIVE_UI_SETTINGS } from '../services/execution/run_agent/deductive/register_deductive_agent';
 import { agentBuilderSpaceSettingsType } from '../saved_objects';
@@ -52,7 +53,7 @@ const getAgentBuilderUiSettings = (): Array<Record<string, UiSettingsParams>> =>
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
-    savedObjectTypes: [agentBuilderSpaceSettingsType],
+    savedObjectTypes: [agentBuilderSpaceSettingsType, createInferenceSettingsSavedObjectType()],
     settings: [AGENT_BUILDER_RUN_SETTINGS_ID, INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID],
     uiSettings: getAgentBuilderUiSettings(),
     // The global settings of the Deductive agent (registered when Kibana's config opts in).
@@ -91,6 +92,7 @@ export const contribution: WorkflowStepsContribution = {
     });
     if (!processServices) return;
     services.registerService('agentBuilder', processServices.start);
+    services.registerService('searchInferenceEndpoints', processServices.searchInferenceEndpoints);
 
     // The steps that read agent builder's registries, so that the guard can name them.
     const stepIds = new Set<string>();
@@ -135,6 +137,7 @@ export const contribution: WorkflowStepsContribution = {
       }
       return gap;
     };
+    services.registerService('agentBuilder.parity', getGap);
     registerRunCheck?.((step) => {
       if (stepIds.has(step.type)) {
         const missing = getGap();
