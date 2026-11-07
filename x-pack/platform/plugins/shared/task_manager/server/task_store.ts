@@ -64,7 +64,7 @@ import type {
   TaskClaimCandidate,
 } from './task';
 import { TaskStatus, TaskLifecycleResult } from './task';
-import type { TaskTypeDictionary } from './task_type_dictionary';
+import type { TaskSchedulingDefinitionRegistry } from './task_scheduling_definition_registry';
 import type { AdHocTaskCounter } from './lib/adhoc_task_counter';
 import { TaskValidator } from './task_validator';
 import { TaskBulkUpdater, docHasEncryptedApiKey } from './task_bulk_updater';
@@ -85,7 +85,7 @@ export interface StoreOpts {
   esClient: ElasticsearchClient;
   index: string;
   taskManagerId: string;
-  definitions: TaskTypeDictionary;
+  definitions: TaskSchedulingDefinitionRegistry;
   savedObjectsRepository: ISavedObjectsRepository;
   savedObjectsService: SavedObjectsServiceStart;
   serializer: ISavedObjectsSerializer;
@@ -202,7 +202,7 @@ export class TaskStore {
   private esClient: ElasticsearchClient;
   private esoClient?: EncryptedSavedObjectsClient;
   private isEncryptionError?: (error: Error) => boolean;
-  private definitions: TaskTypeDictionary;
+  private definitions: TaskSchedulingDefinitionRegistry;
   private savedObjectsRepository: ISavedObjectsRepository;
   private savedObjectsService: SavedObjectsServiceStart;
   private _invalidationSoClient?: SavedObjectsClientContract;

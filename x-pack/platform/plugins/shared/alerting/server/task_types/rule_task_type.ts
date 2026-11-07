@@ -9,6 +9,7 @@ import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import { kibanaPackageJson } from '@kbn/repo-info';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
 import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import { CONNECTOR_TYPES_PARITY_KIND } from '@kbn/actions-plugin/server/task_types/task_process_settings';
@@ -466,7 +467,7 @@ export function createRuleTaskType(
     Object.assign(taskType, {
       // A task process hands over what plugins contribute; the module is built again with it.
       contributions: {
-        keys: [RULE_RUN_CONTRIBUTIONS],
+        keys: [RULE_RUN_CONTRIBUTIONS, TASK_SCHEDULING_CONTRIBUTIONS_KEY],
         apply: (contributed: Record<string, unknown[]>) =>
           createRuleTaskType(
             source,

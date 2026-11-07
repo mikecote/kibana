@@ -23,16 +23,25 @@ import type {
   WorkflowStepsContributionContext,
 } from '@kbn/workflows-extensions/server';
 import { createWorkflowRuntimeFromHost } from './process_runtime';
+import { contribution as schedulingContribution } from './task_scheduling_contribution';
 import { taskType as resumeTaskType } from './workflow_resume.task';
 import { taskType as runTaskType } from './workflow_run.task';
 import { taskType as scheduledTaskType } from './workflow_scheduled.task';
 import { config as engineConfig } from '../config';
 import { getWorkflowDataStreamDefinitions } from '../data_streams';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
 
 jest.mock('./process_runtime', () => ({ createWorkflowRuntimeFromHost: jest.fn() }));
 
 describe('workflow task type modules', () => {
   const modules = [runTaskType, resumeTaskType, scheduledTaskType];
+  it('shares scheduling metadata and native schema instances with the execution modules', () => {
+    for (const definition of Object.values(WORKFLOW_TASK_SCHEDULING_DEFINITIONS)) {
+      const module = modules.find(({ type }) => type === definition.type);
+      expect(module).toMatchObject(definition);
+      if ('paramsSchema' in definition) expect(module?.paramsSchema).toBe(definition.paramsSchema);
+    }
+  });
 
   it('keep the definitions the plugin registered', () => {
     expect(
@@ -89,6 +98,7 @@ describe('workflow task type modules', () => {
         ])
       );
       expect(module.contributions?.keys).toEqual([
+        'task-scheduling',
         'alerting-rule-run',
         'workflow-steps',
         'agent-builder',
@@ -129,6 +139,14 @@ describe('workflow task type modules', () => {
 });
 
 describe('workflow task type modules with contributions', () => {
+  it('contributes the native resume schema only when Main enabled workflows', () => {
+    const schemas = schedulingContribution.createSchemas({
+      workflowsExecutionEngine: engineConfig.schema.validate({}),
+    });
+    expect(schemas['workflow:resume']?.paramsSchema).toBe(resumeTaskType.paramsSchema);
+    expect(schedulingContribution.createSchemas({})).toEqual({});
+  });
+
   it.each(['plain_index', 'data_stream'] as const)(
     'registers native workflow data streams with current %s storage settings',
     (source) => {

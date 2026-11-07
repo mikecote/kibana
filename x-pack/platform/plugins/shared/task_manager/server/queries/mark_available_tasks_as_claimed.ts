@@ -5,7 +5,7 @@
  * 2.0.
  */
 import type { estypes } from '@elastic/elasticsearch';
-import type { TaskTypeDictionary } from '../task_type_dictionary';
+import type { TaskSchedulingDefinitionRegistry } from '../task_scheduling_definition_registry';
 import type { ConcreteTaskInstance } from '../task';
 import { TaskStatus, TaskPriority } from '../task';
 import type {
@@ -116,7 +116,9 @@ if (doc['task.runAt'].size()!=0) {
 };
 export const SortByRunAtAndRetryAt = SortByRunAtAndRetryAtScript as estypes.SortCombinations;
 
-function getSortByPriority(definitions: TaskTypeDictionary): estypes.SortCombinations | undefined {
+function getSortByPriority(
+  definitions: TaskSchedulingDefinitionRegistry
+): estypes.SortCombinations | undefined {
   if (definitions.size() === 0) return;
 
   return {
@@ -154,7 +156,9 @@ function getSortByPriority(definitions: TaskTypeDictionary): estypes.SortCombina
 
 // getClaimSort() is used to generate sort bits for the ES query
 // should align with claimSort() below
-export function getClaimSort(definitions: TaskTypeDictionary): estypes.SortCombinations[] {
+export function getClaimSort(
+  definitions: TaskSchedulingDefinitionRegistry
+): estypes.SortCombinations[] {
   const sortByPriority = getSortByPriority(definitions);
   if (!sortByPriority) return [SortByRunAtAndRetryAt];
   return [sortByPriority, SortByRunAtAndRetryAt];
@@ -165,7 +169,7 @@ export function getClaimSort(definitions: TaskTypeDictionary): estypes.SortCombi
 // Returns a copy of the tasks passed in.
 export function claimSort<
   T extends Pick<ConcreteTaskInstance, 'taskType' | 'priority' | 'retryAt' | 'runAt'>
->(definitions: TaskTypeDictionary, tasks: T[]): T[] {
+>(definitions: TaskSchedulingDefinitionRegistry, tasks: T[]): T[] {
   // get the task definition priority
   const priorityMap: Record<string, TaskPriority> = {};
   tasks.forEach((task) => {
@@ -195,7 +199,10 @@ export function claimSort<
   }
 }
 
-function getPriority(definitions: TaskTypeDictionary, taskType: string): TaskPriority {
+function getPriority(
+  definitions: TaskSchedulingDefinitionRegistry,
+  taskType: string
+): TaskPriority {
   return definitions.get(taskType)?.priority ?? TaskPriority.Standard;
 }
 

@@ -8,6 +8,10 @@
 import Boom from '@hapi/boom';
 import { i18n } from '@kbn/i18n';
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
+import type {
+  TaskSchedulingRegistration,
+  TaskSchedulingDefinitions,
+} from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
 import type { RunContext, TaskManagerSetupContract } from '@kbn/task-manager-plugin/server';
 import { TaskCost } from '@kbn/task-manager-plugin/server';
 import { ACTION_TYPE_SOURCES } from '@kbn/actions-types';
@@ -26,14 +30,23 @@ import type {
   InMemoryConnector,
 } from './types';
 
-export interface ActionTypeRegistryOpts {
+export type ActionTypeRegistryOpts = {
   licensing: LicensingPluginSetup;
-  taskManager: TaskManagerSetupContract;
-  taskRunnerFactory: TaskRunnerFactory;
   actionsConfigUtils: ActionsConfigurationUtilities;
   licenseState: ILicenseState;
   inMemoryConnectors: InMemoryConnector[];
-}
+} & (
+  | {
+      taskManager: Pick<TaskManagerSetupContract, 'registerTaskDefinitions'>;
+      taskRunnerFactory: Pick<TaskRunnerFactory, 'create'>;
+      taskDefinitionRegistry?: never;
+    }
+  | {
+      taskManager?: never;
+      taskRunnerFactory?: never;
+      taskDefinitionRegistry: Pick<TaskSchedulingDefinitions, 'registerTaskDefinitions'>;
+    }
+);
 
 interface ListOpts {
   featureId?: string;
@@ -41,17 +54,31 @@ interface ListOpts {
 }
 
 export class ActionTypeRegistry {
-  private readonly taskManager: TaskManagerSetupContract;
+  private readonly registerActionTask: (
+    type: string,
+    definition: Pick<TaskSchedulingRegistration, 'title' | 'maxAttempts' | 'cost' | 'taskTypeGroup'>
+  ) => void;
   private readonly actionTypes: Map<string, ActionType> = new Map();
-  private readonly taskRunnerFactory: TaskRunnerFactory;
   private readonly actionsConfigUtils: ActionsConfigurationUtilities;
   private readonly licenseState: ILicenseState;
   private readonly inMemoryConnectors: InMemoryConnector[];
   private readonly licensing: LicensingPluginSetup;
 
   constructor(constructorParams: ActionTypeRegistryOpts) {
-    this.taskManager = constructorParams.taskManager;
-    this.taskRunnerFactory = constructorParams.taskRunnerFactory;
+    if (constructorParams.taskDefinitionRegistry) {
+      const { taskDefinitionRegistry } = constructorParams;
+      this.registerActionTask = (type, definition) =>
+        taskDefinitionRegistry.registerTaskDefinitions({ [type]: definition });
+    } else {
+      const { taskManager, taskRunnerFactory } = constructorParams;
+      this.registerActionTask = (type, definition) =>
+        taskManager.registerTaskDefinitions({
+          [type]: {
+            ...definition,
+            createTaskRunner: (context: RunContext) => taskRunnerFactory.create(context),
+          },
+        });
+    }
     this.actionsConfigUtils = constructorParams.actionsConfigUtils;
     this.licenseState = constructorParams.licenseState;
     this.inMemoryConnectors = constructorParams.inMemoryConnectors;
@@ -226,14 +253,11 @@ export class ActionTypeRegistry {
 
     // Skip task type registration for connectors without execute/params
     if (actionType.executor && actionType.validate.params) {
-      this.taskManager.registerTaskDefinitions({
-        [`actions:${actionType.id}`]: {
-          title: actionType.name,
-          maxAttempts,
-          cost: TaskCost.Tiny,
-          taskTypeGroup: TaskTypeGroup.Actions,
-          createTaskRunner: (context: RunContext) => this.taskRunnerFactory.create(context),
-        },
+      this.registerActionTask(`actions:${actionType.id}`, {
+        title: actionType.name,
+        maxAttempts,
+        cost: TaskCost.Tiny,
+        taskTypeGroup: TaskTypeGroup.Actions,
       });
     }
     // No need to notify usage on basic action types

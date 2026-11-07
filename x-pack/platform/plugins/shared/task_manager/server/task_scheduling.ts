@@ -31,7 +31,7 @@ import { retryableBulkUpdate } from './lib/retryable_bulk_update';
 import type { ErrorOutput } from './lib/bulk_operation_buffer';
 import { TaskAlreadyRunningError } from './lib/errors';
 import type { TaskPollingLifecycle } from './polling_lifecycle';
-import type { TaskTypeDictionary } from './task_type_dictionary';
+import type { TaskSchedulingDefinitionRegistry } from './task_scheduling_definition_registry';
 import { getExecutionId } from './lib/get_execution_id';
 import { credentialMatchesRunAs } from './lib/service_account_credential';
 import type { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
@@ -73,7 +73,7 @@ export interface TaskSchedulingOpts {
   taskStore: TaskStore;
   middleware: Middleware;
   taskManagerId: string;
-  definitions: TaskTypeDictionary;
+  definitions: TaskSchedulingDefinitionRegistry;
   taskPollingLifecycle?: TaskPollingLifecycle; // subscribe to task lifecycle events
   claimNudgeService?: TaskManagerClaimNudgeService;
 }
@@ -133,7 +133,7 @@ export class TaskScheduling {
   private store: TaskStore;
   private logger: Logger;
   private middleware: Middleware;
-  private readonly definitions: TaskTypeDictionary;
+  private readonly definitions: TaskSchedulingDefinitionRegistry;
   private readonly taskPolling: TaskPollingLifecycle | undefined;
   private readonly claimNudgeService: TaskManagerClaimNudgeService | undefined;
 

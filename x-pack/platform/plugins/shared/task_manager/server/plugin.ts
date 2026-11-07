@@ -59,6 +59,10 @@ import {
 } from './saved_objects';
 import type { TaskDefinitionRegistry } from './task_type_dictionary';
 import { TaskTypeDictionary } from './task_type_dictionary';
+import {
+  createTaskSchedulingSnapshot,
+  type TaskManagerTaskProcessSettings,
+} from './task_scheduling_snapshot';
 import type { AggregationOpts, FetchResult, SearchOpts } from './task_store';
 import { TaskStore } from './task_store';
 import { TaskScheduling } from './task_scheduling';
@@ -394,6 +398,11 @@ export class TaskManagerPlugin
       const registration = this.moduleRegistrations.get(taskType);
       if (!registration) return undefined;
       const { options } = registration;
+      const taskStore = this.taskStore;
+      if (!taskStore)
+        throw new Error(
+          'Native task scheduling metadata is not available before Task Manager starts'
+        );
       const init: Pick<
         TaskProcessInit,
         | 'server'
@@ -437,7 +446,15 @@ export class TaskManagerPlugin
         taskManager: serializeSettings({
           api_key_type: this.config.api_key_type,
           grant_uiam_api_keys: this.config.grant_uiam_api_keys,
-        }),
+          scheduling: {
+            taskManagerId: taskStore.taskManagerId,
+            allowReadingInvalidState: this.config.allow_reading_invalid_state,
+            definitions: createTaskSchedulingSnapshot(this.definitions),
+            claimNudge: this.claimNudgeService
+              ? { index: TASK_MANAGER_CLAIM_NUDGE_INDEX }
+              : undefined,
+          },
+        } satisfies TaskManagerTaskProcessSettings),
       } as TaskProcessInit['settings'];
       return init;
     };

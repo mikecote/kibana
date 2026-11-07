@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
 import type { Observable } from 'rxjs';
 import type {
   AnalyticsServiceStart,
@@ -142,6 +143,7 @@ export const createRuleRunActions = (
   deps: RuleRunActionsDeps
 ): {
   actionsPlugin: RuleRunActionsStart;
+  taskDefinitions: TaskSchedulingDefinitions;
   hasActionType: (id: string) => boolean;
   /** The ids of the connector types registered, for comparing with Kibana's. */
   getActionTypeIds: () => string[];
@@ -168,13 +170,12 @@ export const createRuleRunActions = (
     ? [...sentConnectors]
     : getInMemoryConnectorsFromConfig(config, logger);
 
+  const taskDefinitions = new TaskSchedulingDefinitions();
   const actionTypeRegistry = new ActionTypeRegistry({
     licensing: {
       featureUsage: { register: () => undefined, notifyUsage: () => undefined },
     } as unknown as LicensingPluginSetup,
-    // Registering a connector type would register the task type that runs it; Kibana does that.
-    taskManager: { registerTaskDefinitions: () => undefined } as never,
-    taskRunnerFactory: {} as never,
+    taskDefinitionRegistry: taskDefinitions,
     actionsConfigUtils: configurationUtilities,
     licenseState,
     inMemoryConnectors,
@@ -355,6 +356,7 @@ export const createRuleRunActions = (
           (connector) => connector.id === connectorId && connector.isSystemAction
         ),
     },
+    taskDefinitions,
     hasActionType: (id) => actionTypeRegistry.has(id),
     getActionTypeIds: () => actionTypeRegistry.getAllTypes(),
     stop: async () => {

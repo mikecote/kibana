@@ -272,7 +272,7 @@ describe('createRuleTaskType', () => {
 
     it('is built again with what other plugins contribute to rule runs', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
-      expect(taskType.contributions?.keys).toEqual([RULE_RUN_CONTRIBUTIONS]);
+      expect(taskType.contributions?.keys).toEqual([RULE_RUN_CONTRIBUTIONS, 'task-scheduling']);
 
       const contributedType = { name: 'contributed-type', hidden: true } as never;
       const applied = taskType.contributions!.apply!({

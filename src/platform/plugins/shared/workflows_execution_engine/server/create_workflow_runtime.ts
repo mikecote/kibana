@@ -115,6 +115,11 @@ import type {
   WorkflowRuntimeTaskManager,
 } from './workflow_core_services';
 import { WorkflowLogsQueryService } from './workflow_event_logger';
+import {
+  WORKFLOW_RESUME_TASK_MAX_ATTEMPTS,
+  WORKFLOW_RUN_TASK_MAX_ATTEMPTS,
+  WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS,
+} from './workflow_task_manager/task_scheduling_definitions';
 import type {
   ResumeWorkflowExecutionParams,
   StartWorkflowExecutionParams,
@@ -134,27 +139,11 @@ import {
 } from './workflow_task_manager/workflow_task_manager';
 import { createWorkflowTaskAbortController } from './workflow_task_shutdown';
 
-/**
- * Max Task Manager attempts for `workflow:run`.
- * - Attempt 1: normal `runWorkflow` execution.
- * - Attempts > 1: `resolveInterruptedWorkflowRunTask` runs first; when it marks the execution FAILED
- *   (interrupt recovery) the runner returns without re-executing user logic - so attempt 2 is not a
- *   second full workflow run in that case.
- * - A third attempt mainly covers transient failures persisting that recovery (e.g. ES unavailable)
- *   or a thrown error on attempt 1 where attempt 2 still runs recovery then `runWorkflow` again;
- *   it is not meant as extra user workflow retries after successful interrupt recovery.
- */
-export const WORKFLOW_RUN_TASK_MAX_ATTEMPTS = 3;
-
-/**
- * Max Task Manager attempts for `workflow:resume`.
- * Same numeric budget as run but semantics differ: each attempt can run `resumeWorkflow` user logic
- * until interrupt recovery short-circuits or the last attempt applies `resolveExhaustedWorkflowRunTask`
- * after a handler failure - so extra attempts also cover resume work that runs and may throw.
- */
-export const WORKFLOW_RESUME_TASK_MAX_ATTEMPTS = 3;
-
-export const WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS = 3;
+export {
+  WORKFLOW_RUN_TASK_MAX_ATTEMPTS,
+  WORKFLOW_RESUME_TASK_MAX_ATTEMPTS,
+  WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS,
+} from './workflow_task_manager/task_scheduling_definitions';
 
 /** Batch size for bulk cancel search_after paging (internal; not exposed on the public API). */
 const BULK_CANCEL_PAGE_SIZE = 10;

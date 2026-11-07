@@ -55,6 +55,16 @@ describe('createRuleRunActions', () => {
       ...extra,
     });
 
+  it('registers native scheduling metadata instead of fabricating a task runner', () => {
+    const { taskDefinitions, stop } = create();
+    expect(taskDefinitions.get('actions:.server-log')).toMatchObject({
+      title: 'Test',
+      taskTypeGroup: 'actions',
+    });
+    expect(taskDefinitions.get('actions:.server-log')).not.toHaveProperty('createTaskRunner');
+    stop();
+  });
+
   it('knows the connector types that were registered, and no others', () => {
     const { hasActionType, stop } = create();
     expect(hasActionType('.server-log')).toBe(true);

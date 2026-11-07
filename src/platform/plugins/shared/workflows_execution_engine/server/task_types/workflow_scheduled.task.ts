@@ -8,18 +8,10 @@
  */
 
 import { defineWorkflowTaskType } from './define_workflow_task_type';
-import { WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS } from '../create_workflow_runtime';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
 import { WORKFLOW_SCHEDULED_TASK_TYPE } from '../workflow_task_manager/types';
 
 export const taskType = defineWorkflowTaskType(
-  {
-    type: WORKFLOW_SCHEDULED_TASK_TYPE,
-    title: 'Scheduled Workflow Execution',
-    description: 'Executes workflows on a scheduled basis',
-    // Set high timeout for long-running workflows.
-    // The workflow timeout logic defined in workflow execution engine logic is the primary control.
-    timeout: '365d',
-    maxAttempts: WORKFLOW_SCHEDULED_TASK_MAX_ATTEMPTS,
-  },
+  WORKFLOW_TASK_SCHEDULING_DEFINITIONS[WORKFLOW_SCHEDULED_TASK_TYPE],
   (runtime) => runtime.scheduledWorkflowTask
 );

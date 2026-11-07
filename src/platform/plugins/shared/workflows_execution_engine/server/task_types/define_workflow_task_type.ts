@@ -17,6 +17,7 @@ import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalon
 import { kibanaPackageJson } from '@kbn/repo-info';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '@kbn/task-manager-plugin/server/task_process/host_capabilities/task_scheduling';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
 import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import { defineTaskType } from '@kbn/task-manager-plugin/server/task_type_module';
 import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
@@ -204,6 +205,7 @@ export const defineWorkflowTaskType = (
     // and attachment types of the plugins that register them with agent builder.
     contributions: {
       keys: [
+        TASK_SCHEDULING_CONTRIBUTIONS_KEY,
         RULE_RUN_CONTRIBUTIONS_KEY,
         WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
         AGENT_BUILDER_CONTRIBUTIONS_KEY,
