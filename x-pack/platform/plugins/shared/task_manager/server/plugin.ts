@@ -36,7 +36,7 @@ import { TaskProcessSupervisor } from './task_process/supervisor';
 import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
-import { serializeSettings } from './task_process/settings';
+import { resolveSettingsByPlugin, serializeSettings } from './task_process/settings';
 import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
 import { TaskProcessAcquireError } from './task_process/acquire_error';
 import type { TaskProcessInit } from './task_process/wire';
@@ -349,8 +349,12 @@ export class TaskManagerPlugin
             };
           }
           if (module.settings?.length) {
-            host.settings = Object.fromEntries(
-              module.settings.map((id) => [id, options!.settings![id]()])
+            const registeredSettings = options?.settings;
+            if (!registeredSettings) {
+              throw new Error('The task module settings were not registered');
+            }
+            host.settings = await resolveSettingsByPlugin(
+              Object.fromEntries(module.settings.map((id) => [id, registeredSettings[id]]))
             );
           }
           return host;
@@ -422,9 +426,9 @@ export class TaskManagerPlugin
       init.settings = {
         ...(options?.settings
           ? Object.fromEntries(
-              Object.entries(options.settings).map(([id, getSettings]) => [
+              Object.entries(await resolveSettingsByPlugin(options.settings)).map(([id, value]) => [
                 id,
-                serializeSettings(getSettings()),
+                serializeSettings(value),
               ])
             )
           : {}),

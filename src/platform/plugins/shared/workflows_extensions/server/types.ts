@@ -74,8 +74,9 @@ export interface WorkflowsExtensionsServerPluginSetup {
   /**
    * Registers the config a plugin's steps read in the task process of the workflow task types, to be
    * listed in the `declares.settings` of its `workflow-steps` contribution and read there as
-   * `settings[pluginId]`. The getter runs each time a process is started, so it may read start
-   * services. Use `alerting.registerTaskProcessSettings` only for rule runs.
+   * `settings[pluginId]`. The getter is awaited for every dispatch snapshot, so it may read start
+   * services or file-backed material asynchronously. Use `alerting.registerTaskProcessSettings`
+   * only for rule runs.
    */
   registerTaskProcessSettings(pluginId: string, getSettings: () => unknown): void;
 

@@ -269,8 +269,9 @@ export interface TaskTypeRegistrationOptions {
   logger?: Logger;
   hostExtensions?: TaskTypeHostExtensions;
   /**
-   * Validated plugin configs by plugin id, read when a run or a process starts. Every one is sent to
-   * the task process of this task type; the module it runs reads the ones it lists in `settings`.
+   * Validated plugin configs by plugin id; getters may return promises and are awaited for each
+   * run or dispatch snapshot. Every one is sent to the task process of this task type; the module
+   * it runs reads the ones it lists in `settings`.
    */
   settings?: Record<string, () => unknown>;
   /**
