@@ -19,7 +19,7 @@ import { contextEngineServerEbtEvents } from '../telemetry/events';
 import { createPrivilegeChecks } from '../utils/create_privilege_checks';
 import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import { contextEngineGlobalUiSettings, contextEngineSpaceUiSettings } from '../ui_settings';
-import { checkContextEngineStep } from './context_engine_workflow_run_checks';
+import type { KiVerifierWorkflowRunner } from '../ki_verification';
 import {
   CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID,
   createTaskProcessAiIndexRegistry,
@@ -37,8 +37,8 @@ import {
  *
  * The KI and feedback steps use the same services and space/global settings as Kibana.
  *
- * Managed AI indices are restored from Kibana's dispatch snapshot. Custom verifier workflows still
- * require the workflow management API to run and cancel them.
+ * Managed AI indices are restored from Kibana's dispatch snapshot. Custom verifiers use the
+ * shared workflow management runtime for execution, authorization, and cancellation.
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
@@ -48,7 +48,7 @@ export const contribution: WorkflowStepsContribution = {
     // The events of the analytics service; the process ships them itself.
     analyticsEventTypes: contextEngineServerEbtEvents,
   },
-  register: (registry, { host, logger, registerRunCheck, settings }) => {
+  register: (registry, { host, logger, services, settings }) => {
     const { elasticsearch, savedObjects, uiSettings, security, analytics, plugins } =
       host as TaskHost;
     const securityPlugin = plugins?.security as SecurityTaskPluginStart | undefined;
@@ -92,9 +92,11 @@ export const contribution: WorkflowStepsContribution = {
         .get<boolean>(CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID)) ?? false;
     const verifyKi = createVerifyKi({
       getAuditLogger: async (request) => security.audit.asScoped(request),
-      // Custom verifier workflows are declined by `checkContextEngineStep`.
       workflowVerifierDeps: {
-        getWorkflowsManagement: async () => undefined,
+        getWorkflowsManagement: async () => {
+          if (!services) throw new Error('The workflow runtime services are missing');
+          return services.getService<KiVerifierWorkflowRunner>('workflows.management');
+        },
         checkExecutePrivilege: (request, spaceId) =>
           checkApiPrivileges(request, spaceId, WorkflowsManagementOperationPrivileges.execute),
       },
@@ -102,7 +104,6 @@ export const contribution: WorkflowStepsContribution = {
       logger: stepsLogger,
     });
 
-    registerRunCheck?.(checkContextEngineStep);
     registerStepDefinitions({
       workflowsExtensions: registry,
       analyticsService,

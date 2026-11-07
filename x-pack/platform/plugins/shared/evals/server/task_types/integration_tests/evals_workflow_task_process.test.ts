@@ -11,9 +11,13 @@
  */
 
 import { createServer } from 'http';
+import { join } from 'path';
 import type { IncomingHttpHeaders, Server } from 'http';
 import type { AddressInfo } from 'net';
-import { startWorkflowProcessHarness } from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
+import {
+  WORKFLOW_PROCESS_TEST_MODES,
+  startWorkflowProcessHarness,
+} from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
 
 const MODEL_WORKFLOW_ID = 'evals-model-workflow';
 const AGENT_WORKFLOW_ID = 'evals-agent-workflow';
@@ -35,9 +39,9 @@ const executeTask = (name: string, task: Record<string, unknown>) => ({
  * Runs `workflow:scheduled` workflows with `ai.evals.executeTask` from the real bundle in a real
  * task process: the steps come from the `workflow-steps` contribution of evals. The direct model
  * task calls an LLM (a stub) through the inference services built from the host, the agent task
- * calls Kibana's converse API through the self client, and a task a suite registered is declined.
+ * calls Kibana's converse API through the self client, and a contributed provider writes its result directly to Elasticsearch.
  */
-describe('evals workflow steps served from the workflow:scheduled bundle', () => {
+describe.each(WORKFLOW_PROCESS_TEST_MODES)('evals in $mode (reuse: $reuse)', ({ mode, reuse }) => {
   let harness: Awaited<ReturnType<typeof startWorkflowProcessHarness>>;
   let llmStub: Server;
   const llmRequests: Array<{ url?: string; headers: IncomingHttpHeaders; body: string }> = [];
@@ -99,10 +103,20 @@ describe('evals workflow steps served from the workflow:scheduled bundle', () =>
     const llmUrl = `http://127.0.0.1:${(llmStub.address() as AddressInfo).port}`;
 
     harness = await startWorkflowProcessHarness({
+      mode,
+      reuse,
+      additionalContributions: {
+        'workflow-steps': [join(__dirname, 'fixtures/task_provider_contribution.ts')],
+      },
+      settings: {
+        evalsTaskProviders: { names: ['inference', 'agentBuilder.converse', 'suite.custom_task'] },
+      },
       workflows: {
         [MODEL_WORKFLOW_ID]: { steps: [executeTask('model', {})] },
         [AGENT_WORKFLOW_ID]: { steps: [executeTask('agent', { agent_id: 'my-agent' })] },
-        [SUITE_WORKFLOW_ID]: { steps: [executeTask('suite', { task_ref: 'suite.custom_task' })] },
+        [SUITE_WORKFLOW_ID]: {
+          steps: [executeTask('suite', { task_ref: "{{ 'suite.custom_task' }}" })],
+        },
       },
       kibanaHandler: () => ({
         body: {
@@ -177,11 +191,18 @@ describe('evals workflow steps served from the workflow:scheduled bundle', () =>
     );
   });
 
-  it('declines a task a suite registered in Kibana, writing nothing', async () => {
+  it('executes a contributed provider selected by a templated reference and persists its effect', async () => {
     const onDispatchFailure = jest.fn();
-    await expect(harness.run(SUITE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
-
-    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
-    expect(await harness.executionsOf(SUITE_WORKFLOW_ID)).toHaveLength(0);
+    await harness.run(SUITE_WORKFLOW_ID, onDispatchFailure);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
+    const step = await completedStep(SUITE_WORKFLOW_ID, 'suite');
+    expect(step.output.output).toEqual({
+      input: 'What is the capital of France?',
+      source: 'custom-task-provider',
+    });
+    const stored = await harness.es.get({ index: 'test-evals-provider-output', id: 'custom-task' });
+    expect(stored._source).toEqual({ output: step.output.output, connectorId: CONNECTOR_ID });
+    expect(step.output.trace_id).toBe('0af7651916cd43dd8448eb211c80319c');
+    expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 3);
   });
 });

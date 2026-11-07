@@ -455,6 +455,99 @@ describe('createHostTaskScheduling', () => {
       });
     });
 
+    describe('bulkUpdateSchedules', () => {
+      const replyWithUpdates = () =>
+        repository.bulkUpdate.mockImplementation(
+          async (objects) =>
+            ({
+              saved_objects: objects.map((object) => ({
+                ...so(object.id),
+                attributes: object.attributes,
+              })),
+            } as never)
+        );
+
+      it('replaces an RRule schedule and moves only idle tasks unless running tasks are included', async () => {
+        repository.bulkGet.mockResolvedValue({
+          saved_objects: [
+            so('idle', {
+              schedule: {
+                rrule: { freq: 3, interval: 1, tzid: 'UTC', dtstart: '2026-01-01T00:00:00.000Z' },
+              },
+            }),
+            so('running', { status: 'running', schedule: { interval: '1d' } }),
+          ],
+        } as never);
+        replyWithUpdates();
+        const result = await workflows().bulkUpdateSchedules(['idle', 'running'], {
+          interval: '2d',
+        });
+        expect(result.errors).toEqual([]);
+        expect(result.tasks.map(({ id }) => id)).toEqual(['idle']);
+        expect(repository.bulkUpdate).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              id: 'idle',
+              version: 'v1',
+              mergeAttributes: false,
+              attributes: expect.objectContaining({ schedule: { interval: '2d' } }),
+            }),
+          ],
+          { refresh: false }
+        );
+      });
+
+      it('preserves the due time of a running task while updating its schedule', async () => {
+        repository.bulkGet.mockResolvedValue({
+          saved_objects: [so('running', { status: 'running', schedule: { interval: '1d' } })],
+        } as never);
+        replyWithUpdates();
+        const result = await workflows().bulkUpdateSchedules(
+          ['running'],
+          { interval: '2d' },
+          { includeRunningTasks: true }
+        );
+        expect(result.tasks[0].runAt.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+        expect(result.tasks[0].schedule).toEqual({ interval: '2d' });
+      });
+
+      it('retries version conflicts against the latest task version', async () => {
+        repository.bulkGet
+          .mockResolvedValueOnce({
+            saved_objects: [so('idle', { schedule: { interval: '1d' } })],
+          } as never)
+          .mockResolvedValueOnce({
+            saved_objects: [{ ...so('idle', { schedule: { interval: '1d' } }), version: 'v2' }],
+          } as never);
+        replyWithUpdates();
+        repository.bulkUpdate.mockResolvedValueOnce({
+          saved_objects: [
+            {
+              id: 'idle',
+              type: 'task',
+              error: { statusCode: 409, message: 'conflict', error: 'Conflict' },
+            },
+          ],
+        });
+        const result = await workflows().bulkUpdateSchedules(['idle'], { interval: '2d' });
+        expect(result.errors).toEqual([]);
+        expect(repository.bulkUpdate).toHaveBeenLastCalledWith(
+          [expect.objectContaining({ version: 'v2' })],
+          { refresh: false }
+        );
+      });
+
+      it('rejects writes outside the allowed task types', async () => {
+        repository.bulkGet.mockResolvedValue({
+          saved_objects: [so('rule', { taskType: 'alerting:x' })],
+        } as never);
+        await expect(workflows().bulkUpdateSchedules(['rule'], { interval: '2d' })).rejects.toThrow(
+          'cannot be rescheduled'
+        );
+        expect(repository.bulkUpdate).not.toHaveBeenCalled();
+      });
+    });
+
     describe('runSoon', () => {
       it('sets runAt to now and keeps retryAt, at the version that was read', async () => {
         repository.get.mockResolvedValue(so('t1', { runAt: '2999-01-01T00:00:00.000Z' }) as never);

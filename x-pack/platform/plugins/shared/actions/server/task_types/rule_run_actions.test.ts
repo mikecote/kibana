@@ -59,6 +59,18 @@ describe('createRuleRunActions', () => {
     stop();
   });
 
+  it('exposes the same host restrictions and relay configuration to workflow tools', () => {
+    const { actionsPlugin, stop } = create({
+      allowedHosts: ['allowed.example'],
+      relay: { url: 'https://relay.example' },
+    });
+    const config = actionsPlugin.getActionsConfigurationUtilities();
+    expect(config.isHostnameAllowed('allowed.example')).toBe(true);
+    expect(config.isHostnameAllowed('other.example')).toBe(false);
+    expect(actionsPlugin.getRelayClient()?.uiamEnabled).toBe(false);
+    stop();
+  });
+
   it('answers whether an action is executable from the registry and the license', () => {
     const { actionsPlugin, stop } = create();
     expect(actionsPlugin.isActionExecutable('connector-1', '.server-log')).toBe(true);

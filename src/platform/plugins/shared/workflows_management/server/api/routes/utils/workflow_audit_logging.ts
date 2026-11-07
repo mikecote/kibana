@@ -10,7 +10,7 @@
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AuditEvent } from '@kbn/security-plugin-types-server';
-import type { WorkflowsService } from '../../workflows_management_service';
+import type { WorkflowsRuntime } from '../../../runtime/workflows_runtime';
 
 /**
  * Stable action names for xpack.security.audit.ignore_filters.
@@ -101,7 +101,7 @@ function createEvent(
 }
 
 interface WorkflowManagementAuditLogDeps {
-  service: WorkflowsService;
+  service: WorkflowsRuntime;
 }
 
 /**
@@ -110,7 +110,7 @@ interface WorkflowManagementAuditLogDeps {
  * Best-effort: sync throws are caught; audit never affects HTTP responses.
  */
 export class WorkflowManagementAuditLog {
-  private security?: SecurityServiceStart;
+  private security?: Pick<SecurityServiceStart, 'audit'>;
 
   constructor(private readonly deps: WorkflowManagementAuditLogDeps) {
     this.deps.service

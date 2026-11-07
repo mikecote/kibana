@@ -236,8 +236,8 @@ definitions that are already installed.
 A plugin that a run depends on exposes a function with explicit dependencies, used by both its own
 `plugin.ts` and the process (`createMlRunServices`, `createInfraAlertingLibs`,
 `createFleetRunServices`, `createRuleDataService`, `createRunTimeSecurity` ...). There is one
-implementation and no copy to drift. Where something cannot exist in a process it throws a clear
-"only available in Kibana" error when used.
+implementation and no copy to drift. Any execution dependency missing from a process is a parity
+defect to complete before the affected capability is enabled.
 
 ### Capability failures
 
@@ -326,14 +326,14 @@ using the median of five interleaved runs per variant. The baseline includes PR 
 Both variants use the same validated settings and an active trial security license. These real-rule
 fixtures differ from the minimal settings used for earlier startup-only measurements.
 
-| Platform | Task | Startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) | Peak RSS through first task (MiB) |
-| --- | --- | --- | --- | --- | --- |
-| macOS ARM64 | Task Manager | 504 → 337 | 200 → 158 | 87 → 49 | 201 → 158 |
-| macOS ARM64 | `.es-query` | 880 → 676 | 344 → 266 | 173 → 114 | 365 → 267 |
-| macOS ARM64 | `siem.queryRule` | 1363 → 870 | 483 → 312 | 263 → 156 | 495 → 327 |
-| Linux ARM64 | Task Manager | 575 → 381 | 181 → 142 | 86 → 49 | 181 → 142 |
-| Linux ARM64 | `.es-query` | 1065 → 805 | 301 → 235 | 150 → 115 | 314 → 238 |
-| Linux ARM64 | `siem.queryRule` | 1674 → 1036 | 394 → 276 | 247 → 153 | 419 → 291 |
+| Platform    | Task             | Startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) | Peak RSS through first task (MiB) |
+| ----------- | ---------------- | ------------ | -------------- | -------------------- | --------------------------------- |
+| macOS ARM64 | Task Manager     | 504 → 337    | 200 → 158      | 87 → 49              | 201 → 158                         |
+| macOS ARM64 | `.es-query`      | 880 → 676    | 344 → 266      | 173 → 114            | 365 → 267                         |
+| macOS ARM64 | `siem.queryRule` | 1363 → 870   | 483 → 312      | 263 → 156            | 495 → 327                         |
+| Linux ARM64 | Task Manager     | 575 → 381    | 181 → 142      | 86 → 49              | 181 → 142                         |
+| Linux ARM64 | `.es-query`      | 1065 → 805   | 301 → 235      | 150 → 115            | 314 → 238                         |
+| Linux ARM64 | `siem.queryRule` | 1674 → 1036  | 394 → 276      | 247 → 153            | 419 → 291                         |
 
 Linux used `node:24.21.0-bookworm-slim` containers with a 1 GiB memory limit and two CPUs. Each run
 started a fresh process and executed a real task against Elasticsearch; rule samples used fresh
@@ -367,9 +367,10 @@ from explicit inputs. These are the steps, in the order most plugins need them.
    implementation. Examples: `createMlRunServices`, `createFleetRunServices`, `createRuleDataService`,
    `createInferenceRunServices`, `createRunTimeSecurity`. Read services lazily when they are used, not
    while the factory runs, because the process builds things in a different order than Kibana.
-2. **Throw for what cannot exist.** If a part needs something only Kibana has (HTTP routes, the
-   session, a long-lived poller), make it throw "only available in Kibana" when used, so a path that
-   reaches it fails loudly. Do not return an empty object that silently does nothing.
+2. **Complete every execution dependency.** Extract the shared runtime service, contribute executable
+   registrations, and snapshot current metadata from Kibana. Keep HTTP route installation and
+   long-lived pollers in Kibana. Missing capabilities must fail explicitly while being completed;
+   throwing placeholders and silent no-ops do not establish parity.
 3. **Do not install anything at startup.** Index, template and data stream creation belongs to Kibana.
    Take already-installed definitions (build a client from its definition, skip mapping updates on
    read). Installs a run itself triggers in Kibana, such as an alerts index for a new space, stay as
@@ -466,8 +467,8 @@ reschedule, the task state, the retries). What differs, and why:
   short-lived process cannot export the same series (cumulative counters of one resource from many
   processes overwrite each other, and Prometheus cannot scrape them). A rule that uses a connector type or
   adapter the process does not know, or a workflow rule whose executions are stored where the process cannot
-  store them, is declined, and each run is a fresh process, so it pays for the encryption service, the license
-  and the alerts resource checks every time.
+  store them, fails explicitly. Fresh workers pay for the encryption service, license and alerts resource
+  checks at startup. Reused workers retain Core while rebuilding execution services for each run.
 
 ### Testing a rule type in a process
 
@@ -511,11 +512,11 @@ loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_R
 and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
 records, with Task Manager at debug, so the tests can see where each run happened.
 
-| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap retry in a process (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
-| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and the rules fail (`declined`)                                                                                                                                                                                                                                                                                |
-| `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                 |
+| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and the rules fail (`declined`)                                                                                                                                                                                                                                                                                                |
+| `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                          |
 
 ```
 node scripts/scout.js start-server --arch stateful --domain classic --serverConfigSet task_processes
@@ -593,12 +594,30 @@ flags and event log providers it needs to the module. Rules to follow:
   types, the features registry) unless the registry is filled by contributions too, as agent builder's is
   (see below). It would behave differently from Kibana. A workflow that uses a step the process lacks is
   declined before anything is written, and the task fails.
-- `context.registerRunCheck(check)` declines a single step by what it asks for (a connector feature the
-  process does not know, a templated value, an input only Kibana can serve).
+- `context.registerRunCheck(check)` verifies required registrations and capabilities before a run writes.
+  Templated values resolve through the handler at execution time, as in Kibana. A missing capability fails
+  the task without changing executors.
 - A step that emits events without waiting must flush them before it returns, because the process exits
   with the run.
 - A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
   counts usage reads `host.usageCounters.getUsageCounter(domain)`.
+
+Contributions can provide lazy execution services with `provides: { serviceId: (context) => service }`.
+`context.services.getService<T>(serviceId)` returns the same instance throughout one run. Agent Builder
+contributions use the same resolver. Providers and their mutable registries are rebuilt for the next run,
+including when Core and the bundle are reused.
+
+The `workflows.management` and `workflows.extensions` providers share one `WorkflowsRuntime`: the full
+management API, request-scoped trigger clients and owner-bound managed workflow clients use the same
+services and license checks as Kibana. The `spaces` provider uses the real spaces client and security
+wrapper over stored space documents, with the captured feature registry, solution visibility and CPS
+routing. `nightshiftSources` uses the source catalog's shared client factory; its change emitter awaits
+subscribers before writes return.
+
+Evals exposes its executable registry as `evals.taskProviders`. A plugin that calls `registerTaskProvider`
+in Kibana also registers the same provider from its workflow contribution through that service. The
+`evalsTaskProviders` dispatch snapshot lists the expected provider names, which are checked against the
+completed execution registry. Both literal and templated `task_ref` values execute through that registry.
 
 ### Agent builder in a process
 
@@ -618,9 +637,9 @@ request and credential), the search inference endpoints with Kibana's complete f
 endpoints Kibana's poller had found (sent as a setting), Core's Elasticsearch, saved objects and ui settings,
 the actions client of the run, the usage counter and analytics of the host, the deployment information Kibana
 sent, and a space taken from the run's request. The start contract plugins read (`getAgentBuilderStart()`) is
-built by `createAgentBuilderStartContract`, which the plugin's `start()` calls too. What cannot exist in a
-process (the callbacks of an asynchronous execution) throws "only available in Kibana". Conversation events
-are forwarded to the workflows triggers with the engine's runtime and flushed before the run answers.
+built by `createAgentBuilderStartContract`, which the plugin's `start()` calls too. Asynchronous execution
+callbacks use the shared actions configuration and relay client. Conversation events are forwarded to the
+workflows triggers with the engine's runtime and flushed before the run answers.
 
 **Contributions.** A plugin lists a file under `plugin.taskTypeContributions['agent-builder']` in its
 `kibana.jsonc` that exports `contribution: AgentBuilderContribution` (`@kbn/agent-builder-server`):
@@ -677,16 +696,20 @@ running in a process while contributions are still being added. The parity is `h
 contribute.
 
 **The workflows management API.** The hooks that run an agent's workflows, the `workflow` tool type and the tools of
-the plugins that run workflows read `workflowsManagement.management`. A process serves it as far as it can:
-`createWorkflowsProcessManagementApi` (`workflows_management/server/api`) is built over the same read API the
-workflow steps use (`createWorkflowsReadApi`: `getWorkflow`, `getWorkflowExecution`, `getWorkflowExecutionStatuses`,
-`assertWorkflowAccess`) and the engine's `scheduleWorkflow`: `executeWorkflow` of a saved workflow checks that the
-request may execute it, schedules a `workflow:run` task (it runs under its own task, in a process of its own when
-configured by Task Manager) and waits for the execution as the management API does; `runWorkflow` and
-`scheduleWorkflow` schedule. Everything that needs the workflows service of Kibana (creating, updating, listing,
-validating, resuming and cancelling workflows, inline YAML runs, step and trigger definitions) throws "only
-available in Kibana": a tool that needs it registers and fails when called in a process (the contributions say
-which). A contribution reads it as `services.getWorkflowsManagement()`, lazily.
+the plugins that run workflows read `workflowsManagement.management`. The process uses the same
+`WorkflowsRuntime` and `WorkflowsManagementApi` as Kibana, composed from explicit execution, authorization,
+actions, storage, and registry dependencies. The plugin's lifecycle adapter supplies these dependencies
+from Core; the `workflows.management` contribution supplies them from the run. CRUD, validation,
+inline and saved execution, managed workflows, history, resume, and cancellation share one implementation.
+Management side effects include audit events and SML indexing, which the process flushes before replying.
+Change history opens the data stream Kibana installed instead of installing assets at worker startup.
+
+`WorkflowStepsContribution.provides` declares lazy run-service providers. `services.getService(id)` resolves
+one instance per execution; `registerService` publishes services after asynchronous composition, and
+`getExecutionEngine` resolves once all step contributions have registered. Duplicate and circular providers
+fail explicitly. Agent Builder publishes its start contract as `agentBuilder`; proposal steps use its
+attachment client. KI verifier workflows are scheduled as separate tasks, so their caller can poll and
+cancel them through the same access-controlled management API.
 
 **Global ui settings.** `declares.globalUiSettings` (of an `agent-builder` or `workflow-steps` contribution) are
 registered with `registerGlobal` in the process (`TaskTypeModule.uiSettings.globalDefaults`) and read with
@@ -717,9 +740,8 @@ indices other plugins register as managed, the attachment types and the alerts c
 data views of ML recognizers).
 Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
 the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
-are read and validated without them), agent_builder_workflows (over the management API of the process: tools that
-need the workflows service of Kibana are registered and fail with "only available in Kibana"; the workflow tool and
-the hooks run workflows through `scheduleWorkflow`), and the SML types of visualizations, platform, dashboards and
+are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
+execution, and scheduling), and the SML types of visualizations, platform, dashboards and
 workflows. Product documentation counts as installed from the status saved objects (an installation in flight is
 not looked at; Security Labs is not available).
 
@@ -730,8 +752,7 @@ encrypted saved objects client exist only in Kibana and throw when used, integra
 served, and the space solution that gates the tools in Kibana is not known to a process, so the tools are available in
 every space of a project type that registers them, which Kibana decides) and evals_skills (the dataset service and the
 evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
-service and the privileges of the security task plugin; saving an experiment needs Kibana's workflows service and fails
-with "only available in Kibana", running one goes through `scheduleWorkflow`).
+service and the privileges of the security task plugin; saving and running an experiment use the shared workflow management runtime).
 
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
@@ -766,16 +787,10 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **proposals:** `proposals.createProposal`, `proposals.cloneProposal`.
-- **discoveries:** `security.attack-discovery.persistDiscoveries`, and `run` with a `feature_id`.
-- **context_engine:** custom workflow verifiers. Feedback context and improvement recording use the
-  process's global UI settings and scoped services. Managed AI index registrations come from Kibana's
-  dispatch snapshot and use the same bootstrap service, including templated index ids.
 - **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`.
 - **agentic_investigations:** all four steps.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
-- **evals** steps that name a task provider a suite registered in Kibana.
 
 Inference features are sent as the `inferenceFeatures` settings snapshot at each dispatch, including parent
 relationships, model policies and the current recommended endpoints. Both AI steps and Agent Builder restore

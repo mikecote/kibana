@@ -215,6 +215,10 @@ export class AlertsService implements IAlertsService {
     );
   }
 
+  public getCommonInitializationPromise(): Promise<InitializationPromise> {
+    return this.commonInitPromise;
+  }
+
   public isInitialized() {
     return this.initialized;
   }

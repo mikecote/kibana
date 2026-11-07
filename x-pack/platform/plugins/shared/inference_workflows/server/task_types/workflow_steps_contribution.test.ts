@@ -40,6 +40,11 @@ describe('inference_workflows workflow-steps contribution', () => {
       kibanaVersion: '1.0.0',
       settings: { inferenceFeatures: { features: [] } },
       services: {
+        stepRegistry: createServerStepRegistry(loggerMock.create()),
+        registerService: jest.fn(),
+        getService: jest.fn(),
+        getExecutionEngine: jest.fn(),
+        getUnsecuredActionsClient: jest.fn(),
         executionDataClients: {
           createWorkflowDataClient: jest.fn(),
           createStepDataClient: jest.fn(),

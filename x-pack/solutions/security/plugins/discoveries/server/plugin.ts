@@ -13,18 +13,10 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import { ECS_COMPONENT_TEMPLATE_NAME } from '@kbn/alerting-plugin/server';
-import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
-import type { IRuleDataClient, IndexOptions } from '@kbn/rule-registry-plugin/server';
-import { Dataset } from '@kbn/rule-registry-plugin/server';
-import { ATTACK_DISCOVERY_SCHEDULES_CONSUMER_ID } from '@kbn/elastic-assistant-common';
+import type { IRuleDataClient } from '@kbn/rule-registry-plugin/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 
-import {
-  ATTACK_DISCOVERY_ALERTS_CONTEXT,
-  attackDiscoveryAlertFieldMap,
-} from '@kbn/discoveries/impl/attack_discovery/alert_fields';
 import {
   ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
   ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
@@ -34,6 +26,7 @@ import { reportMisconfiguration } from '@kbn/discoveries/impl/lib/telemetry/repo
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
 import { DEFAULT_CONNECTOR_TIMEOUT_MS } from '.';
+import { getAttackDiscoveryIndexOptions } from './lib/attack_discovery/index_options';
 import { preCreateDefaultAdhocAttackDiscoveryIndex } from './lib/attack_discovery/pre_create_default_adhoc_index';
 import { logStartupHealthCheck } from './lib/startup_health_check';
 import { createAttackDiscoveryWorkflowExecutor } from './lib/schedules/workflow_executor/create_attack_discovery_workflow_executor';
@@ -125,25 +118,10 @@ export class DiscoveriesPlugin
      * This mirrors what elastic_assistant does, but is owned by this plugin so we have
      * zero runtime dependency on elastic_assistant.
      */
-    const ruleDataServiceOptions: IndexOptions = {
-      // IMPORTANT: These values MUST match what elastic_assistant uses to ensure
-      // both plugins read/write to the same index. See elastic_assistant/server/plugin.ts
-      // The resulting index pattern is: .adhoc.alerts-security.attack.discovery.alerts-{namespace}
-      feature: ATTACK_DISCOVERY_SCHEDULES_CONSUMER_ID,
-      registrationContext: ATTACK_DISCOVERY_ALERTS_CONTEXT,
-      dataset: Dataset.alerts,
-      additionalPrefix: '.adhoc',
-      componentTemplateRefs: [ECS_COMPONENT_TEMPLATE_NAME],
-      componentTemplates: [
-        {
-          name: 'mappings',
-          mappings: mappingFromFieldMap(attackDiscoveryAlertFieldMap),
-        },
-      ],
-    };
 
-    this.adhocAttackDiscoveryDataClient =
-      plugins.ruleRegistry.ruleDataService.initializeIndex(ruleDataServiceOptions);
+    this.adhocAttackDiscoveryDataClient = plugins.ruleRegistry.ruleDataService.initializeIndex(
+      getAttackDiscoveryIndexOptions()
+    );
 
     preCreateDefaultAdhocAttackDiscoveryIndex({
       core,

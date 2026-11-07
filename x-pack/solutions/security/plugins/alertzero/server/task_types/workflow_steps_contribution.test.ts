@@ -34,6 +34,11 @@ const registerContribution = async (alertzero: Record<string, unknown> | null = 
     kibanaVersion: '1.0.0',
     settings: alertzero ? { alertzero } : {},
     services: {
+      stepRegistry: createServerStepRegistry(loggerMock.create()),
+      registerService: jest.fn(),
+      getService: jest.fn(),
+      getExecutionEngine: jest.fn(),
+      getUnsecuredActionsClient: jest.fn(),
       executionDataClients: {
         createWorkflowDataClient: jest.fn(),
         createStepDataClient: jest.fn(),

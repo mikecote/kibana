@@ -42,7 +42,7 @@ export const collectRegisteredIds = async ({
   const services = createAgentBuilderRunServices({
     config: configSchema.validate({}, { dev: false }),
     logger,
-    // As in a process: the management API is there (its methods throw when used).
+    // This helper records registrations without executing management operations.
     workflowsManagement: { management: {} } as never,
     actions: {} as never,
     getActionsStart: unavailable('The actions plugin') as never,
@@ -53,6 +53,7 @@ export const collectRegisteredIds = async ({
     taskProcess: { registerSettings: () => {} },
   });
   const contributionServices: AgentBuilderContributionServices = {
+    getService: unavailable('Contributed services'),
     getCoreStart: unavailable('Core') as never,
     getActionsStart: unavailable('The actions plugin') as never,
     getActionsClientWithRequest: unavailable('The actions client') as never,

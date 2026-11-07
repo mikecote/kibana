@@ -41,6 +41,7 @@ dependsOn:
   - '@kbn/alerting-types'
   - '@kbn/management-settings-ids'
   - '@kbn/core-spaces-common'
+  - '@kbn/workflows-extensions'
 tags:
   - plugin
   - prod

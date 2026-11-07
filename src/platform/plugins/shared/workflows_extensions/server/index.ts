@@ -95,3 +95,5 @@ export type {
   WorkflowStepsRegistry,
   WorkflowStepsRegistryView,
 } from './create_server_step_registry';
+
+export { createPluginScopedManagedWorkflowsClient } from './create_plugin_scoped_managed_workflows_client';

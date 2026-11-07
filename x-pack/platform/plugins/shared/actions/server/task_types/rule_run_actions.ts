@@ -23,6 +23,7 @@ import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_co
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
+import type { SystemIdentity } from '@kbn/security-plugin-types-server';
 import type { PluginSetupContract, PluginStartContract } from '../plugin';
 import { renderActionParameterTemplates } from '../lib/render_action_parameter_templates';
 import { ActionTypeRegistry } from '../action_type_registry';
@@ -37,6 +38,8 @@ import {
   ALERT_SAVED_OBJECT_TYPE,
 } from '../constants/saved_objects';
 import { createBulkExecutionEnqueuerFunction } from '../create_execute_function';
+import { createBulkUnsecuredExecutionEnqueuerFunction } from '../create_unsecured_execute_function';
+import { UnsecuredActionsClient } from '../unsecured_actions_client/unsecured_actions_client';
 import type { InMemoryConnector } from '../types';
 import { createSystemConnectors } from '../create_system_actions';
 import { ensureSufficientLicense } from '../lib/ensure_sufficient_license';
@@ -54,16 +57,21 @@ import {
 import { createSubActionConnectorFramework } from '../sub_action_framework';
 import { SubActionConnector } from '../sub_action_framework/sub_action_connector';
 import { CaseConnector } from '../sub_action_framework/case';
+import { RelayClient } from '../lib/relay/relay_client';
+import { getAxiosInstanceWithAuth } from '../lib/get_axios_instance';
 
 /** What a rule run calls on the actions plugin when it enqueues the actions of its alerts. */
 export type RuleRunActionsStart = Pick<
   PluginStartContract,
+  | 'getRelayClient'
+  | 'getUnsecuredActionsClient'
   | 'getActionsClientWithRequest'
   | 'isActionExecutable'
   | 'renderActionParameterTemplates'
   | 'isSystemActionConnector'
   | 'isActionTypeEnabled'
->;
+> &
+  Pick<PluginSetupContract, 'getActionsConfigurationUtilities'>;
 
 /** The part of the actions setup contract that connector types are registered through. */
 export type RuleRunActionsSetup = Pick<
@@ -81,6 +89,7 @@ export interface RuleRunActionsDeps {
   logger: Logger;
   /** The validated actions config, as Kibana has it. */
   config: ActionsConfig;
+  getSystemIdentity?: () => SystemIdentity | undefined;
   /**
    * Kibana's final in-memory connectors (see `ActionsTaskProcessSettings`). Without them, which only
    * a process that was sent none has, they are rebuilt from the config, which cannot know what
@@ -90,7 +99,7 @@ export interface RuleRunActionsDeps {
   inMemoryConnectors?: InMemoryConnector[];
   license$: Observable<ILicense>;
   elasticsearch: Pick<IClusterClient, 'asScoped' | 'asInternalUser'>;
-  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
+  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient' | 'createInternalRepository'>;
   getEncryptedSavedObjectsClient: (options: {
     includedHiddenTypes: string[];
   }) => EncryptedSavedObjectsClient;
@@ -143,6 +152,15 @@ export const createRuleRunActions = (
 } => {
   const { logger, config } = deps;
   const configurationUtilities = getActionsConfigurationUtilities(config);
+  const relayClient = config.relay
+    ? new RelayClient({
+        baseUrl: config.relay.url,
+        configurationUtilities,
+        logger: logger.get('relay-client'),
+        useSystemIdentity: config.relay.uiam?.enabled ?? false,
+        getSystemIdentity: () => deps.getSystemIdentity?.(),
+      })
+    : undefined;
   const licenseState = new LicenseState(deps.license$);
   // As the actions plugin does at start: using a licensed connector type is recorded.
   if (deps.featureUsage) licenseState.setNotifyUsage(deps.featureUsage.notifyUsage);
@@ -258,6 +276,27 @@ export const createRuleRunActions = (
 
   return {
     actionsPlugin: {
+      getActionsConfigurationUtilities: () => configurationUtilities,
+      getRelayClient: () => relayClient,
+      getUnsecuredActionsClient: () =>
+        new UnsecuredActionsClient({
+          actionExecutor,
+          clusterClient: deps.elasticsearch as IClusterClient,
+          executionEnqueuer: createBulkUnsecuredExecutionEnqueuerFunction({
+            taskManager: deps.taskManager,
+            connectorTypeRegistry: actionTypeRegistry,
+            inMemoryConnectors,
+            configurationUtilities,
+          }),
+          inMemoryConnectors,
+          internalSavedObjectsRepository: deps.savedObjects.createInternalRepository([
+            ACTION_SAVED_OBJECT_TYPE,
+            ACTION_TASK_PARAMS_SAVED_OBJECT_TYPE,
+          ]),
+          kibanaIndices: ['.kibana', '.kibana_alerting_cases'],
+          logger,
+          connectorTypeRegistry: actionTypeRegistry,
+        }),
       getActionsClientWithRequest: async (request: KibanaRequest) => {
         const unsecuredSavedObjectsClient = deps.savedObjects.getScopedClient(request, {
           excludedExtensions: [SECURITY_EXTENSION_ID],
@@ -285,7 +324,11 @@ export const createRuleRunActions = (
             configurationUtilities,
           }),
           getEventLogClient: unavailable('The event log client') as never,
-          getAxiosInstanceWithAuth: unavailable('An authenticated HTTP client') as never,
+          getAxiosInstanceWithAuth: getAxiosInstanceWithAuth({
+            authTypeRegistry,
+            configurationUtilities,
+            logger,
+          }),
           isESOCanEncrypt: true,
           encryptedSavedObjectsClient,
         } as ConstructorParameters<typeof ActionsClient>[0]);

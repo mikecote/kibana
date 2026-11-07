@@ -198,6 +198,22 @@ describe('createRunTimeSecurity', () => {
       expect(uiam.revokeApiKey).toHaveBeenCalled();
     });
 
+    it('serves the system identity when the dispatch carries its mTLS material', () => {
+      const runtime = create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: { ...uiamOptions, tls: { certificate: 'certificate-pem', key: 'key-pem' } },
+      });
+      expect(runtime.authc.systemIdentity).toBeDefined();
+    });
+
+    it('does not serve a system identity without a complete client certificate', () => {
+      const runtime = create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: { ...uiamOptions, tls: { certificate: 'certificate-pem' } },
+      });
+      expect(runtime.authc.systemIdentity).toBeUndefined();
+    });
+
     it('requires the options of the UIAM service', () => {
       expect(() =>
         create({ config: { uiam: uiamConfig, serviceAccounts: { enabled: false } } })

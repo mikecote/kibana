@@ -13,13 +13,15 @@ import type {
 } from '@kbn/security-plugin-types-server';
 import type { SpacesPluginSetup } from '@kbn/spaces-plugin/server';
 
+import type { SpacesAuthorization } from './secure_spaces_client_wrapper';
 import { SecureSpacesClientWrapper } from './secure_spaces_client_wrapper';
 import { SavedObjectsSecurityExtension } from '../saved_objects';
 
 interface Deps {
   audit: AuditServiceSetup;
-  authz: AuthorizationServiceSetup;
-  spaces?: SpacesPluginSetup;
+  authz: SpacesAuthorization &
+    Pick<AuthorizationServiceSetup, 'checkSavedObjectsPrivilegesWithRequest'>;
+  spaces?: Pick<SpacesPluginSetup, 'spacesClient'>;
   getCurrentUser: (request: KibanaRequest) => AuthenticatedUser | null;
   getTypeRegistry: () => ISavedObjectTypeRegistry;
 }

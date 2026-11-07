@@ -21,6 +21,7 @@ import { ServiceStatusLevels } from '@kbn/core/server';
 
 import type { AlertingServerSetup, AlertingServerStart } from '@kbn/alerting-plugin/server';
 import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type {
   PluginStart as DataPluginStart,
@@ -37,6 +38,7 @@ import { defineRoutes } from './routes';
 import { ruleRegistrySearchStrategyProvider, RULE_SEARCH_STRATEGY_NAME } from './search_strategy';
 
 export interface RuleRegistryPluginSetupDependencies {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   security?: SecurityPluginSetup;
   data: DataPluginSetup;
   alerting: AlertingServerSetup;
@@ -119,6 +121,10 @@ export class RuleRegistryPlugin
 
     // What a task process that runs a rule type of a plugin that uses the rule registry reads of it.
     plugins.alerting.registerTaskProcessSettings(
+      RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID,
+      () => this.config
+    );
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
       RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID,
       () => this.config
     );

@@ -13,12 +13,12 @@ import type {
   WorkflowsClientProvider,
 } from '@kbn/workflows/server/types';
 import { REQUIRED_LICENSE_TYPE } from '../api/constants';
-import type { WorkflowsService } from '../api/workflows_management_service';
 import type { WorkflowsManagementConfig } from '../config';
+import type { WorkflowsRuntime } from '../runtime/workflows_runtime';
 
 export const createWorkflowsClientProvider = (
-  workflowsService: WorkflowsService,
-  config: WorkflowsManagementConfig,
+  workflowsService: WorkflowsRuntime,
+  config: Pick<WorkflowsManagementConfig, 'available'>,
   logger: Logger
 ): WorkflowsClientProvider => {
   return async (request) => {
@@ -86,8 +86,8 @@ export const createWorkflowsClientProvider = (
  * {@link RegisteredManagedWorkflowsLifecycleApi}.
  */
 export const createManagedWorkflowsSystemApiProvider = (
-  workflowsService: WorkflowsService,
-  config: WorkflowsManagementConfig,
+  workflowsService: WorkflowsRuntime,
+  config: Pick<WorkflowsManagementConfig, 'available'>,
   logger: Logger
 ): ManagedWorkflowsSystemApiProvider => {
   return async (pluginId: string) => {
@@ -150,8 +150,8 @@ export const createManagedWorkflowsSystemApiProvider = (
 };
 
 const getWorkflowsAvailabilityContext = async (
-  workflowsService: WorkflowsService,
-  config: WorkflowsManagementConfig
+  workflowsService: WorkflowsRuntime,
+  config: Pick<WorkflowsManagementConfig, 'available'>
 ) => {
   const { licensing, workflowsExecutionEngine } = await workflowsService.getPluginsStart();
   const license = await licensing.getLicense();

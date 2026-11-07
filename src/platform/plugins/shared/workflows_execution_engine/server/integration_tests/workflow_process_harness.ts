@@ -14,6 +14,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { createServer } from 'http';
 import type { IncomingHttpHeaders, Server } from 'http';
 import type { AddressInfo } from 'net';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
@@ -29,12 +30,14 @@ import {
   ConfigSchema as securityConfigSchema,
 } from '@kbn/security-plugin/server/config';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
+import { ConfigSchema as spacesConfigSchema } from '@kbn/spaces-plugin/server/config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
+import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
@@ -61,6 +64,49 @@ const ENCRYPTION_KEY = 'a'.repeat(32);
 const TASK_TYPE = 'workflow:scheduled';
 const BUNDLE_NAME = 'workflowsExecutionEngine__workflow_scheduled';
 
+const bundleBuilds = new Map<string, Promise<string>>();
+const getWorkflowBundles = (
+  includeRunTask: boolean,
+  additionalContributions: Record<string, string[]> = {}
+): Promise<string> => {
+  const key = JSON.stringify({ includeRunTask, additionalContributions });
+  const existing = bundleBuilds.get(key);
+  if (existing) return existing;
+  const build = async () => {
+    const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+    const entries = getTaskBundleEntries().filter(
+      ({ name }: { name: string }) =>
+        name === BUNDLE_NAME ||
+        (includeRunTask && name === 'workflowsExecutionEngine__workflow_run')
+    );
+    const built: Array<{ name: string }> = [];
+    for (const entry of entries)
+      built.push(await buildTaskBundle({ entry, outDir: bundleDir, additionalContributions }));
+    writeFileSync(
+      join(bundleDir, 'manifest.json'),
+      JSON.stringify({
+        bundles: Object.fromEntries(
+          built.map(({ name }) => [
+            name,
+            { file: `${name}.mjs`, taskType: name === BUNDLE_NAME ? TASK_TYPE : 'workflow:run' },
+          ])
+        ),
+      })
+    );
+    return bundleDir;
+  };
+  const promise = build();
+  bundleBuilds.set(key, promise);
+  return promise;
+};
+
+export const WORKFLOW_PROCESS_TEST_MODES = [
+  { mode: 'child_process', reuse: false },
+  { mode: 'child_process', reuse: true },
+  { mode: 'remote', reuse: false },
+  { mode: 'remote', reuse: true },
+] as const;
+
 export interface StubRequest {
   url?: string;
   method?: string;
@@ -69,8 +115,20 @@ export interface StubRequest {
 }
 
 export interface WorkflowProcessHarnessOptions {
+  mode?: 'child_process' | 'remote';
+  reuse?: boolean;
+  includeRunTask?: boolean;
+  additionalContributions?: Record<string, string[]>;
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
-  workflows: Record<string, { name?: string; steps: unknown[]; triggers?: unknown[] }>;
+  workflows: Record<
+    string,
+    {
+      name?: string;
+      steps: unknown[];
+      triggers?: unknown[];
+      outputs?: Array<{ name: string; type: string }>;
+    }
+  >;
   /** Answers the calls of the process to Kibana (its self client); 200 with `{}` by default. */
   kibanaHandler?: (request: StubRequest) => { status?: number; body: unknown };
   /** The configs the steps read, by plugin id, added to the ones of the engine. */
@@ -122,7 +180,16 @@ const startHarness = async (
   cleanups.push(() => new Promise((resolve) => kibanaStub.close(resolve)));
   const kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
 
+  const licenseExpiryDate = Date.now() + 86400000;
   const settings = () => ({
+    evalsTaskProviders: { names: ['inference', 'agentBuilder.converse'] },
+    spacesRuntime: {
+      config: spacesConfigSchema.validate({}, { offering: 'traditional' }),
+      buildFlavor: 'traditional',
+      features: [],
+      cpsEnabled: false,
+    },
+    workflowsManagementRuntime: { available: true, managedWorkflowPluginIds: [] },
     inferenceFeatures: { features: [] },
     contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
@@ -136,7 +203,7 @@ const startHarness = async (
           type: 'trial',
           mode: 'trial',
           status: 'active',
-          expiryDateInMillis: Date.now() + 86400000,
+          expiryDateInMillis: licenseExpiryDate,
         },
         features: { security: { isAvailable: true, isEnabled: true } },
         signature: 'sig',
@@ -276,7 +343,13 @@ const startHarness = async (
     },
   });
   const now = new Date().toISOString();
-  for (const [id, { name = id, steps, triggers }] of Object.entries(options.workflows)) {
+  await es.index({
+    index: '.kibana',
+    id: 'space:default',
+    refresh: 'wait_for',
+    document: { type: 'space', space: { name: 'Default', disabledFeatures: [] }, references: [] },
+  });
+  for (const [id, { name = id, steps, triggers, outputs }] of Object.entries(options.workflows)) {
     const definedTriggers = triggers ?? [{ type: 'scheduled', with: { every: '1d' } }];
     await es.index({
       index: WORKFLOW_INDEX_NAME,
@@ -294,6 +367,7 @@ const startHarness = async (
           version: '1',
           triggers: definedTriggers,
           steps,
+          ...(outputs ? { outputs } : {}),
         },
         createdBy: 'elastic',
         lastUpdatedBy: 'elastic',
@@ -332,41 +406,68 @@ const startHarness = async (
     }
   }
 
-  const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
-  const entries = getTaskBundleEntries().filter(
-    ({ name }: { name: string }) => name === BUNDLE_NAME
+  const bundleDir = await getWorkflowBundles(
+    options.includeRunTask ?? false,
+    options.additionalContributions
   );
-  const built: Array<{ name: string }> = await Promise.all(
-    entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
-  );
-  writeFileSync(
-    join(bundleDir, 'manifest.json'),
-    JSON.stringify({
-      bundles: { [built[0].name]: { file: `${built[0].name}.mjs`, taskType: TASK_TYPE } },
-    })
-  );
-  const supervisor = new TaskProcessSupervisor({
-    settings: {
-      bundle_dir: bundleDir,
-      kibanaVersion: KIBANA_VERSION,
-      getElasticsearchConfig: esConfig,
-      getInitFor: initFor,
-    },
-    logger: loggingSystemMock.createLogger(),
-  });
-  supervisor.start();
-  cleanups.push(() => supervisor.stop());
+  const workerSettings = {
+    bundle_dir: bundleDir,
+    kibanaVersion: KIBANA_VERSION,
+    ...(options.reuse
+      ? { reuse: { idleTimeoutMs: 30000, maxAgeMs: 300000, maxRuns: 50, maxIdleProcesses: 2 } }
+      : {}),
+  };
+  let getRoute: TaskProcessSupervisor['getRoute'];
+  let getWorkerStats: TaskProcessSupervisor['getStats'];
+  if (options.mode === 'remote') {
+    const worker = startTaskProcessWorker({
+      settings: workerSettings,
+      logger: loggingSystemMock.createLogger(),
+      authToken: 'workflow-test-worker',
+      port: 0,
+      host: '127.0.0.1',
+    });
+    cleanups.push(worker.stop);
+    getWorkerStats = worker.getStats;
+    await new Promise<void>((resolve) => worker.server.once('listening', resolve));
+    const address = worker.server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('The workflow test worker has no listening address');
+    getRoute = () => ({ url: `http://127.0.0.1:${address.port}`, token: 'workflow-test-worker' });
+  } else {
+    const supervisor = new TaskProcessSupervisor({
+      settings: { ...workerSettings, getElasticsearchConfig: esConfig, getInitFor: initFor },
+      logger: loggingSystemMock.createLogger(),
+    });
+    supervisor.start();
+    cleanups.push(() => supervisor.stop());
+    getRoute = (taskType) => supervisor.getRoute(taskType);
+    getWorkerStats = () => supervisor.getStats();
+  }
 
   /** Runs the scheduled task of a workflow in the process; `onDispatchFailure` observes dispatch failures. */
-  const run = (workflowId: string, onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']) =>
+  const runTask = (
+    taskType: string,
+    task: { id: string; params: Record<string, string> },
+    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']
+  ) =>
     new RemoteTaskRunner({
-      route: supervisor.getRoute(TASK_TYPE)!,
+      route: getRoute(taskType),
       request: {
-        taskType: TASK_TYPE,
+        taskType,
+        ...(options.mode === 'remote'
+          ? {
+              snapshot: {
+                protocolVersion: 1 as const,
+                init: { ...initFor(), kibanaVersion: KIBANA_VERSION, elasticsearch: esConfig() },
+                featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
+              },
+            }
+          : {}),
         taskInstance: {
-          id: `workflow:${workflowId}:scheduled`,
-          taskType: TASK_TYPE,
-          params: { workflowId, spaceId: 'default', triggerType: 'scheduled' },
+          id: task.id,
+          taskType,
+          params: task.params,
           state: {},
           attempts: 1,
           status: 'running',
@@ -376,7 +477,7 @@ const startHarness = async (
           retryAt: null,
           ownerId: null,
         },
-        executionUuid: `${workflowId}-${Date.now()}`,
+        executionUuid: `${task.id}-${Date.now()}`,
         apiKey,
         spaceId: 'default',
         userName: 'elastic',
@@ -389,6 +490,44 @@ const startHarness = async (
       onDispatchFailure,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
+
+  const run = (workflowId: string, onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']) =>
+    runTask(
+      TASK_TYPE,
+      {
+        id: `workflow:${workflowId}:scheduled`,
+        params: { workflowId, spaceId: 'default', triggerType: 'scheduled' },
+      },
+      onDispatchFailure
+    );
+
+  const waitForRunTask = async (workflowId: string, signal?: AbortSignal) => {
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      signal?.throwIfAborted();
+      await es.indices.refresh({ index: '.kibana_task_manager' });
+      const { hits } = await es.search<{ task: { params: string } }>({
+        index: '.kibana_task_manager',
+        query: { term: { 'task.taskType': 'workflow:run' } },
+      });
+      for (const hit of hits.hits) {
+        if (hit._source && hit._id) {
+          const params = JSON.parse(hit._source.task.params) as {
+            workflowRunId: string;
+            spaceId: string;
+          };
+          const execution = await es.get<{ workflowId: string }>({
+            index: WORKFLOWS_EXECUTIONS_INDEX,
+            id: params.workflowRunId,
+          });
+          if (execution._source?.workflowId === workflowId)
+            return { id: hit._id.replace(/^task:/, ''), params };
+        }
+      }
+      await sleep(100, undefined, { signal });
+    }
+    throw new Error(`No workflow:run task was scheduled for ${workflowId}`);
+  };
 
   type Document = Record<string, any>;
   const executionsOf = async (workflowId: string): Promise<Document[]> => {
@@ -414,6 +553,9 @@ const startHarness = async (
     kibanaUrl,
     kibanaRequests,
     run,
+    runTask,
+    waitForRunTask,
+    getWorkerStats,
     executionsOf,
     stepsOf,
     stop: async () => {

@@ -18,10 +18,7 @@ const collectTaskRefs = (value: unknown, refs: string[] = []): string[] => {
 };
 
 /**
- * Why an evals step cannot be served by a task process as Kibana serves it, or `undefined`. A step
- * can name a task provider (`task_ref`) that a suite registered with the plugin's setup contract:
- * a process only has the built-in providers, so a run that names another one is declined, and
- * Kibana runs it.
+ * Checks literal task references against the current execution registry; templates resolve when the step runs.
  */
 export const checkEvalsTaskProvider = (
   step: { type: string; config: Record<string, unknown> },
@@ -29,10 +26,7 @@ export const checkEvalsTaskProvider = (
 ): string | undefined => {
   if (!step.type.startsWith(EVALS_STEP_PREFIX)) return undefined;
   for (const taskRef of collectTaskRefs(step.config.with)) {
-    if (taskRef.includes('{{')) {
-      return `task_ref "${taskRef}" is a template, which is only known when the step runs`;
-    }
-    if (!hasTaskProvider(taskRef)) {
+    if (!taskRef.includes('{{') && !hasTaskProvider(taskRef)) {
       return `the task provider "${taskRef}" is not registered in this process`;
     }
   }

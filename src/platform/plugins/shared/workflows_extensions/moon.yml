@@ -36,6 +36,9 @@ dependsOn:
   - '@kbn/core-http-common'
   - '@kbn/core-ui-settings-common'
   - '@kbn/encrypted-saved-objects-plugin'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/security-plugin'
+  - '@kbn/core-spaces-common'
 tags:
   - plugin
   - prod

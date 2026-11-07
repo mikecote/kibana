@@ -11,14 +11,19 @@ import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types
 import type { WorkflowsManagementApi } from '../api/workflows_management_api';
 import { getConnectorType, getWorkflowsConnectorAdapter } from '../connectors/workflows';
 
-/**
- * The `.workflows` system action and its adapter, so a rule run can enqueue the workflows it was
- * configured with. Running them is Kibana's job when it executes the enqueued action, which is why
- * the connector type here has no API behind it.
- */
+/** Registers the system connector with the management API of the executing workflow. */
 export const contribution: RuleRunContribution = {
-  register: ({ actions, alerting }) => {
-    actions.registerType(getConnectorType({} as WorkflowsManagementApi) as never);
+  register: ({ actions, alerting }, context) => {
+    actions.registerType(
+      getConnectorType(() => {
+        if (!context.getService) {
+          throw new Error(
+            'Workflow execution services are required to execute the workflows connector'
+          );
+        }
+        return context.getService<WorkflowsManagementApi>('workflows.management');
+      }) as never
+    );
     alerting.registerConnectorAdapter(getWorkflowsConnectorAdapter());
   },
 };

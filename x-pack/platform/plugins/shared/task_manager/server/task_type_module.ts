@@ -63,7 +63,11 @@ export interface TaskHost {
   elasticsearch: Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
   savedObjects: Pick<
     SavedObjectsServiceStart,
-    'createInternalRepository' | 'getScopedClient' | 'getUnsafeInternalClient' | 'getTypeRegistry'
+    | 'createInternalRepository'
+    | 'createScopedRepository'
+    | 'getScopedClient'
+    | 'getUnsafeInternalClient'
+    | 'getTypeRegistry'
   >;
   /** A pass-through in a task process. */
   executionContext: Pick<ExecutionContextStart, 'withContext' | 'getAsLabels'>;

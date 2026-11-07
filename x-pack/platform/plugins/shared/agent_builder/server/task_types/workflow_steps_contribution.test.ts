@@ -123,7 +123,12 @@ describe('agent_builder workflow-steps contribution with the services of a proce
       isServerless: false,
       kibanaVersion: '1.0.0',
       settings: { [AGENT_BUILDER_RUN_SETTINGS_ID]: {} },
-      services: { getActionsClientWithRequest: jest.fn(), emitEvent: jest.fn() } as never,
+      services: {
+        getActionsClientWithRequest: jest.fn(),
+        emitEvent: jest.fn(),
+        registerService: jest.fn(),
+        getService: jest.fn(),
+      } as never,
       registerRunCheck: (check) => checks.push(check),
     });
     const check = (type: string, config: Record<string, unknown> = {}) =>

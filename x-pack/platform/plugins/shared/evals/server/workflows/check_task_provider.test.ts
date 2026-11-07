@@ -40,12 +40,12 @@ describe('checkEvalsTaskProvider', () => {
     ).toMatch(/"suite" is not registered/);
   });
 
-  it('declines a templated task ref', () => {
+  it('resolves a templated task ref when the step runs', () => {
     expect(
       checkEvalsTaskProvider(
         { type: 'ai.evals.executeTask', config: { with: { task_ref: '{{ inputs.ref }}' } } },
         known
       )
-    ).toMatch(/template/);
+    ).toBeUndefined();
   });
 });

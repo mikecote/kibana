@@ -27,7 +27,7 @@ const registeredByKibana = () => {
 };
 
 describe('proposals workflow-steps contribution', () => {
-  it('registers every step Kibana registers in a process registry, and declines what needs Agent Builder', async () => {
+  it('registers every step Kibana registers, including proposal creation and cloning', async () => {
     const registry = createServerStepRegistry(loggerMock.create());
     const internalSteps = registry.getAllStepDefinitions().length;
     const checks: WorkflowStepRunCheck[] = [];
@@ -44,6 +44,11 @@ describe('proposals workflow-steps contribution', () => {
       kibanaVersion: '1.0.0',
       settings: {},
       services: {
+        stepRegistry: createServerStepRegistry(loggerMock.create()),
+        registerService: jest.fn(),
+        getService: jest.fn(),
+        getExecutionEngine: jest.fn(),
+        getUnsecuredActionsClient: jest.fn(),
         executionDataClients: {
           createWorkflowDataClient: jest.fn(),
           createStepDataClient: jest.fn(),
@@ -62,8 +67,8 @@ describe('proposals workflow-steps contribution', () => {
 
     const declined = (type: string) =>
       checks.map((check) => check({ type, config: {} })).find(Boolean);
-    expect(declined('proposals.createProposal')).toMatch(/Agent Builder/);
-    expect(declined('proposals.cloneProposal')).toMatch(/Agent Builder/);
+    expect(declined('proposals.createProposal')).toBeUndefined();
+    expect(declined('proposals.cloneProposal')).toBeUndefined();
     expect(declined('proposals.getProposal')).toBeUndefined();
   });
 });

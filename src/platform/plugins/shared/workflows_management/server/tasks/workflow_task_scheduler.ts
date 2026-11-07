@@ -8,14 +8,12 @@
  */
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
-import {
-  calculateNextRunAtFromSchedule,
-  type TaskManagerStartContract,
-} from '@kbn/task-manager-plugin/server';
+import { calculateNextRunAtFromSchedule } from '@kbn/task-manager-plugin/server';
 import type { EsWorkflow } from '@kbn/workflows';
 import { getReadableFrequency, getReadableInterval } from '../lib/rrule_logging_utils';
 import type { WorkflowTrigger } from '../lib/schedule_utils';
 import { convertWorkflowScheduleToTaskSchedule, getScheduledTriggers } from '../lib/schedule_utils';
+import type { WorkflowManagementTaskManager } from '../runtime/dependencies';
 
 const VERSION_CONFLICT_STATUS = 409;
 const NOT_FOUND_STATUS = 404;
@@ -31,7 +29,7 @@ export interface WorkflowTaskSchedulerParams {
 export class WorkflowTaskScheduler {
   constructor(
     private readonly logger: Logger,
-    private readonly taskManager: TaskManagerStartContract
+    private readonly taskManager: WorkflowManagementTaskManager
   ) {}
 
   /**

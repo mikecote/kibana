@@ -18,29 +18,39 @@ const create = () => {
   const scheduleWorkflow = jest.fn().mockResolvedValue({ workflowExecutionId: 'execution-1' });
   const inference = { getConnectorById: jest.fn() };
   const getInference = jest.fn().mockReturnValue(inference);
+  const searchInferenceEndpoints = { getConnectorByFeatureId: jest.fn() };
   const core = { featureFlags: {} } as never;
   const services = createDiscoveriesRunServices({
     core,
     authz: { actions: {} } as never,
     getActionsClientWithRequest: jest.fn(),
     getInference: getInference as never,
+    getSearchInferenceEndpoints: () => searchInferenceEndpoints as never,
     readApi,
     scheduleWorkflow,
     hasStepDefinition: (id) => id === 'registered',
   });
-  return { ...services, readApi, scheduleWorkflow, inference, getInference, core };
+  return {
+    ...services,
+    readApi,
+    scheduleWorkflow,
+    inference,
+    getInference,
+    core,
+    searchInferenceEndpoints,
+  };
 };
 
 describe('createDiscoveriesRunServices', () => {
   it('gives the steps Core, the plugins and the space of the request, building inference when first read', async () => {
-    const { getStartServices, getInference, inference, core } = create();
+    const { getStartServices, getInference, inference, core, searchInferenceEndpoints } = create();
     expect(getInference).not.toHaveBeenCalled();
 
     const { coreStart, pluginsStart } = await getStartServices();
 
     expect(coreStart).toBe(core);
     expect(pluginsStart.inference).toBe(inference);
-    expect(pluginsStart.searchInferenceEndpoints).toBeUndefined();
+    expect(pluginsStart.searchInferenceEndpoints).toBe(searchInferenceEndpoints);
     const request = httpServerMock.createKibanaRequest();
     expect(pluginsStart.spaces?.spacesService.getSpaceId(request)).toBe('default');
     expect(pluginsStart.spaces?.spacesService.getSpaceId({ spaceId: 'security' } as never)).toBe(

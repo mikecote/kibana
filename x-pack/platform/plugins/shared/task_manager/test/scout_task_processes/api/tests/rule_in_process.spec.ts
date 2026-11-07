@@ -125,9 +125,7 @@ apiTest.describe(
           message: 'the server log connector output',
         });
         const output = readKibanaLog().find(isOutput);
-        expect(output).toMatchObject({
-          log: { logger: expect.stringMatching(/^plugins\.actions/) },
-        });
+        expect(output?.log?.logger).toMatch(/^plugins\.actions/);
       }
     );
 

@@ -37,8 +37,7 @@ export const CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID = 'contextEngineAgentBuild
  * signals and improvements stores) are built by `createContextEngineRunServices` over the host.
  *
  * Managed AI indices come from Kibana's dispatch snapshot. The workflows management API serves
- * reading and running saved workflows; tools that save an automation still fail in a
- * process with "only available in Kibana". Without the setting the plugin is not enabled in this
+ * the full management contract, including automation creation and execution. Without the setting the plugin is not enabled in this
  * Kibana, and nothing is registered.
  */
 export const contribution: AgentBuilderContribution = {
@@ -91,13 +90,9 @@ export const contribution: AgentBuilderContribution = {
       ContextEngineAgentBuilderPluginStart
     >;
     // The process's workflows API, resolved when a tool calls it.
-    const workflowsManagement = new Proxy(
-      {},
-      {
-        get: (_target, property) =>
-          (services.getWorkflowsManagement() as Record<string | symbol, unknown>)[property],
-      }
-    ) as WorkflowsServerPluginSetup['management'];
+    const workflowsManagement =
+      services.getWorkflowsManagement() as WorkflowsServerPluginSetup['management'];
+
     registerContextEngineAgentBuilderIntegration({
       coreSetup,
       agentBuilder,

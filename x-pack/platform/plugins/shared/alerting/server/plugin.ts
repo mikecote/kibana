@@ -600,6 +600,7 @@ export class AlertingPlugin {
     );
 
     if (plugins.workflowsExtensions) {
+      plugins.workflowsExtensions.registerTaskProcessSettings('alerting', () => this.config);
       this.alertingEventBus = new AsyncDomainEventBus<
         AlertingDomainEvent,
         AlertingPublisherContext

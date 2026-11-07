@@ -30,6 +30,7 @@ import type { SpacesClientRepositoryFactory, SpacesClientWrapper } from './space
 import { SpacesClientService } from './spaces_client';
 import type { SpacesServiceSetup, SpacesServiceStart } from './spaces_service';
 import { SpacesService } from './spaces_service';
+import type { SpacesTaskProcessSettings } from './task_process_settings';
 import type {
   SpacesPluginSetupDeps,
   SpacesPluginStartDeps,
@@ -43,6 +44,8 @@ import { SpacesLicenseService } from '../common/licensing';
  * Setup contract for the Spaces plugin.
  */
 export interface SpacesPluginSetupApi {
+  /** Captures the configuration and feature registry used by a task process. */
+  getTaskProcessSettings(): SpacesTaskProcessSettings;
   /**
    * Service for interacting with spaces.
    */
@@ -242,6 +245,12 @@ export class SpacesPlugin
     }
 
     return {
+      getTaskProcessSettings: () => ({
+        config: this.initializerContext.config.get<ConfigType>(),
+        buildFlavor: this.initializerContext.env.packageInfo.buildFlavor,
+        features: plugins.features.getKibanaFeatures().map((feature) => feature.toRaw()),
+        cpsEnabled: plugins.cps?.getCpsEnabled() ?? false,
+      }),
       spacesClient: spacesClientSetup,
       spacesService: spacesServiceSetup,
       hasOnlyDefaultSpace$: this.hasOnlyDefaultSpace$,

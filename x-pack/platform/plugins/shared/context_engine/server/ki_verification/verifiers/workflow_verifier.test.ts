@@ -132,7 +132,7 @@ describe('createWorkflowVerifier', () => {
     auditLogger = { log: jest.fn(), enabled: true, includeSavedObjectNames: false };
     workflowsManagement = {
       getWorkflow: jest.fn().mockResolvedValue(workflowDto()),
-      runWorkflow: jest.fn().mockResolvedValue(executionId),
+      scheduleWorkflow: jest.fn().mockResolvedValue(executionId),
       getWorkflowExecution: jest.fn(),
       cancelWorkflowExecution: jest.fn().mockResolvedValue(undefined),
     };
@@ -185,7 +185,7 @@ describe('createWorkflowVerifier', () => {
       await makeVerifier().verify(ki, context);
 
       expect(workflowsManagement.getWorkflow).toHaveBeenCalledWith('my-verifier', spaceId, request);
-      expect(workflowsManagement.runWorkflow).toHaveBeenCalledWith(
+      expect(workflowsManagement.scheduleWorkflow).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'my-verifier' }),
         spaceId,
         { ki },
@@ -409,7 +409,7 @@ describe('createWorkflowVerifier', () => {
         .catch((error) => error);
 
       expect(thrown.type).toBe('NotFoundError');
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
       expect(auditLogger.log).toHaveBeenCalledWith(
         expect.objectContaining({ event: expect.objectContaining({ outcome: 'failure' }) })
       );
@@ -424,7 +424,7 @@ describe('createWorkflowVerifier', () => {
 
       expect(thrown.type).toBe('InputValidationError');
       expect(thrown.message).toContain('is a managed workflow');
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it.each([{ enabled: false }, { valid: false }, { definition: null }])(
@@ -437,7 +437,7 @@ describe('createWorkflowVerifier', () => {
           .catch((error) => error);
 
         expect(thrown.type).toBe('InputValidationError');
-        expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+        expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
       }
     );
 
@@ -470,7 +470,7 @@ describe('createWorkflowVerifier', () => {
     });
 
     it('throws and writes a failure audit event when the workflow cannot be started', async () => {
-      workflowsManagement.runWorkflow.mockRejectedValue(new Error('workflow not found'));
+      workflowsManagement.scheduleWorkflow.mockRejectedValue(new Error('workflow not found'));
 
       await expect(makeVerifier().verify({}, context)).rejects.toThrow('workflow not found');
       expect(auditLogger.log).toHaveBeenCalledWith(
@@ -502,7 +502,7 @@ describe('createWorkflowVerifier', () => {
       await expect(
         makeVerifier().verify({}, { ...context, abortSignal: controller.signal })
       ).rejects.toThrow();
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
   });
 });

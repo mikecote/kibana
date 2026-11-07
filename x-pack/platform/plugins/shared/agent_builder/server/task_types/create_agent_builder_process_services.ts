@@ -15,7 +15,6 @@ import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plu
 import type { PluginSetupContract as ActionsPluginSetup } from '@kbn/actions-plugin/server';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import {
   createTaskProcessInferenceFeatureRegistry,
@@ -49,13 +48,10 @@ import type {
   AgentBuilderContributionServices,
 } from './agent_builder_contribution';
 
-const onlyInKibana = (what: string) => () => {
-  throw new Error(`${what} is only available in Kibana, not in a task process`);
-};
-
 export interface AgentBuilderProcessServices extends AgentBuilderRunServices {
+  start: AgentBuilderPluginStart;
   conversationEventBus: ConversationEventBus;
-  /** What stands for the spaces plugin: a run has one space, the one its request names. */
+  /** The authorized spaces service of this execution. */
   spaces: SpacesPluginStart;
   /** The inference features sent by Kibana for this execution. */
   inferenceFeatureIds: () => string[];
@@ -66,8 +62,8 @@ export interface AgentBuilderProcessServices extends AgentBuilderRunServices {
 /**
  * Agent builder's services in a task process, built by the function the plugin builds them with, from
  * the host of the process: the same registries, filled by the `agent-builder` contributions of the
- * plugins that fill them in Kibana, and started with Core's own services. What cannot exist in a
- * process (the callbacks of an asynchronous execution) throws "only available in Kibana" when used.
+ * plugins that fill them in Kibana, and started with Core's own services. The shared actions runtime
+ * supplies asynchronous callback delivery.
  *
  * Nothing is installed: indices and templates are Kibana's, and the storage of agents, conversations
  * and attachments is the plugin's own, which creates its index when it first writes, as in Kibana.
@@ -79,6 +75,9 @@ export const createAgentBuilderProcessServices = async ({
   contributions,
   context: baseContext,
   getActionsClientWithRequest,
+  actions,
+  spaces,
+  getService,
   getWorkflowsManagement,
   emitEvent,
 }: {
@@ -89,6 +88,9 @@ export const createAgentBuilderProcessServices = async ({
   context: Omit<AgentBuilderContributionContext, 'services' | 'registerSmlType'>;
   /** The actions client of a request, from the engine's runtime. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
+  actions: Pick<ActionsPluginSetup, 'getActionsConfigurationUtilities' | 'getRelayClient'>;
+  spaces: SpacesPluginStart;
+  getService: AgentBuilderContributionServices['getService'];
   /** The workflows management API of the process (`createWorkflowsProcessManagementApi`). */
   getWorkflowsManagement: () => WorkflowsServerPluginSetup['management'];
   /** Emits a workflow trigger event through the engine's runtime. */
@@ -129,8 +131,8 @@ export const createAgentBuilderProcessServices = async ({
 
   const actionsStart = {
     getActionsClientWithRequest,
-    getActionsConfigurationUtilities: onlyInKibana('The actions configuration'),
-    getRelayClient: onlyInKibana('The relay client'),
+    getActionsConfigurationUtilities: actions.getActionsConfigurationUtilities,
+    getRelayClient: actions.getRelayClient,
   } as unknown as ActionsPluginStart;
 
   const getCoreStart = async () =>
@@ -138,7 +140,12 @@ export const createAgentBuilderProcessServices = async ({
       elasticsearch: { client: elasticsearch },
       savedObjects,
       uiSettings,
-      http: { basePath: host.http.basePath },
+      http: host.http,
+      security: host.security,
+      userProfile: host.userProfile,
+      featureFlags: host.featureFlags,
+      analytics: host.analytics,
+      executionContext: host.executionContext,
     } as unknown as Awaited<ReturnType<AgentBuilderContributionServices['getCoreStart']>>);
 
   const usageCounter = host.usageCounters?.getUsageCounter(AGENTBUILDER_USAGE_DOMAIN);
@@ -166,13 +173,13 @@ export const createAgentBuilderProcessServices = async ({
     },
     logger,
     // The hooks that run an agent's workflows and the workflow tool type read the management API as
-    // far as a process serves it (reading and running saved workflows).
+    // provided by the shared management runtime.
     workflowsManagement: { management: workflowsManagement } as WorkflowsServerPluginSetup,
     trackingService,
     analyticsService,
     actions: {
-      getActionsConfigurationUtilities: onlyInKibana('The actions configuration'),
-      getRelayClient: onlyInKibana('The relay client'),
+      getActionsConfigurationUtilities: actions.getActionsConfigurationUtilities,
+      getRelayClient: actions.getRelayClient,
     } as unknown as ActionsPluginSetup,
     getActionsStart: async () => actionsStart,
     getInferenceStart: async () => inference,
@@ -191,6 +198,7 @@ export const createAgentBuilderProcessServices = async ({
       run.registrations.recordSmlType(definition.id);
     },
     services: {
+      getService,
       getCoreStart,
       getActionsStart: async () => actionsStart,
       getActionsClientWithRequest,
@@ -206,19 +214,6 @@ export const createAgentBuilderProcessServices = async ({
   for (const contribution of contributions) {
     await contribution.register(run.setupContract, context);
   }
-
-  // A run has one space: the one its request names.
-  const spaces = {
-    spacesService: {
-      getSpaceId: (request: KibanaRequest) =>
-        (request as { spaceId?: string } | undefined)?.spaceId ?? DEFAULT_SPACE_ID,
-      getActiveSpace: async (request: KibanaRequest) => ({
-        id: (request as { spaceId?: string } | undefined)?.spaceId ?? DEFAULT_SPACE_ID,
-        name: (request as { spaceId?: string } | undefined)?.spaceId ?? DEFAULT_SPACE_ID,
-        disabledFeatures: [],
-      }),
-    },
-  } as unknown as SpacesPluginStart;
 
   const conversationEventBus = createConversationEventBus();
   const startServices = run.serviceManager.startServices({
@@ -262,6 +257,7 @@ export const createAgentBuilderProcessServices = async ({
     spaces,
     logger: logger.get('sml'),
   });
+  workflowsManagement.setSmlClient(smlStart, logger.get('workflowsManagement'));
   startContract = createAgentBuilderStartContract({
     startServices,
     coreStart: {
@@ -293,6 +289,7 @@ export const createAgentBuilderProcessServices = async ({
 
   return {
     ...run,
+    start: startContract,
     conversationEventBus,
     spaces,
     inferenceFeatureIds: () => features.getAll().map(({ featureId }) => featureId),

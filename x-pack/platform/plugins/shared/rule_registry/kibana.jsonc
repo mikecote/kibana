@@ -22,7 +22,8 @@
     ],
     "optionalPlugins": [
       "security",
-      "spaces"
+      "spaces",
+      "workflowsExtensions"
     ]
   }
 }

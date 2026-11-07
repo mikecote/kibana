@@ -58,8 +58,7 @@ export interface AgentBuilderRunServicesDeps {
   getActionsStart: () => Promise<ActionsPluginStart>;
   getInferenceStart: () => Promise<InferenceServerStart>;
   /**
-   * The SML plugin's start contract, which the SML tools read. A task process does not have it: the
-   * tools are then not registered, and the parity guard keeps the runs that read them in Kibana.
+   * The SML start contract used by the tools in Kibana and task processes.
    */
   getAgentBuilderSml?: () => AgentBuilderSmlPluginStart;
   getCoreStart: () => Promise<Pick<CoreStart, 'uiSettings' | 'savedObjects'>>;

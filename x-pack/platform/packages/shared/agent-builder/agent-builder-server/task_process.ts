@@ -43,9 +43,11 @@ export interface AgentBuilderContributionDeclares {
  * What the process has in place of what a registration reads in Kibana from
  * `coreSetup.getStartServices()`: Core's start services, the start contracts of the plugins it reads
  * and agent builder's own. All of them are read lazily, when a tool, hook or attachment type runs, and
- * not while registering. What cannot exist in a process throws "only available in Kibana" when used.
+ * not while registering. Execution dependencies use their shared runtime implementations.
  */
 export interface AgentBuilderContributionServices {
+  /** Resolves a contributed service for this execution. */
+  getService: <T extends object>(id: string) => T;
   /** What a tool reads of Core: the Elasticsearch client, saved objects, ui settings and the base path. */
   getCoreStart: () => Promise<
     Pick<CoreStart, 'elasticsearch' | 'savedObjects' | 'uiSettings' | 'http'>
@@ -58,9 +60,8 @@ export interface AgentBuilderContributionServices {
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
   /**
    * The workflows management API as a process serves it (`workflowsManagement.management` in Kibana),
-   * cast it to `WorkflowsServerPluginSetup['management']`: reading and running saved workflows; what
-   * needs Kibana's workflows service (creating, updating, listing, validating, resuming, cancelling,
-   * inline YAML runs) throws "only available in Kibana" when called.
+   * cast it to `WorkflowsServerPluginSetup['management']`. This is the full shared management API,
+   * including authoring, validation, inline execution, resume, and cancellation.
    */
   getWorkflowsManagement: () => unknown;
   /**

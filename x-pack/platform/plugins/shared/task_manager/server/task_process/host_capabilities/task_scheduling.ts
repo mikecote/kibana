@@ -35,6 +35,10 @@ import type {
   TaskInstance,
 } from '../../task';
 import { TaskStatus } from '../../task';
+import { TaskBulkUpdater } from '../../task_bulk_updater';
+import { TaskValidator } from '../../task_validator';
+import { TaskTypeDictionary } from '../../task_type_dictionary';
+import { updateTaskSchedules } from '../../update_task_schedules';
 import { TASK_MANAGER_INDEX } from '../../constants';
 import { ensureDeprecatedFieldsAreCorrected } from '../../lib/correct_deprecated_fields';
 import { getFirstRunAt } from '../../lib/get_first_run_at';
@@ -120,6 +124,7 @@ export type HostTaskManager = Pick<
   TaskManagerStartContract,
   | 'schedule'
   | 'bulkSchedule'
+  | 'bulkUpdateSchedules'
   | 'aggregate'
   | 'get'
   | 'bulkGet'
@@ -589,6 +594,54 @@ export const createHostTaskScheduling = ({
   return {
     schedule,
     ensureScheduled,
+    bulkUpdateSchedules: (taskIds, newSchedule, options) =>
+      updateTaskSchedules({
+        taskIds,
+        schedule: newSchedule,
+        options,
+        getTasks: async (ids) => {
+          const tasks = await bulkGet(ids);
+          for (const result of tasks) {
+            if ('value' in result) assertAllowed(result.value.taskType, 'rescheduled');
+          }
+          return tasks;
+        },
+        store: new TaskBulkUpdater({
+          logger,
+          savedObjectsRepository: repository,
+          getScopedClient: (request, clientOptions) => {
+            if (!credentials)
+              throw new Error(
+                'Task schedule updates require the saved objects credentials service'
+              );
+            return credentials.savedObjects.getScopedClient(request, clientOptions);
+          },
+          getIsSecurityEnabled: () => credentials?.isSecurityEnabled?.() ?? true,
+          getApiKeyStrategy: () => {
+            if (!strategy) throw new Error('Task schedule updates require the API key strategy');
+            return strategy;
+          },
+          grantApiKeys: (tasks, keyOptions) =>
+            grant(
+              tasks.map((task) => ({ ...task, id: task.id ?? v4() })),
+              keyOptions
+            ),
+          invalidateUnpersistedApiKeys: invalidateUnpersisted,
+          getInvalidationSoClient: () => {
+            if (!credentials)
+              throw new Error('Task schedule updates require the API key invalidation service');
+            return credentials.savedObjects.getUnsafeInternalClient({
+              includedHiddenTypes: [INVALIDATE_API_KEY_SO_NAME],
+            });
+          },
+          taskValidator: new TaskValidator({
+            logger,
+            definitions: new TaskTypeDictionary(logger),
+            allowReadingInvalidState: false,
+          }),
+          reportError: (error) => logger.error(error),
+        }),
+      }),
     runSoon,
     get: getTask,
     bulkGet: bulkGet as HostTaskManager['bulkGet'],

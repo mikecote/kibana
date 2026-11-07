@@ -6,19 +6,14 @@
  */
 
 import type { CoreStart } from '@kbn/core/server';
-import { CloneProposalStepId, CreateProposalStepId } from '@kbn/proposals-common';
+import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
+import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
-import { createWorkflowsReadApi } from '@kbn/workflows-management-plugin/server/api/workflows_read_api';
-import type { WorkflowAccessCore } from '@kbn/workflows-management-plugin/server/services/workflow_access_control';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { createProposalPrivilegesChecker } from '../services/check_proposal_privileges';
 import { registerStepDefinitions } from '../step_types';
 import { createProposalsRunServices } from './create_proposals_run_services';
-
-const onlyInKibana = (what: string) => () => {
-  throw new Error(`${what} is only available in Kibana, not in a task process`);
-};
 
 /**
  * The proposal steps in the task process of the workflow task types. Listed under
@@ -26,12 +21,11 @@ const onlyInKibana = (what: string) => () => {
  * Kibana builds: its storage over the internal client, the read API of the workflows management
  * plugin over the engine's execution storage, and the privilege checks of the security task plugin.
  *
- * Creating or cloning a proposal attaches a card to its conversation with Agent Builder's
- * attachments, which a process does not have: a workflow that uses either step is declined, and
- * Kibana runs it.
+ * Creating and cloning proposals use this run's Agent Builder attachments and shared workflow
+ * management runtime, with the same authorization as Kibana.
  */
 export const contribution: WorkflowStepsContribution = {
-  register: (registry, { host, logger, services, registerRunCheck }) => {
+  register: (registry, { host, logger, services }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const { elasticsearch, security, userProfile, plugins } = host as TaskHost & {
       userProfile?: CoreStart['userProfile'];
@@ -44,25 +38,6 @@ export const contribution: WorkflowStepsContribution = {
     const proposalsLogger = logger.get('proposals');
     const esClient = elasticsearch.asInternalUser;
 
-    let readApi: ReturnType<typeof createWorkflowsReadApi> | undefined;
-    const getReadApi = () => {
-      if (!readApi) {
-        readApi = createWorkflowsReadApi({
-          logger: proposalsLogger,
-          esClient,
-          core: {
-            security,
-            userProfile,
-            elasticsearch: { client: elasticsearch },
-          } as unknown as WorkflowAccessCore,
-          authz: authz.authz,
-          workflowExecutionsDataClient:
-            services.executionDataClients.createWorkflowDataClient() as never,
-          stepExecutionsDataClient: services.executionDataClients.createStepDataClient() as never,
-        });
-      }
-      return readApi;
-    };
     const privileges = createProposalPrivilegesChecker({
       getSecurity: async () => authz as SecurityPluginStart,
       logger: proposalsLogger,
@@ -73,20 +48,13 @@ export const contribution: WorkflowStepsContribution = {
       security: security as CoreStart['security'],
       userProfile,
       getWorkflowsApi: () =>
-        ({
-          getWorkflow: getReadApi().getWorkflow,
-          getWorkflowExecution: getReadApi().getWorkflowExecution,
-          getWorkflowExecutionStatuses: getReadApi().getWorkflowExecutionStatuses,
-          resumeWorkflowExecution: onlyInKibana('Resuming a workflow execution') as never,
-        } as never),
-      getAttachmentsClient: onlyInKibana('Attaching a proposal to a conversation') as never,
+        services.getService<WorkflowsServerPluginSetup['management']>('workflows.management'),
+      getAttachmentsClient: (request) =>
+        services
+          .getService<AgentBuilderPluginStart>('agentBuilder')
+          .attachments.getScopedClient({ request }),
     });
 
-    registerRunCheck?.((step) =>
-      step.type === CreateProposalStepId || step.type === CloneProposalStepId
-        ? 'attaching the proposal to its conversation needs Agent Builder, which a task process does not have'
-        : undefined
-    );
     registerStepDefinitions({
       workflowsExtensions: registry,
       getProposalsService,

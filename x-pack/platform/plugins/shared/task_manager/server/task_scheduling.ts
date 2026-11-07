@@ -10,7 +10,6 @@ import { chunk, flatten, omit } from 'lodash';
 import agent from 'elastic-apm-node';
 import type { Logger } from '@kbn/core/server';
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
-import { isEqual } from 'lodash';
 import type { Middleware } from './lib/middleware';
 import { parseIntervalAsMillisecond } from './lib/intervals';
 import {
@@ -27,9 +26,9 @@ import {
 } from './task';
 import type { TaskStore } from './task_store';
 import { ensureDeprecatedFieldsAreCorrected } from './lib/correct_deprecated_fields';
+import { updateTaskSchedules } from './update_task_schedules';
 import { retryableBulkUpdate } from './lib/retryable_bulk_update';
 import type { ErrorOutput } from './lib/bulk_operation_buffer';
-import { calculateNextRunAtFromSchedule } from './lib/get_next_run_at';
 import { TaskAlreadyRunningError } from './lib/errors';
 import type { TaskPollingLifecycle } from './polling_lifecycle';
 import type { TaskTypeDictionary } from './task_type_dictionary';
@@ -328,44 +327,12 @@ export class TaskScheduling {
     schedule: IntervalSchedule | RruleSchedule,
     options?: BulkUpdateSchedulesOptions
   ): Promise<BulkUpdateTaskResult> {
-    const { includeRunningTasks = false, ...apiKeyOptions } = options ?? {};
-    const shouldRegenerateApiKey = apiKeyOptions.regenerateApiKey === true;
-    const updatableStatuses = includeRunningTasks
-      ? new Set([TaskStatus.Idle, TaskStatus.Running, TaskStatus.Claiming])
-      : new Set([TaskStatus.Idle]);
-
-    return retryableBulkUpdate({
+    return updateTaskSchedules({
       taskIds,
+      schedule,
+      options,
       store: this.store,
-      getTasks: async (ids) => await this.bulkGetTasksHelper(ids),
-      filter: (task) =>
-        updatableStatuses.has(task.status) &&
-        (shouldRegenerateApiKey || !isEqual(task.schedule, schedule)),
-      map: (task) => {
-        if (isEqual(task.schedule, schedule)) {
-          return task;
-        }
-
-        // For a running/claiming task `runAt` is the time the current execution was due; the task
-        // runner computes the next `runAt` from it and the new schedule once the run completes.
-        if (task.status !== TaskStatus.Idle) {
-          return { ...task, schedule };
-        }
-
-        const newRunAtInMs = calculateNextRunAtFromSchedule({
-          schedule,
-          startDate: task.scheduledAt,
-        });
-
-        return { ...task, schedule, runAt: new Date(newRunAtInMs) };
-      },
-      validate: false,
-      /**
-       * Because the schedule can be converted from Interval to Rrule and vice versa we want to a void a situation
-       * where both are defined by passing mergeAttributes: false here.
-       */
-      mergeAttributes: false,
-      options: apiKeyOptions,
+      getTasks: (ids) => this.bulkGetTasksHelper(ids),
     });
   }
 

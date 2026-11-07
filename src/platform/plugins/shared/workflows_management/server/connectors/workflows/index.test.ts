@@ -56,7 +56,7 @@ describe('Workflows Connector', () => {
   describe('executor', () => {
     const mockRequest = {} as KibanaRequest;
 
-    it('should schedule workflow successfully', async () => {
+    it('resolves the process management API lazily and schedules the workflow', async () => {
       jest.mocked(mockWorkflowsManagementApi.getWorkflow).mockResolvedValue({
         id: 'test-workflow-id',
         name: 'Private workflow',
@@ -113,9 +113,12 @@ describe('Workflows Connector', () => {
         request: mockRequest,
       };
 
-      const connector = getConnectorType(mockWorkflowsManagementApi);
+      const getApi = jest.fn(() => mockWorkflowsManagementApi);
+      const connector = getConnectorType(getApi);
+      expect(getApi).not.toHaveBeenCalled();
       if (!connector.executor) throw new Error('Workflows connector executor is missing');
       const result = await connector.executor(execOptions);
+      expect(getApi).toHaveBeenCalledTimes(1);
 
       expect(result).toEqual({
         status: 'ok',

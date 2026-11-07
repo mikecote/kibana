@@ -93,6 +93,8 @@ export interface WorkflowStepsContribution {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     analyticsEventTypes?: Array<EventTypeOpts<any>>;
   };
+  /** Shared run services, created lazily so contributions may depend on each other. */
+  provides?: Readonly<Record<string, (context: WorkflowStepsContributionContext) => object>>;
   register(
     registry: WorkflowStepsRegistry,
     context: WorkflowStepsContributionContext
@@ -104,6 +106,14 @@ export interface WorkflowStepsContribution {
  * Kibana from the start contracts of the actions and workflows plugins.
  */
 export interface WorkflowStepsContributionServices {
+  stepRegistry: WorkflowStepsRegistryView;
+  registerService: (id: string, service: object) => void;
+  /** Resolves one run's contributed service; providers must return the same public contract as Kibana. */
+  getService: <T extends object>(id: string) => T;
+  /** Resolves after registration finishes and the engine runtime has been composed. */
+  getExecutionEngine: <T extends object>() => Promise<T>;
+  /** The internal actions client, with the same allowed callers as Kibana. */
+  getUnsecuredActionsClient: () => object;
   /** The actions client of a request: the one of the connectors the process runs. */
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<unknown>;
   /**

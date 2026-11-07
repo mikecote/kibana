@@ -85,7 +85,7 @@ describe('context engine workflow-steps contribution', () => {
     ).toEqual(Object.keys(contextEngineGlobalUiSettings));
   });
 
-  it('declines the steps that need what other plugins register in Kibana', async () => {
+  it('serves managed indices and built-in, workflow, and templated verifiers', async () => {
     const { checks } = await registerContribution();
     const decline = (type: string, config: Record<string, unknown>) =>
       checks.map((check) => check({ type, config })).find(Boolean);
@@ -100,10 +100,10 @@ describe('context engine workflow-steps contribution', () => {
       decline('context-engine.createKi', {
         with: { ai_index_id: 'mine', verifiers: [{ workflow_id: 'w' }] },
       })
-    ).toMatch(/workflows management/);
+    ).toBeUndefined();
     expect(
       decline('context-engine.verifyKi', { with: { verifiers: '{{ inputs.verifiers }}' } })
-    ).toMatch(/template/);
+    ).toBeUndefined();
 
     expect(
       decline('context-engine.createKi', {

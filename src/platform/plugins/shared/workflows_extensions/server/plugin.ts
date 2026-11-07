@@ -14,13 +14,14 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import type {
   ManagedWorkflowsSystemApi,
   ManagedWorkflowsSystemApiProvider,
-  PluginScopedManagedWorkflowsApi,
   WorkflowsClient,
   WorkflowsClientProvider,
 } from '@kbn/workflows/server/types';
+import { createPluginScopedManagedWorkflowsClient } from './create_plugin_scoped_managed_workflows_client';
 import { registerGetStepDefinitionsRoute } from './routes/get_step_definitions';
 import { registerGetTriggerDefinitionsRoute } from './routes/get_trigger_definitions';
 import { ServerStepRegistry } from './step_registry';
@@ -63,6 +64,8 @@ export class WorkflowsExtensionsServerPlugin
     core: CoreSetup<WorkflowsExtensionsServerPluginStartDeps>,
     plugins: WorkflowsExtensionsServerPluginSetupDeps
   ): WorkflowsExtensionsServerPluginSetup {
+    this.taskProcessSettings[SPACES_TASK_PROCESS_SETTINGS_ID] =
+      plugins.spaces.getTaskProcessSettings;
     // Register the workflows client provider to the workflows request context
     core.http.registerRouteHandlerContext<WorkflowsExtensionsRequestHandlerContext, 'workflows'>(
       'workflows',
@@ -156,7 +159,11 @@ export class WorkflowsExtensionsServerPlugin
           ? await this.managedWorkflowsSystemApiProvider(pluginId)
           : this.getNoopManagedWorkflowsSystemClient();
 
-        return this.createPluginScopedManagedWorkflowsClient(pluginId, systemClient);
+        return createPluginScopedManagedWorkflowsClient(pluginId, systemClient, async (request) =>
+          this.workflowsClientProvider
+            ? this.workflowsClientProvider(request)
+            : this.getNoopWorkflowsClient()
+        );
       },
       getTaskProcessSettings: () => this.taskProcessSettings,
       getTaskProcessParity: () => this.taskProcessParity,
@@ -240,26 +247,6 @@ export class WorkflowsExtensionsServerPlugin
           'No managed workflows system API provider set, using noop state list to avoid errors.'
         );
         throw new Error('Managed workflows system API provider is not available');
-      },
-    };
-  }
-
-  private createPluginScopedManagedWorkflowsClient(
-    pluginId: string,
-    systemClient: ManagedWorkflowsSystemApi
-  ): PluginScopedManagedWorkflowsApi {
-    return {
-      install: systemClient.install,
-      uninstall: systemClient.uninstall,
-      ready: systemClient.ready,
-      getWorkflowStatus: systemClient.getWorkflowStatus,
-      getInstalledWorkflowState: systemClient.getInstalledWorkflowState,
-      listInstalledWorkflowStates: systemClient.listInstalledWorkflowStates,
-      execute: async (request, id, options) => {
-        const requestClient = this.workflowsClientProvider
-          ? await this.workflowsClientProvider(request)
-          : this.getNoopWorkflowsClient();
-        return requestClient.managedWorkflows.execute(pluginId, id, options);
       },
     };
   }

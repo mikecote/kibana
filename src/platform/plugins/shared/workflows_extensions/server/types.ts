@@ -10,7 +10,7 @@
 import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
 import type { CustomRequestHandlerContext, KibanaRequest } from '@kbn/core/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
-import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { SpacesPluginSetup, SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type {
   ManagedWorkflowsSystemApiProvider,
   PluginScopedManagedWorkflowsApi,
@@ -136,7 +136,9 @@ export type WorkflowsExtensionsServerPluginStart =
 /**
  * Dependencies for the server plugin setup phase.
  */
-export type WorkflowsExtensionsServerPluginSetupDeps = Record<string, never>;
+export interface WorkflowsExtensionsServerPluginSetupDeps {
+  spaces: Pick<SpacesPluginSetup, 'getTaskProcessSettings'>;
+}
 
 export type ServerStepDefinitionOrLoader<
   Input extends z.ZodType = z.ZodType,

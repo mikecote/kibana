@@ -13,6 +13,7 @@ import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
 
 import { createApiKeys } from './authentication/api_keys/create_api_keys';
 import type { InternalAuthenticationServiceStart } from './authentication/authentication_service';
+import { UiamSystemIdentity } from './authentication/system_identity';
 import { checkPrivilegesFactory } from './authorization/check_privileges';
 import { checkPrivilegesDynamicallyWithRequestFactory } from './authorization/check_privileges_dynamically';
 import { checkSavedObjectsPrivilegesWithRequestFactory } from './authorization/check_saved_objects_privileges';
@@ -51,7 +52,7 @@ export interface RunTimeSecurityOptions {
 }
 
 export interface RunTimeSecurity {
-  authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser'>;
+  authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser' | 'systemIdentity'>;
   authz: ReturnType<typeof checkPrivilegesFactory> & {
     /**
      * Checks at the space of the request (a run's fake request names its space), as the actions
@@ -120,7 +121,19 @@ export const createRunTimeSecurity = ({
   } as unknown as SpacesService;
 
   return {
-    authc: { apiKeys, getCurrentUser },
+    authc: {
+      apiKeys,
+      getCurrentUser,
+      systemIdentity:
+        uiam &&
+        Boolean(
+          uiamOptions?.tls
+            ? uiamOptions.tls.certificate && uiamOptions.tls.key
+            : config.uiam?.ssl.certificate && config.uiam.ssl.key
+        )
+          ? new UiamSystemIdentity({ logger: logger.get('system-identity'), uiam })
+          : undefined,
+    },
     authz: {
       ...privileges,
       actions,

@@ -68,7 +68,7 @@ describe('the anomaly detection jobs health rule type served from a bundle', () 
     ) as never,
   });
 
-  const run = (ruleId: string, fallback?: jest.Mock) =>
+  const run = (ruleId: string, onDispatchFailure?: jest.Mock) =>
     new RemoteTaskRunner({
       route: supervisor.getRoute(TASK_TYPE)!,
       request: {
@@ -92,7 +92,7 @@ describe('the anomaly detection jobs health rule type served from a bundle', () 
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
       fetchFn: undiciFetch as unknown as typeof fetch,
-      fallback: fallback as never,
+      onDispatchFailure,
     }).run();
 
   beforeAll(async () => {
@@ -261,9 +261,9 @@ describe('the anomaly detection jobs health rule type served from a bundle', () 
   });
 
   it('runs the real executor, which reports no problem when there are no jobs', async () => {
-    const fallback = jest.fn();
-    const result = await run(RULE_ID, fallback);
-    expect(fallback).not.toHaveBeenCalled();
+    const onDispatchFailure = jest.fn();
+    const result = await run(RULE_ID, onDispatchFailure);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     expect(result).toEqual(
       expect.objectContaining({ schedule: { interval: '1m' }, state: expect.any(Object) })
     );

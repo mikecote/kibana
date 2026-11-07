@@ -21,6 +21,7 @@ import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { kibanaPackageJson } from '@kbn/repo-info';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import { registerRunFlusher } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { UsageReportingService } from '@kbn/usage-api-plugin/server/usage_reporting';
@@ -33,6 +34,8 @@ import {
 import type {
   WorkflowStepRunCheck,
   WorkflowStepsContribution,
+  WorkflowStepsContributionContext,
+  WorkflowStepsContributionServices,
 } from '@kbn/workflows-extensions/server';
 import {
   RULE_RUN_CONTRIBUTIONS_KEY,
@@ -41,6 +44,7 @@ import {
   WORKFLOWS_ENGINE_SETTINGS_ID,
   WORKFLOWS_USAGE_API_SETTINGS_ID,
 } from './constants';
+import { WorkflowRuntimeServices } from './workflow_runtime_services';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import { createWorkflowRuntime } from '../create_workflow_runtime';
 import type { WorkflowRuntime } from '../create_workflow_runtime';
@@ -146,6 +150,8 @@ export const createWorkflowRuntimeFromHost = async (
   const { actionsPlugin, hasActionType, stop } = createRuleRunActions({
     logger: logger.get('plugins', 'actions'),
     config: actionsConfig,
+    getSystemIdentity: () =>
+      (host.plugins?.security as SecurityTaskPluginStart | undefined)?.authc.systemIdentity,
     license$: licensing.license$,
     elasticsearch: host.elasticsearch,
     savedObjects: host.savedObjects,
@@ -177,6 +183,7 @@ export const createWorkflowRuntimeFromHost = async (
           publicBaseUrl: host.server.publicBaseUrl,
           settings,
           host,
+          getService: <T extends object>(id: string): T => runServices.getService<T>(id),
         })
       );
     },
@@ -185,41 +192,47 @@ export const createWorkflowRuntimeFromHost = async (
 
   // Steps: the internal ones (registered with the registry), and what the plugins contribute, which
   // may use the actions and the runtime of the engine, read when a step runs.
-  const started: { runtime?: WorkflowRuntime } = {};
   const runChecks: WorkflowStepRunCheck[] = [];
   const stepContributions = (host.contributions?.[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ??
     []) as WorkflowStepsContribution[];
-  await Promise.all(
-    stepContributions.map((contribution) =>
-      contribution.register(workflowsExtensions, {
-        host,
-        logger,
-        isServerless: host.server.isServerless,
-        kibanaVersion: host.server.version,
-        publicBaseUrl: host.server.publicBaseUrl,
-        settings,
-        registerRunCheck: (check) => runChecks.push(check),
-        hasStepDefinition: (stepTypeId) => workflowsExtensions.hasStepDefinition(stepTypeId),
-        services: {
-          executionDataClients: dataClients,
-          getActionsClientWithRequest: (request) =>
-            actionsPlugin.getActionsClientWithRequest(request),
-          scheduleWorkflow: (workflow, workflowContext, request) => {
-            if (!started.runtime) {
-              throw new Error('The workflows runtime is not ready to schedule workflows');
-            }
-            return started.runtime.scheduleWorkflow(workflow as never, workflowContext, request);
-          },
-          emitEvent: (params) => {
-            if (!started.runtime) {
-              throw new Error('The workflows runtime is not ready to emit events');
-            }
-            return started.runtime.emitEvent(params);
-          },
-        },
-      })
-    )
-  );
+  const engineReady = Promise.withResolvers<WorkflowRuntime['contract']>();
+  // The registry may be unused, but registration failures must reject every service waiting for it.
+  void engineReady.promise.catch(() => {});
+  const runServices = new WorkflowRuntimeServices(stepContributions, () => context, {
+    actions: actionsPlugin,
+  });
+  const services: WorkflowStepsContributionServices = {
+    stepRegistry: workflowsExtensions,
+    registerService: runServices.registerService,
+    getService: runServices.getService,
+    getExecutionEngine: async <T extends object>(): Promise<T> => (await engineReady.promise) as T,
+    getUnsecuredActionsClient: actionsPlugin.getUnsecuredActionsClient,
+    executionDataClients: dataClients,
+    getActionsClientWithRequest: (request) => actionsPlugin.getActionsClientWithRequest(request),
+    scheduleWorkflow: async (workflow, workflowContext, request) =>
+      (await engineReady.promise).scheduleWorkflow(workflow as never, workflowContext, request),
+    emitEvent: async (params) => (await engineReady.promise).triggerEvents.emitEvent(params),
+  };
+  const context: WorkflowStepsContributionContext = {
+    host,
+    logger,
+    isServerless: host.server.isServerless,
+    kibanaVersion: host.server.version,
+    publicBaseUrl: host.server.publicBaseUrl,
+    settings,
+    registerRunCheck: (check) => runChecks.push(check),
+    hasStepDefinition: (stepTypeId) => workflowsExtensions.hasStepDefinition(stepTypeId),
+    services,
+  };
+  try {
+    await Promise.all(
+      stepContributions.map((contribution) => contribution.register(workflowsExtensions, context))
+    );
+  } catch (error) {
+    engineReady.reject(error);
+    stops.forEach((cleanup) => cleanup());
+    throw error;
+  }
 
   // Links are built from Kibana's own public base URL (Core's `publicBaseUrl` is where the process
   // reaches Kibana), and calls go to `kibanaUrl`.
@@ -255,71 +268,79 @@ export const createWorkflowRuntimeFromHost = async (
     host.onRunEnd?.(() => meteringService.flush());
   }
 
-  const runtime = createWorkflowRuntime({
-    state: {
-      identityContexts: new ExecutionIdentityContexts(),
-      // HTTP steps and plugin helpers read this request-local symbol too.
-      eventChainContext: createEventChainContextStore(),
-      hitlLifecycle: new HitlLifecycleAuditRegistry(),
-    },
-    logger,
-    config,
-    elasticsearch: { client: host.elasticsearch },
-    security: {
-      authc: host.security.authc,
-      audit: host.security.audit,
-      // The engine plugin's own: the workload bindings are scoped to the plugin that registered the type.
-      serviceAccounts:
-        (host.plugins?.workflowsExecutionEngine as WorkflowsEngineTaskPluginStart | undefined)
-          ?.serviceAccounts ?? noServiceAccounts(),
-    },
-    userProfile,
-    http,
-    analytics: host.analytics,
-    dataStreams,
-    featureFlags,
-    // A run has one space: the one its request names.
-    spaces: {
-      getSpaceId: (request: KibanaRequest) =>
-        (request as { spaceId?: string } | undefined)?.spaceId ?? 'default',
-    } as never,
-    actions: { getActionsClientWithRequest: actionsPlugin.getActionsClientWithRequest },
-    taskManager: taskManager as never,
-    workflowsExtensions,
-    licensing: { getLicense: () => firstValueFrom(licensing.license$) as never },
-    dataClients,
-    // The process meters itself, with the Usage API connection Kibana sent (none when Kibana does
-    // not meter), and finishes sending before it answers.
-    metering,
-    // `canRunAs` is the default: the process's security plugin serves the service accounts from the
-    // same bindings and credentials as Kibana (`serviceAccounts.enabled` says whether it does).
-    cloud,
-    preflight: assertRunnableInProcessPreflight,
-    checkStep: (step) => {
-      for (const check of runChecks) {
-        const reason = check(step);
-        if (reason) return reason;
-      }
-      return undefined;
-    },
-    // A connector step (`ConnectorStepImpl`) is `<connector type>` or `<connector type>.<sub action>`,
-    // where the connector type is an action type id without its dot (`webhook`, `slack`, `cases`).
-    // `console` is answered by the step itself. The `http` step runs as the `.http` system connector.
-    //
-    // The engine runs a step as a connector when it names a `connector-id`, or when it is a system
-    // connector (`http`). A step that does neither is a custom step, so one missing from the registry
-    // (a plugin whose steps this process does not have, such as `cases.addAlerts`) is declined and
-    // never mistaken for a connector whose type shares its prefix.
-    isConnectorStepType: ({ type, config: stepConfig }) => {
-      if (type === 'console') return true;
-      const [base] = type.split('.');
-      const knownConnector = hasActionType(`.${base}`) || hasActionType(base);
-      if (!knownConnector) return false;
-      return typeof stepConfig['connector-id'] === 'string' || SystemConnectorsMap.has(`.${type}`);
-    },
-  });
-
-  started.runtime = runtime;
+  let runtime: WorkflowRuntime;
+  try {
+    runtime = createWorkflowRuntime({
+      state: {
+        identityContexts: new ExecutionIdentityContexts(),
+        // HTTP steps and plugin helpers read this request-local symbol too.
+        eventChainContext: createEventChainContextStore(),
+        hitlLifecycle: new HitlLifecycleAuditRegistry(),
+      },
+      logger,
+      config,
+      elasticsearch: { client: host.elasticsearch },
+      security: {
+        authc: host.security.authc,
+        audit: host.security.audit,
+        // The engine plugin's own: the workload bindings are scoped to the plugin that registered the type.
+        serviceAccounts:
+          (host.plugins?.workflowsExecutionEngine as WorkflowsEngineTaskPluginStart | undefined)
+            ?.serviceAccounts ?? noServiceAccounts(),
+      },
+      userProfile,
+      http,
+      analytics: host.analytics,
+      dataStreams,
+      featureFlags,
+      // A run has one space: the one its request names.
+      spaces: {
+        getSpaceId: (request: KibanaRequest) =>
+          (request as { spaceId?: string } | undefined)?.spaceId ?? 'default',
+      } as never,
+      actions: { getActionsClientWithRequest: actionsPlugin.getActionsClientWithRequest },
+      taskManager: taskManager as never,
+      workflowsExtensions,
+      licensing: { getLicense: () => firstValueFrom(licensing.license$) as never },
+      dataClients,
+      // The process meters itself, with the Usage API connection Kibana sent (none when Kibana does
+      // not meter), and finishes sending before it answers.
+      metering,
+      // `canRunAs` is the default: the process's security plugin serves the service accounts from the
+      // same bindings and credentials as Kibana (`serviceAccounts.enabled` says whether it does).
+      cloud,
+      preflight: assertRunnableInProcessPreflight,
+      checkStep: (step) => {
+        for (const check of runChecks) {
+          const reason = check(step);
+          if (reason) return reason;
+        }
+        return undefined;
+      },
+      // A connector step (`ConnectorStepImpl`) is `<connector type>` or `<connector type>.<sub action>`,
+      // where the connector type is an action type id without its dot (`webhook`, `slack`, `cases`).
+      // `console` is answered by the step itself. The `http` step runs as the `.http` system connector.
+      //
+      // The engine runs a step as a connector when it names a `connector-id`, or when it is a system
+      // connector (`http`). A step that does neither is a custom step, so one missing from the registry
+      // (a plugin whose steps this process does not have, such as `cases.addAlerts`) is declined and
+      // never mistaken for a connector whose type shares its prefix.
+      isConnectorStepType: ({ type, config: stepConfig }) => {
+        if (type === 'console') return true;
+        const [base] = type.split('.');
+        const knownConnector = hasActionType(`.${base}`) || hasActionType(base);
+        if (!knownConnector) return false;
+        return (
+          typeof stepConfig['connector-id'] === 'string' || SystemConnectorsMap.has(`.${type}`)
+        );
+      },
+    });
+  } catch (error) {
+    engineReady.reject(error);
+    stops.forEach((cleanup) => cleanup());
+    throw error;
+  }
+  engineReady.resolve(runtime.contract);
 
   return {
     runtime,

@@ -35,7 +35,8 @@
     "@kbn/core-http-server",
     "@kbn/alerting-types",
     "@kbn/management-settings-ids",
-    "@kbn/core-spaces-common"
+    "@kbn/core-spaces-common",
+    "@kbn/workflows-extensions"
   ],
   "exclude": [
     "target/**/*",

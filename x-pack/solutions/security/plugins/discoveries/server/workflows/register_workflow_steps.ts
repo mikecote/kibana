@@ -86,7 +86,7 @@ export const registerWorkflowSteps = (
     logger,
     workflowsManagementApi,
   }: {
-    /** Without it the persist step is not registered: a task process has no rule data client. */
+    /** Without an initialized persistence client the persist step is not registered. */
     adhocAttackDiscoveryDataClient?: IRuleDataClient;
     analytics?: AnalyticsServiceSetup;
     connectorTimeout: number;

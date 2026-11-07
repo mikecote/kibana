@@ -118,7 +118,7 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
     ) as never,
   });
 
-  const run = (workflowId: string, fallback?: () => never) =>
+  const run = (workflowId: string, onDispatchFailure?: jest.Mock) =>
     new RemoteTaskRunner({
       route: supervisor.getRoute(TASK_TYPE)!,
       request: {
@@ -145,7 +145,7 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
       },
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
-      fallback,
+      onDispatchFailure,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 
@@ -341,11 +341,11 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
   });
 
   it('runs a security step that calls the Kibana API in the process, with the credential of the run', async () => {
-    const fallback = jest.fn();
-    await run(NOTE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await run(NOTE_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step type is in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     await es.indices.refresh({ index: WORKFLOWS_EXECUTIONS_INDEX });
     const { hits } = await es.search<Record<string, unknown> & { id: string; output?: unknown }>({

@@ -112,7 +112,12 @@ export class ConnectorExecutor {
 
     // Prefer direct ID lookup: try to fetch by ID first, which is unambiguous
     try {
-      const connector = await this.actionsClient.get({ id: connectorNameOrId });
+      const connector = await this.actionsClient.get({
+        id: connectorNameOrId,
+        ...(connectorNameOrId.startsWith('system-connector-')
+          ? { throwIfSystemAction: false }
+          : {}),
+      });
       return connector.id;
     } catch {
       // Not found by ID -- fall through to name-based lookup

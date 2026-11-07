@@ -36,6 +36,8 @@ dependsOn:
   - '@kbn/zod-helpers'
   - '@kbn/std'
   - '@kbn/agent-builder-common'
+  - '@kbn/agent-builder-plugin'
+  - '@kbn/repo-info'
   - '@kbn/agent-builder-server'
   - '@kbn/agent-builder-browser'
   - '@kbn/core-http-browser'

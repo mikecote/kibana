@@ -81,6 +81,10 @@ export class EvalsPlugin
     coreSetup.dataStreams.registerDataStream(onlineScoresDataStreamDefinition);
 
     this.taskProviderRegistry = createTaskProviderRegistry();
+    const registry = this.taskProviderRegistry;
+    workflowsExtensions?.registerTaskProcessSettings('evalsTaskProviders', () => ({
+      names: registry.list().map(({ name }) => name),
+    }));
 
     coreSetup.savedObjects.registerType(evalsRemoteKibanaConfigSavedObjectType);
     encryptedSavedObjects.registerType({

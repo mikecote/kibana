@@ -10,11 +10,6 @@ import { agentBuilderServerEbtEvents } from '@kbn/agent-builder-common';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from '@kbn/search-inference-endpoints/server/task_process_settings';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
-import type { CoreStart } from '@kbn/core/server';
-import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
-import { createWorkflowsReadApi } from '@kbn/workflows-management-plugin/server/api/workflows_read_api';
-import { createWorkflowsProcessManagementApi } from '@kbn/workflows-management-plugin/server/api/workflows_process_management_api';
-import type { WorkflowAccessCore } from '@kbn/workflows-management-plugin/server/services/workflow_access_control';
 import { DEDUCTIVE_UI_SETTINGS } from '../services/execution/run_agent/deductive/register_deductive_agent';
 import { agentBuilderSpaceSettingsType } from '../saved_objects';
 import { registerUISettings } from '../ui_settings';
@@ -88,37 +83,14 @@ export const contribution: WorkflowStepsContribution = {
         settings: context.settings,
       },
       getActionsClientWithRequest: services.getActionsClientWithRequest as never,
+      actions: services.getService('actions'),
+      spaces: services.getService('spaces'),
+      getService: services.getService,
       emitEvent: services.emitEvent,
-      // The workflows management API as far as a process serves it: reads over the engine's storage
-      // and runs of saved workflows, scheduled as tasks.
-      getWorkflowsManagement: () => {
-        const { userProfile } = host as TaskHost & { userProfile?: CoreStart['userProfile'] };
-        const authz = (host.plugins?.security as SecurityTaskPluginStart | undefined)?.authz;
-        const readApi = createWorkflowsReadApi({
-          logger: context.logger.get('workflowsManagement'),
-          esClient: host.elasticsearch.asInternalUser,
-          core: {
-            security: host.security,
-            userProfile,
-            elasticsearch: { client: host.elasticsearch },
-          } as unknown as WorkflowAccessCore,
-          authz: authz as never,
-          workflowExecutionsDataClient:
-            services.executionDataClients.createWorkflowDataClient() as never,
-          stepExecutionsDataClient: services.executionDataClients.createStepDataClient() as never,
-        });
-        return createWorkflowsProcessManagementApi({
-          readApi,
-          scheduleWorkflow: (workflow, workflowContext, request) => {
-            if (!services.scheduleWorkflow) {
-              throw new Error('The workflows task process did not give the engine services');
-            }
-            return services.scheduleWorkflow(workflow, workflowContext, request);
-          },
-        });
-      },
+      getWorkflowsManagement: () => services.getService('workflows.management'),
     });
     if (!processServices) return;
+    services.registerService('agentBuilder', processServices.start);
 
     // The steps that read agent builder's registries, so that the guard can name them.
     const stepIds = new Set<string>();

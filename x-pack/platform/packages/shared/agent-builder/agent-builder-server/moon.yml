@@ -28,6 +28,10 @@ dependsOn:
   - '@kbn/core-ui-settings-server'
   - '@kbn/core-saved-objects-api-server'
   - '@kbn/connector-specs'
+  - '@kbn/core-analytics-server'
+  - '@kbn/core-lifecycle-server'
+  - '@kbn/core-saved-objects-server'
+  - '@kbn/core-ui-settings-common'
 tags:
   - shared-common
   - package

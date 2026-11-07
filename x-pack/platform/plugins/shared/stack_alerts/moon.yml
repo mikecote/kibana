@@ -19,6 +19,7 @@ project:
 dependsOn:
   - '@kbn/core'
   - '@kbn/alerting-plugin'
+  - '@kbn/security-plugin'
   - '@kbn/core-test-helpers-kbn-server'
   - '@kbn/repo-info'
   - '@kbn/event-log-plugin'

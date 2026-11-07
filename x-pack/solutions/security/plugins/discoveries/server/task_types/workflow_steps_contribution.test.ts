@@ -10,13 +10,14 @@ import { loggerMock } from '@kbn/logging-mocks';
 import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
 import type { WorkflowStepRunCheck, WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
-import {
-  AD_STEP_TYPE_IDS,
-  PersistDiscoveriesStepTypeId,
-  RunStepTypeId,
-} from '../../common/step_types';
+import { AD_STEP_TYPE_IDS, RunStepTypeId } from '../../common/step_types';
 import { registerWorkflowSteps } from '../workflows/register_workflow_steps';
 import { contribution } from './workflow_steps_contribution';
+import { createWorkflowRuleDataService } from '@kbn/rule-registry-plugin/server/task_types/workflow_rule_data_services';
+
+jest.mock('@kbn/rule-registry-plugin/server/task_types/workflow_rule_data_services', () => ({
+  createWorkflowRuleDataService: jest.fn().mockResolvedValue({ initializeIndex: jest.fn() }),
+}));
 
 /** The step types Kibana registers: `plugin.ts` registers them through the same function, as loaders. */
 const registeredByKibana = async (): Promise<string[]> => {
@@ -59,8 +60,13 @@ const registerContribution = async ({
     logger: loggerMock.create(),
     isServerless: false,
     kibanaVersion: '1.0.0',
-    settings: discoveries ? { discoveries } : {},
+    settings: discoveries ? { discoveries, inferenceFeatures: { features: [] } } : {},
     services: {
+      stepRegistry: createServerStepRegistry(loggerMock.create()),
+      registerService: jest.fn(),
+      getService: jest.fn(),
+      getExecutionEngine: jest.fn(),
+      getUnsecuredActionsClient: jest.fn(),
       executionDataClients: {
         createWorkflowDataClient: jest.fn(),
         createStepDataClient: jest.fn(),
@@ -77,17 +83,17 @@ const registerContribution = async ({
 };
 
 describe('discoveries workflow-steps contribution', () => {
-  it('registers every step Kibana registers, except the one that only Kibana serves', async () => {
+  it('registers every step Kibana registers with the shared rule data service', async () => {
+    jest
+      .mocked(createWorkflowRuleDataService)
+      .mockResolvedValue({ initializeIndex: jest.fn().mockReturnValue({}) } as never);
     const { registry, internalSteps } = await registerContribution();
     const kibana = await registeredByKibana();
 
     expect([...kibana].sort()).toEqual([...AD_STEP_TYPE_IDS].sort());
 
-    const declined = [PersistDiscoveriesStepTypeId];
-    declined.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(false));
-    const served = kibana.filter((id) => !declined.includes(id));
-    served.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
-    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + served.length);
+    kibana.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
+    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + kibana.length);
   });
 
   it('registers nothing when Kibana sent no settings, as when the plugin is disabled', async () => {
@@ -98,7 +104,12 @@ describe('discoveries workflow-steps contribution', () => {
   });
 
   it('declares its settings, the flag of the workflows, the per-space setting and its event log provider', () => {
-    expect(contribution.declares?.settings).toEqual(['discoveries']);
+    expect(contribution.declares?.settings).toEqual([
+      'discoveries',
+      'inferenceFeatures',
+      'ruleRegistry',
+      'alerting',
+    ]);
     expect(contribution.declares?.featureFlags).toEqual({
       [ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG]: true,
     });
@@ -110,17 +121,16 @@ describe('discoveries workflow-steps contribution', () => {
     ]);
   });
 
-  it('declines a run step that names an inference feature, which other plugins register in Kibana', async () => {
+  it('does not reject run steps that name inference features from the dispatch snapshot', async () => {
     const { checks } = await registerContribution();
-    const decline = (type: string, config: Record<string, unknown>) =>
-      checks.map((check) => check({ type, config })).find(Boolean);
-
-    expect(decline(RunStepTypeId, { with: { feature_id: 'attack_discovery' } })).toMatch(
-      /feature_id/
-    );
-    expect(decline(RunStepTypeId, { with: { feature_id: ['a', 'b'] } })).toMatch(/feature_id/);
-    expect(decline(RunStepTypeId, { with: { connector_id: 'c' } })).toBeUndefined();
-    expect(decline(RunStepTypeId, { with: { feature_id: [] } })).toBeUndefined();
-    expect(decline('ai.prompt', { with: { feature_id: 'x' } })).toBeUndefined();
+    for (const featureId of ['attack_discovery', ['a', 'b']]) {
+      expect(
+        checks
+          .map((check) =>
+            check({ type: RunStepTypeId, config: { with: { feature_id: featureId } } })
+          )
+          .filter(Boolean)
+      ).toEqual([]);
+    }
   });
 });

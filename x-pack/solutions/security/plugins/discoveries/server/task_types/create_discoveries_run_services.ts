@@ -28,6 +28,9 @@ export interface DiscoveriesRunServicesDeps {
   getActionsClientWithRequest: DiscoveriesStepPluginServices['actions']['getActionsClientWithRequest'];
   /** Read when a step first needs it. */
   getInference: () => InferenceServerStart;
+  getSearchInferenceEndpoints: () => NonNullable<
+    DiscoveriesStepPluginServices['searchInferenceEndpoints']
+  >;
   /** The reads of the workflows management plugin over the engine's storage. */
   readApi: Pick<
     WorkflowsReadApi,
@@ -50,13 +53,14 @@ export interface DiscoveriesRunServicesDeps {
  * The workflows a step starts (alert retrieval, generation, validation) are scheduled as tasks
  * instead of run inline, as the scheduled attack discovery executor already does: a process serves
  * one run, and the workflow it starts runs under its own `workflow:run` task, in a process of its
- * own when it can be, or in Kibana when a step it uses is declined there.
+ * own under the same process routing policy.
  */
 export const createDiscoveriesRunServices = ({
   core,
   authz,
   getActionsClientWithRequest,
   getInference,
+  getSearchInferenceEndpoints,
   readApi,
   scheduleWorkflow,
   hasStepDefinition,
@@ -105,9 +109,7 @@ export const createDiscoveriesRunServices = ({
     pluginsStart: {
       actions: { getActionsClientWithRequest },
       inference: getInference(),
-      // A feature id resolves the features other plugins register in their `setup()`: the run
-      // check of the contribution declines the steps that name one.
-      searchInferenceEndpoints: undefined,
+      searchInferenceEndpoints: getSearchInferenceEndpoints(),
       security: { authz },
       // A run has one space: the one its request names.
       spaces: {
