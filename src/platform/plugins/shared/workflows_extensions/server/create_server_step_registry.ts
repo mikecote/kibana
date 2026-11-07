@@ -8,6 +8,7 @@
  */
 
 import type { EventTypeOpts, KibanaRequest, SavedObjectsType } from '@kbn/core/server';
+import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { Logger } from '@kbn/logging';
@@ -79,6 +80,7 @@ export interface WorkflowStepsContribution {
   declares?: {
     schedulableTypes?: RegExp[];
     savedObjectTypes?: SavedObjectsType[];
+    dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
     settings?: string[];
     uiSettings?: Array<Record<string, UiSettingsParams>>;

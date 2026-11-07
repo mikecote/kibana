@@ -125,6 +125,13 @@ describe('workflow task type modules with contributions', () => {
       encryptedSavedObjectTypes: [
         { type: 'contributed-encrypted', attributesToEncrypt: new Set() },
       ],
+      dataStreams: [
+        {
+          name: '.contributed-data',
+          version: 1,
+          template: { mappings: { properties: { '@timestamp': { type: 'date' as const } } } },
+        },
+      ],
       settings: ['contributedPlugin'],
       uiSettings: [{ 'contributed:setting': { schema: {}, value: 1 } }],
       featureFlags: { 'contributed.flag': true },
@@ -152,6 +159,7 @@ describe('workflow task type modules with contributions', () => {
       expect(applied.settings).not.toContain('contributedPlugin');
       expect(applied.optionalSettings).toEqual(['contributedPlugin']);
       expect(applied.uiSettings?.defaults).toEqual(contribution.declares.uiSettings);
+      expect(applied.dataStreams).toEqual(contribution.declares.dataStreams);
       expect(applied.featureFlags).toEqual({
         [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false,
         'contributed.flag': true,

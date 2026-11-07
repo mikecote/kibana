@@ -341,6 +341,7 @@ export class TaskManagerPlugin
             };
           }
           if (module.uiSettings) host.uiSettings = coreStart.uiSettings;
+          if (module.dataStreams) host.dataStreams = coreStart.dataStreams;
           if (module.licensing) {
             host.licensing = {
               license$: pluginsStart.licensing.license$,

@@ -35,6 +35,7 @@ export const createTaskPluginSetupContext = <
   },
   savedObjects: deps.savedObjects,
   uiSettings: deps.uiSettings,
+  dataStreams: deps.dataStreams,
   security: {
     registerSecurityDelegate: deps.security.registerSecurityDelegate,
     acquireFakeRequestEnricher: deps.security.acquireFakeRequestEnricher,
@@ -61,6 +62,7 @@ export const createTaskPluginStartContext = (
   executionContext: deps.executionContext,
   savedObjects: deps.savedObjects,
   uiSettings: deps.uiSettings,
+  dataStreams: deps.dataStreams,
   http: deps.http,
   security: {
     authc: deps.security.authc,

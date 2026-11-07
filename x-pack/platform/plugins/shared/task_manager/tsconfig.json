@@ -17,6 +17,7 @@
     "test/scout_task_processes_unknown_connector/**/*"
   ],
   "kbn_references": [
+    "@kbn/core-data-streams-server",
     "@kbn/core",
     "@kbn/tracing-utils",
     "@kbn/usage-collection-plugin",

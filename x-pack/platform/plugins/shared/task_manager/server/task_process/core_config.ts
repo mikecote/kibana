@@ -107,8 +107,9 @@ export const buildCoreConfig = (
         ? { publicBaseUrl: init.server?.kibanaUrl ?? init.server?.publicBaseUrl }
         : {}),
     },
-    // Kibana owns the saved object indices and the data streams; a run only reads and writes documents.
+    // Kibana owns startup migrations; runs retain native lazy initialization of their declared storage.
     migrations: { skip: true },
+    dataStreams: { migrations: { skip: true } },
     plugins: { initialize: true },
     // No translation files: nothing in a run is rendered for a person.
     i18n: { locales: [] },

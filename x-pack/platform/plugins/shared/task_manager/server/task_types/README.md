@@ -163,7 +163,7 @@ mode now targets the supervisor so every dispatch receives its current configura
 ## What a process is
 
 A task process boots Core's `TaskRoot` with a fixed set of task plugins. It shares Core's configuration,
-logging, Elasticsearch, saved objects, UI settings, analytics, security, status and plugin lifecycle
+logging, Elasticsearch, saved objects, data streams, UI settings, analytics, security, status and plugin lifecycle
 implementations. It does not construct inbound HTTP servers, rendering, Core apps or browser assets.
 Index migration orchestration is skipped; document migrations, mappings, serialization and repository
 extensions remain available. Outbound HTTP uses Core's real self client, including base paths and UIAM.
@@ -185,6 +185,7 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
+| `dataStreams` | `dataStreams` | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped | Core |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
@@ -231,8 +232,10 @@ credentials; never log them.
 **Installs.** A run does what it would do in Kibana, and nothing a plugin's startup does. What a run
 triggers (the alerts resources of a space it runs in for the first time, a signing key, the endpoint
 action requests data stream) happens in the process with the plugin's own idempotent code. Startup
-installs are Kibana's: Core's migrations and data streams are skipped, and a plugin's factory takes
-definitions that are already installed.
+installs are Kibana's: Core's eager migrations and data stream initialization are skipped. Modules
+declare lazily used storage through `dataStreams`; Core registers those definitions locally and its
+real `initializeClient` initializes the requested stream when business execution first needs it,
+as it does in Kibana. Factories that only open existing resources retain that behavior.
 
 ### Plugin factories
 

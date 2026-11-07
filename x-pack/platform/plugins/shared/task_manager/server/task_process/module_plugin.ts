@@ -78,6 +78,9 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         types.push(type);
       }
       types.forEach((type) => core.savedObjects.registerType(type));
+      for (const definition of new Set(module.dataStreams ?? [])) {
+        core.dataStreams.registerDataStream(definition);
+      }
       // The `task` type and its neighbours, which `host.taskManager` writes.
       if (module.taskManager) registerTaskManagerSavedObjects(core.savedObjects);
 
@@ -232,6 +235,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         });
       }
       if (module.uiSettings) host.uiSettings = core.uiSettings;
+      if (module.dataStreams) host.dataStreams = core.dataStreams;
       if (module.featureFlags) host.featureFlags = createHostFeatureFlags();
       if (module.licensing) {
         const { featureUsage, flush } = createStandaloneFeatureUsage({

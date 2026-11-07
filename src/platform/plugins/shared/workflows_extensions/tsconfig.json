@@ -12,6 +12,7 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/core-data-streams-server",
     "@kbn/core",
     "@kbn/workflows",
     "@kbn/zod",

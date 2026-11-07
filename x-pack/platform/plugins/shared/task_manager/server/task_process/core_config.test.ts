@@ -35,6 +35,12 @@ interface Logging {
 }
 
 describe('buildCoreConfig', () => {
+  it('disables eager data stream installation and migrations in task workers', () => {
+    const { settings, cleanup } = buildCoreConfig(init(), {});
+    expect(settings.dataStreams).toEqual({ migrations: { skip: true } });
+    cleanup();
+  });
+
   it('gives Core the ui settings overrides and global overrides Kibana has', () => {
     const { settings, cleanup } = buildCoreConfig(
       init({

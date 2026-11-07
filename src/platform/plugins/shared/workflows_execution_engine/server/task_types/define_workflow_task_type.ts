@@ -79,6 +79,7 @@ const dedupeUiSettings = <T extends Record<string, unknown>>(list: T[]): T[] => 
 export type AgentBuilderContributionDeclares = Pick<
   NonNullable<WorkflowStepsContribution['declares']>,
   | 'savedObjectTypes'
+  | 'dataStreams'
   | 'encryptedSavedObjectTypes'
   | 'settings'
   | 'uiSettings'
@@ -158,6 +159,9 @@ export const defineWorkflowTaskType = (
     // What contributions read: a plugin that is disabled sends nothing, and its contribution then
     // registers nothing, so these are not required.
     optionalSettings: [...new Set(declared.flatMap(({ settings }) => settings ?? []))],
+    ...(declared.some(({ dataStreams }) => dataStreams?.length)
+      ? { dataStreams: declared.flatMap(({ dataStreams }) => dataStreams ?? []) }
+      : {}),
     // Only when contributions declare some: it gives the runner `host.uiSettings`.
     ...(declared.some(
       ({ uiSettings, globalUiSettings }) => uiSettings?.length || globalUiSettings?.length

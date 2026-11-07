@@ -9,6 +9,7 @@ import type { EventTypeOpts } from '@kbn/core-analytics-server';
 import type { CoreStart } from '@kbn/core-lifecycle-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
+import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { Logger } from '@kbn/logging';
 import type { AgentBuilderPluginSetup, AgentBuilderPluginStart } from './plugin_contract';
@@ -26,6 +27,8 @@ export const AGENT_BUILDER_CONTRIBUTIONS_KEY = 'agent-builder';
 export interface AgentBuilderContributionDeclares {
   /** Saved object types the registrations (tools, attachment types ...) read or write. */
   savedObjectTypes?: SavedObjectsType[];
+  /** Data streams initialized lazily by the registrations' execution services. */
+  dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** The ids of the plugin configs the registrations read, as `context.settings[id]`. */
   settings?: string[];
   /** Ui settings the registrations read, as `core.uiSettings.register` takes them. */

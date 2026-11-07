@@ -17,6 +17,7 @@ project:
   owner: '@elastic/response-ops'
   sourceRoot: x-pack/platform/plugins/shared/task_manager
 dependsOn:
+  - '@kbn/core-data-streams-server'
   - '@kbn/core'
   - '@kbn/tracing-utils'
   - '@kbn/usage-collection-plugin'

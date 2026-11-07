@@ -19,6 +19,7 @@ import {
 import { EnvironmentService } from '@kbn/core-environment-server-internal';
 import { NodeService } from '@kbn/core-node-server-internal';
 import { ElasticsearchService } from '@kbn/core-elasticsearch-server-internal';
+import { DataStreamsService } from '@kbn/core-data-streams-server-internal';
 import { SavedObjectsService } from '@kbn/core-saved-objects-server-internal';
 import { UiSettingsService } from '@kbn/core-ui-settings-server-internal';
 import { SecurityService } from '@kbn/core-security-server-internal';
@@ -47,6 +48,7 @@ export class TaskRoot {
   private readonly node: NodeService;
   private readonly elasticsearch: ElasticsearchService;
   private readonly savedObjects: SavedObjectsService;
+  private readonly dataStreams: DataStreamsService;
   private readonly uiSettings: UiSettingsService;
   private readonly security: SecurityService;
   private readonly userProfile: UserProfileService;
@@ -87,6 +89,7 @@ export class TaskRoot {
     this.node = new NodeService(core);
     this.elasticsearch = new ElasticsearchService(core);
     this.savedObjects = new SavedObjectsService(core);
+    this.dataStreams = new DataStreamsService(core);
     this.uiSettings = new UiSettingsService(core);
     this.security = new SecurityService(core);
     this.userProfile = new UserProfileService(core);
@@ -138,6 +141,7 @@ export class TaskRoot {
       elasticsearch,
       logging: this.logging.setup(),
       savedObjects,
+      dataStreams: await this.dataStreams.setup(),
       uiSettings: await this.uiSettings.setupTask({ savedObjects }),
       security,
       userProfile: this.userProfile.setup(),
@@ -170,6 +174,7 @@ export class TaskRoot {
       elasticsearch,
       executionContext: this.executionContext.start(),
       savedObjects,
+      dataStreams: await this.dataStreams.start({ elasticsearch }),
       uiSettings: await this.uiSettings.start(),
       security,
       userProfile: this.userProfile.start(),
@@ -182,6 +187,7 @@ export class TaskRoot {
     this.shuttingDown = true;
     await this.plugins.stop();
     await this.uiSettings.stop();
+    this.dataStreams.stop();
     await this.savedObjects.stop();
     await this.elasticsearch.stop();
     await this.http.stop();

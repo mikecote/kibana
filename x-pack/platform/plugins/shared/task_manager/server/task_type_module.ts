@@ -12,6 +12,7 @@ import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
+import type { DataStreamsSetup, DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { HttpServiceStart } from '@kbn/core-http-server';
@@ -129,6 +130,8 @@ export interface TaskHost {
   eventLog?: TaskHostEventLog;
   /** Declared with `taskManager`. */
   taskManager?: HostTaskManager;
+  /** Declared with `dataStreams`; uses Core's lazy initialization when a run requests a client. */
+  dataStreams?: DataStreamsStart;
   /** Declared with `uiSettings`. */
   uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient' | 'globalAsScopedToClient'>;
   /** Declared with `licensing`. */
@@ -167,6 +170,8 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * has them.
    */
   savedObjectTypes?: SavedObjectsType[];
+  /** Data streams owned by the module; registered locally without eager initialization. */
+  dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** Encrypted saved object registrations the runner needs; a task process registers them. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** Gives the runner `host.eventLog`. */
@@ -322,6 +327,7 @@ export const toTaskDefinition = (
     type,
     cancelGracePeriodMs,
     savedObjectTypes,
+    dataStreams,
     encryptedSavedObjectTypes,
     eventLog,
     taskManager,

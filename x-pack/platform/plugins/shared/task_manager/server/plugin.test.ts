@@ -237,6 +237,7 @@ describe('TaskManagerPlugin', () => {
           type: 'test:capabilities',
           eventLog: { providers: [], create: jest.fn() },
           uiSettings: {},
+          dataStreams: [],
           settings: ['alerting'],
           createTaskRunner,
         }),
@@ -258,6 +259,7 @@ describe('TaskManagerPlugin', () => {
       expect(host.eventLog).toBe(eventLog);
       expect(host.settings).toEqual({ alerting: { max: 1 } });
       expect(host.uiSettings).toBeDefined();
+      expect(host.dataStreams).toBeDefined();
       expect(host.encryptedSavedObjects).toBeUndefined();
       expect(host.taskManager).toBeUndefined();
     });
