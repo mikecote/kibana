@@ -5,132 +5,144 @@
  * 2.0.
  */
 
-import { httpServerMock } from '@kbn/core-http-server-mocks';
+import type { WorkflowYaml } from '@kbn/workflows';
+import { coreMock, httpServerMock } from '@kbn/core/server/mocks';
+import { inferenceMock } from '@kbn/inference-plugin/server/mocks';
+import { securityMock } from '@kbn/security-plugin/server/mocks';
+import { loggerMock } from '@kbn/logging-mocks';
+import { createSearchInferenceEndpointsStart } from '@kbn/search-inference-endpoints/server/create_search_inference_endpoints_start';
+import { InferenceFeatureRegistry } from '@kbn/search-inference-endpoints/server/inference_feature_registry';
 import { createDiscoveriesRunServices } from './create_discoveries_run_services';
 
+const definition: WorkflowYaml = {
+  name: 'Example',
+  enabled: true,
+  version: '1',
+  triggers: [{ type: 'manual' }],
+  steps: [{ name: 'end', type: 'console', with: { message: 'Done' } }],
+};
+
 const create = () => {
-  const readApi = {
-    assertWorkflowAccess: jest.fn().mockResolvedValue(undefined),
-    getManagedWorkflowStatus: jest.fn().mockResolvedValue({ status: 'intact' }),
+  const core = coreMock.createStart();
+  const inference = inferenceMock.createStartContract();
+  const logger = loggerMock.create();
+  const searchInferenceEndpoints = createSearchInferenceEndpointsStart({
+    core: { savedObjects: core.savedObjects, uiSettings: core.uiSettings },
+    inference,
+    logger,
+    featureRegistry: new InferenceFeatureRegistry(logger),
+  });
+  const getInference = jest.fn(() => inference);
+  const management = {
     getWorkflow: jest.fn(),
     getWorkflowExecution: jest.fn(),
+    runWorkflow: jest.fn().mockResolvedValue('inline-execution'),
+    scheduleWorkflow: jest.fn().mockResolvedValue('queued-execution'),
   };
-  const scheduleWorkflow = jest.fn().mockResolvedValue({ workflowExecutionId: 'execution-1' });
-  const inference = { getConnectorById: jest.fn() };
-  const getInference = jest.fn().mockReturnValue(inference);
-  const searchInferenceEndpoints = { getConnectorByFeatureId: jest.fn() };
-  const core = { featureFlags: {} } as never;
+  const ownedClient = { getWorkflowStatus: jest.fn().mockResolvedValue({ status: 'intact' }) };
+  const extensions = {
+    hasStepDefinition: jest.fn((id: string) => id === 'registered'),
+    initManagedWorkflowsClient: jest.fn().mockResolvedValue(ownedClient),
+  };
+  const spaces = { getSpaceId: jest.fn(() => 'finance') };
   const services = createDiscoveriesRunServices({
     core,
-    authz: { actions: {} } as never,
+    authz: securityMock.createStart().authz,
     getActionsClientWithRequest: jest.fn(),
-    getInference: getInference as never,
-    getSearchInferenceEndpoints: () => searchInferenceEndpoints as never,
-    readApi,
-    scheduleWorkflow,
-    hasStepDefinition: (id) => id === 'registered',
+    getInference,
+    getSearchInferenceEndpoints: () => searchInferenceEndpoints,
+    workflowsManagementApi: management,
+    workflowsExtensions: extensions,
+    spaces,
   });
   return {
     ...services,
-    readApi,
-    scheduleWorkflow,
+    core,
     inference,
     getInference,
-    core,
     searchInferenceEndpoints,
+    management,
+    extensions,
+    spaces,
+    ownedClient,
   };
 };
 
 describe('createDiscoveriesRunServices', () => {
-  it('gives the steps Core, the plugins and the space of the request, building inference when first read', async () => {
-    const { getStartServices, getInference, inference, core, searchInferenceEndpoints } = create();
-    expect(getInference).not.toHaveBeenCalled();
-
-    const { coreStart, pluginsStart } = await getStartServices();
-
-    expect(coreStart).toBe(core);
-    expect(pluginsStart.inference).toBe(inference);
-    expect(pluginsStart.searchInferenceEndpoints).toBe(searchInferenceEndpoints);
-    const request = httpServerMock.createKibanaRequest();
-    expect(pluginsStart.spaces?.spacesService.getSpaceId(request)).toBe('default');
-    expect(pluginsStart.spaces?.spacesService.getSpaceId({ spaceId: 'security' } as never)).toBe(
-      'security'
-    );
-    expect(pluginsStart.workflowsExtensions.hasStepDefinition('registered')).toBe(true);
-    expect(pluginsStart.workflowsExtensions.hasStepDefinition('other')).toBe(false);
+  it('composes the actual services and resolves inference lazily', async () => {
+    const fixture = create();
+    expect(fixture.getInference).not.toHaveBeenCalled();
+    const { coreStart, pluginsStart } = await fixture.getStartServices();
+    expect(coreStart).toBe(fixture.core);
+    expect(pluginsStart.inference).toBe(fixture.inference);
+    expect(pluginsStart.searchInferenceEndpoints).toBe(fixture.searchInferenceEndpoints);
+    expect(pluginsStart.spaces?.spacesService).toBe(fixture.spaces);
+    expect(pluginsStart.workflowsExtensions).toBe(fixture.extensions);
   });
 
-  it('answers the managed workflow status with the plugin that owns them', async () => {
-    const { getStartServices, readApi } = create();
-    const { pluginsStart } = await getStartServices();
-
+  it('uses the native owner-bound managed workflow client', async () => {
+    const fixture = create();
+    const { pluginsStart } = await fixture.getStartServices();
     const client = await pluginsStart.workflowsExtensions.initManagedWorkflowsClient('discoveries');
-    await client.getWorkflowStatus('id' as never, { spaceId: 'default' } as never);
-
-    expect(readApi.getManagedWorkflowStatus).toHaveBeenCalledWith(
-      'id',
-      { spaceId: 'default' },
-      'discoveries'
-    );
+    expect(client).toBe(fixture.ownedClient);
+    expect(fixture.extensions.initManagedWorkflowsClient).toHaveBeenCalledWith('discoveries');
   });
 
-  it('schedules the workflows a step starts, running one only when the request may execute it', async () => {
-    const { workflowsManagementApi, readApi, scheduleWorkflow } = create();
-    const request = httpServerMock.createKibanaRequest();
-    const workflow = { id: 'workflow-1', isEphemeral: false } as never;
-
-    const executionId = await workflowsManagementApi.runWorkflow(
-      workflow,
-      'default',
-      { event: { a: 1 }, size: 2 },
-      request
-    );
-
-    expect(executionId).toBe('execution-1');
-    expect(readApi.assertWorkflowAccess).toHaveBeenCalledWith(
-      'workflow-1',
-      'default',
-      'execute',
-      request
-    );
-    expect(scheduleWorkflow).toHaveBeenCalledWith(
-      workflow,
-      { event: { a: 1 }, spaceId: 'default', inputs: { size: 2 }, triggeredBy: 'manual' },
-      request
-    );
+  it('preserves inline execution instead of changing it to a scheduled task', async () => {
+    const { workflowsManagementApi, management } = create();
+    const request = httpServerMock.createFakeKibanaRequest({});
+    const workflow = { id: 'inline', name: 'Inline', enabled: true, definition, yaml: '' };
+    await expect(
+      workflowsManagementApi.runWorkflow(workflow, 'finance', {}, request)
+    ).resolves.toBe('inline-execution');
+    expect(management.runWorkflow).toHaveBeenCalledWith(workflow, 'finance', {}, request);
+    expect(management.scheduleWorkflow).not.toHaveBeenCalled();
   });
 
-  it('does not run a workflow the request may not execute', async () => {
-    const { workflowsManagementApi, readApi, scheduleWorkflow } = create();
-    readApi.assertWorkflowAccess.mockRejectedValue(new Error('forbidden'));
-
+  it('propagates the native workflow authorization failure', async () => {
+    const { workflowsManagementApi, management } = create();
+    management.runWorkflow.mockRejectedValue(new Error('forbidden'));
     await expect(
       workflowsManagementApi.runWorkflow(
-        { id: 'workflow-1', isEphemeral: false } as never,
-        'default',
+        { id: 'denied', name: 'Denied', enabled: true, definition, yaml: '' },
+        'finance',
         {},
-        httpServerMock.createKibanaRequest()
+        httpServerMock.createFakeKibanaRequest({})
       )
     ).rejects.toThrow('forbidden');
-    expect(scheduleWorkflow).not.toHaveBeenCalled();
+    expect(management.scheduleWorkflow).not.toHaveBeenCalled();
   });
 
-  it('skips the access check for an ephemeral workflow, as Kibana does', async () => {
-    const { workflowsManagementApi, readApi, scheduleWorkflow } = create();
-
-    await workflowsManagementApi.runWorkflow(
-      { id: 'workflow-1', isEphemeral: true } as never,
-      'default',
+  it('keeps explicit scheduling and its metadata on the native management contract', async () => {
+    const { workflowsManagementApi, management } = create();
+    const request = httpServerMock.createFakeKibanaRequest({});
+    const workflow = {
+      id: 'queued',
+      name: 'Queued',
+      enabled: true,
+      definition,
+      yaml: '',
+      isEphemeral: true,
+    };
+    const metadata = { attackDiscovery: { executionUuid: 'correlation', source: 'workflow' } };
+    await expect(
+      workflowsManagementApi.scheduleWorkflow(
+        workflow,
+        'finance',
+        {},
+        request,
+        'workflow',
+        metadata
+      )
+    ).resolves.toBe('queued-execution');
+    expect(management.scheduleWorkflow).toHaveBeenCalledWith(
+      workflow,
+      'finance',
       {},
-      httpServerMock.createKibanaRequest(),
-      'attack-discovery'
+      request,
+      'workflow',
+      metadata
     );
-
-    expect(readApi.assertWorkflowAccess).not.toHaveBeenCalled();
-    expect(scheduleWorkflow).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ triggeredBy: 'attack-discovery' }),
-      expect.anything()
-    );
+    expect(management.runWorkflow).not.toHaveBeenCalled();
   });
 });

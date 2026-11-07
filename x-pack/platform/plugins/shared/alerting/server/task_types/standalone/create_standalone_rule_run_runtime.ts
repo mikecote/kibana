@@ -207,6 +207,7 @@ export const createStandaloneRuleRunRuntime = ({
     taskManager: host.taskManager!,
     publicBaseUrl,
     authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
+    getAuditLoggerWithRequest: (request) => host.security.audit.asScoped(request),
     executor: executeConnectors
       ? {
           security: host.security as SecurityServiceStart,

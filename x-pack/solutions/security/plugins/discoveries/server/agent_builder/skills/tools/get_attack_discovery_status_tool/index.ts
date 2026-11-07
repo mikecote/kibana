@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import { ToolResultType, ToolType } from '@kbn/agent-builder-common';
 import { getToolResultId } from '@kbn/agent-builder-server';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
@@ -14,7 +14,7 @@ import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflo
 import { ExecutionStatus, type WorkflowExecutionDto } from '@kbn/workflows';
 import { z, lazySchema } from '@kbn/zod/v4';
 
-import type { DiscoveriesPluginStartDeps } from '../../../../types';
+import type { GetStepServices } from '../../../../workflows/step_services';
 import { extractPipelineValidationData } from '../../../../routes/get/pipeline_data/helpers/extract_pipeline_validation_data';
 import { getWorkflowExecutionsTracking } from '../../../../routes/get/pipeline_data/helpers/get_workflow_executions_tracking';
 
@@ -88,10 +88,7 @@ export const getAttackDiscoveryStatusTool = ({
   workflowExecutionLookup,
 }: {
   getEventLogIndex: () => Promise<string>;
-  getStartServices?: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices?: GetStepServices;
   workflowExecutionLookup: WorkflowExecutionLookup;
 }): BuiltinSkillBoundedTool<typeof inputSchema> => ({
   description: `Look up the current status of an Attack Discovery generation by its \`execution_uuid\`. Returns one of \`succeeded\`, \`running\`, \`failed\`, or \`not_found\`. When succeeded, includes the validated \`attack_discoveries\` so the agent can emit insights JSON. When running, includes the current \`phase\` (alert_retrieval, generation, or validation). Use this to resume a slow-path generation that returned only an \`execution_uuid\` because it exceeded the run step's soft deadline, and whenever the user asks about the status of a previously-started generation.`,

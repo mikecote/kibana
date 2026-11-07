@@ -191,6 +191,45 @@ describe('WorkflowContextManager', () => {
     };
   }
 
+  it('keeps persisted execution metadata separate from rendered test overrides', () => {
+    const fixture = createTestContainer({
+      name: 'Identity',
+      enabled: true,
+      version: '1',
+      triggers: [{ type: 'manual' }],
+      steps: [{ name: 'end', type: 'console', with: { message: 'Done' } }],
+    });
+    const original = fixture.workflowExecutionState.getWorkflowExecution();
+    const metadata = { label: 'caller metadata' };
+    jest.spyOn(fixture.workflowExecutionState, 'getWorkflowExecution').mockReturnValue({
+      ...original,
+      id: 'real-execution',
+      workflowId: 'real-workflow',
+      managed: false,
+      isEphemeral: false,
+      metadata,
+      context: {
+        contextOverride: {
+          execution: { id: 'spoofed-execution' },
+          workflow: {
+            id: 'spoofed-workflow',
+            managed: true,
+            managedBy: 'discoveries',
+            isEphemeral: true,
+          },
+        },
+      },
+    });
+    expect(fixture.underTest.getContext().workflow.id).toBe('spoofed-workflow');
+    expect(fixture.underTest.getExecutionMetadata()).toMatchObject({
+      id: 'real-execution',
+      workflowId: 'real-workflow',
+      managed: false,
+      isEphemeral: false,
+      metadata,
+    });
+  });
+
   describe('consts', () => {
     const workflow: WorkflowYaml = {
       name: 'Test Workflow',

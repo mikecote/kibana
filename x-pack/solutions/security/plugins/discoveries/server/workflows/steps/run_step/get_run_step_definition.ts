@@ -15,6 +15,8 @@ import type {
   WorkflowsManagementApi,
 } from '@kbn/discoveries/impl/attack_discovery/generation/types';
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
+import { getBackgroundGenerationMetadata } from '../../background_generation';
+import type { GenerationRunner } from '../../generation_runner';
 
 import { RunStepCommonDefinition } from '../../../../common/step_types/run_step';
 import { getAlertsIndexForSpace } from '../../../lib/get_alerts_index_for_space';
@@ -24,15 +26,7 @@ import { resolveConnectorDetails } from '../../helpers/resolve_connector_details
 import { resolveDefaultConnectorId } from '../../helpers/resolve_default_connector_id';
 import { checkManagedWorkflowIntegrity } from '../../../managed_workflows/check_managed_workflow_integrity';
 
-/**
- * Server-side implementation of the Attack Discovery run step.
- *
- * Orchestrates the full pipeline (alert retrieval → generation → validation)
- * in a single workflow step. Supports sync mode (returns discoveries inline)
- * and async mode (fire-and-forget, returns execution_uuid only).
- *
- * The `replacements` map is explicitly excluded from the output for security.
- */
+/** Runs the discovery pipeline and delegates background execution to its configured runtime. */
 export const getRunStepDefinition = ({
   analytics,
   getEventLogIndex,
@@ -40,7 +34,9 @@ export const getRunStepDefinition = ({
   getStartServices,
   logger,
   workflowsManagementApi,
+  runGeneration,
 }: {
+  runGeneration: GenerationRunner;
   analytics?: AnalyticsServiceSetup;
   getEventLogIndex: () => Promise<string>;
   getEventLogger: () => Promise<IEventLogger>;
@@ -76,7 +72,10 @@ export const getRunStepDefinition = ({
           validation_workflow_id: validationWorkflowId = '',
         } = context.input;
 
-        const executionUuid = uuidv4();
+        const background = getBackgroundGenerationMetadata(
+          context.contextManager.getExecutionMetadata()
+        );
+        const executionUuid = background?.executionUuid ?? uuidv4();
 
         const { coreStart, pluginsStart } = await getStartServices();
         const request = context.contextManager.getFakeRequest();
@@ -199,26 +198,20 @@ export const getRunStepDefinition = ({
           shouldStopExecution: () => context.abortSignal?.aborted === true,
           size,
           start,
-          trigger: 'workflow',
+          trigger: background?.source ?? 'workflow',
           type: 'attack_discovery',
           workflowConfig,
           workflowsManagementApi,
         };
 
         if (mode === 'async') {
-          executeGenerationWorkflow(executeParams).catch((err) => {
-            logger.error(
-              `Async Attack Discovery run failed (execution=${executionUuid}): ${
-                err instanceof Error ? err.message : String(err)
-              }`
-            );
-          });
-
           return {
-            output: {
-              execution_uuid: executionUuid,
-              status: 'pending' as const,
-            },
+            output: await runGeneration({
+              params: executeParams,
+              input: context.input,
+              mode,
+              spaceId,
+            }),
           };
         }
 
@@ -241,7 +234,9 @@ export const getRunStepDefinition = ({
               // output carries none of their weight.
               ...(includeAttackDiscoveries
                 ? {
-                    attack_discoveries: (validationResult.discoveriesToPersist ?? []) as Array<{
+                    attack_discoveries: (background?.source === 'agent_builder'
+                      ? generationResult.attackDiscoveries
+                      : validationResult.discoveriesToPersist ?? []) as Array<{
                       alert_ids: string[];
                       details_markdown: string;
                       entity_summary_markdown?: string;

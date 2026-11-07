@@ -26,6 +26,7 @@ export async function invokeStepHandler(
   extraConfig: Record<string, unknown> = {}
 ) {
   const fakeContextManager = {
+    getExecutionMetadata: () => undefined,
     getFakeRequest: () => toolContext.request,
     getContext: () => {
       throw new Error('getContext is not available in the agent builder execution context');

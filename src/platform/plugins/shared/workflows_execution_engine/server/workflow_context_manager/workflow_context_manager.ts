@@ -12,6 +12,7 @@ import type { ElasticsearchClient } from '@kbn/core-elasticsearch-server';
 import { KQLSyntaxError } from '@kbn/es-query';
 import { evaluateKql } from '@kbn/eval-kql';
 import {
+  type EsWorkflowExecution,
   type EsWorkflowStepExecution,
   type SerializedError,
   type StackFrame,
@@ -281,6 +282,18 @@ export class WorkflowContextManager {
    */
   public getEsClientAsUser(): ElasticsearchClient {
     return this.esClient;
+  }
+
+  /** Reads persisted execution metadata without template or test-context overrides. */
+  public getExecutionMetadata(): Readonly<
+    Pick<
+      EsWorkflowExecution,
+      'id' | 'workflowId' | 'isEphemeral' | 'managed' | 'managedBy' | 'metadata'
+    >
+  > {
+    const { id, workflowId, isEphemeral, managed, managedBy, metadata } =
+      this.workflowExecutionState.getWorkflowExecution();
+    return { id, workflowId, isEphemeral, managed, managedBy, metadata };
   }
 
   public getWorkflowSpaceId(): string {

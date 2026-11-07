@@ -13,6 +13,21 @@ import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
  * process). A contribution that is not listed gets `{}`.
  */
 const EXAMPLES: Record<string, unknown> = {
+  discoveries: {
+    connectorTimeout: 60_000,
+    agentBuilder: {
+      attachmentTypeIds: [
+        'security.attack_discovery',
+        'diagnostic_report',
+        'security.attack_discovery.verdict',
+      ],
+      skillIds: [
+        'attack-discovery-alert-retrieval-builder',
+        'attack-discovery-generator',
+        'attack-discovery-workflow-troubleshooting',
+      ],
+    },
+  },
   alertingV2Runtime: { agentBuilderEnabled: true, smlEnabled: true },
   contextEngineManagedAiIndices: { registrations: [] },
   casesAgentBuilder: {

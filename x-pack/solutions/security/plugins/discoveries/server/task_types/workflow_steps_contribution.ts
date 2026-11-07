@@ -16,6 +16,8 @@ import {
   ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
   ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
   ATTACK_DISCOVERY_STEP_FAILURE_EVENT,
+  WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT,
+  WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT,
 } from '@kbn/discoveries/impl/lib/telemetry/event_based_telemetry';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
@@ -30,8 +32,13 @@ import { createWorkflowRuleDataService } from '@kbn/rule-registry-plugin/server/
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
-import { createWorkflowsReadApi } from '@kbn/workflows-management-plugin/server/api/workflows_read_api';
-import type { WorkflowAccessCore } from '@kbn/workflows-management-plugin/server/services/workflow_access_control';
+import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
+import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
+import type { WorkflowsManagementApi } from '@kbn/discoveries/impl/attack_discovery/generation/types';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import { createDurableGenerationRunner } from '../workflows/background_generation';
+import type { DiscoveriesProcessServices } from './discoveries_process_services';
+import { DISCOVERIES_PROCESS_SERVICES_ID } from './discoveries_process_services';
 import { getAttackDiscoveryIndexOptions } from '../lib/attack_discovery/index_options';
 import { registerWorkflowSteps } from '../workflows/register_workflow_steps';
 import { createDiscoveriesRunServices } from './create_discoveries_run_services';
@@ -75,6 +82,8 @@ export const contribution: WorkflowStepsContribution = {
       ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
       ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
       ATTACK_DISCOVERY_STEP_FAILURE_EVENT,
+      WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT,
+      WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT,
     ],
     eventLogProviders: [
       {
@@ -99,7 +108,6 @@ export const contribution: WorkflowStepsContribution = {
       featureFlags,
       http,
       security,
-      userProfile,
       eventLog,
       analytics,
       plugins,
@@ -109,31 +117,19 @@ export const contribution: WorkflowStepsContribution = {
     if (!uiSettings) throw new Error('The workflows task module did not get ui settings');
     if (!featureFlags) throw new Error('The workflows task module did not get feature flags');
     if (!eventLog) throw new Error('The workflows task module did not get the event log');
-    if (!userProfile) {
-      throw new Error('The task process host did not lend Core user profile service');
-    }
-    if (!services.scheduleWorkflow) {
-      throw new Error('The workflows task process did not give the engine a scheduler');
-    }
     if (!hasStepDefinition) {
       throw new Error('The workflows task process did not give the engine step registry');
     }
-    const { scheduleWorkflow } = services;
 
     const discoveriesLogger = logger.get('discoveries');
-    const readApi = createWorkflowsReadApi({
-      logger: discoveriesLogger,
-      esClient: elasticsearch.asInternalUser,
-      core: {
-        security,
-        userProfile,
-        elasticsearch: { client: elasticsearch },
-      } as unknown as WorkflowAccessCore,
-      authz: securityPlugin.authz as never,
-      workflowExecutionsDataClient:
-        services.executionDataClients.createWorkflowDataClient() as never,
-      stepExecutionsDataClient: services.executionDataClients.createStepDataClient() as never,
-    });
+    const getManagement = () =>
+      services.getService<WorkflowsServerPluginSetup['management']>('workflows.management');
+    const management: WorkflowsManagementApi = {
+      getWorkflow: (...args) => getManagement().getWorkflow(...args),
+      getWorkflowExecution: (...args) => getManagement().getWorkflowExecution(...args),
+      runWorkflow: (...args) => getManagement().runWorkflow(...args),
+      scheduleWorkflow: (...args) => getManagement().scheduleWorkflow(...args),
+    };
 
     let inference: InferenceServerStart | undefined;
     let searchInferenceEndpoints: SearchInferenceEndpointsPluginStart | undefined;
@@ -168,15 +164,24 @@ export const contribution: WorkflowStepsContribution = {
           ),
           logger: discoveriesLogger.get('searchInferenceEndpoints'),
         })),
-      readApi,
-      scheduleWorkflow: scheduleWorkflow as never,
-      hasStepDefinition,
+      workflowsManagementApi: management,
+      workflowsExtensions: {
+        hasStepDefinition,
+        initManagedWorkflowsClient: (...args) =>
+          services
+            .getService<WorkflowsExtensionsServerPluginStart>('workflows.extensions')
+            .initManagedWorkflowsClient(...args),
+      },
+      spaces: settings.spacesRuntime
+        ? services.getService<SpacesPluginStart>('spaces').spacesService
+        : undefined,
     });
 
     const eventLogIndex = eventLog.getIndexPattern?.();
 
     const ruleDataService = await createWorkflowRuleDataService(host as TaskHost);
-    registerWorkflowSteps(registry, {
+    const runtime: DiscoveriesProcessServices = {
+      runGeneration: createDurableGenerationRunner(workflowsManagementApi),
       adhocAttackDiscoveryDataClient: ruleDataService.initializeIndex(
         getAttackDiscoveryIndexOptions()
       ),
@@ -193,6 +198,8 @@ export const contribution: WorkflowStepsContribution = {
       langSmithProject: discoveries.langSmithProject,
       logger: discoveriesLogger,
       workflowsManagementApi,
-    });
+    };
+    services.registerService(DISCOVERIES_PROCESS_SERVICES_ID, runtime);
+    registerWorkflowSteps(registry, runtime);
   },
 };

@@ -11,6 +11,7 @@ export const DISCOVERIES_TASK_PROCESS_SETTINGS_ID = 'discoveries';
 /** What the steps read of `xpack.discoveries` in a task process. Plain values: they are sent over the wire. */
 export interface DiscoveriesTaskProcessSettings {
   connectorTimeout: number;
+  agentBuilder?: { attachmentTypeIds: string[]; skillIds: string[] };
   langSmithApiKey?: string;
   langSmithProject?: string;
 }
@@ -20,12 +21,22 @@ export const getDiscoveriesTaskProcessSettings = ({
   connectorTimeout,
   langSmithApiKey,
   langSmithProject,
+  agentBuilder,
 }: {
   connectorTimeout: number;
   langSmithApiKey?: string;
   langSmithProject?: string;
+  agentBuilder?: DiscoveriesTaskProcessSettings['agentBuilder'];
 }): DiscoveriesTaskProcessSettings => ({
   connectorTimeout,
+  ...(agentBuilder
+    ? {
+        agentBuilder: {
+          attachmentTypeIds: [...agentBuilder.attachmentTypeIds],
+          skillIds: [...agentBuilder.skillIds],
+        },
+      }
+    : {}),
   ...(langSmithApiKey ? { langSmithApiKey } : {}),
   ...(langSmithProject ? { langSmithProject } : {}),
 });

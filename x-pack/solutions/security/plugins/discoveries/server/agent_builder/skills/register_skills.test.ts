@@ -33,6 +33,26 @@ describe('registerSkills', () => {
     jest.clearAllMocks();
   });
 
+  it('registers precisely the successful registration snapshot and reports those ids', async () => {
+    const onRegistered = jest.fn();
+    await registerSkills(mockAgentBuilder, mockLogger, {
+      ...baseOptions,
+      skillIds: [ATTACK_DISCOVERY_GENERATOR_SKILL_ID],
+      onRegistered,
+    });
+    expect(mockAgentBuilder.skills.register).toHaveBeenCalledTimes(1);
+    expect(mockAgentBuilder.skills.register).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ATTACK_DISCOVERY_GENERATOR_SKILL_ID })
+    );
+    expect(onRegistered).toHaveBeenCalledTimes(1);
+    expect(onRegistered).toHaveBeenCalledWith(ATTACK_DISCOVERY_GENERATOR_SKILL_ID);
+  });
+
+  it('keeps an empty registration snapshot empty', async () => {
+    await registerSkills(mockAgentBuilder, mockLogger, { ...baseOptions, skillIds: [] });
+    expect(mockAgentBuilder.skills.register).not.toHaveBeenCalled();
+  });
+
   it('completes without error when agentBuilder is available', async () => {
     await expect(
       registerSkills(mockAgentBuilder, mockLogger, baseOptions)

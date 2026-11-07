@@ -19,6 +19,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { fetch as undiciFetch } from 'undici';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
+import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
 import type { Logger } from '@kbn/core/server';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
@@ -28,6 +29,7 @@ import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
 import { License } from '@kbn/licensing-plugin/common/license';
 import { featureUsageSavedObjectType } from '@kbn/licensing-plugin/server/services/feature_usage_store';
 import { kibanaPackageJson, REPO_ROOT } from '@kbn/repo-info';
+import { config as ruleRegistryConfig } from '@kbn/rule-registry-plugin/server/config';
 import {
   createConfig as createSecurityConfig,
   ConfigSchema as securityConfigSchema,
@@ -122,6 +124,7 @@ export interface WorkflowProcessHarnessOptions {
   logger?: Logger;
   mode?: 'child_process' | 'remote';
   reuse?: boolean;
+  maxIdleProcesses?: number;
   includeRunTask?: boolean;
   additionalContributions?: Record<string, string[]>;
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
@@ -198,6 +201,8 @@ const startHarness = async (
     inferenceFeatures: { features: [] },
     contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
+    alerting: alertingConfigSchema.validate({}),
+    ruleRegistry: ruleRegistryConfig.schema.validate({}),
     taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
@@ -427,7 +432,14 @@ const startHarness = async (
     bundle_dir: bundleDir,
     kibanaVersion: KIBANA_VERSION,
     ...(options.reuse
-      ? { reuse: { idleTimeoutMs: 30000, maxAgeMs: 300000, maxRuns: 50, maxIdleProcesses: 2 } }
+      ? {
+          reuse: {
+            idleTimeoutMs: 30000,
+            maxAgeMs: 300000,
+            maxRuns: 50,
+            maxIdleProcesses: options.maxIdleProcesses ?? 2,
+          },
+        }
       : {}),
   };
   let getRoute: TaskProcessSupervisor['getRoute'];
@@ -514,7 +526,7 @@ const startHarness = async (
       onDispatchFailure
     );
 
-  const waitForRunTask = async (workflowId: string, signal?: AbortSignal) => {
+  const waitForRunTask = async (workflowId: string | RegExp, signal?: AbortSignal) => {
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       signal?.throwIfAborted();
@@ -529,11 +541,16 @@ const startHarness = async (
             workflowRunId: string;
             spaceId: string;
           };
-          const execution = await es.get<{ workflowId: string }>({
+          const execution = await es.get<{ workflowId: string; status: string }>({
             index: WORKFLOWS_EXECUTIONS_INDEX,
             id: params.workflowRunId,
           });
-          if (execution._source?.workflowId === workflowId)
+          const matchesWorkflow =
+            execution._source &&
+            (typeof workflowId === 'string'
+              ? execution._source.workflowId === workflowId
+              : workflowId.test(execution._source.workflowId));
+          if (matchesWorkflow && execution._source?.status === 'pending')
             return { id: hit._id.replace(/^task:/, ''), params };
         }
       }

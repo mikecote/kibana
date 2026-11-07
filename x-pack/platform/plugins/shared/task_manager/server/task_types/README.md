@@ -186,7 +186,7 @@ task type hands over its own service for the same capability.
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
-| `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                                    | `hostExtensions.eventLog`               |
+| `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
 | `uiSettings`                | `uiSettings`                  | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core                                    |
 | `licensing`                 | `licensing`                   | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares                                         | the licensing plugin                    |
@@ -775,8 +775,16 @@ does not write it. An availability that holds a callback is sent as data (the re
 dispatch) and rebuilt by the registration as a handler that answers it, or is the process-side equivalent built by the
 same factory. Test it with `collectRegisteredIds`, which runs `registerAtStart` too.
 
-Not yet, with what each needs: security_solution,
-discoveries, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
+**Discovery.** Attachment and skill registration follows the exact successful registration snapshot from Kibana,
+including flag-off startup. The shared runtime supplies authorized workflow management, scoped Spaces and
+inference services, and the native discovery data client. Asynchronous generation is queued as a separately
+owned, nonbillable workflow task before returning `pending`. Synchronous agent calls read that task's persisted
+result and stop waiting at their existing deadline while the queued job continues. Execution UUID, source,
+request identity and space are preserved across the task boundary; the source keeps the native gate and result
+policies. Only metadata bound to an owned ephemeral execution can choose these policies; caller metadata and
+rendered context overrides cannot. Each pipeline phase and the optional report are scheduled by the native orchestration.
+
+Not yet, with what each needs: security_solution, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
 ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
 registry that has to be fed through the same mechanism), significant_events (its scoped clients over the knowledge
 indicator, source catalog, run quota, detections and relay services, and the registrations after start above) and

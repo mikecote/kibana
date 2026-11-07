@@ -6,6 +6,9 @@
  */
 
 import { of } from 'rxjs';
+import { httpServerMock } from '@kbn/core-http-server-mocks';
+import { ConnectorAuditAction } from '../lib/audit_events';
+import { auditLoggerMock } from '@kbn/security-plugin/server/audit/mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
@@ -116,6 +119,28 @@ describe('createRuleRunActions', () => {
       isSystemAction: false,
       isDynamic: true,
     };
+
+    it('audits connector access with the execution request', async () => {
+      const request = httpServerMock.createFakeKibanaRequest({});
+      const auditLogger = auditLoggerMock.create();
+      const getAuditLoggerWithRequest = jest.fn(() => auditLogger);
+      const { actionsPlugin, stop } = create(
+        {},
+        { inMemoryConnectors: [dynamic], getAuditLoggerWithRequest }
+      );
+      try {
+        const client = await actionsPlugin.getActionsClientWithRequest(request);
+        await client.get({ id: dynamic.id });
+        expect(getAuditLoggerWithRequest).toHaveBeenCalledWith(request);
+        expect(auditLogger.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: expect.objectContaining({ action: ConnectorAuditAction.GET }),
+          })
+        );
+      } finally {
+        await stop();
+      }
+    });
 
     it('uses a connector another plugin registered in Kibana, which the config does not have', () => {
       // `.server-log` is not enabled, so only a preconfigured connector may use it.

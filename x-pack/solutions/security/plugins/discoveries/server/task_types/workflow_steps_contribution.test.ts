@@ -6,6 +6,7 @@
  */
 
 import { of } from 'rxjs';
+import { runInlineGeneration } from '../workflows/generation_runner';
 import { loggerMock } from '@kbn/logging-mocks';
 import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
@@ -27,6 +28,7 @@ const registeredByKibana = async (): Promise<string[]> => {
     registerTriggerDefinition: jest.fn(),
   } as unknown as WorkflowStepsRegistry;
   registerWorkflowSteps(registry, {
+    runGeneration: runInlineGeneration,
     adhocAttackDiscoveryDataClient: {} as never,
     connectorTimeout: 1,
     getEventLogIndex: async () => 'index',

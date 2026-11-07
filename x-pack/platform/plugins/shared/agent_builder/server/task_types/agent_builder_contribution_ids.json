@@ -53,9 +53,7 @@
     "platform.workflows.workflow_execute_step",
     "proposals.create"
   ],
-  "agents": [
-    "platform.context_engine.setup"
-  ],
+  "agents": ["platform.context_engine.setup"],
   "agentTypes": [],
   "skills": [
     "action-policy-authoring",
@@ -63,6 +61,9 @@
     "ai-index-automations",
     "ai-index-sources",
     "analyze-and-improve",
+    "attack-discovery-alert-retrieval-builder",
+    "attack-discovery-generator",
+    "attack-discovery-workflow-troubleshooting",
     "cases-analytics",
     "cases-management",
     "connector-authoring",
@@ -97,6 +98,7 @@
     "cases",
     "connector",
     "connector_setup",
+    "diagnostic_report",
     "discover.session",
     "esql",
     "esql.query_results",
@@ -115,29 +117,20 @@
     "platform.dashboard.dashboard_state",
     "platform.proposal",
     "screen_context",
+    "security.attack_discovery",
+    "security.attack_discovery.verdict",
     "skill",
     "text",
     "visualization",
     "workflow.yaml",
     "workflow.yaml.diff"
   ],
-  "conversationEvents": [
-    "text_note"
-  ],
-  "conversationTemplates": [
-    "escalation",
-    "investigation"
-  ],
+  "conversationEvents": ["text_note"],
+  "conversationTemplates": ["escalation", "investigation"],
   "renderers": [],
-  "hooks": [
-    "after-execution-workflows",
-    "before-agent-workflows",
-    "skill-tools-loader"
-  ],
+  "hooks": ["after-execution-workflows", "before-agent-workflows", "skill-tools-loader"],
   "plugins": [],
-  "aiIndexResolvers": [
-    "resolver"
-  ],
+  "aiIndexResolvers": ["resolver"],
   "smlTypes": [
     "alerting_v2_action_policy",
     "alerting_v2_rule",

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { runInlineGeneration } from './generation_runner';
 import { of } from 'rxjs';
 import { loggerMock } from '@kbn/logging-mocks';
 import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
@@ -23,6 +24,7 @@ describe('registerWorkflowSteps', () => {
   const mockGetEventLogger = jest.fn();
   const mockGetEventLogIndex = jest.fn().mockResolvedValue('.kibana-event-log-*');
   const defaultArgs = {
+    runGeneration: runInlineGeneration,
     adhocAttackDiscoveryDataClient: mockAdhocAttackDiscoveryDataClient,
     connectorTimeout: 60000,
     getEventLogIndex: mockGetEventLogIndex,

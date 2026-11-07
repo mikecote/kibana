@@ -38,8 +38,22 @@ const READINESS_POLL_INTERVAL_MS = 100;
  */
 const DEFAULT_READINESS_TIMEOUT_MS = 5000;
 
-const delay = (delayMs: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, delayMs));
+const delay = (delayMs: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 /**
  * Polls until a workflow execution reaches a terminal status and, optionally,
@@ -99,8 +113,10 @@ export const pollForWorkflowCompletion = async ({
   spaceId,
   request,
   workflowsManagementApi,
+  signal,
 }: {
   executionId: string;
+  signal?: AbortSignal;
   isReady?: (execution: WorkflowExecutionDto) => boolean;
   logger: Logger;
   maxPollIntervalMs?: number;
@@ -114,11 +130,13 @@ export const pollForWorkflowCompletion = async ({
   const startTime = Date.now();
 
   const fetchExecution = async (includeOutput: boolean): Promise<WorkflowExecutionDto> => {
+    signal?.throwIfAborted();
     const execution = await workflowsManagementApi.getWorkflowExecution(executionId, spaceId, {
       includeOutput,
       request,
     });
 
+    signal?.throwIfAborted();
     if (!execution) {
       throw new Error(`Workflow execution not found: ${executionId}`);
     }
@@ -152,7 +170,7 @@ export const pollForWorkflowCompletion = async ({
         `Waiting for workflow to complete (execution: ${executionId}, status: ${status}, elapsed: ${elapsedMs}ms, nextPollInMs: ${nextPollInMs})`
     );
 
-    await delay(nextPollInMs);
+    await delay(nextPollInMs, signal);
   }
 
   // Phase 2: terminal — fetch the full payload (including output) that consumers
@@ -183,7 +201,7 @@ export const pollForWorkflowCompletion = async ({
         `Workflow terminal (${ExecutionStatus.COMPLETED}) but step metadata not yet ready, re-polling (elapsed: ${readinessElapsedMs}ms / ${readinessTimeoutMs}ms)`
     );
 
-    await delay(READINESS_POLL_INTERVAL_MS);
+    await delay(READINESS_POLL_INTERVAL_MS, signal);
     const candidate = await fetchExecution(true);
 
     if (isReady(candidate)) {

@@ -438,6 +438,21 @@ describe('createAttackDiscoveryAttachmentType', () => {
   });
 
   describe('resolve', () => {
+    it('opens a lazy persistence client only while resolving with the requesting user', async () => {
+      const { esClient } = createEsClient([discoveryHit]);
+      const getDataClient = jest.fn(async () => adhocAttackDiscoveryDataClient);
+      const attachmentType = createAttackDiscoveryAttachmentType({
+        adhocAttackDiscoveryDataClient: getDataClient,
+        esClient,
+        logger,
+      });
+      expect(getDataClient).not.toHaveBeenCalled();
+      await attachmentType.resolve?.('discovery-1', { ...resolveContext, spaceId: 'space-a' });
+      expect(getDataClient).toHaveBeenCalledTimes(1);
+      expect(esClient.asScoped).toHaveBeenCalledWith(request);
+      expect(adhocAttackDiscoveryDataClient.indexNameWithNamespace).toHaveBeenCalledWith('space-a');
+    });
+
     it('searches as the current user of the request', async () => {
       const { esClient } = createEsClient([discoveryHit]);
 

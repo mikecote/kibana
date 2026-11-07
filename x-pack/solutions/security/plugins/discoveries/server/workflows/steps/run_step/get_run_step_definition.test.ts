@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { runInlineGeneration } from '../../generation_runner';
 import type { Logger } from '@kbn/core/server';
 import { WorkflowExecutionAuthorizationError } from '@kbn/discoveries/impl/attack_discovery/generation/assert_authorized_to_execute_workflows';
 
@@ -88,6 +89,9 @@ describe('getRunStepDefinition', () => {
   const baseMockContext = {
     abortSignal: new AbortController().signal,
     contextManager: {
+      getExecutionMetadata: jest
+        .fn()
+        .mockReturnValue({ id: 'workflow-run-1', workflowId: 'workflow-1' }),
       getContext: jest.fn().mockReturnValue({
         execution: { id: 'workflow-run-1' },
         workflow: { id: 'workflow-1', spaceId: 'default' },
@@ -188,12 +192,21 @@ describe('getRunStepDefinition', () => {
     },
   ];
 
+  const workflowsManagementApi = {
+    getWorkflow: jest.fn(),
+    getWorkflowExecution: jest.fn(),
+    runWorkflow: jest.fn(),
+    scheduleWorkflow: jest.fn().mockResolvedValue('background-pipeline'),
+  };
+
   const getStepDefinition = () =>
     getRunStepDefinition({
       getEventLogIndex: mockGetEventLogIndex,
       getEventLogger: mockGetEventLogger,
       getStartServices: mockGetStartServices,
       logger: mockLogger,
+      workflowsManagementApi,
+      runGeneration: runInlineGeneration,
     });
 
   beforeEach(() => {
@@ -209,6 +222,71 @@ describe('getRunStepDefinition', () => {
     mockResolveDefaultConnectorId.mockResolvedValue('default-connector');
 
     mockExecuteGenerationWorkflow.mockResolvedValue(mockSuccessOutcome);
+  });
+
+  it('preserves the durable correlation and the native agent tool result policy', async () => {
+    const executionUuid = 'a1b2c3d4-e5f6-4789-abcd-ef0123456789';
+    mockExecuteGenerationWorkflow.mockResolvedValue({
+      ...mockSuccessOutcome,
+      validationResult: { ...mockSuccessOutcome.validationResult, discoveriesToPersist: [] },
+    });
+    const context = {
+      ...syncMockContext,
+      contextManager: {
+        ...baseMockContext.contextManager,
+        getExecutionMetadata: () => ({
+          id: 'background-execution',
+          workflowId: `attack-discovery-${executionUuid}`,
+          isEphemeral: true,
+          managed: true,
+          managedBy: 'discoveries',
+          metadata: { attackDiscovery: { executionUuid, source: 'agent_builder' } },
+        }),
+      },
+    };
+    const result = await getStepDefinition().handler(context as never);
+    expect(mockExecuteGenerationWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ executionUuid, trigger: 'agent_builder' })
+    );
+    expect(result.output?.attack_discoveries).toEqual(
+      mockSuccessOutcome.generationResult.attackDiscoveries
+    );
+  });
+
+  it('ignores caller metadata and rendered context overrides when choosing the gate and result policy', async () => {
+    const executionUuid = 'a1b2c3d4-e5f6-4789-abcd-ef0123456789';
+    const metadata = { attackDiscovery: { executionUuid, source: 'agent_builder' } };
+    mockExecuteGenerationWorkflow.mockResolvedValue({
+      ...mockSuccessOutcome,
+      validationResult: { ...mockSuccessOutcome.validationResult, discoveriesToPersist: [] },
+    });
+    const context = {
+      ...syncMockContext,
+      contextManager: {
+        ...baseMockContext.contextManager,
+        getExecutionMetadata: () => ({
+          id: 'ordinary-run',
+          workflowId: 'ordinary-workflow',
+          metadata,
+        }),
+        getContext: () => ({
+          ...baseMockContext.contextManager.getContext(),
+          metadata,
+          workflow: {
+            id: `attack-discovery-${executionUuid}`,
+            managed: true,
+            managedBy: 'discoveries',
+            isEphemeral: true,
+          },
+        }),
+      },
+    };
+    const result = await getStepDefinition().handler(context as never);
+    expect(mockExecuteGenerationWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'workflow' })
+    );
+    expect(mockExecuteGenerationWorkflow.mock.calls[0][0].executionUuid).not.toBe(executionUuid);
+    expect(result.output?.attack_discoveries).toEqual([]);
   });
 
   describe('step definition metadata', () => {
@@ -666,11 +744,9 @@ describe('getRunStepDefinition', () => {
       expect(result.output?.status).toBe('pending');
     });
 
-    it('does not await executeGenerationWorkflow', async () => {
+    it('does not await the native background pipeline', async () => {
       const stepDefinition = getStepDefinition();
-
       await stepDefinition.handler(asyncMockContext as never);
-
       expect(mockExecuteGenerationWorkflow).toHaveBeenCalled();
     });
   });

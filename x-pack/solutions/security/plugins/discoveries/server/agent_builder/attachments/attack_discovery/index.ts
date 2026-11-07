@@ -136,8 +136,10 @@ export const createAttackDiscoveryAttachmentType = ({
   esClient,
   logger,
 }: {
-  adhocAttackDiscoveryDataClient: IRuleDataClient;
-  esClient: IClusterClient;
+  adhocAttackDiscoveryDataClient:
+    | IRuleDataClient
+    | (() => IRuleDataClient | Promise<IRuleDataClient>);
+  esClient: Pick<IClusterClient, 'asScoped'>;
   logger: Logger;
 }): AttachmentTypeDefinition => ({
   id: ATTACK_DISCOVERY_ATTACHMENT_TYPE,
@@ -175,6 +177,10 @@ export const createAttackDiscoveryAttachmentType = ({
   // resolve here.
   resolve: async (origin: string, context: AttachmentResolveContext) => {
     const { request, spaceId } = context;
+    const dataClient =
+      typeof adhocAttackDiscoveryDataClient === 'function'
+        ? await adhocAttackDiscoveryDataClient()
+        : adhocAttackDiscoveryDataClient;
 
     // As the current user, so the privileges of the identity adding the attachment apply;
     // later readers of the conversation see the stored snapshot. Scheduled and ad-hoc
@@ -183,7 +189,7 @@ export const createAttackDiscoveryAttachmentType = ({
       .asScoped(request)
       .asCurrentUser.search<Record<string, unknown>>(
         getResolveSearchRequest({
-          adhocIndex: adhocAttackDiscoveryDataClient.indexNameWithNamespace(spaceId),
+          adhocIndex: dataClient.indexNameWithNamespace(spaceId),
           origin,
           spaceId,
         })

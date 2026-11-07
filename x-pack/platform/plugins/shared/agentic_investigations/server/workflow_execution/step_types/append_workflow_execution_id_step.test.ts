@@ -22,6 +22,7 @@ const createContext = (stepInput = input): HandlerContext => ({
   rawInput: stepInput,
   config: {},
   contextManager: {
+    getExecutionMetadata: jest.fn(),
     getContext: jest.fn(),
     getScopedEsClient: jest.fn(),
     getFakeRequest: jest.fn().mockReturnValue(request),

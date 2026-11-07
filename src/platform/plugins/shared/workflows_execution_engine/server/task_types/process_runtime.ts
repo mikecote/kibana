@@ -60,21 +60,6 @@ import { HitlLifecycleAuditRegistry } from '../step/wait_for_input_step/hitl_lif
 import type { WorkflowsEngineTaskPluginStart } from '../task_plugin';
 import type { WorkflowCoreStart, WorkflowDataStreamsAdapter } from '../workflow_core_services';
 
-const onlyInKibana = (what: string) => () => {
-  throw new Error(`${what} is only available in Kibana, not in a task process`);
-};
-
-/** For a host without service accounts (the security plugin did not serve them): a workflow that needs one is declined. */
-const noServiceAccounts = (): SecurityServiceStart['serviceAccounts'] =>
-  ({
-    isEnabled: () => false,
-    registerWorkloadType: onlyInKibana('Registering a workload type'),
-    bindWorkload: onlyInKibana('Binding a service account'),
-    unbindWorkload: onlyInKibana('Unbinding a service account'),
-    getWorkloadBinding: onlyInKibana('Reading a service account binding'),
-    withScopedRequestForWorkload: onlyInKibana('Running as a service account'),
-  } as unknown as SecurityServiceStart['serviceAccounts']);
-
 /**
  * The workflow runtime a task process runs, built from the task host: what Kibana builds from Core
  * and the plugins, built from the host's services. Nothing is installed (indices, templates, data
@@ -83,6 +68,11 @@ const noServiceAccounts = (): SecurityServiceStart['serviceAccounts'] =>
 export const createWorkflowRuntimeFromHost = async (
   taskHost: TaskHost
 ): Promise<{ runtime: WorkflowRuntime; stop: () => Promise<void> }> => {
+  const enginePlugin = taskHost.plugins?.workflowsExecutionEngine as
+    | WorkflowsEngineTaskPluginStart
+    | undefined;
+  if (!enginePlugin)
+    throw new Error('The workflow engine task plugin is required by the workflow runtime');
   const host: TaskHost = {
     ...taskHost,
     // These services belong to one workflow execution; Core's hooks survive worker reuse.
@@ -173,6 +163,7 @@ export const createWorkflowRuntimeFromHost = async (
     usageCounter: host.usageCounters?.getUsageCounter(ACTIONS_FEATURE_ID),
     featureUsage: licensing.featureUsage,
     authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
+    getAuditLoggerWithRequest: (request) => host.security.audit.asScoped(request),
     executor: {
       security: host.security as SecurityServiceStart,
       eventLogger: eventLog.getLogger({
@@ -293,9 +284,7 @@ export const createWorkflowRuntimeFromHost = async (
         authc: host.security.authc,
         audit: host.security.audit,
         // The engine plugin's own: the workload bindings are scoped to the plugin that registered the type.
-        serviceAccounts:
-          (host.plugins?.workflowsExecutionEngine as WorkflowsEngineTaskPluginStart | undefined)
-            ?.serviceAccounts ?? noServiceAccounts(),
+        serviceAccounts: enginePlugin.serviceAccounts,
       },
       userProfile,
       http,

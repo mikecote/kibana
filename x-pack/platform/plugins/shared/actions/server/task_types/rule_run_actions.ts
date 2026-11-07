@@ -112,6 +112,9 @@ export interface RuleRunActionsDeps {
    * enqueues it, as in Kibana. Without it (security is off) nothing is checked.
    */
   authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
+  getAuditLoggerWithRequest?: (
+    request: KibanaRequest
+  ) => ConstructorParameters<typeof ActionsClient>[0]['auditLogger'];
   /**
    * Set for rule types that execute connectors themselves in the process, such as attack discovery
    * calling a model connector: the executor is initialized as the actions plugin initializes it.
@@ -286,6 +289,7 @@ export const createRuleRunActions = (
       inMemoryConnectors,
       request,
       authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
+      auditLogger: deps.getAuditLoggerWithRequest?.(request),
       actionExecutor,
       bulkExecutionEnqueuer,
       usageCounter: deps.usageCounter as UsageCounter | undefined,

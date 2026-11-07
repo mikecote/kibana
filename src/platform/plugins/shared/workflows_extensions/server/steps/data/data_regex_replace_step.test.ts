@@ -27,6 +27,9 @@ describe('dataRegexReplaceStepDefinition', () => {
     input,
     rawInput: input as OrStringRecursive<{ pattern: string; replacement: string }>,
     contextManager: {
+      getExecutionMetadata: jest
+        .fn()
+        .mockReturnValue({ id: 'execution-1', workflowId: 'workflow-1' }),
       getContext: jest.fn(),
       renderInputTemplate: jest.fn((val) => val),
       getScopedEsClient: jest.fn(),

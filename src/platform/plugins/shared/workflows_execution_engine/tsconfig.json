@@ -15,6 +15,7 @@
   ],
   "kbn_references": [
     "@kbn/alerting-plugin",
+    "@kbn/rule-registry-plugin",
     "@kbn/apm-utils",
     "@kbn/core",
     "@kbn/config-schema",

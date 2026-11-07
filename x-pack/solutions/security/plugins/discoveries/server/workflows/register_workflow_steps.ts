@@ -11,6 +11,7 @@ import type { IRuleDataClient } from '@kbn/rule-registry-plugin/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type { WorkflowsManagementApi } from '@kbn/discoveries/impl/attack_discovery/generation/types';
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
+import type { GenerationRunner } from './generation_runner';
 import type { GetStepServices } from './step_services';
 import { getDefaultAlertRetrievalStepDefinition } from './steps/default_alert_retrieval_step';
 import { getDefaultValidationStepDefinition } from './steps/default_validation_step';
@@ -85,7 +86,9 @@ export const registerWorkflowSteps = (
     langSmithProject,
     logger,
     workflowsManagementApi,
+    runGeneration,
   }: {
+    runGeneration: GenerationRunner;
     /** Without an initialized persistence client the persist step is not registered. */
     adhocAttackDiscoveryDataClient?: IRuleDataClient;
     analytics?: AnalyticsServiceSetup;
@@ -187,6 +190,7 @@ export const registerWorkflowSteps = (
       getStartServices,
       logger,
       workflowsManagementApi,
+      runGeneration,
     }),
     getStartServices
   );

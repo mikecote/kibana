@@ -11,6 +11,7 @@
  */
 
 import { parse } from 'yaml';
+import { loggerMock } from '@kbn/logging-mocks';
 import type { WorkflowYaml } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
 import {
@@ -30,6 +31,7 @@ import {
 const RETRIEVAL_WORKFLOW_ID = 'attack-discovery-retrieval';
 const PERSIST_WORKFLOW_ID = 'attack-discovery-persist';
 const FEATURE_RUN_WORKFLOW_ID = 'attack-discovery-run-with-feature';
+const ASYNC_RUN_WORKFLOW_ID = 'attack-discovery-background';
 const ALERTS_INDEX = '.alerts-security.alerts-default';
 const PERSISTED_INDEX = '.adhoc.alerts-security.attack.discovery.alerts-default';
 const CONNECTOR_ID = 'discovery-model';
@@ -39,11 +41,22 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
   'discoveries in $mode (reuse: $reuse)',
   ({ mode, reuse }) => {
     let harness: Awaited<ReturnType<typeof startWorkflowProcessHarness>>;
+    const workerLogs: string[] = [];
 
     beforeAll(async () => {
+      const workerLogger = loggerMock.create();
+      workerLogger.get.mockReturnValue(workerLogger);
+      for (const level of ['warn', 'error'] as const) {
+        workerLogger[level].mockImplementation((message) => {
+          if (typeof message === 'string') workerLogs.push(message);
+          else if (message instanceof Error) workerLogs.push(message.message);
+        });
+      }
       harness = await startWorkflowProcessHarness({
+        logger: workerLogger,
         mode,
         reuse,
+        maxIdleProcesses: 3,
         includeRunTask: true,
         workflows: {
           [RETRIEVAL_WORKFLOW_ID]: {
@@ -102,9 +115,28 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
               },
             ],
           },
+          [ASYNC_RUN_WORKFLOW_ID]: {
+            steps: [
+              {
+                name: 'run',
+                type: 'security.attack-discovery.run',
+                with: {
+                  feature_id: 'attack_discovery',
+                  size: 10,
+                  mode: 'async',
+                  ground_truth_gate_enabled: false,
+                  filter: { ids: { values: ['missing-alert'] } },
+                },
+              },
+            ],
+          },
         },
         settings: {
           discoveries: { connectorTimeout: 60000 },
+          workflowsManagementRuntime: {
+            available: true,
+            managedWorkflowPluginIds: ['discoveries'],
+          },
           alerting: alertingConfigSchema.validate({}),
           ruleRegistry: ruleRegistryConfig.schema.validate({}),
           inferenceFeatures: {
@@ -264,24 +296,13 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       expect(persisted.hits.hits).toHaveLength(1);
     }, 120000);
 
-    it('resolves the configured inference feature and runs the retrieval workflow in another worker', async () => {
+    it('resolves the configured inference feature and runs each queued pipeline phase', async () => {
       const failure = jest.fn();
-      const parent = harness.run(FEATURE_RUN_WORKFLOW_ID, failure);
-      const polling = new AbortController();
-      const child = await Promise.race([
-        harness.waitForRunTask(ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID, polling.signal),
-        parent.then(async () => {
-          const [execution] = await harness.executionsOf(FEATURE_RUN_WORKFLOW_ID);
-          throw new Error(
-            `Discovery run completed before retrieval: ${JSON.stringify({
-              execution,
-              steps: await harness.stepsOf(execution.id),
-            })}`
-          );
-        }),
-      ]).finally(() => polling.abort());
-      await harness.runTask('workflow:run', child);
-      await parent;
+      const running = harness.run(FEATURE_RUN_WORKFLOW_ID, failure);
+      const retrievalTask = await harness.waitForRunTask(
+        ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID
+      );
+      await Promise.all([running, harness.runTask('workflow:run', retrievalTask, failure)]);
       expect(failure).not.toHaveBeenCalled();
       const [retrieval] = await harness.executionsOf(ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID);
       expect(retrieval).toMatchObject({ status: 'completed' });
@@ -298,8 +319,47 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       const [execution] = await harness.executionsOf(FEATURE_RUN_WORKFLOW_ID);
       expect(execution).toMatchObject({ status: 'completed' });
     }, 120000);
+
+    it('finishes asynchronous generation in a separately owned task after the parent answers', async () => {
+      const failure = jest.fn();
+      await harness.run(ASYNC_RUN_WORKFLOW_ID, failure);
+      expect(failure).not.toHaveBeenCalled();
+      const [parent] = await harness.executionsOf(ASYNC_RUN_WORKFLOW_ID);
+      expect(parent.status).toBe('completed');
+      const [step] = await harness.stepsOf(parent.id);
+      const output = step.output.output ?? step.output;
+      expect(output.status).toBe('pending');
+      const backgroundId = `attack-discovery-${output.execution_uuid}`;
+      const task = await harness.waitForRunTask(backgroundId);
+      const running = harness.runTask('workflow:run', task, failure);
+      const retrievalTask = await harness.waitForRunTask(
+        ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID
+      );
+      await Promise.all([running, harness.runTask('workflow:run', retrievalTask, failure)]);
+      expect(failure).not.toHaveBeenCalled();
+      const [background] = await harness.executionsOf(backgroundId);
+      expect({ status: background.status, error: background.error }).toEqual({
+        status: 'completed',
+        error: undefined,
+      });
+      expect(background).toMatchObject({
+        managed: true,
+        managedBy: 'discoveries',
+        billable: false,
+        isEphemeral: true,
+      });
+      expect(background.executedBy).toBe(parent.executedBy);
+      expect(background.metadata.attackDiscovery.executionUuid).toBe(output.execution_uuid);
+      expect(background.context.output.result).toMatchObject({
+        execution_uuid: output.execution_uuid,
+        status: 'completed',
+        discovery_count: 0,
+      });
+      expect(harness.kibanaRequests).toEqual([]);
+    }, 120000);
     it('uses the configured worker lifetime', () => {
-      expect(harness.getWorkerStats()).toMatchObject({ spawned: reuse ? 2 : 5, active: 0 });
+      expect(harness.getWorkerStats()).toMatchObject({ spawned: reuse ? 3 : 8, active: 0 });
+      expect(workerLogs.filter((line) => /flush.*fail|failed.*flush/i.test(line))).toEqual([]);
     });
   }
 );

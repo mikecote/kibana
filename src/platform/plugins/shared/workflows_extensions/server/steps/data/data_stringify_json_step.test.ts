@@ -19,6 +19,9 @@ describe('dataStringifyJsonStepDefinition', () => {
     input: { pretty: input.pretty ?? false },
     rawInput: input as any,
     contextManager: {
+      getExecutionMetadata: jest
+        .fn()
+        .mockReturnValue({ id: 'execution-1', workflowId: 'workflow-1' }),
       getContext: jest.fn(),
       getFakeRequest: jest.fn(),
       getScopedEsClient: jest.fn(),
