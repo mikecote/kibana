@@ -7,7 +7,7 @@
 
 import type { Server } from 'node:http';
 import type { Logger } from '@kbn/logging';
-import { incrementCreatedTaskCount } from './run_context';
+import { incrementCreatedTaskCount, requestDispatchTaskPool } from './run_context';
 import { throwUnrecoverableError } from '../task_running/errors';
 import { RemoteTaskRunner } from './remote_task_runner';
 import { startTaskProcessServer } from './server';
@@ -71,6 +71,7 @@ export const startTaskProcessWorker = ({
         signal,
         setCustomTaskRunEventFields,
         onTasksCreated: incrementCreatedTaskCount,
+        getCurrentTasksInPool: requestDispatchTaskPool,
       });
     },
     onShutdown: () => supervisor.stop(),

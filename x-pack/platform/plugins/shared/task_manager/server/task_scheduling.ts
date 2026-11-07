@@ -30,7 +30,6 @@ import { updateTaskSchedules } from './update_task_schedules';
 import { retryableBulkUpdate } from './lib/retryable_bulk_update';
 import type { ErrorOutput } from './lib/bulk_operation_buffer';
 import { TaskAlreadyRunningError } from './lib/errors';
-import type { TaskPollingLifecycle } from './polling_lifecycle';
 import type { TaskSchedulingDefinitionRegistry } from './task_scheduling_definition_registry';
 import { getExecutionId } from './lib/get_execution_id';
 import { credentialMatchesRunAs } from './lib/service_account_credential';
@@ -68,13 +67,17 @@ const scheduleOptionsToStoreApiKeyOptions = (
 const VERSION_CONFLICT_STATUS = 409;
 const NOT_FOUND_STATUS = 404;
 const BULK_ACTION_SIZE = 100;
+export interface TaskExecutionPool {
+  getCurrentTasksInPool: () => readonly string[] | Promise<readonly string[]>;
+}
+
 export interface TaskSchedulingOpts {
   logger: Logger;
   taskStore: TaskStore;
   middleware: Middleware;
   taskManagerId: string;
   definitions: TaskSchedulingDefinitionRegistry;
-  taskPollingLifecycle?: Pick<TaskPollingLifecycle, 'getCurrentTasksInPool'>; // subscribe to task lifecycle events
+  taskPollingLifecycle?: TaskExecutionPool;
   claimNudgeService?: TaskManagerClaimNudgeService;
 }
 
@@ -135,7 +138,7 @@ export class TaskScheduling {
   private logger: Logger;
   private middleware: Middleware;
   private readonly definitions: TaskSchedulingDefinitionRegistry;
-  private readonly taskPolling: Pick<TaskPollingLifecycle, 'getCurrentTasksInPool'> | undefined;
+  private readonly taskPolling: TaskExecutionPool | undefined;
   private readonly claimNudgeService: TaskManagerClaimNudgeService | undefined;
 
   /**
@@ -385,7 +388,7 @@ export class TaskScheduling {
       }
 
       // check if task is currently running
-      const currentTaskIds = this.taskPolling?.getCurrentTasksInPool() || [];
+      const currentTaskIds = (await this.taskPolling?.getCurrentTasksInPool()) ?? [];
       const currentExecutionIds = currentTaskIds.map((executionId) => getExecutionId(executionId));
 
       if (currentExecutionIds.includes(taskId)) {

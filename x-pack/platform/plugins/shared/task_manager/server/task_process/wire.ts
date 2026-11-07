@@ -125,6 +125,11 @@ export interface SerializedRunResult {
   taskRunError?: SerializedTaskRunError;
 }
 
+export interface TaskProcessRunMetrics {
+  createdTaskCount?: number;
+  activePoolRequestIds?: string[];
+}
+
 export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }

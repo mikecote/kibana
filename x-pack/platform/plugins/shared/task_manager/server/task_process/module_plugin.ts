@@ -35,7 +35,7 @@ import {
   TASK_SCHEDULING_CONTRIBUTIONS_KEY,
   type TaskSchedulingContribution,
 } from '../task_scheduling_contribution';
-import { getActiveTaskExecutions, incrementCreatedTaskCount } from './run_context';
+import { requestDispatchTaskPool, incrementCreatedTaskCount } from './run_context';
 import { toTaskDefinition } from '../task_type_module';
 import type { TaskHost } from '../task_type_module';
 import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '../task_encryption';
@@ -354,7 +354,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           },
           scheduling: {
             middleware: createInitialMiddleware(),
-            taskPollingLifecycle: { getCurrentTasksInPool: getActiveTaskExecutions },
+            taskPollingLifecycle: { getCurrentTasksInPool: requestDispatchTaskPool },
             claimNudgeService: nudge,
           },
           encryption: encryptedSavedObjects

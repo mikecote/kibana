@@ -5,11 +5,14 @@
  * 2.0.
  */
 
+import { schema } from '@kbn/config-schema';
+import type { TypeOf } from '@kbn/config-schema';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import { ActiveTaskPoolRequests } from './active_task_pool_requests';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import {
   isDeclinedRunError,
@@ -37,7 +40,13 @@ interface InFlight {
   readonly task: { cancel?(): Promise<unknown> };
   readonly finished: Promise<void>;
   readonly adHocTaskCounter: AdHocTaskCounter;
+  readonly activeTaskPool: ActiveTaskPoolRequests;
 }
+
+const activePoolReplySchema = schema.object({
+  requestId: schema.string({ minLength: 1, maxLength: 128 }),
+  executionIds: schema.arrayOf(schema.string({ maxLength: 4096 }), { maxSize: 100000 }),
+});
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
@@ -68,7 +77,7 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   res.end(json);
 };
 
-/** Thrown for runs the process refuses before starting them; the HTTP status tells Kibana to retry. */
+/** Rejects an execution or control request with an explicit HTTP status. */
 class RefusedRun extends Error {
   constructor(
     public readonly status: number,
@@ -78,6 +87,17 @@ class RefusedRun extends Error {
     super(message);
   }
 }
+
+const readActivePoolReply = async (
+  req: IncomingMessage
+): Promise<TypeOf<typeof activePoolReplySchema>> => {
+  const body = await readBody(req);
+  try {
+    return activePoolReplySchema.validate(JSON.parse(body));
+  } catch {
+    throw new RefusedRun(400, 'Invalid active-pool reply');
+  }
+};
 
 const isSameSecret = (received: string | undefined, expected: string) => {
   const a = Buffer.from(received ?? '');
@@ -175,8 +195,10 @@ export const startTaskProcessServer = ({
     let finish: () => void = () => {};
     const finished = new Promise<void>((resolve) => (finish = resolve));
     const adHocTaskCounter = new AdHocTaskCounter();
+    const activeTaskPool = new ActiveTaskPoolRequests(abortController.signal);
     inFlight.set(body.executionUuid, {
       adHocTaskCounter,
+      activeTaskPool,
       abortController,
       task: { cancel: async () => task?.cancel?.() },
       finished,
@@ -244,6 +266,7 @@ export const startTaskProcessServer = ({
               ? `${body.taskInstance.id}::${body.executionUuid}`
               : undefined,
           adHocTaskCounter,
+          getCurrentTasksInPool: activeTaskPool.getCurrentTasksInPool,
         }
       );
       if (error !== undefined) {
@@ -267,6 +290,7 @@ export const startTaskProcessServer = ({
       return response;
     } finally {
       clearTimeout(deadlineTimer);
+      activeTaskPool.dispose();
       inFlight.delete(body.executionUuid);
       finish();
     }
@@ -286,7 +310,10 @@ export const startTaskProcessServer = ({
       const isAuthorized =
         !authToken || isSameSecret(req.headers.authorization, `Bearer ${authToken}`);
       if (
-        (req.method === 'POST' && (req.url === '/run' || req.url?.startsWith('/cancel/'))) ||
+        (req.method === 'POST' &&
+          (req.url === '/run' ||
+            req.url?.startsWith('/cancel/') ||
+            req.url?.startsWith('/active_pool/'))) ||
         (req.method === 'GET' && req.url?.startsWith('/metrics/'))
       ) {
         if (!isAuthorized) {
@@ -301,9 +328,23 @@ export const startTaskProcessServer = ({
           res,
           entry ? 200 : 404,
           entry
-            ? { createdTaskCount: entry.adHocTaskCounter.count }
+            ? {
+                createdTaskCount: entry.adHocTaskCounter.count,
+                activePoolRequestIds: entry.activeTaskPool.getRequestIds(),
+              }
             : { error: 'no such in-flight run' }
         );
+        return;
+      }
+
+      if (req.method === 'POST' && req.url?.startsWith('/active_pool/')) {
+        const entry = inFlight.get(req.url.slice('/active_pool/'.length));
+        const reply = await readActivePoolReply(req);
+        if (!entry?.activeTaskPool.completeRequest(reply.requestId, reply.executionIds)) {
+          sendJson(res, 404, { error: 'no such active-pool request' });
+          return;
+        }
+        sendJson(res, 200, { outcome: 'accepted' });
         return;
       }
 

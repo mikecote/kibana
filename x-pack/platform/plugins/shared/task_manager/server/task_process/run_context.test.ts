@@ -11,6 +11,7 @@ import {
   createHostFeatureFlags,
   getActiveTaskExecutions,
   incrementCreatedTaskCount,
+  requestDispatchTaskPool,
   runFlushers,
   runInRunContext,
 } from './run_context';
@@ -60,6 +61,26 @@ describe('task process run context', () => {
     expect(getActiveTaskExecutions()).toEqual([]);
     expect([firstCounter.count, secondCounter.count]).toEqual([3, 5]);
     expect(() => incrementCreatedTaskCount()).toThrow('require an active task execution');
+  });
+
+  it('uses the active dispatch pool provider and never substitutes worker-local executions', async () => {
+    await expect(requestDispatchTaskPool()).rejects.toThrow('no dispatch-pool control channel');
+    const missing = await runInRunContext(requestDispatchTaskPool, {
+      executionId: 'worker-task::run',
+    });
+    expect(missing.error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('no dispatch-pool control channel'),
+      })
+    );
+    const first = await runInRunContext(requestDispatchTaskPool, {
+      getCurrentTasksInPool: () => ['main-task::run'],
+    });
+    expect(first.value).toEqual(['main-task::run']);
+    const second = await runInRunContext(requestDispatchTaskPool, {
+      getCurrentTasksInPool: async () => ['later-task::run'],
+    });
+    expect(second.value).toEqual(['later-task::run']);
   });
 
   describe('feature flags', () => {

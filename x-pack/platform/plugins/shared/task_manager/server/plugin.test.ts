@@ -355,6 +355,15 @@ describe('TaskManagerPlugin', () => {
       expect(TaskProcessSupervisor).not.toHaveBeenCalled();
     });
 
+    test('reads the live native execution pool for each worker coordination request', () => {
+      const { taskProcessDispatch } = create({ mode: 'child_process' });
+      mockTaskPollingLifecycle.getCurrentTasksInPool.mockReturnValueOnce(['first-task::run']);
+      expect(taskProcessDispatch.getCurrentTasksInPool()).toEqual(['first-task::run']);
+      mockTaskPollingLifecycle.getCurrentTasksInPool.mockReturnValueOnce(['later-task::run']);
+      expect(taskProcessDispatch.getCurrentTasksInPool()).toEqual(['later-task::run']);
+      expect(mockTaskPollingLifecycle.getCurrentTasksInPool).toHaveBeenCalledTimes(2);
+    });
+
     test('evaluates the feature flags a module declares and the ones the registration adds, per dispatch', async () => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,

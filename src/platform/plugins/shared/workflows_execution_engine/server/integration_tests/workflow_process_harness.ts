@@ -36,6 +36,8 @@ import {
 } from '@kbn/security-plugin/server/config';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
 import { ConfigSchema as spacesConfigSchema } from '@kbn/spaces-plugin/server/config';
+import { ApiKeyType } from '@kbn/task-manager-plugin/server/config';
+import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from '@kbn/task-manager-plugin/server/constants';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -44,9 +46,11 @@ import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/ru
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
+import type { TaskExecutionPool } from '@kbn/task-manager-plugin/server/task_scheduling';
 import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
 import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
 import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
+import type { TaskManagerTaskProcessSettings } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { registerUsageCountersSavedObjectTypes } from '@kbn/usage-collection-plugin/server/usage_counters/saved_objects';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
@@ -153,6 +157,8 @@ export interface WorkflowProcessHarnessOptions {
   maxIdleProcesses?: number;
   includeRunTask?: boolean;
   includeResumeTask?: boolean;
+  claimNudge?: boolean;
+  getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   additionalContributions?: Record<string, string[]>;
   featureFlags?: Record<string, boolean | string | number>;
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
@@ -187,6 +193,39 @@ export interface WorkflowProcessHarnessOptions {
    */
   seed?: (context: { es: Client; host: TaskHost; kibanaUrl: string }) => Promise<void>;
 }
+
+const createTaskManagerSettings = (
+  definitions: TaskSchedulingDefinitions,
+  claimNudge: boolean
+): TaskManagerTaskProcessSettings => ({
+  api_key_type: ApiKeyType.ES,
+  grant_uiam_api_keys: false,
+  scheduling: {
+    taskManagerId: `kibana:${KIBANA_UUID}`,
+    securityEnabled: true,
+    allowReadingInvalidState: false,
+    definitions: createTaskSchedulingSnapshot(definitions),
+    ...(claimNudge ? { claimNudge: { index: TASK_MANAGER_CLAIM_NUDGE_INDEX } } : {}),
+  },
+});
+
+const createSeedContributions = (
+  contributions: WorkflowProcessHarnessOptions['seedContributions'] = {}
+): NonNullable<WorkflowProcessHarnessOptions['seedContributions']> => ({
+  ...contributions,
+  [TASK_SCHEDULING_CONTRIBUTIONS_KEY]: [
+    workflowTaskSchedulingContribution,
+    ...(contributions[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ?? []),
+  ],
+});
+
+const runSeed = async (
+  seed: NonNullable<WorkflowProcessHarnessOptions['seed']>,
+  context: Parameters<NonNullable<WorkflowProcessHarnessOptions['seed']>>[0]
+): Promise<void> => {
+  const { error } = await runInRunContext(() => seed(context));
+  if (error !== undefined) throw error;
+};
 
 /**
  * Real Elasticsearch, a stub of Kibana and the real `workflow:scheduled` bundle in a real task
@@ -233,16 +272,7 @@ const startHarness = async (
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     alerting: alertingConfigSchema.validate({}),
     ruleRegistry: ruleRegistryConfig.schema.validate({}),
-    taskManager: {
-      api_key_type: 'es',
-      grant_uiam_api_keys: false,
-      scheduling: {
-        taskManagerId: `kibana:${KIBANA_UUID}`,
-        securityEnabled: true,
-        allowReadingInvalidState: false,
-        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
-      },
-    },
+    taskManager: createTaskManagerSettings(taskSchedulingDefinitions, options.claimNudge === true),
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     security: getSecurityTaskProcessSettings({
@@ -451,17 +481,10 @@ const startHarness = async (
         ...initFor(),
       },
       module: scheduledTaskType,
-      contributions: {
-        ...options.seedContributions,
-        [TASK_SCHEDULING_CONTRIBUTIONS_KEY]: [
-          workflowTaskSchedulingContribution,
-          ...(options.seedContributions?.[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ?? []),
-        ],
-      },
+      contributions: createSeedContributions(options.seedContributions),
     });
     try {
-      const { error } = await runInRunContext(() => seed({ es, host: seeder.host, kibanaUrl }));
-      if (error !== undefined) throw error;
+      await runSeed(seed, { es, host: seeder.host, kibanaUrl });
     } finally {
       await seeder.stop();
     }
@@ -563,6 +586,7 @@ const startHarness = async (
       setCustomTaskRunEventFields: jest.fn(),
       onDispatchFailure,
       onTasksCreated: (count) => createdTaskCounts.push(count),
+      getCurrentTasksInPool: options.getCurrentTasksInPool,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 

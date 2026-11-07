@@ -6,6 +6,7 @@
  */
 
 import { Agent } from 'undici';
+import type { TaskExecutionPool } from '../task_scheduling';
 import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
 import {
   createRetryableError,
@@ -19,6 +20,7 @@ import type {
   TaskProcessDispatchSnapshot,
   TaskProcessRunRequest,
   TaskProcessRunResponse,
+  TaskProcessRunMetrics,
 } from './wire';
 
 /** Where a run goes: its address, and the bearer token the process requires. */
@@ -54,6 +56,7 @@ export interface TaskProcessDispatch {
   /** The values of the feature flags a task type declares, for the run being dispatched. */
   getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
   getSnapshot?: (taskType: string) => Promise<TaskProcessDispatchSnapshot>;
+  getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   onTasksCreated?: (count: number) => void;
   getCancelGracePeriodMs?: (taskType: string) => number | undefined;
   /** Called when dispatch fails; the task remains assigned to process execution. */
@@ -116,6 +119,7 @@ export class RemoteTaskRunner implements CancellableTask {
       onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'];
       /** What the task type counts in Kibana's memory of the runs a process served. */
       observer?: RemoteRunObserver;
+      getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
       onTasksCreated?: (count: number) => void;
       fetchFn?: typeof fetch;
     }
@@ -171,7 +175,7 @@ export class RemoteTaskRunner implements CancellableTask {
       signal
     );
     let reusable = false;
-    const stopMetrics = this.startMetricsPolling(address);
+    const stopControl = this.startControlPolling(address);
     try {
       let response: Response;
       try {
@@ -243,7 +247,7 @@ export class RemoteTaskRunner implements CancellableTask {
       if (!this.cancelled) this.observe((observer) => observer.onResult?.(result));
       return result;
     } finally {
-      stopMetrics();
+      stopControl();
       dispose();
       if (abort.aborted || this.cancelled) await this.cancel();
       else lease?.release({ reusable });
@@ -262,8 +266,8 @@ export class RemoteTaskRunner implements CancellableTask {
     this.params.onTasksCreated?.(delta);
   }
 
-  private startMetricsPolling(address: TaskProcessAddress): () => void {
-    if (!this.params.onTasksCreated) return () => {};
+  private startControlPolling(address: TaskProcessAddress): () => void {
+    if (!this.params.onTasksCreated && !this.params.getCurrentTasksInPool) return () => {};
     const controller = new AbortController();
     let pending = false;
     const timer = setInterval(async () => {
@@ -277,13 +281,31 @@ export class RemoteTaskRunner implements CancellableTask {
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
           }
         );
-        if (response.ok)
-          this.reportCreatedTasks(
-            ((await response.json()) as { createdTaskCount?: number }).createdTaskCount
-          );
-        else await response.body?.cancel();
+        if (!response.ok) {
+          await response.body?.cancel();
+          return;
+        }
+        const metrics = (await response.json()) as TaskProcessRunMetrics;
+        this.reportCreatedTasks(metrics.createdTaskCount);
+        const getPool = this.params.getCurrentTasksInPool;
+        if (getPool) {
+          for (const requestId of metrics.activePoolRequestIds ?? []) {
+            const executionIds = await getPool();
+            controller.signal.throwIfAborted();
+            const reply = await (this.params.fetchFn ?? fetch)(
+              `${address.url}/active_pool/${this.params.request.executionUuid}`,
+              {
+                method: 'POST',
+                headers: { ...authHeaders(address), 'content-type': 'application/json' },
+                body: JSON.stringify({ requestId, executionIds }),
+                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
+              }
+            );
+            await reply.body?.cancel();
+          }
+        }
       } catch {
-        // Metrics are best effort; a later sample or the final response includes the total.
+        // Counts are reconciled by the final response; unanswered pool requests fail in the worker.
       } finally {
         pending = false;
       }

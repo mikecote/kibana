@@ -21,10 +21,12 @@ import { RemoteTaskRunner } from './remote_task_runner';
 import { elasticsearchConfigFromEnv } from './es_config';
 import { TaskProcessSupervisor } from './supervisor';
 import { startTaskProcessWorker } from './worker';
-import type { TaskProcessDispatchSnapshot } from './wire';
+import type { TaskProcessDispatchSnapshot, TaskProcessRunMetrics } from './wire';
+import type { TaskExecutionPool } from '../task_scheduling';
 import {
   createHostFeatureFlags,
   incrementCreatedTaskCount,
+  requestDispatchTaskPool,
   registerRunFlusher,
 } from './run_context';
 import { firstValueFrom } from 'rxjs';
@@ -98,7 +100,14 @@ describe('task process server', () => {
     loopback.close();
   });
 
-  const runner = (overrides: Partial<{ taskType: string; token: string; version: string }> = {}) =>
+  const runner = (
+    overrides: Partial<{
+      taskType: string;
+      token: string;
+      version: string;
+      getCurrentTasksInPool: TaskExecutionPool['getCurrentTasksInPool'];
+    }> = {}
+  ) =>
     new RemoteTaskRunner({
       route: { url, token: overrides.token ?? TOKEN },
       request: {
@@ -108,6 +117,7 @@ describe('task process server', () => {
         kibanaVersion: overrides.version ?? '9.9.9',
       },
       timeoutMs: 5000,
+      getCurrentTasksInPool: overrides.getCurrentTasksInPool,
       setCustomTaskRunEventFields: jest.fn(),
       fetchFn: undiciFetch as unknown as typeof fetch,
     });
@@ -136,7 +146,7 @@ describe('task process server', () => {
       const progress = await undiciFetch(`${url}/metrics/run-1`, {
         headers: { authorization: `Bearer ${TOKEN}` },
       });
-      expect(await progress.json()).toEqual({ createdTaskCount: 3 });
+      expect(await progress.json()).toEqual({ createdTaskCount: 3, activePoolRequestIds: [] });
     } finally {
       completed.resolve();
       await running;
@@ -145,6 +155,56 @@ describe('task process server', () => {
       (await undiciFetch(`${url}/metrics/run-1`, { headers: { authorization: `Bearer ${TOKEN}` } }))
         .status
     ).toBe(404);
+  });
+
+  it('authenticates and validates pool replies before completing the matching live request', async () => {
+    const requested = Promise.withResolvers<void>();
+    createTask = () => ({
+      run: async () => {
+        const pool = requestDispatchTaskPool();
+        requested.resolve();
+        return { state: { pool: await pool } };
+      },
+    });
+    const running = runner().run();
+    await requested.promise;
+    const headers = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
+    const response = await undiciFetch(`${url}/metrics/run-1`, { headers });
+    const metrics = (await response.json()) as TaskProcessRunMetrics;
+    const requestId = metrics.activePoolRequestIds?.[0];
+    if (!requestId) throw new Error('The live pool read was not published');
+    const reply = (body: object, authorized = true) =>
+      undiciFetch(`${url}/active_pool/run-1`, {
+        method: 'POST',
+        headers: authorized ? headers : { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    expect((await reply({ requestId, executionIds: [] }, false)).status).toBe(401);
+    expect((await reply({ requestId: 'stale', executionIds: [] })).status).toBe(404);
+    expect((await reply({ requestId, executionIds: 'invalid' })).status).toBe(400);
+    expect((await reply({ requestId, executionIds: ['x'.repeat(4097)] })).status).toBe(400);
+    expect((await reply({ requestId, executionIds: ['peer-task::execution'] })).status).toBe(200);
+    expect(await running).toEqual({ state: { pool: ['peer-task::execution'] } });
+  });
+
+  it('reads the dispatching pool again when it changes within one execution', async () => {
+    const livePool = ['first-task::execution'];
+    const getCurrentTasksInPool = jest.fn(() => livePool);
+    createTask = () => ({
+      run: async () => {
+        const first = await requestDispatchTaskPool();
+        livePool.push('second-task::execution');
+        const second = await requestDispatchTaskPool();
+        return { state: { first, second } };
+      },
+    });
+    expect(await runner({ getCurrentTasksInPool }).run()).toEqual({
+      state: {
+        first: ['first-task::execution'],
+        second: ['first-task::execution', 'second-task::execution'],
+      },
+    });
+    expect(getCurrentTasksInPool).toHaveBeenCalledTimes(2);
   });
 
   it('enriches the primary and child requests with this execution identity', async () => {

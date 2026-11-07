@@ -578,6 +578,7 @@ export class TaskManagerRunner implements TaskRunner {
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
               onDispatchFailure: this.taskProcessDispatch.onDispatchFailure,
               onTasksCreated: this.taskProcessDispatch.onTasksCreated,
+              getCurrentTasksInPool: this.taskProcessDispatch.getCurrentTasksInPool,
               observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {

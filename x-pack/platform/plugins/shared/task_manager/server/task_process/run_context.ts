@@ -7,12 +7,14 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { defer, of } from 'rxjs';
+import type { TaskExecutionPool } from '../task_scheduling';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import type { TaskHost } from '../task_type_module';
 
 interface RunStore {
   featureFlags: Record<string, boolean | string | number>;
   executionId?: string;
+  getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   adHocTaskCounter: AdHocTaskCounter;
   flushers: Array<() => Promise<void>>;
 }
@@ -22,6 +24,13 @@ const activeExecutions = new Set<string>();
 
 /** Lists the execution identities actually served by this worker process. */
 export const getActiveTaskExecutions = (): string[] => [...activeExecutions];
+
+/** Requests the dispatching node's current execution pool without substituting worker-local state. */
+export const requestDispatchTaskPool = async (): Promise<readonly string[]> => {
+  const getPool = storage.getStore()?.getCurrentTasksInPool;
+  if (!getPool) throw new Error('The active execution has no dispatch-pool control channel');
+  return getPool();
+};
 
 /** Counts created tasks in the actual active run's native counter. */
 export const incrementCreatedTaskCount = (by: number = 1): void => {
@@ -40,13 +49,17 @@ export const runInRunContext = async <T>(
     featureFlags = {},
     flushers = [],
     executionId,
+    getCurrentTasksInPool,
     adHocTaskCounter = new AdHocTaskCounter(),
   }: Partial<RunStore> = {}
 ): Promise<{ value?: T; error?: unknown }> => {
   if (executionId) activeExecutions.add(executionId);
   try {
     return {
-      value: await storage.run({ featureFlags, flushers, executionId, adHocTaskCounter }, fn),
+      value: await storage.run(
+        { featureFlags, flushers, executionId, getCurrentTasksInPool, adHocTaskCounter },
+        fn
+      ),
     };
   } catch (error) {
     return { error };

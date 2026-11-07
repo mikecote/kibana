@@ -475,6 +475,11 @@ export class TaskManagerPlugin
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
         onTasksCreated: (count) => this.adHocTaskCounter.increment(count),
+        getCurrentTasksInPool: () => {
+          if (!this.taskPollingLifecycle)
+            throw new Error('Task Manager execution pool has not started');
+          return this.taskPollingLifecycle.getCurrentTasksInPool();
+        },
         kibanaVersion: this.kibanaVersion,
         onDispatchFailure: (taskType, reason, detail) => {
           this.taskProcessDispatchFailures.increment(taskType, reason, detail);

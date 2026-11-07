@@ -568,9 +568,10 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   run completion waits for pending notifications within the worker's flush deadline.
   Native task-creation counts are sampled over the authenticated control channel and reconciled with
   the final run total, including failed runs. Repeated or older samples are ignored. Counts remain
-  best effort when a worker crashes before its next sample. Force checks currently see executions
-  in the worker; coordination with the dispatching node's complete active pool and native middleware
-  contributions remain required for complete scheduling parity.
+  best effort when a worker crashes before its next sample. Force checks read the dispatching node's
+  actual current execution pool through the authenticated run-control channel, including through a
+  remote supervisor. Completed reads are never reused; unavailable metadata fails the operation
+  before a write. Native middleware contributions remain required for complete scheduling parity.
 - **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** The engine registers its shared definitions with native Core using the current
