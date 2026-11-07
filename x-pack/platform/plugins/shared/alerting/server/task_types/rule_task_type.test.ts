@@ -215,7 +215,11 @@ describe('createRuleTaskType', () => {
         { optionalSettings: ['fleetPackageMetadata'] }
       );
       expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
-      expect(taskType.optionalSettings).toEqual(['fleetPackageMetadata']);
+      expect(taskType.optionalSettings).toEqual([
+        'ruleDataViewsCapabilities',
+        'spacesRuntime',
+        'fleetPackageMetadata',
+      ]);
       // The privileges of a connector are checked when a run enqueues it, as in Kibana.
       expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',

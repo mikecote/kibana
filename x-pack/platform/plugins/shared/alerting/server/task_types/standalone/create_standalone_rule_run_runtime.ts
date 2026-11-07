@@ -13,7 +13,6 @@ import type { TaskHost } from '@kbn/task-manager-plugin/server';
 import type { SharePluginStart } from '@kbn/share-plugin/server';
 import type { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
@@ -49,6 +48,7 @@ import { ALERTING_RUN_SETTINGS_ID, DEFAULT_ALERTING_RUN_SETTINGS } from '../rule
 import type { AlertingRunSettings } from '../rule_run_settings';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 import { createStandaloneFieldFormats } from './field_formats';
+import { createRuleDataViews } from './create_rule_data_views';
 
 export interface StandaloneRuleRunOptions {
   host: TaskHost;
@@ -64,17 +64,6 @@ export interface StandaloneRuleRunOptions {
   /** The rule type executes connectors in the process, so the actions executor is initialized. */
   executeConnectors?: boolean;
 }
-
-/**
- * What a data view service reads of the capabilities, only to know whether a request may save: a
- * process never resolves them, so nothing may be saved through the data views of a run.
- */
-const noCapabilities = {
-  resolveCapabilities: async () => ({
-    indexPatterns: { save: false },
-    advancedSettings: { save: false },
-  }),
-} as never;
 
 const spaceIdToNamespace = (spaceId?: string) =>
   spaceId ? SavedObjectsUtils.namespaceStringToId(spaceId) : undefined;
@@ -236,18 +225,7 @@ export const createStandaloneRuleRunRuntime = ({
   });
 
   const fieldFormats = createStandaloneFieldFormats();
-  const dataViews = {
-    dataViewsServiceFactory: dataViewsServiceFactory({
-      logger,
-      uiSettings,
-      fieldFormats,
-      // A rule run never saves a data view, which is all Kibana reads capabilities for: it asks with
-      // a request, and the user of a rule can save none through a data view service of its run.
-      capabilities: noCapabilities,
-      scriptedFieldsEnabled: runSettings.dataViews.scriptedFieldsEnabled,
-      rollupsEnabled: runSettings.search?.rollupsEnabled ?? false,
-    }),
-  };
+  const dataViews = createRuleDataViews(host, runSettings, fieldFormats);
   const data = {
     search: createStandaloneSearch({
       logger,

@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { createDataViewsCapabilities } from '@kbn/alerting-plugin/server/task_types/standalone/create_data_views_capabilities';
 import { createStandaloneFieldFormats } from '@kbn/alerting-plugin/server/task_types/standalone/field_formats';
 import {
   getSearchMaxConcurrentShardUiSettings,
@@ -30,7 +31,6 @@ import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_
 import type { SpacesTaskProcessSettings } from '@kbn/spaces-plugin/server/task_process_settings';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
-import { createDataViewsCapabilities } from './create_data_views_capabilities';
 import type { DataSearchTaskProcessSettings } from './data_search_task_process_settings';
 import { DATA_SEARCH_TASK_PROCESS_SETTINGS_ID } from './data_search_task_process_settings';
 

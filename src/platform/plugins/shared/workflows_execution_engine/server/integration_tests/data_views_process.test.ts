@@ -8,6 +8,8 @@
  */
 
 import { join } from 'node:path';
+import { RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID } from '@kbn/alerting-plugin/server/task_types/rule_data_views_settings';
+import { ALERTING_RUN_SETTINGS_ID } from '@kbn/alerting-plugin/server/task_types/rule_run_settings';
 import { dataViewSavedObjectType } from '@kbn/data-views-plugin/server';
 import type { KibanaFeatureConfig } from '@kbn/features-plugin/common';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
@@ -51,6 +53,11 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         reuse,
         savedObjectTypes: [dataViewSavedObjectType],
         settings: {
+          [ALERTING_RUN_SETTINGS_ID]: {
+            maintenanceWindowsEnabled: true,
+            dataViews: { scriptedFieldsEnabled: false },
+          },
+          [RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID]: { features, spacesEnabled: true },
           dataViewsRuntime: {
             scriptedFieldsEnabled: false,
             rollupsEnabled: false,
@@ -69,6 +76,24 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           'workflow-steps': [join(__dirname, 'fixtures/data_views_contribution.ts')],
         },
         workflows: {
+          'rule-write': {
+            steps: [
+              {
+                name: 'dataViews',
+                type: 'test.data_views.native',
+                with: { write: true, runtime: 'rule' },
+              },
+            ],
+          },
+          'rule-read': {
+            steps: [
+              {
+                name: 'dataViews',
+                type: 'test.data_views.native',
+                with: { write: false, runtime: 'rule' },
+              },
+            ],
+          },
           write: {
             steps: [{ name: 'dataViews', type: 'test.data_views.native', with: { write: true } }],
           },
@@ -136,49 +161,56 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
     it('uses real fields and saved objects while rechecking each task identity and active space', async () => {
       const seen = new Set<string>();
       const failure = jest.fn();
-      const results: Array<z.infer<typeof resultSchema>> = [];
-      for (const [workflow, limited] of [
-        ['write', false],
-        ['read', true],
-        ['write', true],
-        ['write', false],
-        ['write', false],
-        ['write', false],
-      ] as const) {
-        if (results.length === 4 || results.length === 5) {
-          await harness.es.update({
-            index: '.kibana',
-            id: 'space:default',
-            refresh: 'wait_for',
-            doc: { space: { disabledFeatures: results.length === 4 ? ['indexPatterns'] : [] } },
+      for (const runtime of ['workflow', 'rule'] as const) {
+        const results: Array<z.infer<typeof resultSchema>> = [];
+        for (const [workflow, limited] of [
+          ['write', false],
+          ['read', true],
+          ['write', true],
+          ['write', false],
+          ['write', false],
+          ['write', false],
+        ] as const) {
+          if (results.length === 4 || results.length === 5) {
+            await harness.es.update({
+              index: '.kibana',
+              id: 'space:default',
+              refresh: 'wait_for',
+              doc: { space: { disabledFeatures: results.length === 4 ? ['indexPatterns'] : [] } },
+            });
+          }
+          const workflowId = runtime === 'rule' ? `rule-${workflow}` : workflow;
+          await harness.run(workflowId, failure, {
+            apiKey: limited ? readOnlyKey : harness.apiKey,
           });
+          const execution = (await harness.executionsOf(workflowId)).find(
+            ({ id }) => !seen.has(id)
+          );
+          if (!execution) throw new Error('No new data view execution was persisted');
+          seen.add(execution.id);
+          expect({ status: execution.status, error: execution.error }).toEqual({
+            status: 'completed',
+            error: undefined,
+          });
+          const [step] = await harness.stepsOf(execution.id);
+          results.push(outputSchema.parse(step.output));
         }
-        await harness.run(workflow, failure, { apiKey: limited ? readOnlyKey : harness.apiKey });
-        const execution = (await harness.executionsOf(workflow)).find(({ id }) => !seen.has(id));
-        if (!execution) throw new Error('No new data view execution was persisted');
-        seen.add(execution.id);
-        expect({ status: execution.status, error: execution.error }).toEqual({
-          status: 'completed',
-          error: undefined,
-        });
-        const [step] = await harness.stepsOf(execution.id);
-        results.push(outputSchema.parse(step.output));
+        expect(results.map(({ canSave, scripted }) => ({ canSave, scripted }))).toEqual([
+          { canSave: true, scripted: false },
+          { canSave: false, scripted: false },
+          { canSave: false, scripted: false },
+          { canSave: true, scripted: false },
+          { canSave: false, scripted: false },
+          { canSave: true, scripted: false },
+        ]);
+        for (const result of results)
+          expect(result.fields).toEqual(expect.arrayContaining(['@timestamp', 'duration']));
+        expect(results[2].error).toBe('Operation failed due to insufficient access, id: undefined');
+        expect(results[4].error).toBe(results[2].error);
+        expect(results[0].error).toBeUndefined();
+        expect(results[3].error).toBeUndefined();
       }
-      expect(results.map(({ canSave, scripted }) => ({ canSave, scripted }))).toEqual([
-        { canSave: true, scripted: false },
-        { canSave: false, scripted: false },
-        { canSave: false, scripted: false },
-        { canSave: true, scripted: false },
-        { canSave: false, scripted: false },
-        { canSave: true, scripted: false },
-      ]);
-      for (const result of results)
-        expect(result.fields).toEqual(expect.arrayContaining(['@timestamp', 'duration']));
-      expect(results[2].error).toBe('Operation failed due to insufficient access, id: undefined');
-      expect(results[4].error).toBe(results[2].error);
-      expect(results[0].error).toBeUndefined();
-      expect(results[3].error).toBeUndefined();
-      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 6);
+      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 12);
       expect(harness.kibanaRequests).toEqual([]);
       expect(failure).not.toHaveBeenCalled();
     }, 240000);

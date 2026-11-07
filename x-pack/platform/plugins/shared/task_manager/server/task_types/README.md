@@ -757,8 +757,7 @@ proposals (the services over the plugin's storage, and agent builder's attachmen
 with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
 capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
 license switchers). Differences from Kibana are in the comment of each contribution (the AI
-indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
-data-view capabilities in rule runtimes).
+indices other plugins register as managed, the attachment types and the alerts client of solutions, and files).
 Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
 the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
 are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
@@ -811,7 +810,10 @@ Native observability data services are available through the workflow service re
   request-scoped Security and Spaces capability switchers. Its dispatch snapshot carries the
   plugin's actual scripted-field and rollup settings. Conditional defaults use the same UI
   registration helper as Kibana; meta-field and default-view settings share their native definitions
-  with the Data plugin.
+  with the Data plugin. Rule runtimes use the same native capability factory, with current feature
+  registrations and whether Spaces is enabled captured at dispatch. Security privileges and active
+  space restrictions are checked for each request. Tests exercise both data-view factories with
+  changing task credentials and disabled-space features in fresh and retained local and remote workers.
 - `ml.setup` uses the shared ML service factory with native authorization, licensing, audit,
   data views and Spaces. The module recognizer reads a dispatch snapshot of its installed manifests,
   job and datafeed definitions, logos and saved-object assets. It does not need source-tree paths

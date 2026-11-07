@@ -9,6 +9,7 @@ import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import { kibanaPackageJson } from '@kbn/repo-info';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import { CONNECTOR_TYPES_PARITY_KIND } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
@@ -31,6 +32,7 @@ import {
 } from '@kbn/actions-plugin/server/constants/event_log';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
+import { RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID } from './rule_data_views_settings';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../constants/event_log';
@@ -368,7 +370,13 @@ export function createRuleTaskType(
               ...(options.settings ?? []),
             ]),
           ],
-          optionalSettings: options.optionalSettings,
+          optionalSettings: [
+            ...new Set([
+              RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID,
+              SPACES_TASK_PROCESS_SETTINGS_ID,
+              ...(options.optionalSettings ?? []),
+            ]),
+          ],
           // Kibana sends the connector types and adapters it registered; the process must have
           // registered the same, or it declines the run: a rule would otherwise behave differently.
           parity: [

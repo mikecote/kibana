@@ -6,6 +6,9 @@
  */
 
 import { BehaviorSubject } from 'rxjs';
+import { coreMock } from '@kbn/core/server/mocks';
+import { securityMock } from '@kbn/security-plugin/server/mocks';
+import { RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID } from '../rule_data_views_settings';
 import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { httpServerMock } from '@kbn/core-http-server-mocks';
@@ -59,6 +62,7 @@ const createHost = ({
       actions: {},
       ...(alertingRun ? { [ALERTING_RUN_SETTINGS_ID]: alertingRun } : {}),
     },
+    uiSettings: coreMock.createStart().uiSettings,
     licensing: { license$: new BehaviorSubject(license as never), featureUsage },
     security: { authc: { apiKeys: {} }, audit: {} } as never,
     encryptedSavedObjects: { getClient: jest.fn() } as never,
@@ -182,13 +186,34 @@ describe('createStandaloneRuleRunRuntime', () => {
       await expect(licensing.getLicense()).resolves.toBe(license);
     });
 
-    it('does not resolve capabilities a process does not have: nothing is saved through its data views', async () => {
-      run();
-      const { capabilities } = (dataViewsServiceFactory as jest.Mock).mock.calls[0][0];
-      await expect(capabilities.resolveCapabilities({}, {})).resolves.toEqual({
-        indexPatterns: { save: false },
-        advancedSettings: { save: false },
+    it('uses native capabilities without Spaces when the dispatching plugin is disabled', async () => {
+      const host = createHost();
+      const security = securityMock.createStart();
+      security.authz.mode.useRbacForRequest.mockReturnValue(false);
+      host.plugins = { security };
+      host.settings = {
+        ...host.settings,
+        [RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID]: { features: [], spacesEnabled: false },
+      };
+      build(host);
+      const { capabilities } = jest.mocked(dataViewsServiceFactory).mock.calls[0][0];
+      await expect(
+        capabilities.resolveCapabilities(httpServerMock.createKibanaRequest(), {
+          capabilityPath: 'indexPatterns',
+        })
+      ).resolves.toMatchObject({
+        indexPatterns: { save: true },
       });
+    });
+
+    it('fails capability resolution explicitly when dispatch feature settings are missing', async () => {
+      run();
+      const { capabilities } = jest.mocked(dataViewsServiceFactory).mock.calls[0][0];
+      await expect(
+        capabilities.resolveCapabilities(httpServerMock.createKibanaRequest(), {
+          capabilityPath: 'indexPatterns',
+        })
+      ).rejects.toThrow('require current feature settings and native Security');
     });
   });
 

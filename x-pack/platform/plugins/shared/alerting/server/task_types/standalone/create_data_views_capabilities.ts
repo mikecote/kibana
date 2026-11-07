@@ -1,10 +1,8 @@
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
- * or more contributor license agreements. Licensed under the "Elastic License
- * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
- * Public License v 1"; you may not use this file except in compliance with, at
- * your election, the "Elastic License 2.0", the "GNU Affero General Public
- * License v3.0 only", or the "Server Side Public License, v 1".
+ * or more contributor license agreements. Licensed under the Elastic License
+ * 2.0; you may not use this file except in compliance with the Elastic License
+ * 2.0.
  */
 
 import { merge } from 'lodash';
@@ -20,7 +18,7 @@ interface DataViewsCapabilitiesServices {
   features: readonly KibanaFeatureConfig[];
   authz: Parameters<typeof createSecurityCapabilitiesSwitcher>[0]['authz'];
   getCurrentUser: Parameters<typeof createSecurityCapabilitiesSwitcher>[0]['getCurrentUser'];
-  getActiveSpace: Parameters<typeof createSpacesCapabilitiesSwitcher>[0]['getActiveSpace'];
+  getActiveSpace?: Parameters<typeof createSpacesCapabilitiesSwitcher>[0]['getActiveSpace'];
   logger: Logger;
 }
 
@@ -45,15 +43,17 @@ export const createDataViewsCapabilities = ({
     getElasticsearchFeatures: () => [],
     logger,
   });
-  const spaces = createSpacesCapabilitiesSwitcher({
-    getActiveSpace,
-    getKibanaFeatures: async () => definitions,
-    logger,
-  });
+  const spaces = getActiveSpace
+    ? createSpacesCapabilitiesSwitcher({
+        getActiveSpace,
+        getKibanaFeatures: async () => definitions,
+        logger,
+      })
+    : undefined;
   return {
     resolveCapabilities: async (request) => {
       const secured = merge({}, defaults, await security(request, defaults, false));
-      const scoped = merge({}, secured, await spaces(request, secured, false));
+      const scoped = spaces ? merge({}, secured, await spaces(request, secured, false)) : secured;
       return scoped;
     },
   };

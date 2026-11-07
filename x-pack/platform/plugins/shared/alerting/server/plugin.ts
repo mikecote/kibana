@@ -27,7 +27,8 @@ import type {
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
 import { DEFAULT_SPACE_ID, type SpaceId } from '@kbn/core-spaces-common';
-import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { SpacesPluginStart, SpacesPluginSetup } from '@kbn/spaces-plugin/server';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import type {
   KibanaRequest,
   Logger,
@@ -68,6 +69,10 @@ import type {
   WorkflowsExtensionsServerPluginSetup,
   WorkflowsExtensionsServerPluginStart,
 } from '@kbn/workflows-extensions/server';
+import {
+  RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID,
+  type RuleDataViewsCapabilitiesSettings,
+} from './task_types/rule_data_views_settings';
 import { CONNECTOR_ADAPTERS_PARITY_KIND } from './task_types/parity_kinds';
 import { ApiKeyType } from './task_runner/types';
 import { AsyncDomainEventBus } from './lib/events/event_bus';
@@ -236,6 +241,7 @@ export interface AlertingServerStart {
 }
 
 export interface AlertingPluginsSetup {
+  spaces?: SpacesPluginSetup;
   security?: SecurityPluginSetup;
   telemetry?: TelemetryPluginSetup;
   cloud?: CloudSetup;
@@ -353,6 +359,16 @@ export class AlertingPlugin {
     plugins: AlertingPluginsSetup
   ): AlertingServerSetup {
     this.actionsSetup = plugins.actions;
+    this.taskProcessSettings[RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID] =
+      (): RuleDataViewsCapabilitiesSettings => ({
+        features: plugins.features.getKibanaFeatures().map((feature) => feature.toRaw()),
+        spacesEnabled: plugins.spaces !== undefined,
+      });
+    if (plugins.spaces) {
+      const spaces = plugins.spaces;
+      this.taskProcessSettings[SPACES_TASK_PROCESS_SETTINGS_ID] = () =>
+        spaces.getTaskProcessSettings();
+    }
     this.kibanaBaseUrl = core.http.basePath.publicBaseUrl;
     this.licenseState = new LicenseState(plugins.licensing.license$);
     this.security = plugins.security;
