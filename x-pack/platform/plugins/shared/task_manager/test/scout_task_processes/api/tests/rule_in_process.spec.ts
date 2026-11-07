@@ -19,7 +19,7 @@ import {
   deleteRule,
   getChildLines,
   getExecutions,
-  getFallbacks,
+  getDispatchFailures,
   getStartedProcesses,
   readKibanaLog,
   type LogRecord,
@@ -28,6 +28,9 @@ import {
 } from '../fixtures';
 
 const TASK_TYPE = `alerting:${ES_QUERY}`;
+
+const isServerLogConnectorOutput = (record: LogRecord, message: string): boolean =>
+  record.message.includes(message) && record.labels?.task_type === undefined;
 
 apiTest.describe(
   'Rules in task processes of a real Kibana',
@@ -89,7 +92,7 @@ apiTest.describe(
           expect(typeof line.labels?.child_logger).toBe('string');
           expect(typeof line.log?.level).toBe('string');
         }
-        // ... and not in Kibana in spite of the process: no fallback for this task type
+        // A healthy dispatch reports no process failures
         for (const reason of [
           'declined',
           'not_served',
@@ -98,7 +101,7 @@ apiTest.describe(
           'spawn_timeout',
           'unavailable',
         ]) {
-          expect(getFallbacks(TASK_TYPE, reason, since)).toHaveLength(0);
+          expect(getDispatchFailures(TASK_TYPE, reason, since)).toHaveLength(0);
         }
 
         // The alert document was written by the process
@@ -116,13 +119,15 @@ apiTest.describe(
         // The action task ran in Kibana (it is not a task type module): the server log connector
         // wrote the message, from a logger that is not a child's
         // (the process logs the rendered message too, with its labels, when it enqueues the action)
-        const isOutput = (r: LogRecord) =>
-          r.message.includes(`${marker} ${ruleId}`) && r.labels?.task_type === undefined;
+        const isOutput = (record: LogRecord) =>
+          isServerLogConnectorOutput(record, `${marker} ${ruleId}`);
         await waitFor(() => readKibanaLog().some(isOutput), {
           message: 'the server log connector output',
         });
-        const output = readKibanaLog().find(isOutput)!;
-        expect(output.log?.logger?.startsWith('plugins.actions')).toBe(true);
+        const output = readKibanaLog().find(isOutput);
+        expect(output).toMatchObject({
+          log: { logger: expect.stringMatching(/^plugins\.actions/) },
+        });
       }
     );
 

@@ -39,8 +39,14 @@ import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/s
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import type {
+  TaskProcessDispatch,
+  TaskProcessRoute,
+} from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
+import type { TaskProcessDispatchSnapshot } from '@kbn/task-manager-plugin/server/task_process/wire';
+import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
 import { config as engineConfigDescriptor } from '../config';
@@ -97,6 +103,8 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   let esServer: TestElasticsearchUtils;
   let es: Client;
   let supervisor: TaskProcessSupervisor;
+  let bundleDir: string;
+  let esConfig: () => ReturnType<typeof elasticsearchConfigFromEnv>;
   let apiKey: string;
   let seeder: Awaited<ReturnType<typeof startTaskProcessCore>>;
   let kibanaStub: Server;
@@ -124,6 +132,8 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   }) as unknown as typeof fetch;
 
   const settings = () => ({
+    inferenceFeatures: { features: [] },
+    contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
     workflowsExecutionEngine: engineConfig,
@@ -164,9 +174,11 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     attempts?: number;
     spaceId?: string;
     featureFlags?: Record<string, boolean>;
-    fallback?: () => never;
+    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'];
     signal?: AbortSignal;
     timeoutMs?: number;
+    route?: TaskProcessRoute;
+    snapshot?: TaskProcessDispatchSnapshot;
   }
 
   const runTask = (
@@ -175,9 +187,10 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     options: RunOptions = {}
   ) =>
     new RemoteTaskRunner({
-      route: supervisor.getRoute(type)!,
+      route: options.route ?? supervisor.getRoute(type),
       request: {
         taskType: type,
+        snapshot: options.snapshot,
         taskInstance: {
           taskType: type,
           state: {},
@@ -196,22 +209,27 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         userName: 'elastic',
         featureFlags: options.featureFlags,
         kibanaVersion: KIBANA_VERSION,
+        cancelGracePeriodMs: 5000,
       },
       timeoutMs: options.timeoutMs ?? 120000,
       signal: options.signal,
       setCustomTaskRunEventFields: jest.fn(),
-      fallback: options.fallback,
+      onDispatchFailure: options.onDispatchFailure,
       fetchFn: capturingFetch,
     }).run();
 
-  const run = (workflowId: string, fallback?: () => never, options: RunOptions = {}) =>
+  const run = (
+    workflowId: string,
+    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
+    options: RunOptions = {}
+  ) =>
     runTask(
       TASK_TYPE,
       {
         id: `workflow:${workflowId}:scheduled`,
         params: { workflowId, spaceId: options.spaceId ?? 'default', triggerType: 'scheduled' },
       },
-      { ...options, fallback }
+      { ...options, onDispatchFailure }
     );
 
   const workflowDocument = (
@@ -305,7 +323,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     });
     esServer = await startES();
     es = esServer.es.getClient();
-    const esConfig = () =>
+    esConfig = () =>
       elasticsearchConfigFromEnv({
         ES_URL: esServer.hosts[0],
         ES_USERNAME: esServer.username,
@@ -598,29 +616,32 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       });
     }
 
-    const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
-    const bundleNames = {
-      [TASK_TYPE]: 'workflowsExecutionEngine__workflow_scheduled',
-      [RUN_TASK_TYPE]: 'workflowsExecutionEngine__workflow_run',
-      [RESUME_TASK_TYPE]: 'workflowsExecutionEngine__workflow_resume',
-    };
-    const entries = getTaskBundleEntries().filter(({ name }: { name: string }) =>
-      Object.values(bundleNames).includes(name)
-    );
-    const built: Array<{ name: string }> = await Promise.all(
-      entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
-    );
-    writeFileSync(
-      join(bundleDir, 'manifest.json'),
-      JSON.stringify({
-        bundles: Object.fromEntries(
-          Object.entries(bundleNames).map(([taskType_, name]) => {
-            const { name: builtName } = built.find((bundle) => bundle.name === name)!;
-            return [builtName, { file: `${builtName}.mjs`, taskType: taskType_ }];
-          })
-        ),
-      })
-    );
+    bundleDir =
+      process.env.TASK_PROCESS_TEST_BUNDLE_DIR ?? mkdtempSync(join(tmpdir(), 'task-bundles-'));
+    if (!process.env.TASK_PROCESS_TEST_BUNDLE_DIR) {
+      const bundleNames = {
+        [TASK_TYPE]: 'workflowsExecutionEngine__workflow_scheduled',
+        [RUN_TASK_TYPE]: 'workflowsExecutionEngine__workflow_run',
+        [RESUME_TASK_TYPE]: 'workflowsExecutionEngine__workflow_resume',
+      };
+      const entries = getTaskBundleEntries().filter(({ name }: { name: string }) =>
+        Object.values(bundleNames).includes(name)
+      );
+      const built: Array<{ name: string }> = await Promise.all(
+        entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
+      );
+      writeFileSync(
+        join(bundleDir, 'manifest.json'),
+        JSON.stringify({
+          bundles: Object.fromEntries(
+            Object.entries(bundleNames).map(([taskType_, name]) => {
+              const { name: builtName } = built.find((bundle) => bundle.name === name)!;
+              return [builtName, { file: `${builtName}.mjs`, taskType: taskType_ }];
+            })
+          ),
+        })
+      );
+    }
     supervisor = new TaskProcessSupervisor({
       settings: {
         bundle_dir: bundleDir,
@@ -643,12 +664,12 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   });
 
   it('runs a scheduled workflow with an elasticsearch step to completion, in the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     usageApiRecords.length = 0;
     responseBodies.length = 0;
-    await run(ES_WORKFLOW_ID, fallback as never);
+    await run(ES_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const executions = await executionsOf(ES_WORKFLOW_ID);
     expect(executions).toHaveLength(1);
     expect(executions[0]).toEqual(
@@ -701,19 +722,19 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   });
 
   it('declines a workflow that uses a step the process does not have, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => undefined }));
-    await run(CUSTOM_STEP_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(run(CUSTOM_STEP_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await executionsOf(CUSTOM_STEP_WORKFLOW_ID)).toHaveLength(0);
   });
 
   describe('workflows that run as a service account', () => {
     it('runs in the process, and a step is authenticated as the service account', async () => {
-      const fallback = jest.fn();
-      await run(RUN_AS_WORKFLOW_ID, fallback as never);
+      const onDispatchFailure = jest.fn();
+      await run(RUN_AS_WORKFLOW_ID, onDispatchFailure);
 
-      expect(fallback).not.toHaveBeenCalled();
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       const [execution] = await executionsOf(RUN_AS_WORKFLOW_ID);
       expect(execution).toEqual(
         expect.objectContaining({
@@ -745,12 +766,12 @@ describe('the workflow:scheduled task type served from a bundle', () => {
 
     it('calls Kibana with the credential of the service account, not the one of the task', async () => {
       kibanaRequests.length = 0;
-      const fallback = jest.fn();
-      await run(RUN_AS_KIBANA_WORKFLOW_ID, fallback as never, {
+      const onDispatchFailure = jest.fn();
+      await run(RUN_AS_KIBANA_WORKFLOW_ID, onDispatchFailure, {
         featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
       });
 
-      expect(fallback).not.toHaveBeenCalled();
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       const [execution] = await executionsOf(RUN_AS_KIBANA_WORKFLOW_ID);
       expect(execution.status).toBe('completed');
       expect(kibanaRequests).toHaveLength(1);
@@ -759,13 +780,13 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     });
 
     it('fails the run of a workflow that is not bound to its service account, as Kibana does', async () => {
-      const fallback = jest.fn();
-      await expect(run(RUN_AS_UNBOUND_WORKFLOW_ID, fallback as never)).rejects.toThrow(
+      const onDispatchFailure = jest.fn();
+      await expect(run(RUN_AS_UNBOUND_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow(
         'No service account is bound to workload'
       );
 
       // It ran in the process, where nothing ran as anyone.
-      expect(fallback).not.toHaveBeenCalled();
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       const executions = await executionsOf(RUN_AS_UNBOUND_WORKFLOW_ID);
       expect(executions.every(({ status }) => status !== 'completed')).toBe(true);
     });
@@ -798,13 +819,13 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   describe('kibana steps', () => {
     it('calls Kibana through the self client with the credential of the run, at the path of the step', async () => {
       kibanaRequests.length = 0;
-      const fallback = jest.fn();
-      await run(KIBANA_WORKFLOW_ID, fallback as never, {
+      const onDispatchFailure = jest.fn();
+      await run(KIBANA_WORKFLOW_ID, onDispatchFailure, {
         spaceId: 'other',
         featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
       });
 
-      expect(fallback).not.toHaveBeenCalled();
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       const [execution] = await executionsOf(KIBANA_WORKFLOW_ID);
       expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'other' }));
       expect(kibanaRequests).toHaveLength(1);
@@ -837,10 +858,10 @@ describe('the workflow:scheduled task type served from a bundle', () => {
 
   describe('connector steps', () => {
     it('executes a webhook connector with the actions of the process and logs the execution', async () => {
-      const fallback = jest.fn();
-      await run(CONNECTOR_WORKFLOW_ID, fallback as never);
+      const onDispatchFailure = jest.fn();
+      await run(CONNECTOR_WORKFLOW_ID, onDispatchFailure);
 
-      expect(fallback).not.toHaveBeenCalled();
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       const [execution] = await executionsOf(CONNECTOR_WORKFLOW_ID);
       expect(execution.status).toBe('completed');
       expect(webhookRequests).toEqual(['{"hello":"workflows"}']);
@@ -980,4 +1001,65 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       expect((await executionsOf(PARENT_WORKFLOW_ID))[0].status).toBe('completed');
     });
   });
+
+  it.each(['child_process', 'remote'] as const)(
+    'runs consecutive workflows in a reused worker in %s mode',
+    async (mode) => {
+      const reuse = { idleTimeoutMs: 30_000, maxAgeMs: 300_000, maxRuns: 10, maxIdleProcesses: 1 };
+      const logger = loggingSystemMock.createLogger();
+      const shared = { bundle_dir: bundleDir, kibanaVersion: KIBANA_VERSION, reuse };
+      const init = initFor();
+      const before = (await executionsOf(ES_WORKFLOW_ID)).length;
+      let route: TaskProcessRoute;
+      let snapshot: TaskProcessDispatchSnapshot | undefined;
+      let stop: () => Promise<void>;
+      let getStats: TaskProcessSupervisor['getStats'];
+      if (mode === 'child_process') {
+        const reused = new TaskProcessSupervisor({
+          settings: { ...shared, getElasticsearchConfig: esConfig, getInitFor: () => init },
+          logger,
+        });
+        reused.start();
+        route = reused.getRoute(TASK_TYPE);
+        stop = () => reused.stop();
+        getStats = () => reused.getStats();
+      } else {
+        const worker = startTaskProcessWorker({
+          settings: shared,
+          logger,
+          authToken: 'worker-token',
+          port: 0,
+          host: '127.0.0.1',
+        });
+        await new Promise<void>((resolve) => worker.server.once('listening', resolve));
+        const address = worker.server.address();
+        if (!address || typeof address === 'string') throw new Error('Task worker has no port');
+        route = { url: `http://127.0.0.1:${address.port}`, token: 'worker-token' };
+        snapshot = {
+          protocolVersion: 1,
+          init: {
+            ...init,
+            kibanaVersion: KIBANA_VERSION,
+            elasticsearch: esConfig(),
+          },
+        };
+        stop = worker.stop;
+        getStats = worker.getStats;
+      }
+      try {
+        await run(ES_WORKFLOW_ID, undefined, { route, snapshot });
+        await run(ES_WORKFLOW_ID, undefined, { route, snapshot });
+        const executions = await executionsOf(ES_WORKFLOW_ID);
+        expect(executions).toHaveLength(before + 2);
+        expect(executions.map(({ id, status, error }) => ({ id, status, error }))).toEqual(
+          expect.arrayContaining(
+            executions.map(({ id }) => ({ id, status: 'completed', error: undefined }))
+          )
+        );
+        expect(getStats()).toMatchObject({ spawned: 1, active: 0 });
+      } finally {
+        await stop();
+      }
+    }
+  );
 });

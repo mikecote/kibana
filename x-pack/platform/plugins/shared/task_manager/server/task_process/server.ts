@@ -9,21 +9,28 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
-import { isDeclinedRunError, serializeTaskRunError } from '../task_running/errors';
+import {
+  isDeclinedRunError,
+  serializeTaskRunError,
+  throwUnrecoverableError,
+} from '../task_running/errors';
+import { createRunAsContext } from '../task_running/run_as_context';
 import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
 import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
-import { runInRunContext } from './run_context';
-import type { RunContext, CancellableTask } from '../task';
+import { runFlushers, runInRunContext } from './run_context';
+import type { RunContext, CancellableTask, TaskRunAsDefinition } from '../task';
 
 /** What the server needs of a task definition: a way to create the run's task. */
 export interface TaskProcessTaskDefinition {
   createTaskRunner: (context: RunContext) => CancellableTask;
+  runAs?: TaskRunAsDefinition;
 }
 
 interface InFlight {
   readonly abortController: AbortController;
   readonly task: { cancel?(): Promise<unknown> };
+  readonly finished: Promise<void>;
 }
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -78,6 +85,8 @@ export const startTaskProcessServer = ({
   onListening,
   onShutdown,
   flush,
+  forwardRun,
+  getTaskTypes,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   port: number;
@@ -99,7 +108,13 @@ export const startTaskProcessServer = ({
    * Finishes what the run left to do, such as shipping its analytics events, before the response
    * is sent: Kibana does nothing with a run besides rescheduling it. Bounded by the caller.
    */
-  flush?: () => Promise<void>;
+  flush?: () => Promise<boolean | void>;
+  /** A remote supervisor forwards each run to an isolated execution process. */
+  forwardRun?: (
+    request: TaskProcessRunRequest,
+    context: Pick<RunContext, 'signal' | 'setCustomTaskRunEventFields'>
+  ) => CancellableTask;
+  getTaskTypes?: () => string[];
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
@@ -108,8 +123,13 @@ export const startTaskProcessServer = ({
     body: TaskProcessRunRequest
   ): Promise<TaskProcessRunResponse | undefined> => {
     const definition = taskDefinitions.get(body.taskType);
-    if (!definition) return undefined;
+    if (!definition && !forwardRun) return undefined;
+    if (body.snapshot && !forwardRun) {
+      throw new RefusedRun(409, 'Dispatch snapshots require a task worker supervisor');
+    }
     if (draining) throw new RefusedRun(503, 'task process is shutting down');
+    if (!forwardRun && inFlight.size) throw new RefusedRun(503, 'task process is busy');
+    if (inFlight.has(body.executionUuid)) throw new RefusedRun(409, 'execution is already running');
     if (body.kibanaVersion && body.kibanaVersion !== kibanaVersion) {
       throw new RefusedRun(
         409,
@@ -133,24 +153,54 @@ export const startTaskProcessServer = ({
       userName: body.userName,
     });
 
-    const task = definition.createTaskRunner({
-      taskInstance: reviveTaskInstance(body.taskInstance),
-      fakeRequest,
-      signal: abortController.signal,
-      executionUuid: body.executionUuid,
-      setCustomTaskRunEventFields: (fields: Record<string, unknown>) => customFields.push(fields),
+    let task: CancellableTask | undefined;
+    let finish: () => void = () => {};
+    const finished = new Promise<void>((resolve) => (finish = resolve));
+    inFlight.set(body.executionUuid, {
+      abortController,
+      task: { cancel: async () => task?.cancel?.() },
+      finished,
     });
-    inFlight.set(body.executionUuid, { abortController, task });
+    const flushers: Array<() => Promise<void>> = [];
     let response: TaskProcessRunResponse | undefined;
     let flushed = true;
     try {
-      const { value, error } = await runInRunContext(async () => task.run(), {
-        featureFlags: body.featureFlags,
-      });
+      const { value, error } = await runInRunContext(
+        async () => {
+          if (forwardRun) {
+            task = forwardRun(body, {
+              signal: abortController.signal,
+              setCustomTaskRunEventFields: (fields) => customFields.push(fields),
+            });
+            return task.run();
+          }
+          if (!definition) throw new Error(`Unregistered task type ${body.taskType}`);
+          if (body.runAs && !definition.runAs?.workloadTypes.includes(body.runAs.workloadType)) {
+            throwUnrecoverableError(
+              new Error(
+                `Task type ${body.taskType} does not support workload ${body.runAs.workloadType}`
+              )
+            );
+          }
+          task = definition.createTaskRunner({
+            taskInstance: reviveTaskInstance(body.taskInstance),
+            ...(body.runAs && definition.runAs
+              ? { runAs: createRunAsContext(definition.runAs, body.runAs) }
+              : { fakeRequest }),
+            signal: abortController.signal,
+            executionUuid: body.executionUuid,
+            setCustomTaskRunEventFields: (fields: Record<string, unknown>) =>
+              customFields.push(fields),
+          });
+          return task.run();
+        },
+        { featureFlags: body.featureFlags, flushers }
+      );
       // What the run produced (analytics events, usage) leaves this process before it answers,
       // whether the run returned or threw.
       try {
-        await flush?.();
+        const results = await Promise.all([runFlushers(flushers, logger), flush?.()]);
+        flushed = results.every((result) => result !== false);
       } catch (flushError) {
         flushed = false;
         logger.warn(`Flushing after ${body.taskType} failed: ${(flushError as Error).message}`);
@@ -174,12 +224,14 @@ export const startTaskProcessServer = ({
       return response;
     } finally {
       clearTimeout(deadlineTimer);
-      inFlight.delete(body.executionUuid);
       try {
-        await task.cleanup?.();
+        await task?.cleanup?.();
       } catch (error) {
         if (response) response.reusable = false;
         logger.warn(`Cleanup of ${body.taskType} failed: ${(error as Error).message}`);
+      } finally {
+        inFlight.delete(body.executionUuid);
+        finish();
       }
     }
   };
@@ -190,7 +242,7 @@ export const startTaskProcessServer = ({
         sendJson(res, 200, {
           inFlight: inFlight.size,
           rss: process.memoryUsage().rss,
-          taskTypes: [...taskDefinitions.keys()],
+          taskTypes: getTaskTypes?.() ?? [...taskDefinitions.keys()],
         });
         return;
       }
@@ -227,6 +279,7 @@ export const startTaskProcessServer = ({
         }
         entry.abortController.abort();
         await entry.task.cancel?.();
+        await entry.finished;
         sendJson(res, 200, { outcome: 'cancelled' });
         return;
       }
@@ -249,9 +302,10 @@ export const startTaskProcessServer = ({
 
   // One failing background promise (a late callback after its run ended, say) must not take down
   // every run the process is serving.
-  process.on('unhandledRejection', (reason) => {
+  const onUnhandledRejection = (reason: Error) => {
     logger.error(`unhandled rejection: ${(reason as Error)?.stack ?? String(reason)}`);
-  });
+  };
+  process.on('unhandledRejection', onUnhandledRejection);
 
   // Stop taking runs, let in-flight ones finish (they stop at their own deadline), then exit.
   const shutdown = () => {
@@ -268,6 +322,11 @@ export const startTaskProcessServer = ({
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
+  server.once('close', () => {
+    process.removeListener('unhandledRejection', onUnhandledRejection);
+    process.removeListener('SIGTERM', shutdown);
+    process.removeListener('SIGINT', shutdown);
+  });
 
   const onListen = () => {
     const address = server.address();

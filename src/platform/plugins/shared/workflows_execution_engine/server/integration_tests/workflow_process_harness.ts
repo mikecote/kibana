@@ -32,6 +32,7 @@ import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/s
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
@@ -122,6 +123,8 @@ const startHarness = async (
   const kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
 
   const settings = () => ({
+    inferenceFeatures: { features: [] },
+    contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
     workflowsExecutionEngine: engineConfig,
@@ -354,8 +357,8 @@ const startHarness = async (
   supervisor.start();
   cleanups.push(() => supervisor.stop());
 
-  /** Runs the scheduled task of a workflow in the process; `fallback` is what Kibana runs when it is declined. */
-  const run = (workflowId: string, fallback?: () => never) =>
+  /** Runs the scheduled task of a workflow in the process; `onDispatchFailure` observes dispatch failures. */
+  const run = (workflowId: string, onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']) =>
     new RemoteTaskRunner({
       route: supervisor.getRoute(TASK_TYPE)!,
       request: {
@@ -379,10 +382,11 @@ const startHarness = async (
         userName: 'elastic',
         featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
         kibanaVersion: KIBANA_VERSION,
+        cancelGracePeriodMs: 5000,
       },
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
-      fallback,
+      onDispatchFailure,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 

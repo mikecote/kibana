@@ -54,11 +54,11 @@ describe('agent_builder workflow steps served from the workflow:scheduled bundle
   });
 
   it('runs the rerank step in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(RERANK_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(RERANK_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step type is in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(RERANK_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
@@ -69,10 +69,10 @@ describe('agent_builder workflow steps served from the workflow:scheduled bundle
   });
 
   it('declines a workflow that uses a conversation step, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(CONVERSATION_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(CONVERSATION_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(CONVERSATION_WORKFLOW_ID)).toHaveLength(0);
   });
 });

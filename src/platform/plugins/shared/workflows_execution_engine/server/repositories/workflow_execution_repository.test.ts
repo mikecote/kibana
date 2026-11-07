@@ -1459,6 +1459,84 @@ describe('WorkflowExecutionRepository', () => {
     });
   });
 
+  describe('tryFailPendingWorkflowExecution', () => {
+    const error = { type: 'TaskRecoveryError', message: 'Abandoned pending execution' };
+
+    it('fails only a still-pending execution in the expected space', async () => {
+      workflowExecutionsDataClient.bulk.mockResolvedValue(
+        asBulkResponse({
+          errors: false,
+          items: [{ id: 'execution', index: '.workflows-executions', result: 'updated' }],
+        })
+      );
+      await expect(
+        repository.tryFailPendingWorkflowExecution({
+          executionId: 'execution',
+          spaceId: 'default',
+          error,
+        })
+      ).resolves.toBe(true);
+      const item = workflowExecutionsDataClient.bulk.mock.calls[0][0].items[0];
+      if (!isBulkUpdaterItem(item)) throw new Error('Expected a conditional execution update');
+      expect(
+        item.updater({ status: ExecutionStatus.PENDING, spaceId: 'default' } as never)
+      ).toEqual({
+        status: ExecutionStatus.FAILED,
+        error,
+        finishedAt: expect.any(String),
+      });
+      for (const status of [
+        ExecutionStatus.COMPLETED,
+        ExecutionStatus.RUNNING,
+        ExecutionStatus.CANCELLED,
+        ExecutionStatus.WAITING_FOR_INPUT,
+      ]) {
+        expect(item.updater({ status, spaceId: 'default' } as never)).toBe('noop');
+      }
+      expect(
+        item.updater({ status: ExecutionStatus.PENDING, spaceId: 'another-space' } as never)
+      ).toBe('noop');
+    });
+
+    it('reports that an execution changed before recovery could update it', async () => {
+      workflowExecutionsDataClient.bulk.mockResolvedValue(
+        asBulkResponse({
+          errors: false,
+          items: [{ id: 'execution', index: '.workflows-executions', result: 'noop' }],
+        })
+      );
+      await expect(
+        repository.tryFailPendingWorkflowExecution({
+          executionId: 'execution',
+          spaceId: 'default',
+          error,
+        })
+      ).resolves.toBe(false);
+    });
+
+    it('reports exhausted conflicts so recovery can be retried', async () => {
+      workflowExecutionsDataClient.bulk.mockResolvedValue(
+        asBulkResponse({
+          errors: true,
+          items: [
+            {
+              id: 'execution',
+              index: '.workflows-executions',
+              error: { type: 'version_conflict_engine_exception' },
+            },
+          ],
+        })
+      );
+      await expect(
+        repository.tryFailPendingWorkflowExecution({
+          executionId: 'execution',
+          spaceId: 'default',
+          error,
+        })
+      ).rejects.toThrow('Version conflict');
+    });
+  });
+
   describe('tryCasPromoteQueuedWorkflowExecutionToPending', () => {
     it('returns true when the bulk updater flips queued → pending', async () => {
       workflowExecutionsDataClient.bulk.mockResolvedValue(

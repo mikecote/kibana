@@ -16,9 +16,7 @@ import { getRecordImprovementsStepDefinition } from './record_improvements';
 import { createVerifyKiStepDefinition } from './verify_ki_step';
 
 /**
- * Registers the KI and feedback analysis workflow steps. Kibana and the task process of the workflow
- * task types register them with this function; a process has no `feedbackAnalysis` (see
- * `task_types/workflow_steps_contribution.ts`) and the feedback analysis steps are then not registered.
+ * Registers the KI and feedback analysis workflow steps for Kibana and task processes.
  */
 export const registerStepDefinitions = ({
   workflowsExtensions,

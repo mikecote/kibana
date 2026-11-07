@@ -48,7 +48,8 @@ xpack.task_manager.task_execution:
 
 **`child_process`.** Each run forks the task type's bundle, sends it Kibana's own Elasticsearch
 connection over the fork channel, runs the task in it and stops it when the run ends. If the process
-cannot be started, that run goes to Kibana.
+cannot be started, Task Manager retries process execution according to the task retry policy.
+A process-routed task never runs inside Kibana as a fallback. Required bundles are validated at startup.
 
 ```yaml
 xpack.task_manager.task_execution:
@@ -76,7 +77,7 @@ Omitting `reuse` retains a fresh process per run. Reuse requires rebuilt bundles
 not report successful cleanup and are retired after each run. Changes to startup settings (including
 Elasticsearch credentials and encryption keys) retire incompatible idle children before dispatch.
 Run credentials, feature flags, and task state are supplied for each execution. Cancellation sends
-`SIGKILL` immediately, and failed runs or failed cleanup retire the process. Process memory and module
+`SIGKILL` after the task type's optional cancellation grace period, and failed runs or failed cleanup retire the process. Process memory and module
 state can survive between successful runs; this mode preserves isolation from Kibana but not a clean
 process for every execution. Reused children log `Reusing process <pid> for task <type>` at info.
 
@@ -107,13 +108,16 @@ xpack.task_manager.task_execution:
   resident memory with the same startup time, at about 7% more CPU in allocation-heavy work (4 MB: about 2%).
 - **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
   `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
-  not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
+  retried by Task Manager and counted as a `capacity` dispatch failure. Memory is the reason for the cap; a
   process's memory depends on its task type and settings; the paired measurements below cover startup,
   idle memory and the first real task. Every spawn and exit logs the number of live processes at debug.
 - **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
   stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
-- **Cancellation.** Cancelling a child-process run sends `SIGKILL` immediately, including when its
-  event loop is blocked. The child cannot run cleanup hooks; normal completion still uses `SIGTERM`.
+- **Cancellation.** Task types may declare `cancelGracePeriodMs`. Workflow tasks allow five seconds
+  for the execution to persist cancellation and clean up before forced termination. The cancellation
+  endpoint acknowledges only after the execution finishes. Other task types retain immediate
+  `SIGKILL`; an unresponsive workflow process is killed when its grace period expires. Cancelled
+  processes are always retired. Normal completion uses `SIGTERM` unless reuse is enabled.
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
   `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
   process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the
@@ -121,34 +125,40 @@ xpack.task_manager.task_execution:
   execution id) and `child_logger` (the context inside the process, such as `plugins.alerting`). A line that
   is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
   copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
-- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns the fallbacks by task type
+- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns `dispatchFailures` by task type
   and reason (`declined` for a 422, `not_served` for a 404, `capacity`, `spawn_failed`, `spawn_timeout`,
   `unavailable`) and the supervisor's numbers (`live`, `active`, `max`, `spawned`, `spawnFailures`,
-  `spawnTimeouts`, `capacityRejections`). Fallbacks are also in the `taskManager` usage counter as
-  `taskProcessFallback:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
+  `spawnTimeouts`, `capacityRejections`). Dispatch failures are also in the `taskManager` usage counter as
+  `taskProcessDispatchFailure:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
   response schema is public; that would be its own change.
 
-**`remote`.** Runs go to a task process you start yourself from the same bundle, so it can live on
-another host. It serves the one task type of its bundle and answers 404 for any other, which then
-runs in Kibana.
+**`remote`.** Runs go to an authenticated task worker supervisor. It serves the task types in its
+bundle manifest and starts or reuses an isolated execution process for each dispatch. Both modes use
+the same serialized initialization snapshot, including current connectors, registration ids, encryption
+keys, UI overrides and plugin settings. Credentials and evaluated feature flags belong to each run.
 
 ```yaml
 xpack.task_manager.task_execution:
   mode: remote
   remote:
     url: http://localhost:4100
-    token: secret # the process's TASK_PROCESS_TOKEN, if it has one
+    token: secret # matches the worker's required TASK_PROCESS_TOKEN
 ```
 
-```
-ES_URL=http://localhost:9200 ES_USERNAME=kibana_system ES_PASSWORD=secret PORT=4100 TASK_PROCESS_TOKEN=secret \
-  node target/task_bundles/taskManager__delete_inactive_nodes.mjs
+```sh
+PORT=4100 TASK_PROCESS_TOKEN=secret node scripts/task_worker
 ```
 
-A remote process does not receive Kibana's settings, so it takes `ES_URL`, `ES_API_KEY` or both of
-`ES_USERNAME` and `ES_PASSWORD` (there is no default user), `PORT` and `TASK_PROCESS_TOKEN` from its
-environment. A run for a process that is down is retried shortly. A process built for another Kibana
-version refuses runs.
+The worker reads `TASK_PROCESS_BUNDLE_DIR` (default `target/task_bundles`),
+`TASK_PROCESS_MAX_CONCURRENT` (default `4`), `PORT` (default `5602`) and `HOST` (default `127.0.0.1`).
+Set `TASK_PROCESS_REUSE=true` to retain compatible workers for up to 100 runs, five minutes of age,
+or 30 seconds idle, with at most four idle workers. Off-host deployments terminate TLS in front of
+the authenticated endpoint because dispatch snapshots carry secrets. Elasticsearch credentials and
+Kibana settings come from the dispatch; a static settings file is not needed.
+
+Missing task types and incompatible deployments fail explicitly. Capacity and startup failures remain
+on the process route. Existing standalone bundle endpoints are useful for development, but remote
+mode now targets the supervisor so every dispatch receives its current configuration.
 
 ## What a process is
 
@@ -229,14 +239,12 @@ A plugin that a run depends on exposes a function with explicit dependencies, us
 implementation and no copy to drift. Where something cannot exist in a process it throws a clear
 "only available in Kibana" error when used.
 
-### Declining a run
+### Capability failures
 
-A runner may throw `DeclinedRunError` when it cannot serve this run, such as a rule that uses a
-connector type the process does not know. The process answers `422`, and Kibana runs the task itself,
-as it does for a `404`. Decide before the run has side effects. It is a safety net: the contributions
-below register every connector type Kibana has, and the parity guard below proves it, so it should not
-fire. Kibana logs every fallback with its reason (`TaskProcessFallbackCounter`, which also counts them in
-Task Manager's usage counter as `taskProcessFallback:<reason>:<taskType>`), so a decline can be alarmed on.
+The existing `DeclinedRunError` reports a capability mismatch as `422`. Task Manager treats it and
+an unserved task type (`404`) as an explicit failure without local execution. Process dispatch failures
+are logged and counted by `TaskProcessDispatchFailureCounter`, including the reason returned by the
+process. A capability mismatch is a parity defect to fix before enabling the affected feature.
 
 ### Parity with Kibana
 
@@ -260,14 +268,11 @@ as Kibana does not.
 
 ### Remote processes
 
-A remote process reads the same things from its environment: `ES_URL` with `ES_API_KEY` or
-`ES_USERNAME` and `ES_PASSWORD`, `PORT`, `TASK_PROCESS_TOKEN`, `ESO_ENCRYPTION_KEY` and
-`ESO_DECRYPTION_ONLY_KEYS` (comma separated), `KIBANA_SERVER_UUID`, `KIBANA_BUILD_NUM`,
-`KIBANA_PUBLIC_BASE_URL` (leave it unset when Kibana has none), `KIBANA_BASE_PATH`, `KIBANA_SERVERLESS`,
-`KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a JSON file `{ "settings": { "<pluginId>": <config> },
-"uiSettingsOverrides": {}, "uiSettingsGlobalOverrides": {}, "parity": [{ "kind": "...", "ids": [] }] }` whose
-configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`). A remote
-process is not sent the settings Kibana reads per dispatch, so it skips the parity check unless the file has `parity`.
+The remote supervisor receives the same versioned dispatch snapshot as child-process mode and
+passes initialization secrets to its execution child over IPC. Compatible snapshots permit sequential
+reuse; changed plugin settings, registration ids, UI overrides or credentials retire incompatible idle
+children. Evaluated feature flags and run identities are supplied for each execution. A worker requires
+its bearer token on execution and cancellation requests and validates the dispatch version and deadline.
 
 ## Bundles
 
@@ -448,7 +453,7 @@ reschedule, the task state, the retries). What differs, and why:
 - **In-memory metrics.** The `node_rules` collector reads Kibana's counters, so Kibana counts what its processes
   served from the end of the run (`observeRemoteRun`): a result is an execution, a result with a
   `taskRunError` is also a failure (it is the same condition as the outcome of `TaskRunner`), a run Kibana
-  cancels for its timeout is a timeout and no execution. A run Kibana serves itself (a fallback) counts itself.
+  cancels for its timeout is a timeout and no execution. An intentionally local run counts itself.
 - **Settings Kibana decides.** `settings.alertingRun` carries what alerting learns from the plugins around
   it: whether the maintenance windows plugin is enabled (without it no window applies), the data views'
   `scriptedFieldsEnabled` (off by default in serverless), and the `data.search` config, the Elasticsearch
@@ -508,8 +513,8 @@ records, with Task Manager at debug, so the tests can see where each run happene
 
 | Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
-| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`)                                                                                                                                                                                                                                                                                |
+| `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap retry in a process (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
+| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and the rules fail (`declined`)                                                                                                                                                                                                                                                                                |
 | `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                 |
 
 ```
@@ -587,7 +592,7 @@ flags and event log providers it needs to the module. Rules to follow:
 - Do not register a step that reads a registry other plugins fill in their own `setup()` (cases attachment
   types, the features registry) unless the registry is filled by contributions too, as agent builder's is
   (see below). It would behave differently from Kibana. A workflow that uses a step the process lacks is
-  declined before anything is written, and Kibana runs it.
+  declined before anything is written, and the task fails.
 - `context.registerRunCheck(check)` declines a single step by what it asks for (a connector feature the
   process does not know, a templated value, an input only Kibana can serve).
 - A step that emits events without waiting must flush them before it returns, because the process exits
@@ -609,7 +614,7 @@ the Deductive agent) and returns the registries (`serviceSetups`), the registrat
 registry. The plugin's `setup()` calls it with Kibana's services; the process
 (`task_types/create_agent_builder_process_services.ts`) calls it with the host: the inference services of
 `createInferenceTaskProcessServices` (chat models and clients are built from the connectors, with the run's
-request and credential), the search inference endpoints with agent builder's features and the recommended
+request and credential), the search inference endpoints with Kibana's complete feature snapshot and the recommended
 endpoints Kibana's poller had found (sent as a setting), Core's Elasticsearch, saved objects and ui settings,
 the actions client of the run, the usage counter and analytics of the host, the deployment information Kibana
 sent, and a space taken from the run's request. The start contract plugins read (`getAgentBuilderStart()`) is
@@ -665,7 +670,7 @@ one kind per registry: `agentBuilder.tools`, `.agents`, `.skills`, `.attachmentT
 and the process compares them with what it registered, in both directions: an id Kibana has that the process lacks
 (a plugin that does not contribute yet, a registration the process cannot make) and an id only the process has (a
 plugin that contributes but is disabled in this Kibana). The steps that read the registries are declined, with a
-warning that names the ids, and Kibana runs the workflow; every other step is served as before. This is not
+warning that names the ids, and the task fails; every other step is served as before. This is not
 `TaskTypeModule.parity`, which declines every run of the process: most workflows do not use agents, and they keep
 running in a process while contributions are still being added. The parity is `host.parity`, compared with
 `findMissingParity`. In Kibana today `ai.agent` is still declined, until the plugins listed below as not yet
@@ -677,7 +682,7 @@ the plugins that run workflows read `workflowsManagement.management`. A process 
 workflow steps use (`createWorkflowsReadApi`: `getWorkflow`, `getWorkflowExecution`, `getWorkflowExecutionStatuses`,
 `assertWorkflowAccess`) and the engine's `scheduleWorkflow`: `executeWorkflow` of a saved workflow checks that the
 request may execute it, schedules a `workflow:run` task (it runs under its own task, in a process of its own when
-it can be, or in Kibana) and waits for the execution as the management API does; `runWorkflow` and
+configured by Task Manager) and waits for the execution as the management API does; `runWorkflow` and
 `scheduleWorkflow` schedule. Everything that needs the workflows service of Kibana (creating, updating, listing,
 validating, resuming and cancelling workflows, inline YAML runs, step and trigger definitions) throws "only
 available in Kibana": a tool that needs it registers and fails when called in a process (the contributions say
@@ -750,28 +755,32 @@ registry that has to be fed through the same mechanism), significant_events (its
 indicator, source catalog, run quota, detections and relay services, and the registrations after start above) and
 nightshift_investigations.
 
-### What stays in Kibana
+### Remaining workflow parity gaps
 
-These steps are not registered in a process, so a workflow that uses one runs in Kibana:
+These remaining capability gaps currently fail process execution; they must be completed for full parity:
 
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
-  what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, they are
-  declined. `ai.rerank` and the triggers run.
+  what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
 - **cases:** `cases.addAlerts`, `cases.addEvents`, `cases.addAttachments`, `cases.deleteAttachments` and
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
 - **proposals:** `proposals.createProposal`, `proposals.cloneProposal`.
 - **discoveries:** `security.attack-discovery.persistDiscoveries`, and `run` with a `feature_id`.
-- **context_engine:** `getFeedbackContext`, `recordImprovements`, and any step on Agent Builder's managed
-  index, a templated index id or workflow verifiers.
+- **context_engine:** custom workflow verifiers. Feedback context and improvement recording use the
+  process's global UI settings and scoped services. Managed AI index registrations come from Kibana's
+  dispatch snapshot and use the same bootstrap service, including templated index ids.
 - **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`.
 - **agentic_investigations:** all four steps.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
-- **evals** steps that name a task provider a suite registered in Kibana, and **ai.\*** steps whose
-  `connector-id-by-feature` names a feature the process does not know.
+- **evals** steps that name a task provider a suite registered in Kibana.
+
+Inference features are sent as the `inferenceFeatures` settings snapshot at each dispatch, including parent
+relationships, model policies and the current recommended endpoints. Both AI steps and Agent Builder restore
+that registry, so features registered by other plugins and templated `connector-id-by-feature` values resolve
+as they do in Kibana. A missing or invalid snapshot fails execution explicitly.
 
 The common cause is the registries. Agent builder's have a contribution mechanism now; the plugins above that
 register with it move into processes as they contribute.

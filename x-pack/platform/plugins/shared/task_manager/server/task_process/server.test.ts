@@ -14,9 +14,16 @@ import type { Server } from 'http';
 import { fetch as undiciFetch } from 'undici';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { createRetryableError, DeclinedRunError } from '../task_running/errors';
-import type { CancellableTask } from '../task';
+import type { CancellableTask, RunContext, TaskRunAsDefinition } from '../task';
+import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
 import { startTaskProcessServer } from './server';
 import { RemoteTaskRunner } from './remote_task_runner';
+import { elasticsearchConfigFromEnv } from './es_config';
+import { TaskProcessSupervisor } from './supervisor';
+import { startTaskProcessWorker } from './worker';
+import type { TaskProcessDispatchSnapshot } from './wire';
+import { createHostFeatureFlags, registerRunFlusher } from './run_context';
+import { firstValueFrom } from 'rxjs';
 
 const TYPE = 'test:type';
 const TOKEN = 'secret';
@@ -27,9 +34,11 @@ describe('task process server', () => {
   const cleanup = jest.fn();
   const flush = jest.fn();
   const order: string[] = [];
-  let createTask: () => CancellableTask;
+  let createTask: (context: RunContext) => CancellableTask;
+  let runAsDefinition: TaskRunAsDefinition | undefined;
 
   beforeEach(async () => {
+    runAsDefinition = undefined;
     cleanup.mockReset();
     order.length = 0;
     flush.mockReset().mockImplementation(async () => {
@@ -43,7 +52,17 @@ describe('task process server', () => {
       cleanup,
     });
     server = startTaskProcessServer({
-      taskDefinitions: new Map([[TYPE, { createTaskRunner: () => createTask() }]]),
+      taskDefinitions: new Map([
+        [
+          TYPE,
+          {
+            createTaskRunner: (context) => createTask(context),
+            get runAs() {
+              return runAsDefinition;
+            },
+          },
+        ],
+      ]),
       port: 0,
       logger: loggingSystemMock.createLogger(),
       kibanaVersion: '9.9.9',
@@ -165,7 +184,7 @@ describe('task process server', () => {
     await expect(runner({ token: 'wrong' }).run()).rejects.toThrow(/401/);
   });
 
-  it('refuses a run from another Kibana version so that Kibana retries it', async () => {
+  it('refuses a run from another Kibana version without switching execution modes', async () => {
     await expect(runner({ version: '1.0.0' }).run()).rejects.toThrow(/409/);
   });
 
@@ -173,31 +192,284 @@ describe('task process server', () => {
     await expect(runner({ taskType: 'other:type' }).run()).rejects.toThrow(/404/);
   });
 
-  it('answers 422 for a run the task declines, and Kibana runs it itself', async () => {
+  it('isolates initialization and flushers between consecutive executions', async () => {
+    const flags = createHostFeatureFlags();
+    const flushed: boolean[] = [];
+    createTask = () => {
+      const enabled = firstValueFrom(flags.getBooleanValue$('test.flag', false));
+      registerRunFlusher(async () => {
+        flushed.push(await enabled);
+      });
+      return { run: async () => ({ state: { enabled: await enabled } }) };
+    };
+    const run = async (enabled: boolean) => {
+      const response = await undiciFetch(`${url}/run`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({
+          taskType: TYPE,
+          taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+          executionUuid: `run-${enabled}`,
+          featureFlags: { 'test.flag': enabled },
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        kind: 'result',
+        result: { state: { enabled } },
+        reusable: true,
+      });
+    };
+    await run(true);
+    await run(false);
+    expect(flushed).toEqual([true, false]);
+  });
+
+  it('rejects overlapping executions in the same worker', async () => {
+    let finish: () => void = () => {};
+    let started: () => void = () => {};
+    const ready = new Promise<void>((resolve) => (started = resolve));
+    const blocked = new Promise<void>((resolve) => (finish = resolve));
+    createTask = () => ({
+      run: async () => {
+        started();
+        await blocked;
+        return { state: {} };
+      },
+    });
+    const first = runner().run();
+    await ready;
+    try {
+      await expect(runner().run()).rejects.toThrow('503');
+    } finally {
+      finish();
+      await first;
+    }
+  });
+
+  it('retires a worker when a run flusher fails', async () => {
+    createTask = () => {
+      registerRunFlusher(async () => {
+        throw new Error('metering unavailable');
+      });
+      return { run: async () => ({ state: {} }) };
+    };
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-flusher-fails',
+      }),
+    });
+    expect(await response.json()).toMatchObject({ kind: 'result', reusable: false });
+  });
+
+  it('reconstructs a workload request using the process task definition', async () => {
+    const resolveWorkload = jest.fn();
+    runAsDefinition = {
+      workloadTypes: ['workflow'],
+      withScopedRequest: async (params, fn) => {
+        resolveWorkload(params);
+        const request = buildTaskFakeRequest({
+          apiKey: 'service-account-token',
+          spaceId: params.spaceId,
+        });
+        if (!request) throw new Error('Service account request was not created');
+        return fn(request);
+      },
+    };
+    createTask = ({ runAs, fakeRequest }) => ({
+      run: async () => {
+        expect(fakeRequest).toBeUndefined();
+        if (!runAs) throw new Error('Service account context was not supplied');
+        return runAs.withScopedRequest(async (request) => ({
+          state: {
+            authorization: request.headers.authorization,
+          },
+        }));
+      },
+    });
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        taskType: TYPE,
+        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+        executionUuid: 'run-workload',
+        apiKey: 'must-not-be-used',
+        runAs: {
+          workloadType: 'workflow',
+          workloadId: 'w1',
+          spaceId: 'space1',
+          expectedServiceAccountId: 'sa1',
+        },
+      }),
+    });
+    expect(await response.json()).toMatchObject({
+      kind: 'result',
+      result: {
+        state: {
+          authorization: 'ApiKey service-account-token',
+        },
+      },
+    });
+    expect(resolveWorkload).toHaveBeenCalledWith({
+      workloadType: 'workflow',
+      workloadId: 'w1',
+      spaceId: 'space1',
+      expectedServiceAccountId: 'sa1',
+    });
+  });
+
+  it('returns a capability failure without executing in Kibana', async () => {
     createTask = () => ({
       run: async () => {
         throw new DeclinedRunError('uses a connector the process does not know');
       },
       cleanup,
     });
-    await expect(runner().run()).rejects.toThrow(/422/);
+    await expect(runner().run()).rejects.toThrow('uses a connector the process does not know');
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+});
 
-    const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-    const withFallback = new RemoteTaskRunner({
-      route: { url, token: TOKEN },
-      request: {
-        taskType: TYPE,
-        taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
-        executionUuid: 'run-2',
-        kibanaVersion: '9.9.9',
-      },
-      timeoutMs: 5000,
-      setCustomTaskRunEventFields: jest.fn(),
-      fetchFn: undiciFetch as unknown as typeof fetch,
-      fallback,
+const VERSION = '9.9.9';
+
+const listen = async (server: Server): Promise<string> => {
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Worker has no port');
+  return `http://127.0.0.1:${address.port}`;
+};
+
+describe('remote task worker', () => {
+  let child: Server;
+  let worker: ReturnType<typeof startTaskProcessWorker>;
+  let url: string;
+  const release = jest.fn();
+  const acquire = jest.fn();
+  const getTaskTypes = () => [TYPE];
+
+  const snapshot = (enabled: boolean): TaskProcessDispatchSnapshot => ({
+    protocolVersion: 1,
+    init: {
+      kibanaVersion: VERSION,
+      elasticsearch: elasticsearchConfigFromEnv({
+        ES_URL: 'http://localhost:9200',
+        ES_USERNAME: 'test',
+        ES_PASSWORD: 'secret',
+      }),
+      settings: { plugin: { enabled } },
+      parity: [{ kind: 'workflowSteps', ids: ['test.step'] }],
+    },
+    featureFlags: { 'test.flag': enabled },
+  });
+
+  beforeEach(async () => {
+    jest.spyOn(TaskProcessSupervisor.prototype, 'start').mockImplementation(() => {});
+    jest.spyOn(TaskProcessSupervisor.prototype, 'getTaskTypes').mockImplementation(getTaskTypes);
+    jest.spyOn(TaskProcessSupervisor.prototype, 'getRoute').mockReturnValue({ acquire });
+    jest.spyOn(TaskProcessSupervisor.prototype, 'stop').mockResolvedValue();
+    release.mockReset();
+    acquire.mockReset();
+    const flags = createHostFeatureFlags();
+    child = startTaskProcessServer({
+      taskDefinitions: new Map([
+        [
+          TYPE,
+          {
+            createTaskRunner: ({ fakeRequest, setCustomTaskRunEventFields }) => ({
+              run: async () => {
+                setCustomTaskRunEventFields({ remote: 'preserved' });
+                return {
+                  state: {
+                    enabled: await firstValueFrom(flags.getBooleanValue$('test.flag', false)),
+                    authorization: fakeRequest?.headers.authorization,
+                  },
+                };
+              },
+            }),
+          },
+        ],
+      ]),
+      port: 0,
+      host: '127.0.0.1',
+      logger: loggingSystemMock.createLogger(),
+      kibanaVersion: VERSION,
+      authToken: 'child-token',
     });
-    await expect(withFallback.run()).resolves.toEqual({ state: { local: true } });
-    expect(fallback).toHaveBeenCalledTimes(1);
-    expect(cleanup).toHaveBeenCalled();
+    acquire.mockResolvedValue({ url: await listen(child), token: 'child-token', release });
+    worker = startTaskProcessWorker({
+      settings: { bundle_dir: '/unused', kibanaVersion: VERSION },
+      logger: loggingSystemMock.createLogger(),
+      authToken: TOKEN,
+      port: 0,
+      host: '127.0.0.1',
+    });
+    url = await listen(worker.server);
+  });
+
+  afterEach(async () => {
+    await worker.stop();
+    child.closeAllConnections();
+    await new Promise<void>((resolve) => child.close(() => resolve()));
+    jest.restoreAllMocks();
+  });
+
+  it('forwards the current snapshot, credentials, results and custom event fields', async () => {
+    for (const enabled of [true, false]) {
+      const current = snapshot(enabled);
+      const setFields = jest.fn();
+      const runner = new RemoteTaskRunner({
+        route: { url, token: TOKEN },
+        request: {
+          taskType: TYPE,
+          taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+          executionUuid: `run-${enabled}`,
+          kibanaVersion: VERSION,
+          apiKey: `key-${enabled}`,
+          spaceId: `space-${enabled}`,
+          snapshot: current,
+        },
+        timeoutMs: 10_000,
+        setCustomTaskRunEventFields: setFields,
+        fetchFn: fetch,
+      });
+      await expect(runner.run()).resolves.toEqual({
+        state: {
+          enabled,
+          authorization: `ApiKey key-${enabled}`,
+        },
+      });
+      expect(acquire).toHaveBeenLastCalledWith({
+        executionUuid: `run-${enabled}`,
+        snapshot: current,
+      });
+      expect(release).toHaveBeenLastCalledWith({ reusable: true });
+      expect(setFields).toHaveBeenCalledWith({ remote: 'preserved' });
+    }
+  });
+
+  it('rejects requests without a snapshot before acquiring an execution process', async () => {
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ taskType: TYPE, taskInstance: {}, executionUuid: 'missing' }),
+    });
+    expect(await response.json()).toMatchObject({ kind: 'thrown' });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it('requires the worker token before reading the dispatch credentials', async () => {
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer wrong' },
+      body: JSON.stringify({ snapshot: snapshot(true) }),
+    });
+    expect(response.status).toBe(401);
+    await response.body?.cancel();
+    expect(acquire).not.toHaveBeenCalled();
   });
 });

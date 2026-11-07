@@ -169,12 +169,12 @@ describe('agent builder tools of the hard tier served from the workflow:schedule
   });
 
   it('lists the ILM policies and inspects the streams with the tools of streams, with the clients of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llm.requests.length;
-    await harness.run(STREAMS_WORKFLOW_ID, fallback as never);
+    await harness.run(STREAMS_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the registries of the process are what Kibana's are.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(STREAMS_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const agent = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'agent')!;
@@ -188,11 +188,11 @@ describe('agent builder tools of the hard tier served from the workflow:schedule
   });
 
   it('lists the evaluation datasets with the evals skill, with the services of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llm.requests.length;
-    await harness.run(EVALS_WORKFLOW_ID, fallback as never);
+    await harness.run(EVALS_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(EVALS_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const agent = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'agent')!;

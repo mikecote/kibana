@@ -10,15 +10,21 @@ import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_p
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { WorkflowsManagementOperationPrivileges } from '@kbn/workflows';
-import { AiIndexService } from '../ai_indices/service';
+import { createContextEngineRunServices } from '../run_services/create_context_engine_run_services';
+import { CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID } from '../../common/constants';
 import { registerStepDefinitions } from '../step_types';
 import { createVerifyKi } from '../step_types/verify_ki';
 import { ContextEngineAnalyticsService } from '../telemetry';
 import { contextEngineServerEbtEvents } from '../telemetry/events';
 import { createPrivilegeChecks } from '../utils/create_privilege_checks';
 import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
-import { contextEngineSpaceUiSettings } from '../ui_settings';
+import { contextEngineGlobalUiSettings, contextEngineSpaceUiSettings } from '../ui_settings';
 import { checkContextEngineStep } from './context_engine_workflow_run_checks';
+import {
+  CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID,
+  createTaskProcessAiIndexRegistry,
+  type ContextEngineManagedIndicesSettings,
+} from './task_process_settings';
 
 /**
  * The Context Engine steps in the task process of the workflow task types. Listed under
@@ -29,24 +35,20 @@ import { checkContextEngineStep } from './context_engine_workflow_run_checks';
  * privilege checks of the security task plugin. The plugin has no config and cannot be disabled, so
  * there are no settings to wait for.
  *
- * Served in a process: `context-engine.createKi`, `updateKi`, `deleteKi` and `verifyKi`.
+ * The KI and feedback steps use the same services and space/global settings as Kibana.
  *
- * Not registered (a workflow that uses one is declined and Kibana runs it):
- * - `context-engine.getFeedbackContext` and `context-engine.recordImprovements`: they read the
- *   global `contextEngine:feedbackLoop` advanced setting, and a task process has no global ui settings.
- *
- * Declined by a check of the run (`checkContextEngineStep`): a step that names the AI index Agent
- * Builder registers or a templated one (the managed AI indices are in a registry that other plugins
- * populate in `setup()`), and a step with custom verifier workflows (they need the workflows
- * management API to run and cancel them).
+ * Managed AI indices are restored from Kibana's dispatch snapshot. Custom verifier workflows still
+ * require the workflow management API to run and cancel them.
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
     uiSettings: [contextEngineSpaceUiSettings],
+    globalUiSettings: [contextEngineGlobalUiSettings],
+    settings: [CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID],
     // The events of the analytics service; the process ships them itself.
     analyticsEventTypes: contextEngineServerEbtEvents,
   },
-  register: (registry, { host, logger, registerRunCheck }) => {
+  register: (registry, { host, logger, registerRunCheck, settings }) => {
     const { elasticsearch, savedObjects, uiSettings, security, analytics, plugins } =
       host as TaskHost;
     const securityPlugin = plugins?.security as SecurityTaskPluginStart | undefined;
@@ -61,11 +63,20 @@ export const contribution: WorkflowStepsContribution = {
       logger.get('context_engine', 'telemetry')
     );
 
-    // No registry of managed AI indices: `checkContextEngineStep` declines the steps that need it.
-    const aiIndexService = new AiIndexService({
+    const runServices = createContextEngineRunServices({
       esClient: elasticsearch.asInternalUser,
       logger: aiIndexLogger,
+      savedObjects,
+      uiSettings,
+      audit: security.audit,
+      getSpaceId: (request) => (request as { spaceId?: string }).spaceId ?? 'default',
+      managedAiIndices: createTaskProcessAiIndexRegistry(
+        settings[CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID] as
+          | ContextEngineManagedIndicesSettings
+          | undefined
+      ),
     });
+    const { aiIndexService } = runServices;
     const { checkApiPrivileges, checkWritePrivilege } = createPrivilegeChecks({
       getAuthz: async () => securityPlugin.authz as never,
     });
@@ -75,6 +86,10 @@ export const contribution: WorkflowStepsContribution = {
         uiSettings: uiSettings as never,
         spaceId,
       });
+    const isFeedbackLoopEnabled = async () =>
+      (await uiSettings
+        .globalAsScopedToClient(savedObjects.createInternalRepository())
+        .get<boolean>(CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID)) ?? false;
     const verifyKi = createVerifyKi({
       getAuditLogger: async (request) => security.audit.asScoped(request),
       // Custom verifier workflows are declined by `checkContextEngineStep`.
@@ -96,6 +111,15 @@ export const contribution: WorkflowStepsContribution = {
       isContextEngineEnabled,
       checkWritePrivilege,
       verifyKi,
+      feedbackAnalysis: {
+        getAiIndexService: () => aiIndexService,
+        getImprovementsService: runServices.getImprovementsService,
+        getAuditLogger: async (request) => security.audit.asScoped(request),
+        isContextEngineEnabled,
+        isFeedbackLoopEnabled,
+        checkWritePrivilege,
+        logger: logger.get('feedback_analysis'),
+      },
     });
   },
 };

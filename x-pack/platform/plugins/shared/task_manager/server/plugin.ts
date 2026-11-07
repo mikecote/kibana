@@ -37,7 +37,8 @@ import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
 import { serializeSettings } from './task_process/settings';
-import { TaskProcessFallbackCounter } from './task_process/fallback_counter';
+import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
+import { TaskProcessAcquireError } from './task_process/acquire_error';
 import type { TaskProcessInit } from './task_process/wire';
 import { taskType as deleteInactiveNodesTaskType } from './task_types/delete_inactive_nodes.task';
 import { taskType as markRemovedTasksTaskType } from './task_types/mark_removed_tasks_as_unrecognized.task';
@@ -124,7 +125,7 @@ export interface TaskManagerSetupContract {
 
 export interface TaskProcessStats {
   mode: 'in_process' | 'child_process' | 'remote';
-  fallbacks: ReturnType<TaskProcessFallbackCounter['getCounts']>;
+  dispatchFailures: ReturnType<TaskProcessDispatchFailureCounter['getCounts']>;
   /** Only in `child_process` mode. */
   processes?: TaskProcessSupervisorStats;
 }
@@ -145,9 +146,8 @@ export type TaskManagerStartContract = Pick<
   } & {
     getRegisteredTypes: () => string[];
     /**
-     * What task processes have done since Kibana started: the runs Kibana ran itself because a
-     * process could not (by task type and reason), and the processes started now. The same
-     * fallbacks are counted in the `taskManager` usage counter as `taskProcessFallback:<reason>:<type>`.
+     * Process dispatch failures since Kibana started, by task type and reason, and the
+     * processes started now. The failures are counted in the `taskManager` usage counter as `taskProcessDispatchFailure:<reason>:<type>`.
      */
     getTaskProcessStats: () => TaskProcessStats;
     registerEncryptedSavedObjectsClient: (
@@ -213,8 +213,8 @@ export class TaskManagerPlugin
   ) => Promise<
     Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'> | undefined
   >;
-  /** The runs Kibana ran itself because their task process could not. */
-  private readonly taskProcessFallbacks: TaskProcessFallbackCounter;
+  /** Process dispatch failures since this Kibana instance started. */
+  private readonly taskProcessDispatchFailures: TaskProcessDispatchFailureCounter;
   private publicBaseUrl?: string;
   private getKibanaAddress?: () => string | undefined;
   private serverBasePath?: string;
@@ -234,7 +234,7 @@ export class TaskManagerPlugin
   constructor(private readonly initContext: PluginInitializerContext) {
     this.initContext = initContext;
     this.logger = initContext.logger.get();
-    this.taskProcessFallbacks = new TaskProcessFallbackCounter(this.logger);
+    this.taskProcessDispatchFailures = new TaskProcessDispatchFailureCounter(this.logger);
     this.config = initContext.config.get<TaskManagerConfig>();
     this.definitions = new TaskTypeDictionary(this.logger);
     this.kibanaVersion = initContext.env.packageInfo.version;
@@ -440,10 +440,10 @@ export class TaskManagerPlugin
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
         kibanaVersion: this.kibanaVersion,
-        onFallback: (taskType, reason, detail) => {
-          this.taskProcessFallbacks.increment(taskType, reason, detail);
+        onDispatchFailure: (taskType, reason, detail) => {
+          this.taskProcessDispatchFailures.increment(taskType, reason, detail);
           this.usageCounter?.incrementCounter({
-            counterName: `taskProcessFallback:${reason}:${taskType}`,
+            counterName: `taskProcessDispatchFailure:${reason}:${taskType}`,
             counterType: 'count',
           });
         },
@@ -469,11 +469,31 @@ export class TaskManagerPlugin
           );
           return Object.fromEntries(values);
         },
+        getSnapshot: async (taskType) => ({
+          protocolVersion: 1,
+          init: {
+            ...(await this.getTaskProcessInit?.(taskType)),
+            elasticsearch: serializeElasticsearchConfig(this.elasticsearchConfig!),
+            kibanaVersion: this.kibanaVersion,
+          },
+          featureFlags: await this.taskProcessDispatch?.getFeatureFlags?.(taskType),
+        }),
+        getCancelGracePeriodMs: (taskType) =>
+          this.moduleRegistrations.get(taskType)?.module.cancelGracePeriodMs,
         getRoute: (taskType) => {
           if (!this.moduleTaskTypes.has(taskType)) return undefined;
-          return mode === 'remote'
-            ? { url: remote!.url.replace(/\/$/, ''), token: remote!.token }
-            : this.taskProcessSupervisor?.getRoute(taskType);
+          if (mode === 'remote') {
+            return { url: remote!.url.replace(/\/$/, ''), token: remote!.token };
+          }
+          if (this.taskProcessSupervisor) return this.taskProcessSupervisor.getRoute(taskType);
+          return {
+            acquire: async () => {
+              throw new TaskProcessAcquireError(
+                'unavailable',
+                'Task process supervisor is unavailable'
+              );
+            },
+          };
         },
       };
     }
@@ -809,7 +829,7 @@ export class TaskManagerPlugin
       getRegisteredTypes: () => this.definitions.getAllTypes(),
       getTaskProcessStats: () => ({
         mode: this.config.task_execution?.mode ?? 'in_process',
-        fallbacks: this.taskProcessFallbacks.getCounts(),
+        dispatchFailures: this.taskProcessDispatchFailures.getCounts(),
         processes: this.taskProcessSupervisor?.getStats(),
       }),
       bulkUpdateState: (...args) => taskScheduling.bulkUpdateState(...args),
@@ -832,8 +852,7 @@ export class TaskManagerPlugin
 
   /**
    * In `child_process` mode, lets task types with a bundle run in a process Kibana starts for each
-   * run, with Kibana's own Elasticsearch connection. Without it Kibana runs every task itself,
-   * which is always correct.
+   * run, with Kibana's own Elasticsearch connection.
    */
   private startTaskProcessSupervisor() {
     const {
@@ -871,10 +890,11 @@ export class TaskManagerPlugin
         },
         logger: this.logger,
       });
-      this.taskProcessSupervisor.start();
+      this.taskProcessSupervisor.start([...this.moduleTaskTypes]);
     } catch (error) {
       this.taskProcessSupervisor = undefined;
       this.logger.error(`Task processes could not start: ${error.message}`);
+      throw error;
     }
   }
 

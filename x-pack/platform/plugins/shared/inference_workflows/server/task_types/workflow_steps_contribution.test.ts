@@ -38,7 +38,7 @@ describe('inference_workflows workflow-steps contribution', () => {
       logger: loggerMock.create(),
       isServerless: false,
       kibanaVersion: '1.0.0',
-      settings: {},
+      settings: { inferenceFeatures: { features: [] } },
       services: {
         executionDataClients: {
           createWorkflowDataClient: jest.fn(),

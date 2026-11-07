@@ -14,9 +14,14 @@ import { loggerMock } from '@kbn/logging-mocks';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import { startWorkflowProcessHarness } from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
 import { AiIndexService } from '../../ai_indices/service';
+import { installImprovementsIndexTemplate } from '../../improvements/storage';
+import { IMPROVEMENTS_INDEX } from '../../../common/http_api/improvements';
+import { CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID } from '../../../common/constants';
 
 const CREATE_WORKFLOW_ID = 'create-ki-workflow';
 const FEEDBACK_WORKFLOW_ID = 'feedback-context-workflow';
+const MANAGED_WORKFLOW_ID = 'managed-feedback-workflow';
+const MANAGED_AI_INDEX_ID = 'managed-ai-index';
 const AI_INDEX_ID = 'my-ai-index';
 const KI_INDEX = 'ai-index-idx-my-ki-index';
 
@@ -24,15 +29,41 @@ const KI_INDEX = 'ai-index-idx-my-ki-index';
  * Runs `workflow:scheduled` workflows with Context Engine steps from the real bundle in a real task
  * process: the steps come from the `workflow-steps` contribution of the plugin, which reads the
  * space's `contextEngine:enabled` setting, checks the write privilege of the run's user and writes
- * the knowledge indicator with the AI index service Kibana builds. A step that needs the global
- * feedback loop setting is declined.
+ * the knowledge indicator with the AI index service Kibana builds, then read feedback and record
+ * an improvement under the same global feedback-loop setting as Kibana.
  */
 describe('context engine workflow steps served from the workflow:scheduled bundle', () => {
   let harness: Awaited<ReturnType<typeof startWorkflowProcessHarness>>;
 
   beforeAll(async () => {
     harness = await startWorkflowProcessHarness({
+      settings: {
+        contextEngineManagedAiIndices: {
+          registrations: [
+            {
+              id: MANAGED_AI_INDEX_ID,
+              properties: {
+                dest: { type: 'index', value: KI_INDEX },
+                automations: [],
+                sources: [],
+                traces: [],
+              },
+            },
+          ],
+        },
+      },
       workflows: {
+        [MANAGED_WORKFLOW_ID]: {
+          steps: [
+            {
+              name: 'feedback',
+              type: 'context-engine.getFeedbackContext',
+              with: {
+                ai_index_id: `{{ '${MANAGED_AI_INDEX_ID}' }}`,
+              },
+            },
+          ],
+        },
         [CREATE_WORKFLOW_ID]: {
           steps: [
             {
@@ -52,10 +83,34 @@ describe('context engine workflow steps served from the workflow:scheduled bundl
               type: 'context-engine.getFeedbackContext',
               with: { ai_index_id: AI_INDEX_ID },
             },
+            {
+              name: 'record',
+              type: 'context-engine.recordImprovements',
+              with: {
+                ai_index_id: AI_INDEX_ID,
+                agent_run_id: '{{ execution.id }}',
+                signal_window: { from: '2026-01-01T00:00:00Z', to: '2026-01-02T00:00:00Z' },
+                signal_spaces: ['default'],
+                improvements: [
+                  {
+                    action: 'add_ki',
+                    title: 'Explain failed logins',
+                    rationale: 'Include the recovery procedure',
+                    target: { subject: 'failed-logins' },
+                    payload: { ki: { type: 'document', title: 'Recovery procedure' } },
+                    signal_ids: ['trace-1:span-1'],
+                  },
+                ],
+              },
+            },
           ],
         },
       },
       seed: async ({ es, host }) => {
+        await installImprovementsIndexTemplate({
+          esClient: es as never,
+          logger: loggerMock.create(),
+        });
         // The AI index Kibana would have stored, over a plain index: the ones Kibana creates map
         // ELSER `semantic_text` fields, and the model is not deployed on the test cluster. Elasticsearch
         // ships an index template for `ai-index-*` that adds them to any index of that name, and the
@@ -84,6 +139,13 @@ describe('context engine workflow steps served from the workflow:scheduled bundl
             { 'contextEngine:enabled': true, buildNum: 1 },
             { id: kibanaPackageJson.version, overwrite: true }
           );
+        await host.savedObjects
+          .getUnsafeInternalClient()
+          .create(
+            'config-global',
+            { [CONTEXT_ENGINE_FEEDBACK_LOOP_ENABLED_SETTING_ID]: true, buildNum: 1 },
+            { id: kibanaPackageJson.version, overwrite: true }
+          );
       },
     });
   });
@@ -93,11 +155,11 @@ describe('context engine workflow steps served from the workflow:scheduled bundl
   });
 
   it('writes the knowledge indicator in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(CREATE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(CREATE_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step types are in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(CREATE_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -121,11 +183,55 @@ describe('context engine workflow steps served from the workflow:scheduled bundl
     );
   });
 
-  it('declines a workflow that reads the feedback context, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(FEEDBACK_WORKFLOW_ID, fallback as never);
+  it('reads feedback context and writes improvements in the process', async () => {
+    const onDispatchFailure = jest.fn();
+    await harness.run(FEEDBACK_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).toHaveBeenCalledTimes(1);
-    expect(await harness.executionsOf(FEEDBACK_WORKFLOW_ID)).toHaveLength(0);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
+    const [execution] = await harness.executionsOf(FEEDBACK_WORKFLOW_ID);
+    expect(execution.error).toBeUndefined();
+    expect(execution.status).toBe('completed');
+    const steps = await harness.stepsOf(execution.id);
+    expect(steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stepId: 'feedback',
+          status: 'completed',
+          output: expect.objectContaining({ has_signals: false }),
+        }),
+        expect.objectContaining({
+          stepId: 'record',
+          status: 'completed',
+          output: expect.objectContaining({ skipped: [] }),
+        }),
+      ])
+    );
+    await harness.es.indices.refresh({ index: IMPROVEMENTS_INDEX });
+    const { hits } = await harness.es.search({ index: IMPROVEMENTS_INDEX });
+    expect(hits.hits).toHaveLength(1);
+    expect(hits.hits[0]._source).toEqual(
+      expect.objectContaining({
+        ai_index_id: AI_INDEX_ID,
+        space: 'default',
+        title: 'Explain failed logins',
+        provenance: expect.objectContaining({ agent_run_id: execution.id }),
+      })
+    );
+  });
+
+  it('bootstraps a managed AI index from the dispatch registry when its id is templated', async () => {
+    const onDispatchFailure = jest.fn();
+    await harness.run(MANAGED_WORKFLOW_ID, onDispatchFailure);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
+    const [execution] = await harness.executionsOf(MANAGED_WORKFLOW_ID);
+    expect(execution.error).toBeUndefined();
+    expect(execution.status).toBe('completed');
+    const index = await new AiIndexService({
+      esClient: harness.es as never,
+      logger: loggerMock.create(),
+    }).get(MANAGED_AI_INDEX_ID, 'default');
+    expect(index).toEqual(
+      expect.objectContaining({ managed: true, dest: { type: 'index', value: KI_INDEX } })
+    );
   });
 });

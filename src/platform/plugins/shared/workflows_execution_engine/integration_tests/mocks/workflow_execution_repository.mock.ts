@@ -124,6 +124,26 @@ export class WorkflowExecutionRepositoryMock implements Required<WorkflowExecuti
     return Promise.resolve();
   }
 
+  public async tryFailPendingWorkflowExecution(
+    params: Parameters<WorkflowExecutionRepositoryType['tryFailPendingWorkflowExecution']>[0]
+  ): Promise<boolean> {
+    const current = this.workflowExecutions.get(params.executionId);
+    if (
+      !current ||
+      current.spaceId !== params.spaceId ||
+      current.status !== ExecutionStatus.PENDING
+    ) {
+      return false;
+    }
+    await this.updateWorkflowExecution({
+      id: params.executionId,
+      status: ExecutionStatus.FAILED,
+      error: params.error,
+      finishedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+
   public async searchWorkflowExecutions(
     query: Record<string, unknown>,
     size: number = 10

@@ -21,6 +21,7 @@ describe('toTaskDefinition', () => {
         type: 'test:one',
         title: 'One',
         timeout: '1m',
+        cancelGracePeriodMs: 5000,
         savedObjectTypes: [],
         createTaskRunner: () => ({ run: async () => undefined }),
       }),

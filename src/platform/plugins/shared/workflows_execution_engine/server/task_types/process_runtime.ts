@@ -21,11 +21,15 @@ import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { kibanaPackageJson } from '@kbn/repo-info';
+import { registerRunFlusher } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { UsageReportingService } from '@kbn/usage-api-plugin/server/usage_reporting';
 import type { UsageReportingConfig } from '@kbn/usage-api-plugin/server/usage_reporting';
 import { SystemConnectorsMap } from '@kbn/workflows';
-import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
+import {
+  createEventChainContextStore,
+  createServerStepRegistry,
+} from '@kbn/workflows-extensions/server';
 import type {
   WorkflowStepRunCheck,
   WorkflowStepsContribution,
@@ -47,6 +51,8 @@ import type { WorkflowMeteringCloud } from '../metering';
 import { WorkflowsMeteringService } from '../metering/metering_service';
 import { createDataStreamDataClients } from '../repositories/data_access_layer/implementations/data_stream/data_stream_data_client_bundle';
 import { createPlainIndexDataClients } from '../repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
+import { ExecutionIdentityContexts } from '../service_account_execution';
+import { HitlLifecycleAuditRegistry } from '../step/wait_for_input_step/hitl_lifecycle_auditor';
 import type { WorkflowsEngineTaskPluginStart } from '../task_plugin';
 import type { WorkflowCoreStart, WorkflowDataStreamsAdapter } from '../workflow_core_services';
 
@@ -71,8 +77,15 @@ const noServiceAccounts = (): SecurityServiceStart['serviceAccounts'] =>
  * streams): Kibana did that before it dispatched the run.
  */
 export const createWorkflowRuntimeFromHost = async (
-  host: TaskHost
+  taskHost: TaskHost
 ): Promise<{ runtime: WorkflowRuntime; stop: () => void }> => {
+  const host: TaskHost = {
+    ...taskHost,
+    // These services belong to one workflow execution; Core's hooks survive worker reuse.
+    onRunEnd: (flusher) => {
+      if (!registerRunFlusher(flusher)) taskHost.onRunEnd?.(flusher);
+    },
+  };
   const settings = host.settings ?? {};
   const config = settings[WORKFLOWS_ENGINE_SETTINGS_ID] as WorkflowsExecutionEngineConfig;
   const actionsConfig = settings.actions as ActionsConfig;
@@ -243,6 +256,12 @@ export const createWorkflowRuntimeFromHost = async (
   }
 
   const runtime = createWorkflowRuntime({
+    state: {
+      identityContexts: new ExecutionIdentityContexts(),
+      // HTTP steps and plugin helpers read this request-local symbol too.
+      eventChainContext: createEventChainContextStore(),
+      hitlLifecycle: new HitlLifecycleAuditRegistry(),
+    },
     logger,
     config,
     elasticsearch: { client: host.elasticsearch },

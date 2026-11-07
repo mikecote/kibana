@@ -222,11 +222,11 @@ describe('ai.agent served from the workflow:scheduled bundle', () => {
   });
 
   it('runs the agent in the process with a platform tool that reads Elasticsearch', async () => {
-    const fallback = jest.fn();
-    await harness.run(AGENT_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(AGENT_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the registries of the process are what Kibana's are.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(AGENT_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
@@ -266,10 +266,10 @@ describe('ai.agent served from the workflow:scheduled bundle', () => {
   });
 
   it('runs a conversation step, which reads the agents registry, in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(CONVERSATION_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(CONVERSATION_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(CONVERSATION_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
   });

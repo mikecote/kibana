@@ -5,12 +5,12 @@
  * 2.0.
  */
 
-import { TaskProcessFallbackCounter } from './fallback_counter';
+import { TaskProcessDispatchFailureCounter } from './dispatch_failure_counter';
 
-describe('TaskProcessFallbackCounter', () => {
-  it('counts the fallbacks by task type and reason, and warns with the reason', () => {
+describe('TaskProcessDispatchFailureCounter', () => {
+  it('counts dispatch failures by task type and reason, and warns with the reason', () => {
     const logger = { warn: jest.fn() };
-    const counter = new TaskProcessFallbackCounter(logger);
+    const counter = new TaskProcessDispatchFailureCounter(logger);
     counter.increment('alerting:a', 'declined', 'lacks .new');
     counter.increment('alerting:a', 'declined');
     counter.increment('alerting:a', 'unavailable');

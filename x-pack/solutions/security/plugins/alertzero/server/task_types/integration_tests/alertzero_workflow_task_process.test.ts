@@ -68,11 +68,11 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
   });
 
   it('reads the headroom with the aggregation of the host and the Kibana API of the run', async () => {
-    const fallback = jest.fn();
-    await harness.run(HEADROOM_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(HEADROOM_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step types are in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(HEADROOM_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -90,10 +90,10 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
   });
 
   it('answers the outcome step from what Kibana sent: telemetry is opted out, so it skips', async () => {
-    const fallback = jest.fn();
-    await harness.run(REPORT_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(REPORT_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(REPORT_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const [step] = await harness.stepsOf(execution.id);
@@ -101,10 +101,10 @@ describe('alertzero workflow steps served from the workflow:scheduled bundle', (
   });
 
   it('declines a workflow that packages a hunt report, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(PACKAGE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(PACKAGE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(PACKAGE_WORKFLOW_ID)).toHaveLength(0);
   });
 });

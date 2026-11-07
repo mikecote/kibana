@@ -45,21 +45,18 @@ export interface WorkflowsEngineHostPlugin {
 // The connectors and their task params, and `alert`, which the actions client reads rule actions from.
 const ACTION_SAVED_OBJECT_TYPES = new Set(['action', 'action_task_params', 'alert']);
 
-let processRuntime: Promise<{ runtime: WorkflowRuntime; stop: () => void }> | undefined;
+const getPluginRuntime = (host: TaskHost): WorkflowRuntime | undefined =>
+  (host.plugins?.[WORKFLOWS_ENGINE_PLUGIN_ID] as WorkflowsEngineHostPlugin | undefined)?.runtime;
 
-/**
- * The runtime a run uses: the plugin's in Kibana, built once per process from the host in a task
- * process (a process serves one run, so what it builds is released with it).
- */
-const getRuntime = async (host: TaskHost): Promise<WorkflowRuntime> => {
-  const plugin = host.plugins?.[WORKFLOWS_ENGINE_PLUGIN_ID] as
-    | WorkflowsEngineHostPlugin
-    | undefined;
-  if (plugin?.runtime) return plugin.runtime;
+/** Resolves the plugin runtime or creates the services of one process execution. */
+const getRuntime = async (
+  host: TaskHost
+): Promise<{ runtime: WorkflowRuntime; stop?: () => void }> => {
+  const runtime = getPluginRuntime(host);
+  if (runtime) return { runtime };
   // Loaded here so that Kibana, which never gets here, does not load it.
   const { createWorkflowRuntimeFromHost } = await import('./process_runtime');
-  processRuntime ??= createWorkflowRuntimeFromHost(host);
-  return (await processRuntime).runtime;
+  return createWorkflowRuntimeFromHost(host);
 };
 
 /**
@@ -116,6 +113,7 @@ export const defineWorkflowTaskType = (
   ];
   const taskType = defineTaskType({
     ...definition,
+    cancelGracePeriodMs: 5000,
     // Reads and schedules the `workflow:*` tasks (and the `actions:*` tasks that run connectors).
     taskManager: { schedulableTypes: [/^workflow:/, /^actions:/] },
     licensing: true,
@@ -194,12 +192,36 @@ export const defineWorkflowTaskType = (
       createWorkflowsEngineTaskPlugin(kibanaPackageJson.version),
     ],
     createTaskRunner: (context, host) => {
-      const runner = getRuntime(host).then((runtime) => pick(runtime)(context));
+      let services: ReturnType<typeof getRuntime> | undefined;
+      const pluginRuntime = getPluginRuntime(host);
+      const pluginRunner = pluginRuntime ? pick(pluginRuntime)(context) : undefined;
+      let processRunner: Promise<ReturnType<WorkflowTaskFunction>> | undefined;
+      const getProcessRunner = () =>
+        (processRunner ??= (async () => {
+          services = getRuntime(host);
+          const { runtime } = await services;
+          context.signal.throwIfAborted();
+          return pick(runtime)(context);
+        })());
       return {
-        run: async () => (await runner).run(),
-        cancel: async () => (await runner).cancel?.(),
+        run: async () => {
+          context.signal.throwIfAborted();
+          return (pluginRunner ?? (await getProcessRunner())).run();
+        },
+        cancel: async () => {
+          if (pluginRunner) return pluginRunner.cancel?.();
+          return processRunner?.then(
+            (runner) => runner.cancel?.(),
+            () => undefined
+          );
+        },
         cleanup: async () => {
-          await processRuntime?.then(({ stop }) => stop());
+          try {
+            const runner = pluginRunner ?? (await processRunner?.catch(() => undefined));
+            await runner?.cleanup?.();
+          } finally {
+            await services?.then(({ stop }) => stop?.());
+          }
         },
       };
     },

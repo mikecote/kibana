@@ -15,7 +15,7 @@ import {
   createEsQueryRule,
   deleteRule,
   getExecutions,
-  getFallbacks,
+  getDispatchFailures,
   getStartedProcesses,
   uniqueName,
   waitFor,
@@ -23,7 +23,7 @@ import {
 
 const TASK_TYPE = `alerting:${ES_QUERY}`;
 
-apiTest.describe('Rules that fall back to Kibana', { tag: ['@local-stateful-classic'] }, () => {
+apiTest.describe('Process capacity failures', { tag: ['@local-stateful-classic'] }, () => {
   let headers: Record<string, string>;
   const ruleIds: string[] = [];
 
@@ -36,7 +36,7 @@ apiTest.describe('Rules that fall back to Kibana', { tag: ['@local-stateful-clas
   });
 
   apiTest(
-    'with the cap of processes reached, the extra runs go to Kibana and every rule completes',
+    'with the process cap reached, extra runs retry in processes and every rule completes',
     async ({ apiClient, esClient }) => {
       apiTest.setTimeout(TEST_TIMEOUT_MS);
       const since = new Date().toISOString();
@@ -57,8 +57,8 @@ apiTest.describe('Rules that fall back to Kibana', { tag: ['@local-stateful-clas
         },
         { message: 'every rule to complete a run', timeoutMs: 240_000 }
       );
-      expect(getFallbacks(TASK_TYPE, 'capacity', since).length).toBeGreaterThan(0);
-      // Processes did run some of them
+      expect(getDispatchFailures(TASK_TYPE, 'capacity', since).length).toBeGreaterThan(0);
+      // Process execution continued after capacity became available
       expect(getStartedProcesses(TASK_TYPE, since).length).toBeGreaterThan(0);
     }
   );

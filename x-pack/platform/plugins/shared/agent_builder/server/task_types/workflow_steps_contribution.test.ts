@@ -174,15 +174,13 @@ describe('agent_builder workflow-steps contribution with the services of a proce
     expect(check('ai.agent')).toContain('skills [search.only-in-process]');
   });
 
-  it('declines the agent step for a connector feature the process does not know', async () => {
+  it('resolves connector features at execution time, including templates and other plugins', async () => {
     const { check } = await register({ kibana: { tools: ['a'] }, process: { tools: ['a'] } });
     expect(check('ai.agent', { 'connector-id-by-feature': 'agent_builder' })).toBeUndefined();
-    expect(check('ai.agent', { 'connector-id-by-feature': 'security_ai' })).toContain(
-      'security_ai'
-    );
-    expect(check('ai.agent', { 'connector-id-by-feature': '{{ inputs.feature }}' })).toContain(
-      'template'
-    );
+    expect(check('ai.agent', { 'connector-id-by-feature': 'security_ai' })).toBeUndefined();
+    expect(
+      check('ai.agent', { 'connector-id-by-feature': '{{ inputs.feature }}' })
+    ).toBeUndefined();
   });
 
   it('registers nothing that reads the registries when Kibana sent no settings for agent builder', async () => {

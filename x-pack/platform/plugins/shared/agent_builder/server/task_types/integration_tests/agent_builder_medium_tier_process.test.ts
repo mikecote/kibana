@@ -608,12 +608,12 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('creates a case with the cases tool, with the cases client of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(CASES_WORKFLOW_ID, fallback as never);
+    await harness.run(CASES_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the registries of the process are what Kibana's are.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(CASES_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const agent = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'agent')!;
@@ -637,11 +637,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('lists the AI indices of the space with the context engine tool', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(CONTEXT_ENGINE_WORKFLOW_ID, fallback as never);
+    await harness.run(CONTEXT_ENGINE_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(CONTEXT_ENGINE_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const agent = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'agent')!;
@@ -654,11 +654,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('searches the SML with the SML tool, over the entries of the cluster', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(SML_WORKFLOW_ID, fallback as never);
+    await harness.run(SML_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(SML_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     // The model was sent the entry stored in the SML index.
@@ -666,11 +666,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('generates a dashboard with the dashboards tool, validated in the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(DASHBOARD_WORKFLOW_ID, fallback as never);
+    await harness.run(DASHBOARD_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(DASHBOARD_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     expect(toolResultsSince(from)).toContain(DASHBOARD_TITLE);
@@ -687,11 +687,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('runs a saved workflow with the workflow tool, through the management API of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(EXECUTE_WORKFLOW_ID, fallback as never);
+    await harness.run(EXECUTE_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(EXECUTE_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     // The tool answered the model with the execution it scheduled, which is stored.
@@ -701,10 +701,10 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('adds an image attachment, read from the file service of the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(IMAGE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(IMAGE_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(IMAGE_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     const add = (await harness.stepsOf(execution.id)).find((step) => step.stepId === 'add')!;
@@ -713,11 +713,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('revises a proposal with the proposals tool, with the service of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(PROPOSALS_WORKFLOW_ID, fallback as never);
+    await harness.run(PROPOSALS_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(PROPOSALS_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
 
@@ -737,11 +737,11 @@ describe('agent builder tools of the medium tier served from the workflow:schedu
   });
 
   it('updates an anomaly detection job with the ML skill, with the ML client of the process', async () => {
-    const fallback = jest.fn();
+    const onDispatchFailure = jest.fn();
     const from = llmRequests.length;
-    await harness.run(ML_WORKFLOW_ID, fallback as never);
+    await harness.run(ML_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(ML_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed' }));
     // The tool answered the model, and the job was updated in the cluster.

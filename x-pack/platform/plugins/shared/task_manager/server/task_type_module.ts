@@ -156,6 +156,8 @@ export interface TaskHost {
 export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTaskRunner'> {
   /** The Task Manager task type, such as `task_manager:delete_inactive_background_task_nodes`. */
   type: string;
+  /** Time allowed to persist cancellation before a worker is forcibly terminated. */
+  cancelGracePeriodMs?: number;
   /**
    * Saved object types the runner reads or writes. A task process registers them; Kibana already
    * has them.
@@ -314,6 +316,7 @@ export const toTaskDefinition = (
 ): TaskRegisterDefinition => {
   const {
     type,
+    cancelGracePeriodMs,
     savedObjectTypes,
     encryptedSavedObjectTypes,
     eventLog,

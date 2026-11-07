@@ -67,7 +67,7 @@ export interface TaskProcessCore {
    * Finishes what the run left to do before the process answers, such as shipping its analytics
    * events. Bounded: a slow endpoint holds a run for a few seconds at most.
    */
-  flush: () => Promise<void>;
+  flush: () => Promise<boolean>;
   stop: () => Promise<void>;
 }
 

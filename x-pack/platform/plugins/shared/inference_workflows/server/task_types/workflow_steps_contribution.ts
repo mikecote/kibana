@@ -9,15 +9,17 @@ import { getAnonymizationUiSettings } from '@kbn/ai-anonymization-server';
 import { getGenAiUiSettings } from '@kbn/gen-ai-settings-plugin/server/ui_settings';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import { createSearchInferenceEndpointsStart } from '@kbn/search-inference-endpoints/server/create_search_inference_endpoints_start';
-import { InferenceFeatureRegistry } from '@kbn/search-inference-endpoints/server/inference_feature_registry';
+import {
+  createTaskProcessInferenceFeatureRegistry,
+  INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID,
+  type InferenceFeaturesTaskProcessSettings,
+} from '@kbn/search-inference-endpoints/server/task_process_settings';
 import { createInferenceSettingsSavedObjectType } from '@kbn/search-inference-endpoints/server/saved_objects/inference_settings';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type {
   WorkflowStepsContribution,
   WorkflowStepsContributionServices,
 } from '@kbn/workflows-extensions/server';
-import { checkConnectorFeatures } from './check_connector_features';
-import { registerInferenceFeatures } from '../steps/ai/register_inference_features';
 import { registerAiWorkflowSteps } from '../steps/ai/register_ai_workflow_steps';
 import type { InferenceStepServices } from '../types';
 
@@ -33,6 +35,7 @@ let getActionsClientWithRequest: WorkflowStepsContributionServices['getActionsCl
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
+    settings: [INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID],
     savedObjectTypes: [createInferenceSettingsSavedObjectType()],
     uiSettings: [
       getGenAiUiSettings(
@@ -44,16 +47,17 @@ export const contribution: WorkflowStepsContribution = {
       getAnonymizationUiSettings(),
     ],
   },
-  register: (registry, { host, logger, services, registerRunCheck }) => {
+  register: (registry, { host, logger, services, settings }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     getActionsClientWithRequest = services.getActionsClientWithRequest;
     const { elasticsearch, savedObjects, uiSettings } = host as TaskHost;
     if (!uiSettings) throw new Error('The workflows task module did not get ui settings');
 
-    const features = new InferenceFeatureRegistry(logger.get('inferenceFeatures'));
-    registerInferenceFeatures({ features });
-    registerRunCheck?.((step) =>
-      checkConnectorFeatures(step.config, (featureId) => features.get(featureId) !== undefined)
+    const features = createTaskProcessInferenceFeatureRegistry(
+      settings[INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID] as
+        | InferenceFeaturesTaskProcessSettings
+        | undefined,
+      logger.get('inferenceFeatures')
     );
 
     let services$: InferenceStepServices | undefined;

@@ -91,11 +91,11 @@ describe('proposals workflow steps served from the workflow:scheduled bundle', (
   });
 
   it('reads the proposal and checks the privileges in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(READ_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(READ_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step types are in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(READ_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -108,10 +108,10 @@ describe('proposals workflow steps served from the workflow:scheduled bundle', (
   });
 
   it('declines a workflow that creates a proposal, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(CREATE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(CREATE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(CREATE_WORKFLOW_ID)).toHaveLength(0);
   });
 });

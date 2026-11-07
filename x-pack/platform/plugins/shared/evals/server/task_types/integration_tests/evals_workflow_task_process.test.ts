@@ -147,9 +147,9 @@ describe('evals workflow steps served from the workflow:scheduled bundle', () =>
   };
 
   it('runs the direct model task through the inference services of the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(MODEL_WORKFLOW_ID, fallback as never);
-    expect(fallback).not.toHaveBeenCalled();
+    const onDispatchFailure = jest.fn();
+    await harness.run(MODEL_WORKFLOW_ID, onDispatchFailure);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const step = await completedStep(MODEL_WORKFLOW_ID, 'model');
     expect(step.output.output).toEqual(expect.objectContaining({ content: ANSWER }));
@@ -159,9 +159,9 @@ describe('evals workflow steps served from the workflow:scheduled bundle', () =>
   });
 
   it('runs the agent task through the Kibana API with the credential of the run', async () => {
-    const fallback = jest.fn();
-    await harness.run(AGENT_WORKFLOW_ID, fallback as never);
-    expect(fallback).not.toHaveBeenCalled();
+    const onDispatchFailure = jest.fn();
+    await harness.run(AGENT_WORKFLOW_ID, onDispatchFailure);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const step = await completedStep(AGENT_WORKFLOW_ID, 'agent');
     expect(step.output.output).toEqual(
@@ -178,10 +178,10 @@ describe('evals workflow steps served from the workflow:scheduled bundle', () =>
   });
 
   it('declines a task a suite registered in Kibana, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(SUITE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(SUITE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(SUITE_WORKFLOW_ID)).toHaveLength(0);
   });
 });

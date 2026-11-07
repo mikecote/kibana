@@ -39,6 +39,7 @@ import type { AiIndexDataReadServiceApi } from './ai_indices/data_read_service';
 import type { ImprovementsServiceApi } from './improvements/service';
 import type { AiIndexService } from './ai_indices/service';
 import { AiIndexRegistry } from './ai_indices/registry';
+import { CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID } from './task_types/task_process_settings';
 import { installImprovementsIndexTemplate } from './improvements/storage';
 import { contextEngineGlobalUiSettings } from './ui_settings';
 import { createContextEngineRunServices } from './run_services/create_context_engine_run_services';
@@ -126,6 +127,10 @@ export class ContextEnginePlugin
     });
 
     coreSetup.uiSettings.registerGlobal(contextEngineGlobalUiSettings);
+    setupDeps.workflowsExtensions.registerTaskProcessSettings(
+      CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID,
+      () => ({ registrations: this.aiIndexRegistry.getRegistrations() })
+    );
 
     registerSignalGeneratorTaskDefinition({
       taskManager: setupDeps.taskManager,
@@ -276,30 +281,8 @@ export class ContextEnginePlugin
 
   start(coreStart: CoreStart, startDeps: ContextEngineStartDependencies): ContextEnginePluginStart {
     this.aiIndexRegistry.freeze();
-    const aiIndexLogger = this.logger.get('ai_indices');
 
     this.esClient = coreStart.elasticsearch.client.asInternalUser;
-
-    const ensureAiIndex = async (id: string, spaceId: string): Promise<boolean> => {
-      const enabled = await isContextEngineEnabledInSpace({
-        savedObjects: coreStart.savedObjects,
-        uiSettings: coreStart.uiSettings,
-        spaceId,
-      });
-      if (!enabled) {
-        return false;
-      }
-      if (!this.aiIndexService) {
-        throw new Error('AI index service not available — plugin has not started');
-      }
-      await this.aiIndexRegistry.ensure({
-        id,
-        spaceId,
-        aiIndexService: this.aiIndexService,
-        logger: aiIndexLogger,
-      });
-      return true;
-    };
 
     const runServices = createContextEngineRunServices({
       esClient: this.esClient,
@@ -308,12 +291,7 @@ export class ContextEnginePlugin
       uiSettings: coreStart.uiSettings,
       audit: coreStart.security.audit,
       getSpaceId: (request) => resolveSpaceId(startDeps.spaces, request),
-      managedBootstrap: {
-        isManaged: (id) => this.aiIndexRegistry.has(id),
-        getManagedIds: () => this.aiIndexRegistry.getManagedIds(),
-        getRegistration: (id) => this.aiIndexRegistry.get(id),
-        ensure: ensureAiIndex,
-      },
+      managedAiIndices: this.aiIndexRegistry,
     });
     this.aiIndexService = runServices.aiIndexService;
     this.signalsService = runServices.getSignalsService();

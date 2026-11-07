@@ -17,7 +17,11 @@ import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
-import { InferenceFeatureRegistry } from '@kbn/search-inference-endpoints/server/inference_feature_registry';
+import {
+  createTaskProcessInferenceFeatureRegistry,
+  INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID,
+  type InferenceFeaturesTaskProcessSettings,
+} from '@kbn/search-inference-endpoints/server/task_process_settings';
 import { createSearchInferenceEndpointsStart } from '@kbn/search-inference-endpoints/server/create_search_inference_endpoints_start';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
@@ -32,7 +36,6 @@ import type {
 } from '@kbn/agent-builder-server';
 import { AGENTBUILDER_USAGE_DOMAIN } from '../telemetry/usage_counters';
 import { AnalyticsService, TrackingService } from '../telemetry';
-import { registerInferenceFeatures } from '../inference_features';
 import { createAgentBuilderRunServices } from '../run_services/create_agent_builder_run_services';
 import type { AgentBuilderRunServices } from '../run_services/create_agent_builder_run_services';
 import { AGENT_BUILDER_RUN_SETTINGS_ID, toAgentBuilderConfig } from '../run_services/run_settings';
@@ -54,7 +57,7 @@ export interface AgentBuilderProcessServices extends AgentBuilderRunServices {
   conversationEventBus: ConversationEventBus;
   /** What stands for the spaces plugin: a run has one space, the one its request names. */
   spaces: SpacesPluginStart;
-  /** The inference features this process knows (those agent builder registers). */
+  /** The inference features sent by Kibana for this execution. */
   inferenceFeatureIds: () => string[];
   /** `xpack.agentBuilder.deductive.register`: the global settings of that agent only exist in Kibana. */
   deductiveRegistered: boolean;
@@ -105,20 +108,18 @@ export const createAgentBuilderProcessServices = async ({
   const workflowsManagement = getWorkflowsManagement();
   const core = { elasticsearch, savedObjects, uiSettings };
 
-  // The inference services, as the inference workflows contribution builds them, with the features
-  // agent builder registers and the recommended endpoints Kibana's poller had found.
+  // Both agents and AI workflow steps resolve features against the complete dispatch snapshot.
   const inference = createInferenceTaskProcessServices({
     core,
     logger,
     getActionsClientWithRequest,
   });
-  const features = new InferenceFeatureRegistry(logger.get('inferenceFeatures'));
-  registerInferenceFeatures({ searchInferenceEndpoints: { features } as never });
-  for (const [featureId, endpoints] of Object.entries(runSettings.recommendedEndpoints ?? {})) {
-    if (features.get(featureId) && endpoints.length) {
-      features.updateRecommendedEndpoints(featureId, endpoints);
-    }
-  }
+  const features = createTaskProcessInferenceFeatureRegistry(
+    settings[INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID] as
+      | InferenceFeaturesTaskProcessSettings
+      | undefined,
+    logger.get('inferenceFeatures')
+  );
   const searchInferenceEndpoints = createSearchInferenceEndpointsStart({
     core,
     inference,

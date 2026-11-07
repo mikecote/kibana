@@ -461,11 +461,10 @@ describe('task types served from bundles', () => {
       }
     });
 
-    it('runs in Kibana, counted as capacity, when max_concurrent_processes processes are held', async () => {
+    it('retries in a process when max_concurrent_processes processes are held', async () => {
       const capped = createSupervisor({ maxConcurrentProcesses: 1 });
       const held = await routeOf(capped).acquire();
-      const local = { run: jest.fn().mockResolvedValue({ state: { local: true } }) };
-      const onFallback = jest.fn();
+      const onDispatchFailure = jest.fn();
       try {
         await expect(
           new RemoteTaskRunner({
@@ -478,12 +477,15 @@ describe('task types served from bundles', () => {
             },
             timeoutMs: 30000,
             setCustomTaskRunEventFields: jest.fn(),
-            fallback: () => local,
-            onFallback,
+            onDispatchFailure,
             fetchFn: undiciFetch as unknown as typeof fetch,
           }).run()
-        ).resolves.toEqual({ state: { local: true } });
-        expect(onFallback).toHaveBeenCalledWith(DELETE_NODES, 'capacity', expect.any(String));
+        ).rejects.toThrow('could not be started');
+        expect(onDispatchFailure).toHaveBeenCalledWith(
+          DELETE_NODES,
+          'capacity',
+          expect.any(String)
+        );
         expect(capped.getStats()).toMatchObject({ live: 1, active: 1, capacityRejections: 1 });
       } finally {
         held.release();

@@ -15,6 +15,7 @@ import {
   GEN_AI_SETTINGS_DEFAULT_AI_CONNECTOR_DEFAULT_ONLY,
 } from '@kbn/management-settings-ids';
 import { SearchInferenceEndpointsPlugin } from './plugin';
+import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 import {
   ELASTIC_INFERENCE_SERVICE_APP_ID,
   INFERENCE_ENDPOINTS_APP_ID,
@@ -41,6 +42,35 @@ describe('SearchInferenceEndpointsPlugin', () => {
   });
 
   describe('setup()', () => {
+    it('snapshots all current features and endpoint recommendations at each dispatch', () => {
+      const registerTaskProcessSettings = jest.fn();
+      const setup = plugin.setup(coreSetup, {
+        features,
+        workflowsExtensions: { registerTaskProcessSettings },
+      });
+      expect(registerTaskProcessSettings).toHaveBeenCalledWith(
+        INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID,
+        expect.any(Function)
+      );
+      const getSnapshot = registerTaskProcessSettings.mock.calls[0][1];
+      expect(getSnapshot()).toEqual({ features: [] });
+      const feature = {
+        featureId: 'late_feature',
+        featureName: 'Late feature',
+        featureDescription: 'Registered after setup',
+        taskType: 'chat_completion' as const,
+        recommendedEndpoints: ['initial-endpoint'],
+      };
+      expect(setup.features.register(feature)).toEqual({ ok: true });
+      const start = plugin.start(coreMock.createStart(), {
+        inference: inferenceMock.createStartContract(),
+      });
+      start.features.updateRecommendedEndpoints(feature.featureId, ['current-endpoint']);
+      expect(getSnapshot()).toEqual({
+        features: [{ ...feature, recommendedEndpoints: ['current-endpoint'] }],
+      });
+    });
+
     it('registers routes', () => {
       plugin.setup(coreSetup, { features });
 

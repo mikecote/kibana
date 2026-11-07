@@ -63,11 +63,11 @@ describe('significant_events workflow steps served from the workflow:scheduled b
   });
 
   it('resolves the model of the step in the process, from the connector Kibana saved', async () => {
-    const fallback = jest.fn();
-    await harness.run(WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step type is in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));

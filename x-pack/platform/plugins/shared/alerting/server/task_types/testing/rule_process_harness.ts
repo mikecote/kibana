@@ -141,7 +141,7 @@ export interface SeedRuleOptions {
 
 export interface RunOptions {
   /** Called when the process declines the run or cannot serve it. Defaults to a mock that must not be called. */
-  fallback?: jest.Mock;
+  onDispatchFailure?: jest.Mock;
   timeoutMs?: number;
   state?: Record<string, unknown>;
   observer?: RemoteRunObserver;
@@ -150,7 +150,7 @@ export interface RunOptions {
 
 export interface RunOutcome {
   result: RunResult | undefined | void;
-  fallback: jest.Mock;
+  onDispatchFailure: jest.Mock;
   /** The `RemoteTaskRunner`, for the test that cancels it. */
   runner: RemoteTaskRunner;
 }
@@ -631,13 +631,11 @@ export class RuleProcessHarness {
 
   /**
    * Runs a rule through `RemoteTaskRunner` as Task Manager does, in a process forked by the supervisor.
-   * Fails when the run was declined (the fallback was called), unless the test passes its own fallback.
+   * Rejects when the process cannot execute the run.
    */
   public createRunner(ruleId: string, ruleTypeId: string, options: RunOptions = {}) {
     const taskType = `alerting:${ruleTypeId}`;
-    const fallback =
-      options.fallback ??
-      jest.fn().mockReturnValue({ run: async () => ({ state: { declinedToKibana: true } }) });
+    const onDispatchFailure = options.onDispatchFailure ?? jest.fn();
     const route = this.supervisor.getRoute(taskType)! as Extract<
       ReturnType<TaskProcessSupervisor['getRoute']>,
       { acquire: unknown }
@@ -659,7 +657,7 @@ export class RuleProcessHarness {
       timeoutMs: options.timeoutMs ?? 120000,
       setCustomTaskRunEventFields: jest.fn(),
       fetchFn: undiciFetch as unknown as typeof fetch,
-      fallback: fallback as never,
+      onDispatchFailure: onDispatchFailure as never,
       observer: options.observer,
       signal: options.signal,
     });
@@ -680,7 +678,7 @@ export class RuleProcessHarness {
       }
       throw new Error('The process never had the run in flight');
     };
-    return { runner, fallback, waitForInFlight };
+    return { runner, onDispatchFailure, waitForInFlight };
   }
 
   /** The processes the supervisor forked end with their runs. */
@@ -719,14 +717,9 @@ export class RuleProcessHarness {
     ruleTypeId: string,
     options: RunOptions = {}
   ): Promise<RunOutcome> {
-    const { runner, fallback } = this.createRunner(ruleId, ruleTypeId, options);
+    const { runner, onDispatchFailure } = this.createRunner(ruleId, ruleTypeId, options);
     const result = await runner.run();
-    if (!options.fallback && fallback.mock.calls.length) {
-      throw new Error(
-        `The run of ${ruleId} (${ruleTypeId}) was declined: Kibana would have run it`
-      );
-    }
-    return { result, fallback, runner };
+    return { result, onDispatchFailure, runner };
   }
 
   /**

@@ -143,7 +143,10 @@ describe('bulkScheduleWorkflow', () => {
       taskManager,
       actions: {} as any,
       cloud: {} as any,
-      workflowsExtensions: { getTaskProcessSettings: jest.fn(() => ({})) } as any,
+      workflowsExtensions: {
+        getTaskProcessSettings: jest.fn(() => ({})),
+        getTaskProcessParity: jest.fn(() => ({})),
+      } as any,
       licensing: licensingMock.createStart(),
     });
   });

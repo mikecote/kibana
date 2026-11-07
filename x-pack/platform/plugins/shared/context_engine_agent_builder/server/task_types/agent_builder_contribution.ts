@@ -12,6 +12,11 @@ import {
   contextEngineSpaceUiSettings,
 } from '@kbn/context-engine-plugin/server/ui_settings';
 import { createContextEngineRunServices } from '@kbn/context-engine-plugin/server/run_services/create_context_engine_run_services';
+import {
+  CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID,
+  createTaskProcessAiIndexRegistry,
+  type ContextEngineManagedIndicesSettings,
+} from '@kbn/context-engine-plugin/server/task_types/task_process_settings';
 import type { ContextEnginePluginStart } from '@kbn/context-engine-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
@@ -31,15 +36,17 @@ export const CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID = 'contextEngineAgentBuild
  * the same function. The context engine's services (the AI index service and the reads over it, the
  * signals and improvements stores) are built by `createContextEngineRunServices` over the host.
  *
- * Differences from Kibana: no AI index that other plugins register as managed is known to the
- * process, and the workflows management API is the one of the process (reading and running saved
- * workflows): the tools that save an automation need the workflows service of Kibana and fail in a
+ * Managed AI indices come from Kibana's dispatch snapshot. The workflows management API serves
+ * reading and running saved workflows; tools that save an automation still fail in a
  * process with "only available in Kibana". Without the setting the plugin is not enabled in this
  * Kibana, and nothing is registered.
  */
 export const contribution: AgentBuilderContribution = {
   declares: {
-    settings: [CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID],
+    settings: [
+      CONTEXT_ENGINE_AGENT_BUILDER_SETTINGS_ID,
+      CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID,
+    ],
     // Read by the availability of the tools (`contextEngine:enabled`, per space) and the AI index read
     // service (`contextEngine:memory:enabled`, global), which the context engine registers in Kibana.
     uiSettings: [contextEngineSpaceUiSettings],
@@ -60,6 +67,11 @@ export const contribution: AgentBuilderContribution = {
           uiSettings,
           audit: security.audit,
           getSpaceId: (request) => (request as { spaceId?: string }).spaceId ?? 'default',
+          managedAiIndices: createTaskProcessAiIndexRegistry(
+            settings[CONTEXT_ENGINE_MANAGED_INDICES_SETTINGS_ID] as
+              | ContextEngineManagedIndicesSettings
+              | undefined
+          ),
         });
       }
       return contextEngine;

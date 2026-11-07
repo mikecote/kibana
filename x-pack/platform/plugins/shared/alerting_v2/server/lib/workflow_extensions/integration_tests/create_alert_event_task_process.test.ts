@@ -62,11 +62,11 @@ describe('alerting_v2 workflow steps served from the workflow:scheduled bundle',
   });
 
   it('writes the alert event Kibana would write, as the user of the run', async () => {
-    const fallback = jest.fn();
-    await harness.run(WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step type is in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));

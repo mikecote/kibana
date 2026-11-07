@@ -154,7 +154,7 @@ const CODE_DECLINED = 'TaskManager/declined';
 
 /**
  * Thrown by a runner in a task process that cannot serve this run, such as a rule that uses a
- * connector type the process does not know. Task Manager then runs the task in Kibana.
+ * connector type the process does not know. Task Manager reports a capability failure.
  */
 export class DeclinedRunError extends Error {
   public readonly code = CODE_DECLINED;

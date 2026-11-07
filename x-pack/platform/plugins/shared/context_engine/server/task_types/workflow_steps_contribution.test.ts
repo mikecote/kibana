@@ -13,6 +13,7 @@ import { loggingSystemMock } from '@kbn/core/server/mocks';
 import { registerStepDefinitions } from '../step_types';
 import { mockKiStepTelemetry } from '../step_types/test_utils';
 import { contribution } from './workflow_steps_contribution';
+import { contextEngineGlobalUiSettings } from '../ui_settings';
 
 const registerContribution = async () => {
   const registry = createServerStepRegistry(loggerMock.create());
@@ -30,7 +31,7 @@ const registerContribution = async () => {
     logger: loggingSystemMock.createLogger(),
     isServerless: false,
     kibanaVersion: '1.0.0',
-    settings: {},
+    settings: { contextEngineManagedAiIndices: { registrations: [] } },
     registerRunCheck: (check) => checks.push(check),
   });
   await registry.isReady();
@@ -65,31 +66,23 @@ const registeredByKibana = (): string[] => {
   return ids;
 };
 
-/** Read the global `contextEngine:feedbackLoop` advanced setting, which a task process does not have. */
-const KIBANA_ONLY_STEPS = [
-  'context-engine.getFeedbackContext',
-  'context-engine.recordImprovements',
-];
-
 describe('context engine workflow-steps contribution', () => {
-  it('registers every step Kibana registers, except the ones that only Kibana serves', async () => {
+  it('registers every step Kibana registers', async () => {
     const { registry, internalSteps } = await registerContribution();
     const kibana = registeredByKibana();
 
     expect(kibana).toHaveLength(6);
-    KIBANA_ONLY_STEPS.forEach((id) => {
-      expect(kibana).toContain(id);
-      expect(registry.hasStepDefinition(id)).toBe(false);
-    });
-    const served = kibana.filter((id) => !KIBANA_ONLY_STEPS.includes(id));
-    served.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
-    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + served.length);
+    kibana.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
+    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + kibana.length);
   });
 
-  it('declares the per-space setting the steps read', () => {
+  it('declares the space and global settings the steps read', () => {
     expect(contribution.declares?.uiSettings?.flatMap((defaults) => Object.keys(defaults))).toEqual(
       ['contextEngine:enabled']
     );
+    expect(
+      contribution.declares?.globalUiSettings?.flatMap((defaults) => Object.keys(defaults))
+    ).toEqual(Object.keys(contextEngineGlobalUiSettings));
   });
 
   it('declines the steps that need what other plugins register in Kibana', async () => {
@@ -99,10 +92,10 @@ describe('context engine workflow-steps contribution', () => {
 
     expect(
       decline('context-engine.createKi', { with: { ai_index_id: agentBuilderDefaultAiIndexId } })
-    ).toMatch(/Agent Builder/);
+    ).toBeUndefined();
     expect(
       decline('context-engine.updateKi', { with: { ai_index_id: '{{ inputs.index }}' } })
-    ).toMatch(/template/);
+    ).toBeUndefined();
     expect(
       decline('context-engine.createKi', {
         with: { ai_index_id: 'mine', verifiers: [{ workflow_id: 'w' }] },

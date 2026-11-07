@@ -8,7 +8,7 @@
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { agentBuilderServerEbtEvents } from '@kbn/agent-builder-common';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
-import { normalizeConnectorFeatureIds } from '@kbn/search-inference-endpoints/server/lib/resolve_connector_id_from_features';
+import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from '@kbn/search-inference-endpoints/server/task_process_settings';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import type { CoreStart } from '@kbn/core/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
@@ -26,28 +26,6 @@ import { AGENT_BUILDER_RUN_SETTINGS_ID } from '../run_services/run_settings';
 import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
 import type { AgentBuilderContribution } from './agent_builder_contribution';
 import { createAgentBuilderProcessServices } from './create_agent_builder_process_services';
-
-/**
- * Why a step that names inference features (`connector-id-by-feature`) cannot be served as Kibana
- * serves it: Kibana skips an id that is not registered, so a process that lacks a feature another plugin
- * registers would use the default connector instead of the one configured for it.
- */
-const checkConnectorFeatures = (
-  config: Record<string, unknown>,
-  isFeatureRegistered: (featureId: string) => boolean
-): string | undefined => {
-  const value = config['connector-id-by-feature'];
-  if (value === undefined) return undefined;
-  for (const featureId of normalizeConnectorFeatureIds(value)) {
-    if (featureId.includes('{{')) {
-      return `connector-id-by-feature "${featureId}" is a template, which is only known when the step runs`;
-    }
-    if (!isFeatureRegistered(featureId)) {
-      return `the inference feature "${featureId}" is not registered in this process`;
-    }
-  }
-  return undefined;
-};
 
 /** The ui settings agent builder registers, which the services read. */
 const getAgentBuilderUiSettings = (): Array<Record<string, UiSettingsParams>> => {
@@ -75,12 +53,12 @@ const getAgentBuilderUiSettings = (): Array<Record<string, UiSettingsParams>> =>
  * Parity: Kibana sends the ids it registered with each registry and the process compares them with
  * what it registered. When Kibana has an id the process lacks (a plugin that does not contribute yet,
  * or a registration that needs a service only Kibana has), the steps above are declined, with a
- * warning that names the ids, and Kibana runs the workflow. The other steps are not affected.
+ * warning that names the ids. The task fails without executing inside Kibana.
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
     savedObjectTypes: [agentBuilderSpaceSettingsType],
-    settings: [AGENT_BUILDER_RUN_SETTINGS_ID],
+    settings: [AGENT_BUILDER_RUN_SETTINGS_ID, INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID],
     uiSettings: getAgentBuilderUiSettings(),
     // The global settings of the Deductive agent (registered when Kibana's config opts in).
     globalUiSettings: [DEDUCTIVE_UI_SETTINGS],
@@ -196,11 +174,6 @@ export const contribution: WorkflowStepsContribution = {
         const missing = getGap();
         if (missing)
           return `the agent builder registrations of the process differ from Kibana's: the process ${missing}`;
-        if (step.type === 'ai.agent') {
-          return checkConnectorFeatures(step.config, (featureId) =>
-            processServices.inferenceFeatureIds().includes(featureId)
-          );
-        }
       }
       return undefined;
     });

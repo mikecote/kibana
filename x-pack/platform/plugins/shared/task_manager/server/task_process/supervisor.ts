@@ -11,7 +11,11 @@ import { createHash, randomBytes } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Logger } from '@kbn/core/server';
-import type { TaskProcessLease, TaskProcessRoute } from './remote_task_runner';
+import type {
+  TaskProcessAcquireContext,
+  TaskProcessLease,
+  TaskProcessRoute,
+} from './remote_task_runner';
 import { TaskProcessAcquireError } from './acquire_error';
 import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
@@ -29,7 +33,7 @@ export interface TaskProcessSettings {
   /** Kibana's own Elasticsearch connection, which every process connects with. */
   getElasticsearchConfig: () => SerializedElasticsearchConfig;
   /** What else a task type's process needs, such as the keys and plugin settings it declared. */
-  /** The most task processes that are alive for runs at once; a run past it goes to Kibana. Unbounded when unset. */
+  /** The maximum active processes; additional runs remain assigned to process execution. */
   maxConcurrentProcesses?: number;
   /** `--max-old-space-size` of each process, in MB. Without it a process uses Node's default, not Kibana's heap flags. */
   childMaxOldSpaceMb?: number;
@@ -119,7 +123,7 @@ export class TaskProcessSupervisor {
   ) {}
 
   /** Reads which task types the bundles serve. No process starts until a run needs one. */
-  public start() {
+  public start(requiredTaskTypes: readonly string[] = []) {
     const { settings, logger } = this.params;
     const manifestPath = join(settings.bundle_dir, 'manifest.json');
     if (!existsSync(manifestPath)) {
@@ -135,15 +139,35 @@ export class TaskProcessSupervisor {
         taskType,
       });
     }
+    const required = new Set([...requiredTaskTypes, ...this.bundleByTaskType.keys()]);
+    const missing = [...required].filter((type) => {
+      const bundle = this.bundleByTaskType.get(type);
+      return !bundle || !existsSync(bundle.file);
+    });
+    if (missing.length) {
+      throw new Error(`Missing task bundles for ${missing.join(', ')}; rebuild the task bundles`);
+    }
     logger.debug(`Task bundles serve ${[...this.bundleByTaskType.keys()]}`);
   }
 
-  /** The route of a task type that has a bundle. */
-  public getRoute(taskType: string): TaskProcessRoute | undefined {
+  /** Returns a process route even when its bundle is unavailable. */
+  public getRoute(taskType: string): TaskProcessRoute {
     const bundle = this.bundleByTaskType.get(taskType);
-    return bundle && !this.stopping
-      ? { acquire: (context) => this.acquire(bundle, context) }
-      : undefined;
+    return {
+      acquire: async (context) => {
+        if (this.stopping) {
+          throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
+        }
+        if (!bundle) {
+          throw new TaskProcessAcquireError('not_served', `No task bundle for ${taskType}`);
+        }
+        return this.acquire(bundle, context);
+      },
+    };
+  }
+
+  public getTaskTypes(): string[] {
+    return [...this.bundleByTaskType.keys()];
   }
 
   public getStats(): TaskProcessSupervisorStats {
@@ -197,7 +221,7 @@ export class TaskProcessSupervisor {
   /** Starts a process for one run; releasing the lease stops it. */
   private async acquire(
     bundle: Bundle,
-    context?: { executionUuid?: string }
+    context?: TaskProcessAcquireContext
   ): Promise<TaskProcessLease> {
     if (this.stopping) throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
     const { settings } = this.params;
@@ -227,17 +251,18 @@ export class TaskProcessSupervisor {
 
   private async spawn(
     bundle: Bundle,
-    context: { executionUuid?: string } | undefined,
+    context: TaskProcessAcquireContext | undefined,
     giveBack: () => void
   ): Promise<TaskProcessLease> {
     const { settings, logger, forkFn = fork } = this.params;
     // What Kibana has right now (its connectors, say), read before the process exists, so a failure
     // to read it leaves nothing running.
-    const initOrPromise = settings.getInitFor?.(bundle.taskType);
+    const initOrPromise = context?.snapshot?.init ?? settings.getInitFor?.(bundle.taskType);
     // Only what is asynchronous waits, so a process of settings known now starts at once.
     const init = initOrPromise instanceof Promise ? await initOrPromise : initOrPromise;
     if (this.stopping) throw new TaskProcessAcquireError('unavailable', 'Kibana is shutting down');
-    const elasticsearch = settings.getElasticsearchConfig();
+    const elasticsearch =
+      context?.snapshot?.init.elasticsearch ?? settings.getElasticsearchConfig();
     const fingerprint = settings.reuse
       ? createHash('sha256').update(JSON.stringify({ init, elasticsearch })).digest('hex')
       : '';
@@ -372,7 +397,7 @@ export class TaskProcessSupervisor {
         authToken: this.token,
       } satisfies TaskProcessInit);
     }).catch((error) => {
-      logger.warn(`${error.message}; the run goes to Kibana`);
+      logger.warn(`Task process failed to start: ${error.message}`);
       this.terminate(child);
       throw error;
     });

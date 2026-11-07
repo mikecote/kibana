@@ -138,13 +138,13 @@ describe('the .es-query rule type served from a bundle', () => {
   });
 
   it('serves a rule that uses the cases system action, which cases contributes to the process', async () => {
-    const { fallback } = await harness.run(CASES_RULE_ID, RULE_TYPE);
-    expect(fallback).not.toHaveBeenCalled();
+    const { onDispatchFailure } = await harness.run(CASES_RULE_ID, RULE_TYPE);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
   });
 
   it('enqueues the action of a connector that Kibana registered while it ran, as sent, not rebuilt from config', async () => {
-    const { fallback } = await harness.run(DYNAMIC_RULE_ID, RULE_TYPE);
-    expect(fallback).not.toHaveBeenCalled();
+    const { onDispatchFailure } = await harness.run(DYNAMIC_RULE_ID, RULE_TYPE);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const { actionTaskParams } = await harness.getEnqueued();
     expect(
@@ -155,20 +155,20 @@ describe('the .es-query rule type served from a bundle', () => {
   it('declines every run, before anything is written, when Kibana registered a connector type the process lacks', async () => {
     harness.unregisteredConnectorTypes = ['.registered-after-the-bundle-was-built'];
     try {
-      const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-      const { result } = await harness.run(RULE_ID, RULE_TYPE, { fallback });
-      expect(result).toEqual({ state: { local: true } });
-      expect(fallback).toHaveBeenCalledTimes(1);
+      const onDispatchFailure = jest.fn();
+      await expect(harness.run(RULE_ID, RULE_TYPE, { onDispatchFailure })).rejects.toThrow('422');
+      expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     } finally {
       harness.unregisteredConnectorTypes = [];
     }
   });
 
-  it('declines a rule that uses an action type it does not know, so Kibana runs it', async () => {
-    const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-    const { result } = await harness.run(UNKNOWN_RULE_ID, RULE_TYPE, { fallback });
-    expect(result).toEqual({ state: { local: true } });
-    expect(fallback).toHaveBeenCalledTimes(1);
+  it('declines a rule that uses an action type it does not know, without local execution', async () => {
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(UNKNOWN_RULE_ID, RULE_TYPE, { onDispatchFailure })).rejects.toThrow(
+      '422'
+    );
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.getAlertDocs(ALERTS_INDEX, UNKNOWN_RULE_ID)).toHaveLength(0);
   });
 });

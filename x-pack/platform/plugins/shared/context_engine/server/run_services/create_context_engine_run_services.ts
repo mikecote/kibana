@@ -11,7 +11,8 @@ import type { SavedObjectsClientContract } from '@kbn/core-saved-objects-api-ser
 import { CONTEXT_ENGINE_MEMORY_ENABLED_SETTING_ID } from '@kbn/management-settings-ids';
 import { AiIndexDataReadService } from '../ai_indices/data_read_service';
 import { AiIndexService } from '../ai_indices/service';
-import type { AiIndexManagedBootstrap } from '../ai_indices/service';
+import type { AiIndexRegistry } from '../ai_indices/registry';
+import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import { ImprovementsService } from '../improvements/service';
 import { SignalsService } from '../signals/service';
 import type { ContextEnginePluginStart } from '../types';
@@ -20,8 +21,14 @@ export interface ContextEngineRunServicesDeps {
   /** The internal user client. */
   esClient: ElasticsearchClient;
   logger: Logger;
-  savedObjects: { getScopedClient: (request: KibanaRequest) => SavedObjectsClientContract };
+  savedObjects: {
+    getScopedClient: (request: KibanaRequest) => SavedObjectsClientContract;
+    getUnsafeInternalClient: () => SavedObjectsClientContract;
+  };
   uiSettings: {
+    asScopedToClient: (client: SavedObjectsClientContract) => {
+      get: (key: string) => Promise<boolean>;
+    };
     globalAsScopedToClient: (client: SavedObjectsClientContract) => {
       get: <T>(key: string) => Promise<T | undefined>;
     };
@@ -29,8 +36,7 @@ export interface ContextEngineRunServicesDeps {
   audit: Pick<CoreAuditService, 'asScoped'>;
   /** The space a request is for. */
   getSpaceId: (request: KibanaRequest) => string;
-  /** The AI indices other plugins register in `setup()`: Kibana's registry, none in a process. */
-  managedBootstrap?: AiIndexManagedBootstrap;
+  managedAiIndices: AiIndexRegistry;
 }
 
 /**
@@ -46,12 +52,27 @@ export const createContextEngineRunServices = ({
   uiSettings,
   audit,
   getSpaceId,
-  managedBootstrap,
+  managedAiIndices,
 }: ContextEngineRunServicesDeps): ContextEnginePluginStart & { aiIndexService: AiIndexService } => {
   const aiIndexService = new AiIndexService({
     esClient,
     logger: logger.get('ai_indices'),
-    managedBootstrap,
+    managedBootstrap: {
+      isManaged: (id) => managedAiIndices.has(id),
+      getManagedIds: () => managedAiIndices.getManagedIds(),
+      getRegistration: (id) => managedAiIndices.get(id),
+      ensure: async (id, spaceId) => {
+        if (!(await isContextEngineEnabledInSpace({ savedObjects, uiSettings, spaceId })))
+          return false;
+        await managedAiIndices.ensure({
+          id,
+          spaceId,
+          aiIndexService,
+          logger: logger.get('ai_indices'),
+        });
+        return true;
+      },
+    },
   });
   const signalsService = new SignalsService({ esClient, logger: logger.get('signals') });
   const improvementsLogger = logger.get('improvements');

@@ -7,11 +7,19 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { firstValueFrom } from 'rxjs';
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
+import {
+  createHostFeatureFlags,
+  runInRunContext,
+} from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
+import { createWorkflowRuntimeFromHost } from './process_runtime';
 import { taskType as resumeTaskType } from './workflow_resume.task';
 import { taskType as runTaskType } from './workflow_run.task';
 import { taskType as scheduledTaskType } from './workflow_scheduled.task';
+
+jest.mock('./process_runtime', () => ({ createWorkflowRuntimeFromHost: jest.fn() }));
 
 describe('workflow task type modules', () => {
   const modules = [runTaskType, resumeTaskType, scheduledTaskType];
@@ -56,6 +64,7 @@ describe('workflow task type modules', () => {
     'declares what the process of %s needs',
     (_type, module) => {
       expect(module.taskManager).toEqual({ schedulableTypes: [/^workflow:/, /^actions:/] });
+      expect(module.cancelGracePeriodMs).toBe(5000);
       expect(module.licensing).toBe(true);
       expect(Object.keys(module.featureFlags ?? {})).toEqual([
         WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG,
@@ -97,7 +106,7 @@ describe('workflow task type modules', () => {
     const run = jest.fn().mockResolvedValue({ state: {} });
     const cancel = jest.fn();
     const runWorkflowTask = jest.fn(() => ({ run, cancel }));
-    const context = { taskInstance: {} } as never;
+    const context = { taskInstance: {}, signal: new AbortController().signal } as never;
     const runner = runTaskType.createTaskRunner(context, {
       plugins: { workflowsExecutionEngine: { runtime: { runWorkflowTask } } },
     } as never);
@@ -152,4 +161,67 @@ describe('workflow task type modules with contributions', () => {
       expect(module.settings).not.toContain('contributedPlugin');
     }
   );
+});
+
+describe('workflow process runtime lifecycle', () => {
+  const createRuntime = jest.mocked(createWorkflowRuntimeFromHost);
+  beforeEach(() => createRuntime.mockReset());
+
+  it('creates and stops fresh services for each execution inside its run context', async () => {
+    const flags = createHostFeatureFlags();
+    const stop = jest.fn();
+    const runWorkflowTask = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+    const initialized: boolean[] = [];
+    createRuntime.mockImplementation(async () => {
+      initialized.push(await firstValueFrom(flags.getBooleanValue$('test.flag', false)));
+      return { runtime: { runWorkflowTask } as never, stop };
+    });
+    const host = {} as never;
+    for (const enabled of [true, false]) {
+      const context = { taskInstance: {}, signal: new AbortController().signal } as never;
+      const runner = runTaskType.createTaskRunner(context, host);
+      const before = createRuntime.mock.calls.length;
+      expect(before).toBe(initialized.length);
+      const result = await runInRunContext(async () => runner.run(), {
+        featureFlags: { 'test.flag': enabled },
+      });
+      expect(result).toEqual({ value: { state: {} } });
+      await runner.cleanup?.();
+    }
+    expect(initialized).toEqual([true, false]);
+    expect(createRuntime).toHaveBeenCalledTimes(2);
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not initialize workflow services for an aborted execution', async () => {
+    const controller = new AbortController();
+    const context = { taskInstance: {}, signal: controller.signal } as never;
+    const runner = runTaskType.createTaskRunner(context, {} as never);
+    controller.abort();
+    await expect(runner.run()).rejects.toHaveProperty('name', 'AbortError');
+    await runner.cleanup?.();
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
+
+  it('stops execution services even when runner cleanup fails', async () => {
+    const stop = jest.fn();
+    createRuntime.mockResolvedValue({
+      runtime: {
+        runWorkflowTask: () => ({
+          run: async () => ({ state: {} }),
+          cleanup: async () => {
+            throw new Error('cleanup failed');
+          },
+        }),
+      } as never,
+      stop,
+    });
+    const runner = runTaskType.createTaskRunner(
+      { signal: new AbortController().signal } as never,
+      {} as never
+    );
+    await runner.run();
+    await expect(runner.cleanup?.()).rejects.toThrow('cleanup failed');
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
 });

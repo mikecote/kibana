@@ -42,7 +42,7 @@ export const findMissingParity = (
 
 /**
  * A check that runs once per process, before its first run: ids Kibana has that the process lacks
- * decline every run of the process (Kibana runs them itself) with a warning that names them. A
+ * reject every run of the process with a warning that names them. A
  * process that was sent no parity (a remote one) is not checked, and says so once.
  */
 export const createParityGuard = ({

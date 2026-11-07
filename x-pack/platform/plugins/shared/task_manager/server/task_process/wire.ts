@@ -12,7 +12,7 @@
 
 import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
-import type { ConcreteTaskInstance, RunResult } from '../task';
+import type { ConcreteTaskInstance, RunResult, TaskRunAs } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
 import type { TaskProcessParity } from './parity';
@@ -80,12 +80,24 @@ export interface TaskProcessReady {
   port: number;
 }
 
+/** Configuration and registrations captured for one dispatch in either process mode. */
+export interface TaskProcessDispatchSnapshot {
+  protocolVersion: 1;
+  init: Omit<TaskProcessInit, 'kind' | 'authToken'>;
+  featureFlags?: Record<string, boolean | string | number>;
+}
+
 export interface TaskProcessRunRequest {
   taskType: string;
   /** `ConcreteTaskInstance` with credential fields stripped; dates are ISO strings. */
   taskInstance: Record<string, unknown>;
   executionUuid: string;
+  snapshot?: TaskProcessDispatchSnapshot;
+  /** Bounded time for this task type to persist cancellation before forced termination. */
+  cancelGracePeriodMs?: number;
   apiKey?: string;
+  /** Verified workload identity; the process resolves its scoped service-account request. */
+  runAs?: TaskRunAs;
   spaceId?: string;
   uiamApiKeyExternal?: boolean;
   userProfileId?: string;
@@ -157,7 +169,7 @@ export const deserializeRunResult = (serialized?: SerializedRunResult): RunResul
   } as unknown as RunResult;
 };
 
-/** Body of the response (status 422) to a run the process declines; Kibana runs it itself. */
+/** Body of a capability failure (status 422), reported without local execution. */
 export interface TaskProcessDeclinedResponse {
   kind: 'declined';
   reason: string;

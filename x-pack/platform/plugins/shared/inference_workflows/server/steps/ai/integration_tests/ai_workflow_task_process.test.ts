@@ -89,14 +89,36 @@ describe('inference_workflows steps served from the workflow:scheduled bundle', 
     const llmUrl = `http://127.0.0.1:${(llmStub.address() as AddressInfo).port}`;
 
     harness = await startWorkflowProcessHarness({
+      settings: {
+        inferenceFeatures: {
+          features: [
+            {
+              featureId: 'other_plugin',
+              featureName: 'Another plugin',
+              featureDescription: 'A parent registered by another plugin',
+              taskType: 'chat_completion',
+              recommendedEndpoints: [],
+            },
+            {
+              featureId: 'other_plugin_prompt',
+              parentFeatureId: 'other_plugin',
+              featureName: 'Prompt',
+              featureDescription: 'Uses the endpoint selected in Kibana',
+              taskType: 'chat_completion',
+              recommendedEndpoints: [CONNECTOR_ID],
+              ignoreGlobalDefault: true,
+            },
+          ],
+        },
+      },
       workflows: {
-        // Names a feature another plugin registers in Kibana: the process cannot resolve it like Kibana.
+        // Neither feature is registered by inference_workflows: both come from the dispatch snapshot.
         [FEATURE_WORKFLOW_ID]: {
           steps: [
             {
               name: 'ask',
               type: 'ai.prompt',
-              'connector-id-by-feature': 'agent_builder_unknown_feature',
+              'connector-id-by-feature': "{{ 'other_plugin_prompt' }}",
               with: { prompt: 'Say hello to the workflow' },
             },
           ],
@@ -139,11 +161,11 @@ describe('inference_workflows steps served from the workflow:scheduled bundle', 
   });
 
   it('runs ai.prompt in the process: the connector of Kibana, the LLM called with its credentials', async () => {
-    const fallback = jest.fn();
-    await harness.run(WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step type is in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -159,11 +181,14 @@ describe('inference_workflows steps served from the workflow:scheduled bundle', 
     expect(llmRequests[0].body).toContain('Say hello to the workflow');
   });
 
-  it('declines a workflow that names an inference feature the process does not know, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(FEATURE_WORKFLOW_ID, fallback as never);
+  it('resolves a templated feature registered by another plugin using Kibana endpoint recommendations', async () => {
+    const onDispatchFailure = jest.fn();
+    await harness.run(FEATURE_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).toHaveBeenCalledTimes(1);
-    expect(await harness.executionsOf(FEATURE_WORKFLOW_ID)).toHaveLength(0);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
+    const [execution] = await harness.executionsOf(FEATURE_WORKFLOW_ID);
+    expect(execution.status).toBe('completed');
+    const steps = await harness.stepsOf(execution.id);
+    expect(steps[0].output).toEqual(expect.objectContaining({ content: ANSWER }));
   });
 });

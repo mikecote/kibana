@@ -30,7 +30,10 @@ import {
   WorkflowExecutionInvalidStatusError,
   WorkflowExecutionNotFoundError,
 } from '@kbn/workflows/common/errors';
-import { defaultEventChainContextStore } from '@kbn/workflows-extensions/server';
+import {
+  defaultEventChainContextStore,
+  getEventChainContext,
+} from '@kbn/workflows-extensions/server';
 import type {
   EventChainContextStore,
   WorkflowsExtensionsServerPluginStart,
@@ -1868,6 +1871,8 @@ export const createWorkflowRuntime = (deps: WorkflowRuntimeDeps): WorkflowRuntim
   const triggerEventsClientPromise = initializeTriggerEventsClient(dataStreams);
 
   const triggerEventHandler = new TriggerEventHandler({
+    getEventChainContext: (request) =>
+      runtimeState.eventChainContext.get(request) ?? getEventChainContext(request),
     workflowExecutionRepository,
     coreStart,
     workflowRepository,

@@ -6,7 +6,7 @@
  */
 
 /**
- * Why Kibana ran a task itself:
+ * Why a task could not be dispatched to its process:
  * - `declined`: the process answered 422.
  * - `not_served`: the process answered 404.
  * - `capacity`: Kibana already has `max_concurrent_processes` live task processes.
@@ -14,7 +14,7 @@
  * - `spawn_timeout`: the process was not ready in time.
  * - `unavailable`: anything else that kept a process from starting.
  */
-export type TaskProcessFallbackReason =
+export type TaskProcessDispatchFailureReason =
   | 'declined'
   | 'not_served'
   | 'unavailable'
@@ -22,7 +22,7 @@ export type TaskProcessFallbackReason =
   | 'spawn_failed'
   | 'spawn_timeout';
 
-export const TASK_PROCESS_FALLBACK_REASONS: TaskProcessFallbackReason[] = [
+export const TASK_PROCESS_DISPATCH_FAILURE_REASONS: TaskProcessDispatchFailureReason[] = [
   'declined',
   'not_served',
   'unavailable',
@@ -32,35 +32,32 @@ export const TASK_PROCESS_FALLBACK_REASONS: TaskProcessFallbackReason[] = [
 ];
 
 const emptyCounts = () =>
-  Object.fromEntries(TASK_PROCESS_FALLBACK_REASONS.map((reason) => [reason, 0])) as Record<
-    TaskProcessFallbackReason,
+  Object.fromEntries(TASK_PROCESS_DISPATCH_FAILURE_REASONS.map((reason) => [reason, 0])) as Record<
+    TaskProcessDispatchFailureReason,
     number
   >;
 
-/**
- * Counts the runs Kibana ran itself because their task process could not: a process that declined
- * (which should not happen: it is the safety net of the parity guard), did not serve the task type,
- * or could not be started. Each one is a rule run that did not get the isolation that was asked for,
- * so it is logged, per task type, to be alarmed on.
- */
-export class TaskProcessFallbackCounter {
-  private readonly counts = new Map<string, Record<TaskProcessFallbackReason, number>>();
+/** Counts process dispatch failures by task type and reason. */
+export class TaskProcessDispatchFailureCounter {
+  private readonly counts = new Map<string, Record<TaskProcessDispatchFailureReason, number>>();
 
   constructor(private readonly logger?: { warn: (message: string) => void }) {}
 
-  public increment(taskType: string, reason: TaskProcessFallbackReason, detail?: string) {
+  public increment(
+    taskType: string,
+    reason: TaskProcessDispatchFailureReason,
+    detail?: string
+  ): void {
     const counts = this.counts.get(taskType) ?? emptyCounts();
     counts[reason]++;
     this.counts.set(taskType, counts);
     this.logger?.warn(
-      `Task ${taskType} ran in Kibana instead of its task process (${reason})${
-        detail ? `: ${detail}` : ''
-      }`
+      `Task ${taskType} could not run in its task process (${reason})${detail ? `: ${detail}` : ''}`
     );
   }
 
-  /** Fallbacks since Kibana started, by task type. */
-  public getCounts(): Record<string, Record<TaskProcessFallbackReason, number>> {
+  /** Dispatch failures since Kibana started, by task type. */
+  public getCounts(): Record<string, Record<TaskProcessDispatchFailureReason, number>> {
     return Object.fromEntries([...this.counts].map(([type, counts]) => [type, { ...counts }]));
   }
 }

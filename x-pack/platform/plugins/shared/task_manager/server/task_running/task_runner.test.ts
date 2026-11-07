@@ -40,6 +40,8 @@ import { usageCountersServiceMock } from '@kbn/usage-collection-plugin/server/us
 import { bufferedTaskStoreMock } from '../buffered_task_store.mock';
 import { TASK_MANAGER_RUN_TRANSACTION_TYPE } from './task_runner';
 import { schema } from '@kbn/config-schema';
+import { RemoteTaskRunner } from '../task_process/remote_task_runner';
+import type { TaskProcessDispatch } from '../task_process/remote_task_runner';
 import * as nextRunAtUtils from '../lib/get_next_run_at';
 import { configMock } from '../config.mock';
 import { EsApiKeyStrategy } from '../api_key_strategy';
@@ -482,6 +484,29 @@ describe('TaskManagerRunner', () => {
             { workloadType: 'workflow', workloadId: 'workflow-1', spaceId: 'default' },
             expect.any(Function)
           );
+        });
+
+        test('keeps service-account tasks on their configured process route', async () => {
+          const remoteRun = jest
+            .spyOn(RemoteTaskRunner.prototype, 'run')
+            .mockResolvedValue({ state: {} });
+          const getRoute = jest.fn().mockReturnValue({ url: 'http://worker' });
+          try {
+            const { runner, store } = await readyToRunStageSetup({
+              instance: { credential, encryptedCredential },
+              definitions,
+              taskProcessDispatch: { getRoute, kibanaVersion: '9.9.9' },
+            });
+            store.getVerifiedCredential.mockResolvedValue(asOk(credential));
+            createTaskRunner.mockClear();
+            await runner.run();
+            expect(getRoute).toHaveBeenCalledWith('bar');
+            expect(remoteRun).toHaveBeenCalledTimes(1);
+            expect(createTaskRunner).not.toHaveBeenCalled();
+            expect(withScopedRequest).not.toHaveBeenCalled();
+          } finally {
+            remoteRun.mockRestore();
+          }
         });
 
         test('runs the task as the workload of the verified credential', async () => {
@@ -4497,6 +4522,7 @@ describe('TaskManagerRunner', () => {
     onTaskEvent?: jest.Mock<(event: TaskEvent<unknown, unknown>) => void>;
     allowReadingInvalidState?: boolean;
     enrichFakeRequest?: jest.Mock;
+    taskProcessDispatch?: TaskProcessDispatch;
   }
 
   function withAnyTiming(taskRun: TaskRun) {
@@ -4577,6 +4603,7 @@ describe('TaskManagerRunner', () => {
       apiKeyStrategy: new EsApiKeyStrategy(),
       eventLogger: eventLoggerMock,
       enrichFakeRequest: opts.enrichFakeRequest,
+      taskProcessDispatch: opts.taskProcessDispatch,
     });
 
     if (stage === TaskRunningStage.READY_TO_RUN) {

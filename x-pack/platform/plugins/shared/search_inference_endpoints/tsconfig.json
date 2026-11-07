@@ -11,6 +11,7 @@
     "test/scout_inference_test/**/*"
   ],
   "kbn_references": [
+    "@kbn/workflows-extensions",
     "@kbn/config-schema",
     "@kbn/core",
     "@kbn/i18n",

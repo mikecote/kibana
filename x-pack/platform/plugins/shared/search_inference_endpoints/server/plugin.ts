@@ -18,6 +18,7 @@ import { ApiPrivileges } from '@kbn/core-security-server';
 
 import { defineRoutes } from './routes';
 import { InferenceFeatureRegistry } from './inference_feature_registry';
+import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 import { getForFeature as getForFeatureFn } from './inference_endpoints';
 import {
   createSearchInferenceEndpointsStart,
@@ -70,6 +71,10 @@ export class SearchInferenceEndpointsPlugin
     core.savedObjects.registerType(createInferenceSettingsSavedObjectType());
 
     const featureRegistry = this.featureRegistry;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID,
+      () => ({ features: featureRegistry.getAll() })
+    );
 
     const getForFeature = async (featureId: string, request: KibanaRequest) => {
       const [coreStart, pluginsStart] = await core.getStartServices();

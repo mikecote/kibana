@@ -99,11 +99,11 @@ describe('discoveries workflow steps served from the workflow:scheduled bundle',
   });
 
   it('retrieves and anonymizes the alerts in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(RETRIEVAL_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(RETRIEVAL_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step types are in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(RETRIEVAL_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -123,10 +123,10 @@ describe('discoveries workflow steps served from the workflow:scheduled bundle',
     ['persists discoveries (rule registry data client)', PERSIST_WORKFLOW_ID],
     ['runs with an inference feature id', FEATURE_RUN_WORKFLOW_ID],
   ])('declines a workflow that %s, writing nothing', async (_name, workflowId) => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(workflowId, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(workflowId, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(workflowId)).toHaveLength(0);
   });
 });

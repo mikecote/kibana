@@ -11,6 +11,7 @@ import type { TaskHost } from '../task_type_module';
 
 interface RunStore {
   featureFlags: Record<string, boolean | string | number>;
+  flushers: Array<() => Promise<void>>;
 }
 
 const storage = new AsyncLocalStorage<RunStore>();
@@ -21,13 +22,21 @@ const storage = new AsyncLocalStorage<RunStore>();
  */
 export const runInRunContext = async <T>(
   fn: () => Promise<T>,
-  { featureFlags = {} }: { featureFlags?: RunStore['featureFlags'] } = {}
+  { featureFlags = {}, flushers = [] }: Partial<RunStore> = {}
 ): Promise<{ value?: T; error?: unknown }> => {
   try {
-    return { value: await storage.run({ featureFlags }, fn) };
+    return { value: await storage.run({ featureFlags, flushers }, fn) };
   } catch (error) {
     return { error };
   }
+};
+
+/** Registers a flusher for the active execution and reports whether a run is active. */
+export const registerRunFlusher = (flusher: () => Promise<void>): boolean => {
+  const run = storage.getStore();
+  if (!run) return false;
+  run.flushers.push(flusher);
+  return true;
 };
 
 /**
@@ -60,21 +69,29 @@ export const runFlushers = async (
   flushers: Array<() => Promise<void>>,
   logger: { warn: (message: string) => void },
   timeoutMs: number = FLUSH_TIMEOUT_MS
-) => {
-  if (!flushers.length) return;
+): Promise<boolean> => {
+  if (!flushers.length) return true;
+  let successful = true;
   let timer: NodeJS.Timeout | undefined;
   const timedOut = new Promise<'timeout'>((resolve) => {
     timer = setTimeout(() => resolve('timeout'), timeoutMs);
   });
   const flushed = Promise.all(
     flushers.map((flusher) =>
-      flusher().catch((error) => logger.warn(`Flush failed: ${(error as Error).message}`))
+      Promise.resolve()
+        .then(flusher)
+        .catch((error) => {
+          successful = false;
+          logger.warn(`Flush failed: ${(error as Error).message}`);
+        })
     )
   );
   try {
     if ((await Promise.race([flushed, timedOut])) === 'timeout') {
       logger.warn(`Flushing did not finish in ${timeoutMs}ms; the run answers without waiting`);
+      return false;
     }
+    return successful;
   } finally {
     clearTimeout(timer);
   }

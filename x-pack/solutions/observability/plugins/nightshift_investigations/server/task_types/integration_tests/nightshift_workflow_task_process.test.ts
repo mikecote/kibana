@@ -68,11 +68,11 @@ describe('nightshift investigations workflow steps served from the workflow:sche
   });
 
   it('composes the hydrate notifications in the process', async () => {
-    const fallback = jest.fn();
-    await harness.run(COMPOSE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(COMPOSE_WORKFLOW_ID, onDispatchFailure);
 
     // Not declined: the step types are in the registry of the process.
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const [execution] = await harness.executionsOf(COMPOSE_WORKFLOW_ID);
     expect(execution).toEqual(expect.objectContaining({ status: 'completed', spaceId: 'default' }));
@@ -85,10 +85,10 @@ describe('nightshift investigations workflow steps served from the workflow:sche
   });
 
   it('skips the decision tree preparation as Kibana does when the feature is off', async () => {
-    const fallback = jest.fn();
-    await harness.run(PREPARE_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await harness.run(PREPARE_WORKFLOW_ID, onDispatchFailure);
 
-    expect(fallback).not.toHaveBeenCalled();
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     const [execution] = await harness.executionsOf(PREPARE_WORKFLOW_ID);
     const [step] = await harness.stepsOf(execution.id);
     expect(step).toEqual(expect.objectContaining({ stepId: 'prepare', status: 'completed' }));
@@ -96,10 +96,10 @@ describe('nightshift investigations workflow steps served from the workflow:sche
   });
 
   it('declines a workflow that needs the sandbox, writing nothing', async () => {
-    const fallback = jest.fn(() => ({ run: async () => ({ state: {} }) }));
-    await harness.run(SANDBOX_WORKFLOW_ID, fallback as never);
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(SANDBOX_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
 
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.executionsOf(SANDBOX_WORKFLOW_ID)).toHaveLength(0);
   });
 });

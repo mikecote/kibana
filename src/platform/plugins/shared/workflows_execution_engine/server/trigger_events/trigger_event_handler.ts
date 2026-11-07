@@ -68,6 +68,7 @@ export interface TriggerEventHandlerDeps {
   logger: Logger;
   triggerEventsClientPromise?: Promise<TriggerEventsDataStreamClient | undefined>;
   workflowExecutionRepository: WorkflowExecutionRepository;
+  getEventChainContext?: (request: KibanaRequest) => EventChainContext | undefined;
 }
 
 const SCHEDULE_CONCURRENCY = 20;
@@ -177,8 +178,12 @@ export class TriggerEventHandler {
   private readonly config: EventTriggersConfig;
   private readonly logger: Logger;
   private readonly triggerEventsClientPromise: Promise<TriggerEventsDataStreamClient | undefined>;
+  private readonly readEventChainContext: NonNullable<
+    TriggerEventHandlerDeps['getEventChainContext']
+  >;
 
   constructor(deps: TriggerEventHandlerDeps) {
+    this.readEventChainContext = deps.getEventChainContext ?? getEventChainContext;
     this.scheduleWorkflow = deps.scheduleWorkflow;
     this.workflowRepository = deps.workflowRepository;
     this.spaces = deps.spaces;
@@ -208,7 +213,7 @@ export class TriggerEventHandler {
     const timestamp = new Date().toISOString();
     const eventId = generateUuid();
 
-    let eventChainContext = getEventChainContext(request);
+    let eventChainContext = this.readEventChainContext(request);
     if (eventChainContext === undefined) {
       eventChainContext = await this.resolveEventChainContextFromEmitterExecution(
         request,
