@@ -36,8 +36,9 @@ import { TaskProcessSupervisor } from './task_process/supervisor';
 import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
-import { serializeSettings } from './task_process/settings';
-import { TaskProcessFallbackCounter } from './task_process/fallback_counter';
+import { resolveSettingsByPlugin, serializeSettings } from './task_process/settings';
+import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
+import { TaskProcessAcquireError } from './task_process/acquire_error';
 import type { TaskProcessInit } from './task_process/wire';
 import { taskType as deleteInactiveNodesTaskType } from './task_types/delete_inactive_nodes.task';
 import { taskType as markRemovedTasksTaskType } from './task_types/mark_removed_tasks_as_unrecognized.task';
@@ -124,7 +125,7 @@ export interface TaskManagerSetupContract {
 
 export interface TaskProcessStats {
   mode: 'in_process' | 'child_process' | 'remote';
-  fallbacks: ReturnType<TaskProcessFallbackCounter['getCounts']>;
+  dispatchFailures: ReturnType<TaskProcessDispatchFailureCounter['getCounts']>;
   /** Only in `child_process` mode. */
   processes?: TaskProcessSupervisorStats;
 }
@@ -145,9 +146,8 @@ export type TaskManagerStartContract = Pick<
   } & {
     getRegisteredTypes: () => string[];
     /**
-     * What task processes have done since Kibana started: the runs Kibana ran itself because a
-     * process could not (by task type and reason), and the processes started now. The same
-     * fallbacks are counted in the `taskManager` usage counter as `taskProcessFallback:<reason>:<type>`.
+     * Process dispatch failures since Kibana started, by task type and reason, and the
+     * processes started now. The failures are counted in the `taskManager` usage counter as `taskProcessDispatchFailure:<reason>:<type>`.
      */
     getTaskProcessStats: () => TaskProcessStats;
     registerEncryptedSavedObjectsClient: (
@@ -213,9 +213,11 @@ export class TaskManagerPlugin
   ) => Promise<
     Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'> | undefined
   >;
-  /** The runs Kibana ran itself because their task process could not. */
-  private readonly taskProcessFallbacks: TaskProcessFallbackCounter;
+  /** Process dispatch failures since this Kibana instance started. */
+  private readonly taskProcessDispatchFailures: TaskProcessDispatchFailureCounter;
   private publicBaseUrl?: string;
+  private getKibanaAddress?: () => string | undefined;
+  private serverBasePath?: string;
   private usageCollectionSetup?: UsageCollectionSetup;
   private elasticsearchConfig?: IElasticsearchConfig;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
@@ -232,7 +234,7 @@ export class TaskManagerPlugin
   constructor(private readonly initContext: PluginInitializerContext) {
     this.initContext = initContext;
     this.logger = initContext.logger.get();
-    this.taskProcessFallbacks = new TaskProcessFallbackCounter(this.logger);
+    this.taskProcessDispatchFailures = new TaskProcessDispatchFailureCounter(this.logger);
     this.config = initContext.config.get<TaskManagerConfig>();
     this.definitions = new TaskTypeDictionary(this.logger);
     this.kibanaVersion = initContext.env.packageInfo.version;
@@ -287,6 +289,17 @@ export class TaskManagerPlugin
       this.elasticsearchConfig = config;
     });
     this.publicBaseUrl = core.http.basePath.publicBaseUrl;
+    // How a process reaches this Kibana: the public URL, or the address it listens on.
+    this.getKibanaAddress = () => {
+      if (this.publicBaseUrl) return this.publicBaseUrl;
+      const { protocol, hostname, port } = core.http.getServerInfo();
+      if (protocol === 'socket') return undefined;
+      const host = hostname === '0.0.0.0' || hostname === '::' ? 'localhost' : hostname;
+      return `${protocol}://${host.includes(':') ? `[${host}]` : host}:${port}${
+        core.http.basePath.serverBasePath
+      }`;
+    };
+    this.serverBasePath = core.http.basePath.serverBasePath;
     const getServerInfo = (publicBaseUrl?: string): TaskHost['server'] => ({
       uuid: this.initContext.env.instanceUuid,
       version: this.kibanaVersion,
@@ -304,18 +317,20 @@ export class TaskManagerPlugin
           const extensions = options?.hostExtensions;
           const host: TaskHost = {
             analytics: coreStart.analytics,
+            http: coreStart.http,
             ...(module.featureFlags ? { featureFlags: coreStart.featureFlags } : {}),
             logger: options?.logger ?? this.logger,
             elasticsearch: coreStart.elasticsearch.client,
             savedObjects: coreStart.savedObjects,
             executionContext: coreStart.executionContext,
-            security: coreStart.security,
+            security: { ...coreStart.security, fips: core.security.fips },
             server: getServerInfo(coreStart.http.basePath.publicBaseUrl),
           };
-          if (module.encryptedSavedObjectTypes?.length) {
+          if (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) {
             host.encryptedSavedObjects = await extensions!.encryptedSavedObjects!();
           }
           if (module.eventLog) host.eventLog = extensions!.eventLog;
+          if (extensions?.plugins) host.plugins = await extensions.plugins();
           if (module.taskManager) host.taskManager = this.startContract;
           if (module.usageCounters && this.usageCollectionSetup) {
             const usageCollection = this.usageCollectionSetup;
@@ -325,7 +340,9 @@ export class TaskManagerPlugin
                 usageCollection.createUsageCounter(domainId, params),
             };
           }
-          if (module.uiSettings) host.uiSettings = coreStart.uiSettings;
+          if (module.uiSettings || module.registerUiSettings)
+            host.uiSettings = coreStart.uiSettings;
+          if (module.dataStreams) host.dataStreams = coreStart.dataStreams;
           if (module.licensing) {
             host.licensing = {
               license$: pluginsStart.licensing.license$,
@@ -333,8 +350,12 @@ export class TaskManagerPlugin
             };
           }
           if (module.settings?.length) {
-            host.settings = Object.fromEntries(
-              module.settings.map((id) => [id, options!.settings![id]()])
+            const registeredSettings = options?.settings;
+            if (!registeredSettings) {
+              throw new Error('The task module settings were not registered');
+            }
+            host.settings = await resolveSettingsByPlugin(
+              Object.fromEntries(module.settings.map((id) => [id, registeredSettings[id]]))
             );
           }
           return host;
@@ -384,7 +405,8 @@ export class TaskManagerPlugin
       > = {
         server: {
           ...getServerInfo(this.publicBaseUrl),
-          basePath: core.http.basePath.serverBasePath || undefined,
+          kibanaUrl: this.getKibanaAddress?.(),
+          ...(this.serverBasePath ? { basePath: this.serverBasePath } : {}),
           isDev: this.initContext.env.mode.dev,
         } as TaskProcessInit['server'],
       };
@@ -405,9 +427,9 @@ export class TaskManagerPlugin
       init.settings = {
         ...(options?.settings
           ? Object.fromEntries(
-              Object.entries(options.settings).map(([id, getSettings]) => [
+              Object.entries(await resolveSettingsByPlugin(options.settings)).map(([id, value]) => [
                 id,
-                serializeSettings(getSettings()),
+                serializeSettings(value),
               ])
             )
           : {}),
@@ -424,10 +446,10 @@ export class TaskManagerPlugin
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
         kibanaVersion: this.kibanaVersion,
-        onFallback: (taskType, reason, detail) => {
-          this.taskProcessFallbacks.increment(taskType, reason, detail);
+        onDispatchFailure: (taskType, reason, detail) => {
+          this.taskProcessDispatchFailures.increment(taskType, reason, detail);
           this.usageCounter?.incrementCounter({
-            counterName: `taskProcessFallback:${reason}:${taskType}`,
+            counterName: `taskProcessDispatchFailure:${reason}:${taskType}`,
             counterType: 'count',
           });
         },
@@ -453,11 +475,31 @@ export class TaskManagerPlugin
           );
           return Object.fromEntries(values);
         },
+        getSnapshot: async (taskType) => ({
+          protocolVersion: 1,
+          init: {
+            ...(await this.getTaskProcessInit?.(taskType)),
+            elasticsearch: serializeElasticsearchConfig(this.elasticsearchConfig!),
+            kibanaVersion: this.kibanaVersion,
+          },
+          featureFlags: await this.taskProcessDispatch?.getFeatureFlags?.(taskType),
+        }),
+        getCancelGracePeriodMs: (taskType) =>
+          this.moduleRegistrations.get(taskType)?.module.cancelGracePeriodMs,
         getRoute: (taskType) => {
           if (!this.moduleTaskTypes.has(taskType)) return undefined;
-          return mode === 'remote'
-            ? { url: remote!.url.replace(/\/$/, ''), token: remote!.token }
-            : this.taskProcessSupervisor?.getRoute(taskType);
+          if (mode === 'remote') {
+            return { url: remote!.url.replace(/\/$/, ''), token: remote!.token };
+          }
+          if (this.taskProcessSupervisor) return this.taskProcessSupervisor.getRoute(taskType);
+          return {
+            acquire: async () => {
+              throw new TaskProcessAcquireError(
+                'unavailable',
+                'Task process supervisor is unavailable'
+              );
+            },
+          };
         },
       };
     }
@@ -601,6 +643,7 @@ export class TaskManagerPlugin
     core: CoreStart,
     { cloud, licensing }: TaskManagerPluginsStart
   ): TaskManagerStartContract {
+    this.logger.info(`Task Manager is starting in Kibana process ${process.pid}`);
     const { savedObjects, elasticsearch, executionContext, security } = core;
     this.featureFlagsService = core.featureFlags;
     const enrichFakeRequest = this.enrichFakeRequest;
@@ -792,7 +835,7 @@ export class TaskManagerPlugin
       getRegisteredTypes: () => this.definitions.getAllTypes(),
       getTaskProcessStats: () => ({
         mode: this.config.task_execution?.mode ?? 'in_process',
-        fallbacks: this.taskProcessFallbacks.getCounts(),
+        dispatchFailures: this.taskProcessDispatchFailures.getCounts(),
         processes: this.taskProcessSupervisor?.getStats(),
       }),
       bulkUpdateState: (...args) => taskScheduling.bulkUpdateState(...args),
@@ -815,8 +858,7 @@ export class TaskManagerPlugin
 
   /**
    * In `child_process` mode, lets task types with a bundle run in a process Kibana starts for each
-   * run, with Kibana's own Elasticsearch connection. Without it Kibana runs every task itself,
-   * which is always correct.
+   * run, with Kibana's own Elasticsearch connection.
    */
   private startTaskProcessSupervisor() {
     const {
@@ -825,6 +867,7 @@ export class TaskManagerPlugin
       max_concurrent_processes: maxConcurrentProcesses,
       child_max_old_space_mb: childMaxOldSpaceMb,
       child_max_semi_space_mb: childMaxSemiSpaceMb,
+      reuse,
     } = this.config.task_execution ?? {};
     if (mode !== 'child_process') return;
     try {
@@ -840,15 +883,24 @@ export class TaskManagerPlugin
           maxConcurrentProcesses: maxConcurrentProcesses ?? this.config.max_workers,
           childMaxOldSpaceMb,
           childMaxSemiSpaceMb,
+          reuse: reuse?.enabled
+            ? {
+                idleTimeoutMs: reuse.idle_timeout_ms,
+                maxAgeMs: reuse.max_age_ms,
+                maxRuns: reuse.max_runs,
+                maxIdleProcesses: reuse.max_idle_processes,
+              }
+            : undefined,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },
         logger: this.logger,
       });
-      this.taskProcessSupervisor.start();
+      this.taskProcessSupervisor.start([...this.moduleTaskTypes]);
     } catch (error) {
       this.taskProcessSupervisor = undefined;
       this.logger.error(`Task processes could not start: ${error.message}`);
+      throw error;
     }
   }
 

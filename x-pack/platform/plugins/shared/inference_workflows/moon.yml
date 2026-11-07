@@ -26,6 +26,11 @@ dependsOn:
   - '@kbn/inference-common'
   - '@kbn/search-inference-endpoints'
   - '@kbn/config-schema'
+  - '@kbn/ai-anonymization-server'
+  - '@kbn/gen-ai-settings-plugin'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/logging-mocks'
 tags:
   - plugin
   - prod

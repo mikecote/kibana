@@ -18,7 +18,7 @@ export interface RetryableBulkUpdateOpts {
   getTasks: (taskIds: string[]) => Promise<BulkGetResult>;
   filter: (task: ConcreteTaskInstance) => boolean;
   map: (task: ConcreteTaskInstance, i: number, arr: ConcreteTaskInstance[]) => ConcreteTaskInstance;
-  store: TaskStore;
+  store: Pick<TaskStore, 'bulkUpdate'>;
   validate: boolean;
   mergeAttributes?: boolean;
   options?: ApiKeyOptions;

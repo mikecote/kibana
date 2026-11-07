@@ -70,8 +70,8 @@ describe('task types served from bundles', () => {
       ES_PASSWORD: esServer.password,
     });
 
-  const run = async (taskType: string, id: string) => {
-    const pod = supervisor.getRoute(taskType)!;
+  const run = async (taskType: string, id: string, host = supervisor) => {
+    const pod = host.getRoute(taskType)!;
     expect(pod).toBeDefined();
     return new RemoteTaskRunner({
       route: pod,
@@ -187,6 +187,28 @@ describe('task types served from bundles', () => {
     await run(DELETE_NODES, 'delete_inactive_background_task_nodes');
     await retry(async () => expect(children()).toBe(''));
     await expect(run(DELETE_NODES, 'delete_inactive_background_task_nodes')).resolves.toBeDefined();
+  });
+
+  it('reuses a real Core process for sequential tasks when enabled and stops it on shutdown', async () => {
+    const pooled = new TaskProcessSupervisor({
+      settings: {
+        bundle_dir: bundleDir,
+        kibanaVersion: KIBANA_VERSION,
+        getElasticsearchConfig: esConfig,
+        reuse: { idleTimeoutMs: 30000, maxAgeMs: 300000, maxRuns: 100, maxIdleProcesses: 2 },
+      },
+      logger: loggingSystemMock.createLogger(),
+    });
+    pooled.start();
+    try {
+      for (let index = 0; index < 3; index++) {
+        await expect(run(DELETE_NODES, `reused-${index}`, pooled)).resolves.toBeDefined();
+      }
+      expect(pooled.getStats()).toMatchObject({ spawned: 1, live: 1, active: 0 });
+    } finally {
+      await pooled.stop();
+    }
+    expect(pooled.getStats().live).toBe(0);
   });
 
   it('deletes inactive nodes through saved objects from a task process', async () => {
@@ -439,11 +461,10 @@ describe('task types served from bundles', () => {
       }
     });
 
-    it('runs in Kibana, counted as capacity, when max_concurrent_processes processes are held', async () => {
+    it('retries in a process when max_concurrent_processes processes are held', async () => {
       const capped = createSupervisor({ maxConcurrentProcesses: 1 });
       const held = await routeOf(capped).acquire();
-      const local = { run: jest.fn().mockResolvedValue({ state: { local: true } }) };
-      const onFallback = jest.fn();
+      const onDispatchFailure = jest.fn();
       try {
         await expect(
           new RemoteTaskRunner({
@@ -456,12 +477,15 @@ describe('task types served from bundles', () => {
             },
             timeoutMs: 30000,
             setCustomTaskRunEventFields: jest.fn(),
-            fallback: () => local,
-            onFallback,
+            onDispatchFailure,
             fetchFn: undiciFetch as unknown as typeof fetch,
           }).run()
-        ).resolves.toEqual({ state: { local: true } });
-        expect(onFallback).toHaveBeenCalledWith(DELETE_NODES, 'capacity', expect.any(String));
+        ).rejects.toThrow('could not be started');
+        expect(onDispatchFailure).toHaveBeenCalledWith(
+          DELETE_NODES,
+          'capacity',
+          expect.any(String)
+        );
         expect(capped.getStats()).toMatchObject({ live: 1, active: 1, capacityRejections: 1 });
       } finally {
         held.release();

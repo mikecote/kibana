@@ -17,9 +17,9 @@ import { securityMock } from '@kbn/security-plugin/server/mocks';
 import type { ZodObject } from '@kbn/zod/v4';
 import type { z } from '@kbn/zod/v4';
 import type { NightshiftSource } from '@kbn/nightshift-shared';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
 import type { KnowledgeIndicatorClient } from '../../lib/knowledge_indicators';
 import type { RouteHandlerScopedClients, GetScopedClients } from '../../routes/types';
-import type { SignificantEventsServer } from '../../types';
 
 /**
  * Subset of RouteHandlerScopedClients that tools actually use.
@@ -131,15 +131,13 @@ const API_PRIVILEGES_BY_FEATURE_PRIVILEGE: Record<NightshiftFeaturePrivilege, re
 };
 
 /**
- * A server whose Kibana privilege check behaves like a user with `featurePrivilege` on Nightshift:
- * a check passes only when every requested API privilege is granted by it. Only `security` is
- * real, so mock any other server dependency (e.g. `assertSignificantEventsAccess`).
+ * Creates authorization services whose Kibana privilege checks enforce the chosen Nightshift role.
  */
 export const createSignificantEventsServer = ({
   featurePrivilege,
 }: {
   featurePrivilege: NightshiftFeaturePrivilege;
-}): SignificantEventsServer => {
+}): SignificantEventsAuthorizationServices => {
   const security = securityMock.createStart();
   const toApiAction = (privilege: string) => `api:${privilege}`;
   jest.spyOn(security.authz.actions.api, 'get').mockImplementation(toApiAction);
@@ -152,6 +150,6 @@ export const createSignificantEventsServer = ({
       hasAllRequested: [kibana].flat().every((action) => grantedActions.has(action)),
     }))
   );
-  const server: Pick<SignificantEventsServer, 'security'> = { security };
-  return server as SignificantEventsServer;
+  const server: SignificantEventsAuthorizationServices = { security };
+  return server;
 };

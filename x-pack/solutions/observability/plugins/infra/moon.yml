@@ -162,6 +162,12 @@ dependsOn:
   - '@kbn/core-logging-server-mocks'
   - '@kbn/ui-callout'
   - '@kbn/core-ui-settings-common'
+  - '@kbn/workflows-extensions'
+  - '@kbn/zod'
+  - '@kbn/management-settings-ids'
+  - '@kbn/apm-sources-access-plugin'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/workflows'
 tags:
   - plugin
   - prod

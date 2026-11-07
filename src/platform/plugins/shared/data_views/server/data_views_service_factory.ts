@@ -13,7 +13,7 @@ import type {
   ElasticsearchClient,
   UiSettingsServiceStart,
   KibanaRequest,
-  CoreStart,
+  CapabilitiesStart,
 } from '@kbn/core/server';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import { DataViewsService } from '../common';
@@ -21,11 +21,13 @@ import { UiSettingsServerToCommon } from './ui_settings_wrapper';
 import { IndexPatternsApiServer } from './index_patterns_api_client';
 import { SavedObjectsClientWrapper } from './saved_objects_client_wrapper';
 
+export type DataViewsCapabilities = Pick<CapabilitiesStart, 'resolveCapabilities'>;
+
 interface DataViewsServiceFactoryDeps {
   logger: Logger;
-  uiSettings: UiSettingsServiceStart;
+  uiSettings: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   fieldFormats: FieldFormatsStart;
-  capabilities: CoreStart['capabilities'];
+  capabilities: DataViewsCapabilities;
   scriptedFieldsEnabled: boolean;
   rollupsEnabled: boolean;
 }

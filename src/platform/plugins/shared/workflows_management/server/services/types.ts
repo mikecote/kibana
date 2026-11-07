@@ -9,7 +9,6 @@
 
 import type { ActionsClient, IUnsecuredActionsClient } from '@kbn/actions-plugin/server';
 import type {
-  CoreStart,
   ElasticsearchClient,
   KibanaRequest,
   Logger,
@@ -24,11 +23,11 @@ import type {
   WorkflowExecutionsDataClient,
   WorkflowsExecutionEnginePluginStart,
 } from '@kbn/workflows-execution-engine/server';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 
 import type { IWorkflowChangeHistoryService } from './workflow_change_history_types';
 import type { WorkflowExecutionQueryService } from './workflow_execution_query_service';
 import type { WorkflowValidationService } from './workflow_validation_service';
+import type { WorkflowManagementCore, WorkflowManagementExtensions } from '../runtime/dependencies';
 import type { WorkflowStorage } from '../storage/workflow_storage';
 import type { WorkflowTaskScheduler } from '../tasks/workflow_task_scheduler';
 
@@ -43,12 +42,12 @@ export interface WorkflowCrudDeps extends WorkflowStorageDeps {
   authz?: { checkPrivilegesWithRequest: CheckPrivilegesWithRequest };
   getSpaceId: (request: KibanaRequest) => string;
   getServiceAccountBindings: () => WorkflowsExecutionEnginePluginStart['serviceAccountBindings'];
-  getSecurity: () => SecurityServiceStart | undefined;
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart | undefined;
+  getSecurity: () => Pick<SecurityServiceStart, 'authc'> | undefined;
+  workflowsExtensions: WorkflowManagementExtensions | undefined;
   getTaskScheduler: () => WorkflowTaskScheduler | null;
   executionQueryService: WorkflowExecutionQueryService;
   validationService: WorkflowValidationService;
-  getCoreStart: () => CoreStart;
+  getCoreStart: () => WorkflowManagementCore;
   changeHistoryService: IWorkflowChangeHistoryService;
   workflowExecutionsDataClient: WorkflowExecutionsDataClient;
   stepExecutionsDataClient: StepExecutionsDataClient;
@@ -72,10 +71,10 @@ export interface WorkflowExecutionQueryDeps {
 /** Deps for WorkflowValidationService. */
 export interface WorkflowValidationDeps {
   /** Required plugin dependency, so it is always present once start has run. */
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart;
+  workflowsExtensions: WorkflowManagementExtensions;
   getActionsClient: () => Promise<IUnsecuredActionsClient>;
   getActionsClientWithRequest: (request: KibanaRequest) => Promise<PublicMethodsOf<ActionsClient>>;
-  getCoreStart: () => CoreStart;
-  licensing: LicensingPluginStart;
+  getCoreStart: () => WorkflowManagementCore;
+  licensing: Pick<LicensingPluginStart, 'getLicense'>;
   logger: Logger;
 }

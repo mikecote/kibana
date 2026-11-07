@@ -5,23 +5,25 @@
  * 2.0.
  */
 
-import type { AnalyticsServiceSetup, CoreStart, Logger } from '@kbn/core/server';
+import type { AnalyticsServiceSetup, Logger } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import { ToolResultType, ToolType } from '@kbn/agent-builder-common';
 import { getToolResultId } from '@kbn/agent-builder-server';
 import type { ToolHandlerContext } from '@kbn/agent-builder-server';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
-import { executeGenerationWorkflow } from '@kbn/discoveries/impl/attack_discovery/generation/execute_generation_workflow';
-import type { WorkflowConfig } from '@kbn/discoveries/impl/attack_discovery/generation/types';
+import type {
+  WorkflowConfig,
+  WorkflowsManagementApi,
+} from '@kbn/discoveries/impl/attack_discovery/generation/types';
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
 import { z, lazySchema } from '@kbn/zod/v4';
 import { withTimeout } from '@kbn/std';
 import { v4 as uuidv4 } from 'uuid';
+import type { GenerationRunner } from '../../../../workflows/generation_runner';
 
 import { getAlertsIndexForSpace } from '../../../../lib/get_alerts_index_for_space';
 import { isWorkflowsEnabledForSpace } from '../../../../lib/is_workflows_enabled_for_space';
-import type { DiscoveriesPluginStartDeps } from '../../../../types';
+import type { GetStepServices } from '../../../../workflows/step_services';
 import { checkManagedWorkflowIntegrity } from '../../../../managed_workflows/check_managed_workflow_integrity';
 import { resolveConnectorDetails } from '../../../../workflows/helpers/resolve_connector_details';
 import { ATTACK_DISCOVERY_RUN_SOFT_DEADLINE_MS } from '../../../../workflows/steps/run_step/constants';
@@ -29,15 +31,13 @@ import { ATTACK_DISCOVERY_RUN_SOFT_DEADLINE_MS } from '../../../../workflows/ste
 export const RUN_ATTACK_DISCOVERY_TOOL_ID = 'security.attack-discovery.run';
 
 export interface RunAttackDiscoveryToolDeps {
-  analytics?: AnalyticsServiceSetup;
+  runGeneration: GenerationRunner;
+  analytics?: AnalyticsServiceSetup | (() => AnalyticsServiceSetup | undefined);
   getEventLogIndex: () => Promise<string>;
   getEventLogger: () => Promise<IEventLogger>;
-  getStartServices: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices: GetStepServices;
   logger: Logger;
-  workflowsManagementApi?: WorkflowsServerPluginSetup['management'];
+  workflowsManagementApi?: WorkflowsManagementApi;
 }
 
 const inputSchema = lazySchema(() =>
@@ -161,6 +161,7 @@ export const getRunAttackDiscoveryTool = ({
   getStartServices,
   logger,
   workflowsManagementApi,
+  runGeneration,
 }: RunAttackDiscoveryToolDeps): BuiltinSkillBoundedTool<typeof inputSchema> => ({
   description: `Run the canonical Attack Discovery generation pipeline (alert retrieval → generation → validation → persistence) inside the audited Anonymization Boundary. Prefer "provided" mode (pass curated \`alerts\`) when you have already gathered evidence; otherwise use "esql" with \`esql_query\`, "custom_only" with \`alert_retrieval_workflow_ids\`, or "custom_query" with explicit \`size\`/\`start\`/\`end\`. Every result includes a \`status\` field: \`status: 'completed'\` means the run finished and \`attack_discoveries\`/\`discovery_count\` are final (\`discovery_count: 0\` genuinely means zero discoveries); \`status: 'pending'\` means the run is still executing in the background and only \`execution_uuid\` is returned (async mode, or sync-mode exceeding the soft deadline) — poll \`security.attack-discovery.get_status\` with the \`execution_uuid\` and NEVER report "0 discoveries" for a pending run. The LLM connector is resolved from the agent execution; pass \`connector_id\` only to override.`,
   handler: async (args, context) => {
@@ -192,6 +193,7 @@ export const getRunAttackDiscoveryTool = ({
     } = args;
 
     try {
+      const runAnalytics = typeof analytics === 'function' ? analytics() : analytics;
       const { coreStart, pluginsStart } = await getStartServices();
 
       if (
@@ -249,7 +251,7 @@ export const getRunAttackDiscoveryTool = ({
       const executeParams = {
         ...(alerts != null && alerts.length > 0 ? { alerts } : {}),
         alertsIndexPattern: getAlertsIndexForSpace(spaceId),
-        analytics,
+        analytics: runAnalytics,
         apiConfig,
         authz: pluginsStart.security.authz,
         checkIntegrity:
@@ -263,7 +265,7 @@ export const getRunAttackDiscoveryTool = ({
               }) => {
                 const { pluginsStart: startDeps } = await getStartServices();
                 return checkManagedWorkflowIntegrity({
-                  analytics,
+                  analytics: runAnalytics,
                   logger: checkLogger,
                   spaceId: checkSpaceId,
                   workflowsExtensions: startDeps.workflowsExtensions,
@@ -292,21 +294,29 @@ export const getRunAttackDiscoveryTool = ({
         workflowsManagementApi,
       };
 
+      const input = {
+        ...args,
+        connector_id: effectiveConnectorId,
+        ground_truth_gate_enabled: true,
+        include_attack_discoveries: true,
+      };
       if (mode === 'async') {
-        executeGenerationWorkflow(executeParams).catch((err) => {
-          logger.error(
-            `Async Attack Discovery tool run failed (execution=${executionUuid}): ${
-              err instanceof Error ? err.message : String(err)
-            }`
-          );
-        });
-
         return {
-          results: [buildSuccessResult({ execution_uuid: executionUuid, status: 'pending' })],
+          results: [
+            buildSuccessResult(
+              await runGeneration({ params: executeParams, input, mode, spaceId })
+            ),
+          ],
         };
       }
-
-      const pipelinePromise = executeGenerationWorkflow(executeParams);
+      const waitController = new AbortController();
+      const pipelinePromise = runGeneration({
+        params: executeParams,
+        input,
+        mode: 'sync',
+        spaceId,
+        waitSignal: waitController.signal,
+      });
 
       const outcome = await withTimeout({
         promise: pipelinePromise,
@@ -314,6 +324,7 @@ export const getRunAttackDiscoveryTool = ({
       });
 
       if (outcome.timedout) {
+        waitController.abort();
         logger.info(
           `Attack Discovery tool sync pipeline exceeded soft deadline of ${ATTACK_DISCOVERY_RUN_SOFT_DEADLINE_MS}ms; returning execution_uuid for slow-path resume (execution=${executionUuid})`
         );
@@ -331,36 +342,7 @@ export const getRunAttackDiscoveryTool = ({
         };
       }
 
-      const raced = outcome.value;
-      if (raced.outcome === 'validation_succeeded') {
-        const { alertRetrievalResult, generationResult, validationResult } = raced;
-
-        return {
-          results: [
-            buildSuccessResult({
-              alerts_context_count: alertRetrievalResult.alertsContextCount,
-              attack_discoveries: generationResult.attackDiscoveries,
-              discovery_count: validationResult.generatedCount,
-              execution_uuid: generationResult.executionUuid,
-              status: 'completed',
-            }),
-          ],
-        };
-      }
-
-      logger.warn(`Attack Discovery tool validation failed (execution=${executionUuid})`);
-
-      return {
-        results: [
-          buildSuccessResult({
-            alerts_context_count: 0,
-            attack_discoveries: null,
-            discovery_count: 0,
-            execution_uuid: executionUuid,
-            status: 'completed',
-          }),
-        ],
-      };
+      return { results: [buildSuccessResult(outcome.value)] };
     } catch (error) {
       logger.error(
         `Attack Discovery tool run failed (execution=${executionUuid}): ${

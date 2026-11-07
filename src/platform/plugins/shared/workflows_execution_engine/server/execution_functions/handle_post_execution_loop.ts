@@ -7,15 +7,15 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { Logger } from '@kbn/core/server';
 import { isTerminalStatus } from '@kbn/workflows';
 import { resumeSyncParentIfNeeded } from './resume_sync_parent_if_needed';
 import { drainConcurrencyQueueSlots } from '../concurrency/concurrency_queue_drainer';
-import type { WorkflowsMeteringService } from '../metering';
+import type { WorkflowsMeteringReporter } from '../metering';
 import type { StepExecutionRepository } from '../repositories/step_execution_repository';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 import type { InternalResumeWorkflowExecution } from '../types';
+import type { WorkflowCloudInfo } from '../workflow_core_services';
 import type { WorkflowTaskManager } from '../workflow_task_manager/workflow_task_manager';
 
 export async function handlePostExecutionLoop({
@@ -36,8 +36,8 @@ export async function handlePostExecutionLoop({
   stepExecutionRepository?: StepExecutionRepository;
   internalResumeWorkflowExecution?: InternalResumeWorkflowExecution;
   workflowTaskManager?: WorkflowTaskManager;
-  meteringService?: WorkflowsMeteringService;
-  cloudSetup?: CloudSetup;
+  meteringService?: WorkflowsMeteringReporter;
+  cloudSetup?: WorkflowCloudInfo;
 }): Promise<void> {
   const finalExecution = await workflowExecutionRepository
     .getWorkflowExecutionById(workflowRunId, spaceId)

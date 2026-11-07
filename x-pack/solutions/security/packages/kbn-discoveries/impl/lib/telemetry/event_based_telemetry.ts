@@ -16,7 +16,7 @@ export interface ScheduleInfo {
   actions: string[];
 }
 
-const scheduleInfoSchema: SchemaValue<ScheduleInfo | undefined> = {
+const scheduleInfoSchema = {
   properties: {
     id: {
       type: 'keyword',
@@ -47,7 +47,7 @@ const scheduleInfoSchema: SchemaValue<ScheduleInfo | undefined> = {
     description: 'Attack discovery schedule info',
     optional: true,
   },
-};
+} satisfies SchemaValue<ScheduleInfo | undefined>;
 
 /**
  * Payload emitted on the `attack_discovery_success` stream by the workflow path.
@@ -93,142 +93,139 @@ export interface WorkflowSuccessTelemetryEvent {
  * Both plugins share the same event type name so all events land in the
  * same telemetry stream.
  */
-export const WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT: EventTypeOpts<WorkflowSuccessTelemetryEvent> =
-  {
-    eventType: 'attack_discovery_success',
-    schema: {
-      actionTypeId: {
-        type: 'keyword',
-        _meta: { description: 'Kibana connector type', optional: false },
-      },
-      alertsContextCount: {
-        type: 'integer',
-        _meta: { description: 'Number of alerts sent as context to the LLM', optional: false },
-      },
-      alertsCount: {
-        type: 'integer',
-        _meta: {
-          description: 'Number of unique alerts referenced in the attack discoveries',
-          optional: false,
-        },
-      },
-      configuredAlertsCount: {
-        type: 'integer',
-        _meta: { description: 'Number of alerts configured by the user', optional: false },
-      },
-      custom_retrieval_workflow_count: {
-        type: 'integer',
-        _meta: {
-          description: 'Number of user-selected custom alert retrieval workflows',
-          optional: true,
-        },
-      },
-      dateRangeDuration: {
-        type: 'integer',
-        _meta: { description: 'Duration of time range of request in hours', optional: false },
-      },
-      alert_retrieval_mode: {
-        type: 'keyword',
-        _meta: {
-          description: 'The alert retrieval mode (custom_query/esql/custom_only/provided)',
-          optional: true,
-        },
-      },
-      discoveriesGenerated: {
-        type: 'integer',
-        _meta: { description: 'Quantity of attack discoveries generated', optional: false },
-      },
-      duplicatesDroppedCount: {
-        type: 'integer',
-        _meta: {
-          description:
-            'Number of discoveries dropped because they were duplicates of existing ones',
-          optional: true,
-        },
-      },
-      durationMs: {
-        type: 'integer',
-        _meta: { description: 'Duration of request in ms', optional: false },
-      },
-      execution_mode: {
-        type: 'keyword',
-        _meta: {
-          description: 'Execution mode (workflow/legacy)',
-          optional: true,
-        },
-      },
-      hallucinations_filtered_count: {
-        type: 'integer',
-        _meta: {
-          description:
-            'Number of discoveries filtered out as hallucinations by the validation step',
-          optional: true,
-        },
-      },
-      hasFilter: {
-        type: 'boolean',
-        _meta: {
-          description: 'Whether a filter was applied to the alerts used as context',
-          optional: false,
-        },
-      },
-      isDefaultDateRange: {
-        type: 'boolean',
-        _meta: {
-          description: 'Whether the date range is the default of last 24 hours',
-          optional: false,
-        },
-      },
-      model: {
-        type: 'keyword',
-        _meta: { description: 'LLM model', optional: true },
-      },
-      prebuilt_step_types_used: {
-        type: 'array',
-        items: {
-          type: 'keyword',
-          _meta: { description: 'Prebuilt step type ID used in execution' },
-        },
-        _meta: {
-          description: 'Which prebuilt step type IDs appeared in the execution',
-          optional: true,
-        },
-      },
-      provider: {
-        type: 'keyword',
-        _meta: { description: 'OpenAI provider', optional: true },
-      },
-      retrieval_workflow_count: {
-        type: 'integer',
-        _meta: { description: 'Total number of retrieval workflows executed', optional: true },
-      },
-      scheduleInfo: scheduleInfoSchema,
-      trigger: {
-        type: 'keyword',
-        _meta: {
-          description:
-            'What triggered the generation (manual/schedule/agent_builder/workflow/unknown)',
-          optional: true,
-        },
-      },
-      uses_default_retrieval: {
-        type: 'boolean',
-        _meta: { description: 'Whether the default retrieval workflow was run', optional: true },
-      },
-      uses_default_validation: {
-        type: 'boolean',
-        _meta: { description: 'Whether the default validation workflow was used', optional: true },
-      },
-      validation_discoveries_count: {
-        type: 'integer',
-        _meta: {
-          description:
-            'Number of discoveries actually persisted (after hallucination filtering and deduplication)',
-          optional: true,
-        },
+export const WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT = {
+  eventType: 'attack_discovery_success',
+  schema: {
+    actionTypeId: {
+      type: 'keyword',
+      _meta: { description: 'Kibana connector type', optional: false },
+    },
+    alertsContextCount: {
+      type: 'integer',
+      _meta: { description: 'Number of alerts sent as context to the LLM', optional: false },
+    },
+    alertsCount: {
+      type: 'integer',
+      _meta: {
+        description: 'Number of unique alerts referenced in the attack discoveries',
+        optional: false,
       },
     },
-  };
+    configuredAlertsCount: {
+      type: 'integer',
+      _meta: { description: 'Number of alerts configured by the user', optional: false },
+    },
+    custom_retrieval_workflow_count: {
+      type: 'integer',
+      _meta: {
+        description: 'Number of user-selected custom alert retrieval workflows',
+        optional: true,
+      },
+    },
+    dateRangeDuration: {
+      type: 'integer',
+      _meta: { description: 'Duration of time range of request in hours', optional: false },
+    },
+    alert_retrieval_mode: {
+      type: 'keyword',
+      _meta: {
+        description: 'The alert retrieval mode (custom_query/esql/custom_only/provided)',
+        optional: true,
+      },
+    },
+    discoveriesGenerated: {
+      type: 'integer',
+      _meta: { description: 'Quantity of attack discoveries generated', optional: false },
+    },
+    duplicatesDroppedCount: {
+      type: 'integer',
+      _meta: {
+        description: 'Number of discoveries dropped because they were duplicates of existing ones',
+        optional: true,
+      },
+    },
+    durationMs: {
+      type: 'integer',
+      _meta: { description: 'Duration of request in ms', optional: false },
+    },
+    execution_mode: {
+      type: 'keyword',
+      _meta: {
+        description: 'Execution mode (workflow/legacy)',
+        optional: true,
+      },
+    },
+    hallucinations_filtered_count: {
+      type: 'integer',
+      _meta: {
+        description: 'Number of discoveries filtered out as hallucinations by the validation step',
+        optional: true,
+      },
+    },
+    hasFilter: {
+      type: 'boolean',
+      _meta: {
+        description: 'Whether a filter was applied to the alerts used as context',
+        optional: false,
+      },
+    },
+    isDefaultDateRange: {
+      type: 'boolean',
+      _meta: {
+        description: 'Whether the date range is the default of last 24 hours',
+        optional: false,
+      },
+    },
+    model: {
+      type: 'keyword',
+      _meta: { description: 'LLM model', optional: true },
+    },
+    prebuilt_step_types_used: {
+      type: 'array',
+      items: {
+        type: 'keyword',
+        _meta: { description: 'Prebuilt step type ID used in execution' },
+      },
+      _meta: {
+        description: 'Which prebuilt step type IDs appeared in the execution',
+        optional: true,
+      },
+    },
+    provider: {
+      type: 'keyword',
+      _meta: { description: 'OpenAI provider', optional: true },
+    },
+    retrieval_workflow_count: {
+      type: 'integer',
+      _meta: { description: 'Total number of retrieval workflows executed', optional: true },
+    },
+    scheduleInfo: scheduleInfoSchema,
+    trigger: {
+      type: 'keyword',
+      _meta: {
+        description:
+          'What triggered the generation (manual/schedule/agent_builder/workflow/unknown)',
+        optional: true,
+      },
+    },
+    uses_default_retrieval: {
+      type: 'boolean',
+      _meta: { description: 'Whether the default retrieval workflow was run', optional: true },
+    },
+    uses_default_validation: {
+      type: 'boolean',
+      _meta: { description: 'Whether the default validation workflow was used', optional: true },
+    },
+    validation_discoveries_count: {
+      type: 'integer',
+      _meta: {
+        description:
+          'Number of discoveries actually persisted (after hallucination filtering and deduplication)',
+        optional: true,
+      },
+    },
+  },
+} satisfies EventTypeOpts<WorkflowSuccessTelemetryEvent>;
 
 /**
  * Server-side event for schedule lifecycle actions (create, update, delete,
@@ -287,7 +284,7 @@ export interface WorkflowErrorTelemetryEvent {
 /**
  * Workflow-augmented attack discovery error event.
  */
-export const WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT: EventTypeOpts<WorkflowErrorTelemetryEvent> = {
+export const WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT = {
   eventType: 'attack_discovery_error',
   schema: {
     actionTypeId: {
@@ -338,7 +335,7 @@ export const WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT: EventTypeOpts<WorkflowErrorT
       },
     },
   },
-};
+} satisfies EventTypeOpts<WorkflowErrorTelemetryEvent>;
 
 export type MisconfigurationType =
   | 'alerts_index_missing'

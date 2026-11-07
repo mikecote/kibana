@@ -103,6 +103,67 @@ describe('createWorkflowsReadApi', () => {
 
     expect(report).toEqual(expect.objectContaining({ status: 'missing', installed: false }));
   });
+
+  it('reads the state of a managed workflow that the plugin installed', async () => {
+    mockSearch.mockResolvedValue({
+      timed_out: false,
+      hits: {
+        hits: [
+          {
+            _id: 'wf-1',
+            _source: {
+              ...storedWorkflow,
+              managed: true,
+              managedBy: 'alertzero',
+              originManagedWorkflowId: 'definition-1',
+              version: 3,
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(
+      createApi().getInstalledManagedWorkflowState('wf-1', 'default', 'alertzero')
+    ).resolves.toEqual({
+      workflowId: 'wf-1',
+      spaceId: 'default',
+      definitionId: 'definition-1',
+      templateValues: null,
+      documentVersion: 3,
+    });
+  });
+
+  it('has no state for a workflow that another plugin or no plugin installed', async () => {
+    mockSearch.mockResolvedValue({
+      timed_out: false,
+      hits: {
+        hits: [{ _id: 'wf-1', _source: { ...storedWorkflow, managed: true, managedBy: 'other' } }],
+      },
+    });
+
+    await expect(
+      createApi().getInstalledManagedWorkflowState('wf-1', 'default', 'alertzero')
+    ).resolves.toBeNull();
+    mockSearch.mockResolvedValue({
+      timed_out: false,
+      hits: { hits: [{ _id: 'wf-1', _source: storedWorkflow }] },
+    });
+    await expect(
+      createApi().getInstalledManagedWorkflowState('wf-1', 'default', 'alertzero')
+    ).resolves.toBeNull();
+  });
+
+  it('asserts the access of the request to a workflow, and that it exists', async () => {
+    await expect(
+      createApi().assertWorkflowAccess('wf-1', 'default', 'execute', request)
+    ).resolves.toBeUndefined();
+
+    mockSearch.mockResolvedValue({ timed_out: false, hits: { hits: [] } });
+    await expect(
+      createApi().assertWorkflowAccess('missing', 'default', 'execute', request)
+    ).rejects.toThrow(/missing/);
+  });
 });
 
 describe('scheduleWorkflowWithEngine', () => {

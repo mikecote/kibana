@@ -7,11 +7,18 @@
 
 import { of } from 'rxjs';
 
+import { ConfigSchema } from './config';
 import { spacesClientServiceMock } from './spaces_client/spaces_client_service.mock';
 import { spacesServiceMock } from './spaces_service/spaces_service.mock';
 
 function createSetupMock() {
   return {
+    getTaskProcessSettings: jest.fn().mockReturnValue({
+      config: ConfigSchema.validate({}, { offering: 'traditional' }),
+      buildFlavor: 'traditional',
+      features: [],
+      cpsEnabled: false,
+    }),
     spacesService: spacesServiceMock.createSetupContract(),
     spacesClient: spacesClientServiceMock.createSetup(),
     hasOnlyDefaultSpace$: of(false),

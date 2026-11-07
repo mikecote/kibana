@@ -28,7 +28,7 @@ import {
   validateExternalResumeInput,
 } from './external_resume_form_fields';
 import { renderExternalResumeFormPage } from './render_external_resume_page';
-import type { WorkflowsService } from '../workflows_management_service';
+import type { WorkflowsRuntime } from '../../runtime/workflows_runtime';
 
 export interface ExternalResumeViaGetParams {
   token: string;
@@ -59,7 +59,7 @@ interface ResolvedExternalResumeContext {
 }
 
 export async function resumeWorkflowExecutionExternallyViaGet(
-  workflowsService: WorkflowsService,
+  workflowsService: WorkflowsRuntime,
   { token, executionId, stepId, spaceId, query }: ExternalResumeViaGetParams
 ): Promise<ResumeWorkflowExecutionResponseDto> {
   const { stepExecution } = await resolveExternalResumeContext(workflowsService, {
@@ -107,7 +107,7 @@ export async function resumeWorkflowExecutionExternallyViaGet(
 }
 
 export async function resumeWorkflowExecutionExternallyWithInput(
-  workflowsService: WorkflowsService,
+  workflowsService: WorkflowsRuntime,
   { token, executionId, stepId, spaceId, input }: ExternalResumeWorkflowExecutionWithInputParams
 ): Promise<ResumeWorkflowExecutionResponseDto> {
   const { stepExecution } = await resolveExternalResumeContext(workflowsService, {
@@ -137,7 +137,7 @@ export async function resumeWorkflowExecutionExternallyWithInput(
 }
 
 export async function getExternalResumeFormPage(
-  workflowsService: WorkflowsService,
+  workflowsService: WorkflowsRuntime,
   { token, executionId, stepId, spaceId, basePath }: ExternalResumeFormPageParams
 ): Promise<string> {
   const { stepExecution } = await resolveExternalResumeContext(workflowsService, {
@@ -205,7 +205,7 @@ export function parseExternalResumeFormSubmission(
 }
 
 async function resolveExternalResumeContext(
-  workflowsService: WorkflowsService,
+  workflowsService: WorkflowsRuntime,
   {
     token,
     executionId,
@@ -257,7 +257,7 @@ async function resolveExternalResumeContext(
 }
 
 async function resumeWorkflowExecutionWithResolvedContext(
-  workflowsService: WorkflowsService,
+  workflowsService: WorkflowsRuntime,
   {
     stepExecutionId,
     executionId,

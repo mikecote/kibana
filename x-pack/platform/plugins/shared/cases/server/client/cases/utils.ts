@@ -9,7 +9,6 @@ import { isEmpty, uniqBy } from 'lodash';
 import type { UserProfile } from '@kbn/security-plugin/common';
 import type { IBasePath } from '@kbn/core-http-browser';
 import type { Logger } from '@kbn/logging';
-import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { UserProfileWithAvatar } from '@kbn/user-profile-components';
 import { v4 } from 'uuid';
 import type { SavedObject } from '@kbn/core/server';
@@ -46,6 +45,7 @@ import { CASE_VIEW_PAGE_TABS } from '../../../common/types';
 import { isCommentUserAction, isPushedUserAction } from '../../../common/utils/user_actions';
 import type { CasesClientGetAlertsResponse } from '../alerts/types';
 import type { ExternalServiceComment, ExternalServiceIncident } from './types';
+import type { CasesSecurityStart } from '../types';
 import type { CasesConnectorsMap } from '../../connectors';
 import { getCaseViewPath } from '../../common/utils';
 import {
@@ -654,7 +654,7 @@ export const getDurationForUpdate = ({
 };
 
 export const getUserProfiles = async (
-  securityStartPlugin: SecurityPluginStart,
+  securityStartPlugin: CasesSecurityStart,
   uids: Set<string>,
   dataPath?: string
 ): Promise<Map<string, UserProfileWithAvatar>> => {
@@ -681,7 +681,7 @@ export const getUserProfiles = async (
  * storing assignees uid-only, and the read path still resolves identity live.
  */
 export const getUserProfilesSafe = async (
-  securityStartPlugin: SecurityPluginStart,
+  securityStartPlugin: CasesSecurityStart,
   uids: Set<string>,
   logger: Logger
 ): Promise<Map<string, UserProfileWithAvatar> | undefined> => {
@@ -727,7 +727,7 @@ export const applyProfilesToAssignees = (
  * lookup failure the original (uid-only) assignees are returned unchanged.
  */
 export const populateAssigneesIdentity = async (
-  securityStartPlugin: SecurityPluginStart,
+  securityStartPlugin: CasesSecurityStart,
   logger: Logger,
   assignees?: CaseAssignees
 ): Promise<CaseAssignees | undefined> => {

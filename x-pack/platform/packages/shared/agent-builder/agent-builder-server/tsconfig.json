@@ -14,6 +14,7 @@
     "target/**/*"
   ],
   "kbn_references": [
+    "@kbn/core-data-streams-server",
     "@kbn/inference-langchain",
     "@kbn/zod",
     "@kbn/utility-types",
@@ -25,5 +26,9 @@
     "@kbn/core-ui-settings-server",
     "@kbn/core-saved-objects-api-server",
     "@kbn/connector-specs",
+    "@kbn/core-analytics-server",
+    "@kbn/core-lifecycle-server",
+    "@kbn/core-saved-objects-server",
+    "@kbn/core-ui-settings-common",
   ]
 }

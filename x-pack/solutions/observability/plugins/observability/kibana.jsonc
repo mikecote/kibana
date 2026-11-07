@@ -8,6 +8,7 @@
     "id": "observability",
     "browser": true,
     "server": true,
+    "taskTypeContributions": { "workflow-steps": ["server/task_types/workflow_ui_settings_contribution.ts"] },
     "taskTypes": [
       "server/task_types/custom_threshold.task.ts"
     ],
@@ -46,6 +47,7 @@
       "kql",
     ],
     "optionalPlugins": [
+      "workflowsExtensions",
       "observabilityAgentBuilder",
       "agentBuilder",
       "aiops",

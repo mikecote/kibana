@@ -17,6 +17,8 @@ import { alertsLocatorID } from '@kbn/observability-plugin/common';
 import { Dataset } from '@kbn/rule-registry-plugin/server';
 import { isEmpty, mapValues } from 'lodash';
 import { firstValueFrom } from 'rxjs';
+import type { ApmWorkflowSettings } from './task_types/workflow_services_contribution';
+import { APM_WORKFLOW_SETTINGS_ID } from './task_types/workflow_services_contribution';
 import type { APMConfig } from '.';
 import { APM_SERVER_FEATURE_ID } from '.';
 import { apmTutorialCustomIntegration } from '../common/tutorial/tutorials';
@@ -54,6 +56,7 @@ import type {
 } from './types';
 import { registerDataProviders } from './agent_builder/data_provider/register_data_providers';
 import { registerServiceMapAgentBuilder } from './agent_builder/register_service_map';
+import { APM_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { registerServiceMapEmbeddableTransforms } from './lib/embeddables/register_service_map_embeddable_transforms';
 
 export class APMPlugin
@@ -256,6 +259,16 @@ export class APMPlugin
       getAlertDetailsContextHandler({ setup: core, start: getCoreStart }, resourcePlugins, logger)
     );
 
+    if (plugins.observabilityAgentBuilder) {
+      plugins.workflowsExtensions?.registerTaskProcessSettings(
+        APM_WORKFLOW_SETTINGS_ID,
+        (): ApmWorkflowSettings => ({
+          config: this.currentConfig ?? currentConfig,
+          mlEnabled: plugins.ml !== undefined,
+          sloEnabled: plugins.slo !== undefined,
+        })
+      );
+    }
     registerDataProviders({
       core,
       plugins,
@@ -266,6 +279,8 @@ export class APMPlugin
     registerServiceMapEmbeddableTransforms(plugins.embeddable);
 
     if (plugins.agentBuilder) {
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      plugins.agentBuilder.taskProcess?.registerSettings(APM_AGENT_BUILDER_SETTINGS_ID, () => ({}));
       registerServiceMapAgentBuilder({ agentBuilder: plugins.agentBuilder });
     }
 

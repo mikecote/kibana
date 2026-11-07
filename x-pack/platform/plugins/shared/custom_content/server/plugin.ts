@@ -9,8 +9,8 @@ import type { CoreSetup, Plugin } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
 import { CUSTOM_CONTENT_EMBEDDABLE_TYPE } from '@kbn/custom-content-common';
-import { createCustomContentContextAttachmentType } from './attachment_types/custom_content_context';
-import { createUpdateCustomContentTool } from './tools/update_custom_content_tool';
+import { registerCustomContentAgentBuilder } from './register_agent_builder';
+import { CUSTOM_CONTENT_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { customContentEmbeddableSchema } from './embeddable/schemas';
 
 interface SetupDeps {
@@ -26,14 +26,12 @@ export class CustomContentPlugin implements Plugin<void, void, SetupDeps> {
     });
 
     if (agentBuilder) {
-      agentBuilder.attachments.registerType(
-        createCustomContentContextAttachmentType() as Parameters<
-          typeof agentBuilder.attachments.registerType
-        >[0]
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      agentBuilder.taskProcess?.registerSettings(
+        CUSTOM_CONTENT_AGENT_BUILDER_SETTINGS_ID,
+        () => ({})
       );
-      agentBuilder.tools.register(
-        createUpdateCustomContentTool() as Parameters<typeof agentBuilder.tools.register>[0]
-      );
+      registerCustomContentAgentBuilder(agentBuilder);
     }
   }
 

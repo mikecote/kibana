@@ -91,7 +91,6 @@ const createAlertsClientParams = () => {
     ruleDataService: ruleDataServiceMock.create(),
     esClient: esClientMock,
     esClientScoped: esClientMock,
-    getRuleType: jest.fn(),
     getRuleList: jest.fn(),
     getAlertIndicesAlias: getAlertIndicesAliasMock,
   };

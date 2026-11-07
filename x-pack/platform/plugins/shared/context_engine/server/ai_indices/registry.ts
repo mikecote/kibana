@@ -34,6 +34,11 @@ export class AiIndexRegistry {
     return [...this.entries.keys()];
   }
 
+  /** Registrations sent to task processes at dispatch time. */
+  getRegistrations(): Array<{ id: string; properties: AiIndexProperties }> {
+    return [...this.entries].map(([id, properties]) => ({ id, properties }));
+  }
+
   has(id: string): boolean {
     return this.entries.has(id);
   }

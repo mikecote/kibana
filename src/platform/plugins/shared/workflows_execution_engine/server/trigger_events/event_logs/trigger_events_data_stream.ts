@@ -13,20 +13,6 @@ import type { MappingsDefinition } from '@kbn/es-mappings';
 import { mappings } from '@kbn/es-mappings';
 import { WORKFLOWS_EVENTS_DATA_STREAM } from './constants';
 
-// Note: Bump the version when you make changes to the definition.
-export const initializeTriggerEventsDataStream = (coreDataStreams: DataStreamsSetup): void => {
-  coreDataStreams.registerDataStream({
-    name: WORKFLOWS_EVENTS_DATA_STREAM,
-    version: 3,
-    template: {
-      mappings: triggerEventsMappings,
-      settings: {
-        auto_expand_replicas: '0-1',
-      },
-    },
-  });
-};
-
 const triggerEventsMappings = {
   dynamic: false,
   properties: {
@@ -39,6 +25,22 @@ const triggerEventsMappings = {
     payload: mappings.object({ properties: {} }),
   },
 } satisfies MappingsDefinition;
+
+// Note: Bump the version when you make changes to the definition.
+export const WORKFLOWS_EVENTS_DATA_STREAM_DEFINITION = {
+  name: WORKFLOWS_EVENTS_DATA_STREAM,
+  version: 3,
+  template: {
+    mappings: triggerEventsMappings,
+    settings: {
+      auto_expand_replicas: '0-1',
+    },
+  },
+};
+
+export const initializeTriggerEventsDataStream = (coreDataStreams: DataStreamsSetup): void => {
+  coreDataStreams.registerDataStream(WORKFLOWS_EVENTS_DATA_STREAM_DEFINITION);
+};
 
 export interface TriggerEventDocument {
   '@timestamp': string;

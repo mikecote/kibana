@@ -9,6 +9,7 @@
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
 import type { EsWorkflowExecution } from '@kbn/workflows';
+import type { EventChainContextStore } from '@kbn/workflows-extensions/server';
 import { setWorkflowEventChainContext } from '@kbn/workflows-extensions/server';
 import { emitWorkflowExecutionFailedEventIfFailed } from './emit_workflow_execution_failed_event';
 import {
@@ -25,12 +26,15 @@ export const emitWorkflowIdentityFailureEvent = async ({
   emitEvent,
   logger,
   maxEventChainDepth,
+  eventChainContext,
 }: {
   execution: EsWorkflowExecution;
   request: KibanaRequest;
   emitEvent: EmitEvent;
   logger: Logger;
   maxEventChainDepth: number;
+  /** Where the chain is recorded on the request; the default store when absent. */
+  eventChainContext?: Pick<EventChainContextStore, 'set'>;
 }): Promise<void> => {
   if (execution.isTestRun) return;
   const visitedWorkflowIds = mergeEmitterWorkflowIntoEventChainVisited(
@@ -38,7 +42,7 @@ export const emitWorkflowIdentityFailureEvent = async ({
     execution.workflowId,
     maxEventChainDepth
   );
-  setWorkflowEventChainContext(request, {
+  (eventChainContext?.set ?? setWorkflowEventChainContext)(request, {
     depth: extractEventChainDepthFromExecution(execution) ?? -1,
     sourceExecutionId: execution.id,
     ...(visitedWorkflowIds.length > 0 ? { visitedWorkflowIds } : {}),

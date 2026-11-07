@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { createEvalsServerSteps } from './steps';
 import type { EvalStepDeps } from './types';
 
@@ -16,7 +16,7 @@ export { createEvalsServerSteps } from './steps';
  * Registers all evals workflow steps with the Workflows engine.
  */
 export const registerEvalsWorkflowSteps = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup,
+  workflowsExtensions: WorkflowStepsRegistry,
   deps: EvalStepDeps
 ): void => {
   for (const step of createEvalsServerSteps(deps)) {

@@ -17,28 +17,18 @@ import type { AttachmentPublicClient, ConversationPublicClient } from '@kbn/agen
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { AgenticInvestigationsConfig } from './config';
 import { registerFeatures } from './features';
-import { registerImpactAttachment } from './impact/attachments';
 import { registerImpactRoutes } from './impact/routes/register_routes';
 import { createInvestigationsPrivilegesChecker } from './investigations/services/check_investigations_privileges';
 import { createImpactClient } from './impact/services/impact_client';
 import { createEntityStoreNameLookup } from './impact/services/entity_store_names';
 import { ImpactPillsService } from './impact/services/impact_pills_service';
-import { ImpactService } from './impact/services/impact_service';
+import type { ImpactService } from './impact/services/impact_service';
 import { registerImpactStepDefinitions } from './impact/step_types';
 import { registerInvestigationStepDefinitions } from './investigations/step_types';
 import { registerWorkflowExecutionStepDefinitions } from './workflow_execution/step_types';
-import { createImpactStorageClient } from './impact/storage/impact_storage';
-import { createSetImpactTool } from './impact/tools/set_impact_tool';
-import { registerSubjectAttachment, subjectAttachment } from './subjects/attachments';
-import { SubjectsService } from './subjects/services/subjects_service';
-import {
-  createSubjectClaimStorageClient,
-  SubjectClaimsService,
-} from './subjects/services/subject_claims_service';
+import type { SubjectsService } from './subjects/services/subjects_service';
 import { createSubjectsClient } from './subjects/services/subjects_client';
-import { hypothesesAttachment, registerHypothesesAttachment } from './hypotheses/attachments';
-import { HypothesesService } from './hypotheses/services/hypotheses_service';
-import { createSetHypothesesTool } from './hypotheses/tools/set_hypotheses_tool';
+import type { HypothesesService } from './hypotheses/services/hypotheses_service';
 import { EscalationsService } from './escalations/services/escalations_service';
 import { registerEscalationConversationEvents } from './escalations/conversation_events';
 import { registerEscalationRoutes } from './escalations/routes/register_routes';
@@ -53,7 +43,10 @@ import { InvestigationsQueryService } from './investigations/services/investigat
 import { createInvestigationsClient } from './investigations/services/investigations_client';
 import { createConversationReadCheck } from './investigation_attachments';
 import { createUserResolver } from './services/resolve_user';
+import { registerInvestigationAgentBuilder } from './services/register_agent_builder';
+import { createInvestigationDocumentServices } from './services/create_document_services';
 import type { ResolveUser } from './services/resolve_user';
+import { AGENTIC_INVESTIGATIONS_TASK_PROCESS_SETTINGS_ID } from './task_types/agentic_investigations_task_process_settings';
 import type {
   AgenticInvestigationsPluginSetup,
   AgenticInvestigationsPluginStart,
@@ -72,6 +65,8 @@ export class AgenticInvestigationsPlugin
 {
   private readonly logger: Logger;
   private readonly escalationsEnabled: boolean;
+  private securityEnabled = false;
+  private proposalsEnabled = false;
   private impactService?: ImpactService;
   private impactPillsService?: ImpactPillsService;
   private subjectsService?: SubjectsService;
@@ -101,6 +96,20 @@ export class AgenticInvestigationsPlugin
   ): AgenticInvestigationsPluginSetup {
     this.workflowsManagement = workflowsManagement?.management;
     registerFeatures({ features, escalationsEnabled: this.escalationsEnabled });
+    const getTaskProcessSettings = () => ({
+      escalationsEnabled: this.escalationsEnabled,
+      securityEnabled: this.securityEnabled,
+      spacesEnabled: Boolean(this.spaces),
+      proposalsEnabled: this.proposalsEnabled,
+    });
+    agentBuilder.taskProcess?.registerSettings(
+      AGENTIC_INVESTIGATIONS_TASK_PROCESS_SETTINGS_ID,
+      getTaskProcessSettings
+    );
+    workflowsExtensions.registerTaskProcessSettings(
+      AGENTIC_INVESTIGATIONS_TASK_PROCESS_SETTINGS_ID,
+      getTaskProcessSettings
+    );
 
     if (this.escalationsEnabled) {
       registerEscalationConversationEvents(agentBuilder);
@@ -118,41 +127,15 @@ export class AgenticInvestigationsPlugin
       getConversationClient: (request) => this.getConversationClient(request),
     });
 
-    registerImpactAttachment(agentBuilder, {
+    registerInvestigationAgentBuilder(agentBuilder, {
       getImpactService: () => this.requireImpactService(),
-      privileges: investigationsPrivileges,
-      assertCanReadConversation,
-      logger: this.logger,
-    });
-    registerSubjectAttachment(agentBuilder, {
       getSubjectsService: () => this.requireSubjectsService(),
-      privileges: investigationsPrivileges,
-      assertCanReadConversation,
-      logger: this.logger,
-    });
-    registerHypothesesAttachment(agentBuilder, {
       getHypothesesService: () => this.requireHypothesesService(),
+      resolveUser: (request) => this.requireUserResolver()(request),
       privileges: investigationsPrivileges,
       assertCanReadConversation,
       logger: this.logger,
     });
-
-    agentBuilder.tools.register(
-      createSetImpactTool({
-        getImpactService: () => this.requireImpactService(),
-        resolveUser: (request) => this.requireUserResolver()(request),
-        privileges: investigationsPrivileges,
-        logger: this.logger,
-      })
-    );
-    agentBuilder.tools.register(
-      createSetHypothesesTool({
-        getHypothesesService: () => this.requireHypothesesService(),
-        resolveUser: (request) => this.requireUserResolver()(request),
-        privileges: investigationsPrivileges,
-        logger: this.logger,
-      })
-    );
 
     registerImpactStepDefinitions({
       workflowsExtensions,
@@ -219,6 +202,8 @@ export class AgenticInvestigationsPlugin
   ): AgenticInvestigationsPluginStart {
     this.spaces = plugins.spaces;
     this.agentBuilder = plugins.agentBuilder;
+    this.securityEnabled = Boolean(plugins.security);
+    this.proposalsEnabled = Boolean(plugins.proposals);
     this.resolveUser = createUserResolver({
       userProfile: coreStart.userProfile,
       security: coreStart.security,
@@ -227,23 +212,15 @@ export class AgenticInvestigationsPlugin
 
     // Reads and writes go through the internal user; authorization is enforced
     // at the API layer.
-    this.impactService = new ImpactService({
-      storage: createImpactStorageClient({
-        esClient: coreStart.elasticsearch.client.asInternalUser,
-        logger: this.logger,
-      }),
-    });
-
     const esClient = coreStart.elasticsearch.client.asInternalUser;
-    this.subjectsService = new SubjectsService({
-      documents: subjectAttachment.createService({ esClient, logger: this.logger }),
-      claims: new SubjectClaimsService({
-        storage: createSubjectClaimStorageClient({ esClient, logger: this.logger }),
-      }),
-    });
-    this.hypothesesService = new HypothesesService({
-      documents: hypothesesAttachment.createService({ esClient, logger: this.logger }),
-    });
+    const { impactService, subjectsService, hypothesesService } =
+      createInvestigationDocumentServices({
+        esClient,
+        logger: this.logger,
+      });
+    this.impactService = impactService;
+    this.subjectsService = subjectsService;
+    this.hypothesesService = hypothesesService;
 
     this.investigationStatusService = new InvestigationStatusService({
       getConversationClient: (request) =>

@@ -8,3 +8,11 @@
  */
 
 export { WorkflowsMeteringService } from './metering_service';
+export {
+  buildWorkflowMeteringRecord,
+  createWorkflowsMeteringReporter,
+  type MeteringSink,
+  type WorkflowMeteringCloud,
+  type WorkflowMeteringRecord,
+  type WorkflowsMeteringReporter,
+} from './build_metering_record';

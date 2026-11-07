@@ -176,6 +176,7 @@ dependsOn:
   - '@kbn/alerting-v2-utils'
   - '@kbn/alerting-v2-constants'
   - '@kbn/agentic-investigations-plugin'
+  - '@kbn/workflows-extensions'
 tags:
   - plugin
   - prod

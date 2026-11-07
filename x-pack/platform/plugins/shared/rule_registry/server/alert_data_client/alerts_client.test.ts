@@ -53,7 +53,6 @@ describe('AlertsClient', () => {
       esClient: esClientMock,
       esClientScoped: esClientScopedMock,
       ruleDataService,
-      getRuleType: jest.fn(),
       getRuleList: getRuleListMock,
       getAlertIndicesAlias: getAlertIndicesAliasMock,
     };

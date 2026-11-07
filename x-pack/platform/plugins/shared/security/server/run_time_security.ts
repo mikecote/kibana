@@ -13,12 +13,15 @@ import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
 
 import { createApiKeys } from './authentication/api_keys/create_api_keys';
 import type { InternalAuthenticationServiceStart } from './authentication/authentication_service';
+import { UiamSystemIdentity } from './authentication/system_identity';
 import { checkPrivilegesFactory } from './authorization/check_privileges';
 import { checkPrivilegesDynamicallyWithRequestFactory } from './authorization/check_privileges_dynamically';
 import { checkSavedObjectsPrivilegesWithRequestFactory } from './authorization/check_saved_objects_privileges';
 import { authorizationModeFactory } from './authorization/mode';
 import type { UiamConfigType } from './config';
 import type { SpacesService } from './plugin';
+import type { UiamServicePublic } from './uiam';
+import type { UiamTlsMaterial } from './uiam/uiam_service';
 import { UiamService } from './uiam/uiam_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 
@@ -40,6 +43,8 @@ export interface RunTimeSecurityOptions {
     kibanaServerResourceURL: string;
     elasticsearchUrl?: string;
     kibanaVersion: string;
+    /** The TLS material of the connection as contents, when the files are not readable here. */
+    tls?: UiamTlsMaterial;
   };
   audit: AuditServiceSetup;
   /** Who a request acts for: Kibana's authenticated user, or what enriches a fake request. */
@@ -47,8 +52,15 @@ export interface RunTimeSecurityOptions {
 }
 
 export interface RunTimeSecurity {
-  authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser'>;
+  authc: Pick<InternalAuthenticationServiceStart, 'apiKeys' | 'getCurrentUser' | 'systemIdentity'>;
   authz: ReturnType<typeof checkPrivilegesFactory> & {
+    /**
+     * Checks at the space of the request (a run's fake request names its space), as the actions
+     * plugin does for connectors.
+     */
+    checkPrivilegesDynamicallyWithRequest: ReturnType<
+      typeof checkPrivilegesDynamicallyWithRequestFactory
+    >;
     actions: Actions;
     applicationName: string;
     /** Whether the privileges of a request are checked, which the license decides. */
@@ -56,12 +68,10 @@ export interface RunTimeSecurity {
     checkSavedObjectsPrivilegesWithRequest: ReturnType<
       typeof checkSavedObjectsPrivilegesWithRequestFactory
     >;
-    /** Checks the privileges of a request in its own space, as the actions plugin does for connectors. */
-    checkPrivilegesDynamicallyWithRequest: ReturnType<
-      typeof checkPrivilegesDynamicallyWithRequestFactory
-    >;
   };
   audit: AuditServiceSetup;
+  /** The UIAM service (the one the API keys use), when UIAM is enabled. */
+  uiam?: UiamServicePublic;
 }
 
 /**
@@ -111,7 +121,19 @@ export const createRunTimeSecurity = ({
   } as unknown as SpacesService;
 
   return {
-    authc: { apiKeys, getCurrentUser },
+    authc: {
+      apiKeys,
+      getCurrentUser,
+      systemIdentity:
+        uiam &&
+        Boolean(
+          uiamOptions?.tls
+            ? uiamOptions.tls.certificate && uiamOptions.tls.key
+            : config.uiam?.ssl.certificate && config.uiam.ssl.key
+        )
+          ? new UiamSystemIdentity({ logger: logger.get('system-identity'), uiam })
+          : undefined,
+    },
     authz: {
       ...privileges,
       actions,
@@ -127,5 +149,6 @@ export const createRunTimeSecurity = ({
       ),
     },
     audit,
+    uiam,
   };
 };

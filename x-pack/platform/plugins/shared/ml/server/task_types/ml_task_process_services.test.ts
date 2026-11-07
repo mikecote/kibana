@@ -6,37 +6,41 @@
  */
 
 import { Subject } from 'rxjs';
+import type { ILicense } from '@kbn/licensing-types';
 import { createMlTaskProcessServices } from './ml_task_process_services';
+import {
+  createMlRuleLicense,
+  createMlRuleServicesDeps,
+} from './ml_task_process_services.test_helpers';
 
 describe('createMlTaskProcessServices', () => {
-  const createDeps = (license$: Subject<unknown>) =>
-    ({
-      host: { licensing: { license$ } },
-      isServerless: false,
-      settings: {},
-    } as never);
-
   it('does not read the host before the executor runs', () => {
-    expect(() => createMlTaskProcessServices({ settings: {} } as never)).not.toThrow();
+    const deps = createMlRuleServicesDeps();
+    Object.defineProperty(deps, 'runtime', {
+      get: () => {
+        throw new Error('The execution runtime is not available while registering');
+      },
+    });
+    Object.defineProperty(deps.host, 'plugins', {
+      get: () => {
+        throw new Error('Execution plugins are not available while registering');
+      },
+    });
+    expect(() => createMlTaskProcessServices(deps)).not.toThrow();
   });
 
   it('runs the executor once the license is known', async () => {
-    const license$ = new Subject<unknown>();
-    const executor = jest.fn().mockResolvedValue({ state: {} });
-    const { withLicense } = createMlTaskProcessServices(createDeps(license$));
-    const run = withLicense({ executor }).executor({} as never);
+    const license$ = new Subject<ILicense>();
+    const executor = jest.fn(async (_options: { marker: string }) => ({ state: {} }));
+    const { withLicense } = createMlTaskProcessServices(createMlRuleServicesDeps(license$));
+    const run = withLicense({ executor }).executor({ marker: 'native' });
 
     await Promise.resolve();
     expect(executor).not.toHaveBeenCalled();
 
-    license$.next({
-      status: 'active',
-      getFeature: () => ({ isEnabled: true, isAvailable: true }),
-      hasAtLeast: () => true,
-      check: () => ({ state: 'valid' }),
-      type: 'platinum',
-    });
+    license$.next(createMlRuleLicense());
     await expect(run).resolves.toEqual({ state: {} });
     expect(executor).toHaveBeenCalledTimes(1);
+    expect(executor).toHaveBeenCalledWith({ marker: 'native' });
   });
 });

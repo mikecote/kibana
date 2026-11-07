@@ -23,7 +23,6 @@ import type {
   UserProfileServiceStart,
   UserProfileSuggestParams,
 } from '@kbn/security-plugin-types-server';
-import type { PublicMethodsOf } from '@kbn/utility-types';
 
 import type { UserProfileGrant } from './user_profile_grant';
 import type {
@@ -63,13 +62,13 @@ export interface UserProfileServiceStartInternal extends UserProfileServiceStart
 }
 
 export interface UserProfileServiceSetupParams {
-  authz: AuthorizationServiceSetupInternal;
+  authz: Pick<AuthorizationServiceSetupInternal, 'checkUserProfilesPrivileges'>;
   license: SecurityLicense;
 }
 
 export interface UserProfileServiceStartParams {
   clusterClient: IClusterClient;
-  session: PublicMethodsOf<Session>;
+  session?: Pick<Session, 'get' | 'getSID'>;
   getCurrentUser: (request: KibanaRequest) => AuthenticatedUser | null;
 }
 
@@ -128,7 +127,7 @@ interface ResolvedCurrentUserProfileId {
 }
 
 export class UserProfileService {
-  private authz?: AuthorizationServiceSetupInternal;
+  private authz?: Pick<AuthorizationServiceSetupInternal, 'checkUserProfilesPrivileges'>;
   private license?: SecurityLicense;
   constructor(private readonly logger: Logger) {}
 
@@ -247,7 +246,7 @@ export class UserProfileService {
    * @returns The profile ID if found, null otherwise
    */
   private async getCurrentUserProfileIdViaSession(
-    session: PublicMethodsOf<Session>,
+    session: Pick<Session, 'get' | 'getSID'>,
     request: UserProfileGetCurrentParams['request']
   ): Promise<{ profileId?: string; sessionId?: string }> {
     let userSession;
@@ -390,7 +389,7 @@ export class UserProfileService {
    */
   private async resolveCurrentUserProfileId(
     clusterClient: IClusterClient,
-    session: PublicMethodsOf<Session>,
+    session: Pick<Session, 'get' | 'getSID'> | undefined,
     getCurrentUser: (request: KibanaRequest) => AuthenticatedUser | null,
     request: KibanaRequest,
     recordFailure: (telemetry: GetCurrentTelemetry) => void
@@ -423,7 +422,7 @@ export class UserProfileService {
       }
     }
 
-    if (!profileId && (await session.getSID(request))) {
+    if (!profileId && session && (await session.getSID(request))) {
       this.logger.debug(`Request to get current user profile is authenticated via session.`);
       ({ profileId, sessionId } = await this.getCurrentUserProfileIdViaSession(session, request));
     } else if (!profileId && request.headers[RUNAS_HEADER]) {
@@ -486,7 +485,7 @@ export class UserProfileService {
    */
   private async getCurrent<D extends UserProfileData>(
     clusterClient: IClusterClient,
-    session: PublicMethodsOf<Session>,
+    session: Pick<Session, 'get' | 'getSID'> | undefined,
     getCurrentUser: (request: KibanaRequest) => AuthenticatedUser | null,
     { request, dataPath }: UserProfileGetCurrentParams
   ) {
@@ -552,7 +551,7 @@ export class UserProfileService {
    */
   private async getCurrentProfileId(
     clusterClient: IClusterClient,
-    session: PublicMethodsOf<Session>,
+    session: Pick<Session, 'get' | 'getSID'> | undefined,
     getCurrentUser: (request: KibanaRequest) => AuthenticatedUser | null,
     { request }: UserProfileGetCurrentProfileIdParams
   ): Promise<string | null> {

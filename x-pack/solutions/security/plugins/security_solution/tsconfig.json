@@ -304,6 +304,7 @@
     "@kbn/anonymization-plugin",
     "@kbn/anonymization-common",
     "@kbn/workflows-extensions",
+    "@kbn/workflows-execution-engine",
     "@kbn/alertzero-common",
     "@kbn/alertzero-plugin",
     "@kbn/shared-ux-ai-components",

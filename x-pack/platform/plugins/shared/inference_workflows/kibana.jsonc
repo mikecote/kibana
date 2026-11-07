@@ -10,6 +10,9 @@
     "server": true,
     "browser": true,
     "configPath": ["xpack", "inferenceWorkflows"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    },
     "requiredPlugins": ["inference", "workflowsExtensions", "searchInferenceEndpoints"]
   }
 }

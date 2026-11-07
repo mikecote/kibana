@@ -8,11 +8,11 @@
 import Boom from '@hapi/boom';
 import type { KibanaRequest } from '@kbn/core/server';
 import { NIGHTSHIFT_API_PRIVILEGES } from '@kbn/nightshift-shared';
-import type { SignificantEventsServer } from '../../types';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
 
 interface PrivilegeCheckParams {
   request: KibanaRequest;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
 }
 
 const hasNightshiftApiPrivilege = async ({

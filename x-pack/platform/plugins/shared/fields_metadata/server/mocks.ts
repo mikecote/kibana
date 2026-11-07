@@ -13,6 +13,7 @@ import {
 import type { FieldsMetadataServerSetup, FieldsMetadataServerStart } from './types';
 
 const createFieldsMetadataServerSetupMock = (): jest.Mocked<FieldsMetadataServerSetup> => ({
+  getTaskProcessSettings: jest.fn().mockReturnValue({}),
   registerIntegrationFieldsExtractor:
     createFieldsMetadataServiceSetupMock().registerIntegrationFieldsExtractor,
   registerIntegrationListExtractor:

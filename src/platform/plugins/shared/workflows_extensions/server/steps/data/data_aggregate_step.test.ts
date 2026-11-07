@@ -30,6 +30,9 @@ describe('dataAggregateStepDefinition', () => {
     input: input as any,
     rawInput: input as any,
     contextManager: {
+      getExecutionMetadata: jest
+        .fn()
+        .mockReturnValue({ id: 'execution-1', workflowId: 'workflow-1' }),
       renderInputTemplate: jest.fn((val) => val),
       getContext: jest.fn(),
       getScopedEsClient: jest.fn(),

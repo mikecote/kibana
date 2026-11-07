@@ -5,15 +5,11 @@
  * 2.0.
  */
 
-import type { CoreStart } from '@kbn/core/server';
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 
-import type { DiscoveriesPluginStartDeps } from '../../types';
+import type { GetStepServices } from '../step_services';
 
-type GetStartServices = () => Promise<{
-  coreStart: CoreStart;
-  pluginsStart: DiscoveriesPluginStartDeps;
-}>;
+type GetStartServices = GetStepServices;
 
 /**
  * Wraps a workflow step definition's `handler` with the Attack Discovery

@@ -12,6 +12,7 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/core-data-streams-server",
     "@kbn/core",
     "@kbn/workflows",
     "@kbn/zod",
@@ -28,7 +29,13 @@
     "@kbn/std",
     "@kbn/logging-mocks",
     "@kbn/logging",
-    "@kbn/core-http-common"
+    "@kbn/core-http-common",
+    "@kbn/core-ui-settings-common",
+    "@kbn/encrypted-saved-objects-plugin",
+    "@kbn/task-manager-plugin",
+    "@kbn/security-plugin",
+    "@kbn/core-spaces-common",
+    "@kbn/core-ui-settings-server"
   ],
   "exclude": ["target/**/*"]
 }

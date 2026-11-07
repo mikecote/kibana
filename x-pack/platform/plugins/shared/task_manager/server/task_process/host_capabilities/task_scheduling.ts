@@ -6,7 +6,7 @@
  */
 
 import { v4 } from 'uuid';
-import { omit } from 'lodash';
+import { isEqual, omit } from 'lodash';
 import type { estypes } from '@elastic/elasticsearch';
 import type { Logger } from '@kbn/logging';
 import type { ElasticsearchClient } from '@kbn/core-elasticsearch-server';
@@ -23,9 +23,22 @@ import {
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
-import type { ConcreteTaskInstance, TaskInstance } from '../../task';
+import { encodeVersion } from '@kbn/core-saved-objects-base-server-internal';
+import type {
+  ClientInstanciator,
+  EncryptedSavedObjectTypeRegistration,
+} from '@kbn/encrypted-saved-objects-plugin/server';
+import { asErr, asOk } from '../../lib/result_type';
+import type {
+  ConcreteTaskInstance,
+  SerializedConcreteTaskInstance,
+  TaskInstance,
+} from '../../task';
 import { TaskStatus } from '../../task';
+import { TaskBulkUpdater } from '../../task_bulk_updater';
+import { TaskValidator } from '../../task_validator';
+import { TaskTypeDictionary } from '../../task_type_dictionary';
+import { updateTaskSchedules } from '../../update_task_schedules';
 import { TASK_MANAGER_INDEX } from '../../constants';
 import { ensureDeprecatedFieldsAreCorrected } from '../../lib/correct_deprecated_fields';
 import { getFirstRunAt } from '../../lib/get_first_run_at';
@@ -34,7 +47,10 @@ import {
   savedObjectToConcreteTaskInstance,
   taskInstanceToAttributes,
 } from '../../lib/task_instance_serialization';
-import type { TaskHost } from '../../task_type_module';
+import { calculateNextRunAtFromSchedule } from '../../lib/get_next_run_at';
+import { TaskAlreadyRunningError } from '../../lib/errors/task_already_running_error';
+import type { TaskManagerStartContract } from '../../plugin';
+import type { FetchResult } from '../../task_store';
 import { createApiKeyStrategy } from '../../api_key_strategy';
 import type { ApiKeySOFields, ApiKeyType, InvalidationTarget } from '../../api_key_strategy';
 import { INVALIDATE_API_KEY_SO_NAME } from '../../saved_objects';
@@ -92,7 +108,33 @@ export interface HostTaskSchedulingCredentials {
   canEncrypt: boolean;
   /** Whether security is enabled; tasks are written without credentials when it is not. Defaults to true. */
   isSecurityEnabled?: () => boolean;
+  /**
+   * The encrypted saved objects plugin of this process. Reads that return a task's `apiKey` and
+   * `uiamApiKey`, and removing a task that carries them (to invalidate them), decrypt them with it,
+   * as `TaskStore` does with the client registered by `registerEncryptedSavedObjectsClient`.
+   */
+  encryptedSavedObjects?: { getClient: ClientInstanciator };
 }
+
+/**
+ * What `host.taskManager` offers: the same observable behaviour as the methods of Kibana's Task
+ * Manager start contract of the same name (see `createHostTaskScheduling` for the differences).
+ */
+export type HostTaskManager = Pick<
+  TaskManagerStartContract,
+  | 'schedule'
+  | 'bulkSchedule'
+  | 'bulkUpdateSchedules'
+  | 'aggregate'
+  | 'get'
+  | 'bulkGet'
+  | 'fetch'
+  | 'remove'
+  | 'removeIfExists'
+  | 'bulkRemove'
+  | 'runSoon'
+  | 'ensureScheduled'
+>;
 
 export interface HostScheduleOptions {
   request?: KibanaRequest;
@@ -121,6 +163,16 @@ const getCredentialConflict = (id: string) =>
  * `apiKey` option. Not done either: the ad hoc task counter (so the `adhoc.created` metric
  * undercounts), `traceparent`, task definition validation (a process does not know the definitions,
  * `allowedTypes` limits what it may schedule) and nudging the claim cycle.
+ *
+ * Reads (`get`, `bulkGet`, `fetch`) are not restricted; they decrypt a task's API keys with
+ * `credentials.encryptedSavedObjects`. Writes (`remove`, `removeIfExists`, `bulkRemove`, `runSoon`,
+ * `ensureScheduled`) only touch tasks of `allowedTypes`. Removing a task queues its API keys for
+ * invalidation as `TaskStore` does (needs `credentials`). Differences from Kibana: `runSoon` sets
+ * `runAt` to now and cannot request a claim cycle (`requestImmediateClaim` is ignored); it refuses a
+ * running task even with `force`, as a process has no task pool to tell where it runs; and it accepts
+ * `priority` for any task of `allowedTypes`, because a process does not know whether the definition
+ * allows overrides. `ensureScheduled` updates the schedule of an existing task (idle, interval only)
+ * without regenerating its API key.
  */
 export const createHostTaskScheduling = ({
   repository,
@@ -135,7 +187,7 @@ export const createHostTaskScheduling = ({
   /** Only task types that match may be scheduled; a process does not know the task definitions. */
   allowedTypes?: RegExp;
   credentials?: HostTaskSchedulingCredentials;
-}): NonNullable<TaskHost['taskManager']> & {
+}): HostTaskManager & {
   schedule: (
     taskInstance: TaskInstance,
     options?: HostScheduleOptions
@@ -269,8 +321,348 @@ export const createHostTaskScheduling = ({
     }
   };
 
+  // --- reads, removal and rescheduling ---
+
+  const assertAllowed = (taskType: string, action: string) => {
+    if (allowedTypes && !allowedTypes.test(taskType)) {
+      throw new Error(`Task type ${taskType} cannot be ${action} from a task process`);
+    }
+  };
+
+  const hasKeys = (task: Pick<ConcreteTaskInstance, 'apiKey' | 'uiamApiKey'>) =>
+    Boolean(task.apiKey || task.uiamApiKey);
+
+  // Like `TaskStore.bulkGetDecryptedTaskApiKeys`, per task with `getDecryptedAsInternalUser` instead of
+  // a point in time finder: it reads by id, so it needs no refresh to see a task that was just written.
+  const getDecryptedKeys = async (
+    taskIds: string[]
+  ): Promise<Map<string, { apiKey?: string; uiamApiKey?: string }>> => {
+    const result = new Map<string, { apiKey?: string; uiamApiKey?: string }>();
+    if (!credentials?.encryptedSavedObjects || !credentials.canEncrypt || !taskIds.length) {
+      return result;
+    }
+    const esoClient = credentials.encryptedSavedObjects.getClient({
+      includedHiddenTypes: [TASK_SO_NAME],
+    });
+    await Promise.all(
+      taskIds.map(async (id) => {
+        try {
+          const { attributes } = await esoClient.getDecryptedAsInternalUser<SerializedTask>(
+            TASK_SO_NAME,
+            id
+          );
+          result.set(id, { apiKey: attributes.apiKey, uiamApiKey: attributes.uiamApiKey });
+        } catch (e) {
+          logger.error(`Unable to obtain API key for task ${id}: ${e.message}`);
+        }
+      })
+    );
+    return result;
+  };
+
+  const withDecryptedKeys = async (tasks: ConcreteTaskInstance[]) => {
+    const ids = tasks.filter(hasKeys).map(({ id }) => id);
+    if (!ids.length) return tasks;
+    const decrypted = await getDecryptedKeys(ids);
+    return tasks.map((task) => {
+      const keys = decrypted.get(task.id);
+      if (!keys) return task;
+      return {
+        ...task,
+        ...(keys.apiKey ? { apiKey: keys.apiKey } : {}),
+        ...(keys.uiamApiKey ? { uiamApiKey: keys.uiamApiKey } : {}),
+      };
+    });
+  };
+
+  // `TaskStore` marks the keys of a task for invalidation when it has them and its `userScope`.
+  const invalidationTargetsOf = (task: ConcreteTaskInstance): InvalidationTarget[] =>
+    strategy && hasKeys(task) && task.userScope ? strategy.getApiKeyIdsForInvalidation(task) : [];
+
+  const markKeysForInvalidation = async (targets: InvalidationTarget[]) => {
+    if (!targets.length || !strategy || !credentials) return;
+    // The task is removed once its keys are queued, as `TaskStore` does.
+    await strategy.markForInvalidation(
+      targets,
+      logger,
+      credentials.savedObjects.getUnsafeInternalClient({
+        includedHiddenTypes: [INVALIDATE_API_KEY_SO_NAME],
+      })
+    );
+  };
+
+  const getTask = async (id: string): Promise<ConcreteTaskInstance> => {
+    const so = await repository.get<SerializedConcreteTaskInstance>(TASK_SO_NAME, id);
+    const [task] = await withDecryptedKeys([savedObjectToConcreteTaskInstance(so)]);
+    return task;
+  };
+
+  const bulkGet = async (ids: string[]) => {
+    const result = await repository.bulkGet<SerializedConcreteTaskInstance>(
+      ids.map((id) => ({ type: TASK_SO_NAME, id }))
+    );
+    const tasks: ConcreteTaskInstance[] = [];
+    result.saved_objects.forEach((so) => {
+      if (!isSavedObjectErrorResult(so)) tasks.push(savedObjectToConcreteTaskInstance(so));
+    });
+    const byId = new Map((await withDecryptedKeys(tasks)).map((task) => [task.id, task]));
+    return result.saved_objects.map((so) =>
+      isSavedObjectErrorResult(so)
+        ? asErr({ id: so.id, type: so.type, error: so.error })
+        : asOk(byId.get(so.id)!)
+    );
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    const task = await getTask(id);
+    assertAllowed(task.taskType, 'removed');
+    await markKeysForInvalidation(invalidationTargetsOf(task));
+    await repository.delete(TASK_SO_NAME, id, { refresh: false });
+  };
+
+  const isConflict = (e: { statusCode?: number }) =>
+    e?.statusCode === 409 || SavedObjectsErrorHelpers.isConflictError(e as Error);
+
+  // Updates the schedule of an existing task, as `TaskScheduling.bulkUpdateSchedules` does for one
+  // idle task: it only changes a task that is idle, with another schedule, and moves its `runAt`.
+  // A task that was removed or changed in the meantime is left alone. The task's API key is kept.
+  const updateScheduleOfExistingTask = async (
+    id: string,
+    newSchedule: NonNullable<TaskInstance['schedule']>
+  ) => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let task: ConcreteTaskInstance;
+      try {
+        task = savedObjectToConcreteTaskInstance(
+          await repository.get<SerializedConcreteTaskInstance>(TASK_SO_NAME, id)
+        );
+      } catch (e) {
+        if (SavedObjectsErrorHelpers.isNotFoundError(e)) return;
+        throw e;
+      }
+      if (task.status !== TaskStatus.Idle || isEqual(task.schedule, newSchedule)) return;
+      try {
+        await repository.update<SerializedTask>(
+          TASK_SO_NAME,
+          id,
+          {
+            schedule: newSchedule,
+            runAt: new Date(
+              calculateNextRunAtFromSchedule({ schedule: newSchedule, startDate: task.scheduledAt })
+            ).toISOString(),
+          } as never,
+          { version: task.version, refresh: false }
+        );
+        return;
+      } catch (e) {
+        if (SavedObjectsErrorHelpers.isNotFoundError(e)) return;
+        if (!isConflict(e)) {
+          throw new Error(
+            `Tried to update schedule for existing task "${id}" but failed with error: ${e.message}`
+          );
+        }
+      }
+    }
+  };
+
+  const ensureScheduled: HostTaskManager['ensureScheduled'] = async (taskInstance, options) => {
+    prepare(taskInstance);
+    const existing = async () => {
+      if (taskInstance.schedule?.interval) {
+        await updateScheduleOfExistingTask(taskInstance.id, taskInstance.schedule);
+      }
+      return taskInstance;
+    };
+    // Scheduling grants the API keys before it writes, so check first rather than minting a key pair
+    // per call that the conflict then throws away. Racing callers still land on the conflict path.
+    if (
+      willGrant(options as HostScheduleOptions | undefined) &&
+      (await repository
+        .get(TASK_SO_NAME, taskInstance.id)
+        .then(() => true)
+        .catch((e) => {
+          if (SavedObjectsErrorHelpers.isNotFoundError(e)) return false;
+          throw e;
+        }))
+    ) {
+      return existing();
+    }
+    try {
+      await schedule(taskInstance, options as HostScheduleOptions | undefined);
+      return taskInstance;
+    } catch (e) {
+      if (isConflict(e)) return existing();
+      throw e;
+    }
+  };
+
+  const runSoon: HostTaskManager['runSoon'] = async (taskId, forceOrOptions) => {
+    const options =
+      typeof forceOrOptions === 'boolean' ? { force: forceOrOptions } : forceOrOptions;
+    const priority = options?.priority;
+    const task = savedObjectToConcreteTaskInstance(
+      await repository.get<SerializedConcreteTaskInstance>(TASK_SO_NAME, taskId)
+    );
+    assertAllowed(task.taskType, 'run soon');
+    if (priority !== undefined && !allowedTypes) {
+      // Without a pattern this process has no way to know the type allows it.
+      throw new Error(`Task type "${task.taskType}" does not allow priority overrides`);
+    }
+    if (task.status === TaskStatus.Unrecognized) {
+      throw new Error(`Failed to run task "${taskId}" with status ${task.status}`);
+    }
+    if (task.status === TaskStatus.Claiming) {
+      throw new TaskAlreadyRunningError(taskId);
+    }
+    if (task.status === TaskStatus.Running) {
+      // Kibana lets `force` take over a task that runs on another node, and refuses when its own task
+      // pool runs it. A process has no task pool and cannot tell where the task runs, so it refuses.
+      throw new TaskAlreadyRunningError(taskId, options?.force === true);
+    }
+    const now = new Date();
+    try {
+      await repository.update<SerializedTask>(
+        TASK_SO_NAME,
+        taskId,
+        {
+          status: TaskStatus.Idle,
+          scheduledAt: now.toISOString(),
+          runAt: now.toISOString(),
+          ...(priority !== undefined ? { priority } : {}),
+        } as never,
+        { version: task.version, refresh: false }
+      );
+    } catch (e) {
+      if (isConflict(e)) {
+        logger.debug(`Failed to update the task (${taskId}) for runSoon due to conflict (409)`);
+        return { id: task.id, forced: false, conflict: true };
+      }
+      logger.error(`Failed to update the task (${taskId}) for runSoon`);
+      throw e;
+    }
+    return { id: task.id, forced: false };
+  };
+
+  const search = async (
+    {
+      sort = [{ 'task.runAt': 'asc' as const }],
+      ...opts
+    }: Parameters<HostTaskManager['fetch']>[0] = {},
+    limitResponse = false
+  ): Promise<FetchResult> => {
+    const queryOnlyTasks = { term: { type: TASK_SO_NAME } };
+    const result = await esClient.search<Record<string, unknown>>(
+      {
+        index: TASK_MANAGER_INDEX,
+        ignore_unavailable: true,
+        ...opts,
+        sort,
+        query: (opts.query
+          ? { bool: { must: [queryOnlyTasks, opts.query] } }
+          : queryOnlyTasks) as estypes.QueryDslQueryContainer,
+        ...(limitResponse ? { _source_excludes: ['task.state', 'task.params'] } : {}),
+      } as estypes.SearchRequest,
+      { retryOnTimeout: false }
+    );
+    const versionMap: FetchResult['versionMap'] = new Map();
+    const tasks: ConcreteTaskInstance[] = [];
+    for (const hit of result.hits.hits) {
+      const source = hit._source;
+      if (!hit._id || !source || source.type !== TASK_SO_NAME || !source[TASK_SO_NAME]) continue;
+      const id = hit._id.startsWith(`${TASK_SO_NAME}:`)
+        ? hit._id.slice(TASK_SO_NAME.length + 1)
+        : hit._id;
+      if (hit._seq_no != null && hit._primary_term != null) {
+        versionMap.set(id, { esId: hit._id, seqNo: hit._seq_no, primaryTerm: hit._primary_term });
+      }
+      tasks.push(
+        savedObjectToConcreteTaskInstance({
+          id,
+          type: TASK_SO_NAME,
+          attributes: source[TASK_SO_NAME] as SerializedConcreteTaskInstance,
+          references: (source.references as never) ?? [],
+          version:
+            hit._seq_no != null && hit._primary_term != null
+              ? encodeVersion(hit._seq_no, hit._primary_term)
+              : undefined,
+        } as never)
+      );
+    }
+    return { docs: await withDecryptedKeys(tasks), versionMap };
+  };
+
   return {
     schedule,
+    ensureScheduled,
+    bulkUpdateSchedules: (taskIds, newSchedule, options) =>
+      updateTaskSchedules({
+        taskIds,
+        schedule: newSchedule,
+        options,
+        getTasks: async (ids) => {
+          const tasks = await bulkGet(ids);
+          for (const result of tasks) {
+            if ('value' in result) assertAllowed(result.value.taskType, 'rescheduled');
+          }
+          return tasks;
+        },
+        store: new TaskBulkUpdater({
+          logger,
+          savedObjectsRepository: repository,
+          getScopedClient: (request, clientOptions) => {
+            if (!credentials)
+              throw new Error(
+                'Task schedule updates require the saved objects credentials service'
+              );
+            return credentials.savedObjects.getScopedClient(request, clientOptions);
+          },
+          getIsSecurityEnabled: () => credentials?.isSecurityEnabled?.() ?? true,
+          getApiKeyStrategy: () => {
+            if (!strategy) throw new Error('Task schedule updates require the API key strategy');
+            return strategy;
+          },
+          grantApiKeys: (tasks, keyOptions) =>
+            grant(
+              tasks.map((task) => ({ ...task, id: task.id ?? v4() })),
+              keyOptions
+            ),
+          invalidateUnpersistedApiKeys: invalidateUnpersisted,
+          getInvalidationSoClient: () => {
+            if (!credentials)
+              throw new Error('Task schedule updates require the API key invalidation service');
+            return credentials.savedObjects.getUnsafeInternalClient({
+              includedHiddenTypes: [INVALIDATE_API_KEY_SO_NAME],
+            });
+          },
+          taskValidator: new TaskValidator({
+            logger,
+            definitions: new TaskTypeDictionary(logger),
+            allowReadingInvalidState: false,
+          }),
+          reportError: (error) => logger.error(error),
+        }),
+      }),
+    runSoon,
+    get: getTask,
+    bulkGet: bulkGet as HostTaskManager['bulkGet'],
+    fetch: (opts, limitResponse) => search(opts, limitResponse),
+    remove,
+    removeIfExists: async (id) => {
+      try {
+        await remove(id);
+      } catch (e) {
+        if (!SavedObjectsErrorHelpers.isNotFoundError(e)) throw e;
+      }
+    },
+    bulkRemove: async (taskIds) => {
+      const tasks = (await bulkGet(taskIds)).flatMap((r) => ('value' in r ? [r.value] : []));
+      tasks.forEach(({ taskType }) => assertAllowed(taskType, 'removed'));
+      await markKeysForInvalidation(tasks.flatMap(invalidationTargetsOf));
+      return await repository.bulkDelete(
+        taskIds.map((id) => ({ type: TASK_SO_NAME, id })),
+        { refresh: false }
+      );
+    },
 
     bulkSchedule: async (taskInstances, options) => {
       const requestOptions = getRequestOptions(options as HostScheduleOptions | undefined);

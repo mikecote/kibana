@@ -11,7 +11,8 @@ import type {
   Plugin,
   RequestHandlerContext,
 } from '@kbn/core/server';
-import type { MetricsDataPluginStartDeps } from './types';
+import type { MetricsDataPluginStartDeps, MetricsDataPluginSetupDeps } from './types';
+import { METRICS_DATA_TASK_PROCESS_SETTINGS_ID } from './task_types/metrics_data_task_process_settings';
 import { MetricsDataClient } from './client';
 import { metricsDataSourceSavedObjectType } from './saved_objects/metrics_data_source';
 import { KibanaFramework } from './lib/adapters/framework/kibana_framework_adapter';
@@ -22,13 +23,20 @@ export type MetricsDataPluginSetup = ReturnType<MetricsDataPlugin['setup']>;
 export type MetricsDataPluginStart = ReturnType<MetricsDataPlugin['start']>;
 
 export class MetricsDataPlugin
-  implements Plugin<MetricsDataPluginSetup, MetricsDataPluginStart, {}, MetricsDataPluginStartDeps>
+  implements
+    Plugin<
+      MetricsDataPluginSetup,
+      MetricsDataPluginStart,
+      MetricsDataPluginSetupDeps,
+      MetricsDataPluginStartDeps
+    >
 {
-  private metricsClient: MetricsDataClient | null = null;
-
   constructor(context: PluginInitializerContext) {}
 
-  public setup(core: CoreSetup<MetricsDataPluginStartDeps>) {
+  public setup(
+    core: CoreSetup<MetricsDataPluginStartDeps>,
+    plugins: MetricsDataPluginSetupDeps = {}
+  ) {
     const router = core.http.createRouter();
     const framework = new KibanaFramework(core, router);
 
@@ -40,10 +48,12 @@ export class MetricsDataPlugin
 
     core.savedObjects.registerType(metricsDataSourceSavedObjectType);
 
-    this.metricsClient = new MetricsDataClient();
-    return {
-      client: this.metricsClient,
-    };
+    const client = new MetricsDataClient();
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      METRICS_DATA_TASK_PROCESS_SETTINGS_ID,
+      () => ({ defaultHandler: client.getDefaultMetricIndicesHandlerRegistration() })
+    );
+    return { client };
   }
 
   public start() {

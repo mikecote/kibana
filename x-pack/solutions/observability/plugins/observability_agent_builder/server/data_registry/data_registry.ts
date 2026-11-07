@@ -8,14 +8,24 @@
 import type { Logger } from '@kbn/core/server';
 import type { ObservabilityAgentBuilderDataRegistryTypes } from './data_registry_types';
 
+export interface ObservabilityDataProviderRegistration {
+  id: keyof ObservabilityAgentBuilderDataRegistryTypes;
+  owner?: string;
+}
+
 export class ObservabilityAgentBuilderDataRegistry {
   private readonly providers = new Map<string, (...args: any[]) => Promise<any>>();
+  private readonly owners = new Map<
+    keyof ObservabilityAgentBuilderDataRegistryTypes,
+    string | undefined
+  >();
 
   constructor(private readonly logger: Logger) {}
 
   public registerDataProvider<K extends keyof ObservabilityAgentBuilderDataRegistryTypes>(
     id: K,
-    provider: ObservabilityAgentBuilderDataRegistryTypes[K]
+    provider: ObservabilityAgentBuilderDataRegistryTypes[K],
+    options?: { owner: string }
   ): void {
     if (this.providers.has(id)) {
       this.logger.warn(`Overwriting data provider for key: ${id}`);
@@ -24,6 +34,16 @@ export class ObservabilityAgentBuilderDataRegistry {
     }
 
     this.providers.set(id, provider);
+    this.owners.set(id, options?.owner);
+  }
+
+  public getRegistrations(): ObservabilityDataProviderRegistration[] {
+    return [...this.owners]
+      .map(([id, owner]) => ({
+        id,
+        ...(owner === undefined ? {} : { owner }),
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 
   public async getData<K extends keyof ObservabilityAgentBuilderDataRegistryTypes>(
@@ -40,3 +60,8 @@ export class ObservabilityAgentBuilderDataRegistry {
     return provider(params) as Promise<ReturnType<ObservabilityAgentBuilderDataRegistryTypes[K]>>;
   }
 }
+
+export type ObservabilityDataRegistryClient = Pick<
+  ObservabilityAgentBuilderDataRegistry,
+  'getData'
+>;

@@ -17,6 +17,7 @@ import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { Logger } from '@kbn/logging';
 import { PLUGIN_ID, PLUGIN_NAME, EVALS_API_PRIVILEGES, EVALS_UI_PRIVILEGES } from '../common';
 import type { EvalsConfig } from './config';
+import { createListEvaluators, createListModelConnectors } from './create_evals_read_services';
 import { createEvaluatorRegistry } from './evaluators/registry';
 import type { EvaluatorRegistry } from './evaluators/types';
 import {
@@ -80,6 +81,10 @@ export class EvalsPlugin
     coreSetup.dataStreams.registerDataStream(onlineScoresDataStreamDefinition);
 
     this.taskProviderRegistry = createTaskProviderRegistry();
+    const registry = this.taskProviderRegistry;
+    workflowsExtensions?.registerTaskProcessSettings('evalsTaskProviders', () => ({
+      names: registry.list().map(({ name }) => name),
+    }));
 
     coreSetup.savedObjects.registerType(evalsRemoteKibanaConfigSavedObjectType);
     encryptedSavedObjects.registerType({
@@ -261,26 +266,10 @@ export class EvalsPlugin
     return {
       datasetService: this.datasetService,
       evaluationScoreService: this.evaluationScoreService,
-      listEvaluators: async ({ spaceId }) => {
-        const definitions = await evaluatorRegistry.asScoped({ spaceId }).list();
-
-        return definitions.map((def) => ({
-          name: def.name,
-          version: def.version,
-          kind: def.kind,
-          origin: def.origin,
-          description: def.description,
-          needsJudgeConnector: def.kind === 'llm',
-        }));
-      },
-      listModelConnectors: async (request) => {
-        const connectors = await plugins.inference.getConnectorList(request);
-        return connectors.map((connector) => ({
-          id: connector.connectorId,
-          name: connector.name,
-          type: connector.type,
-        }));
-      },
+      listEvaluators: createListEvaluators(evaluatorRegistry),
+      listModelConnectors: createListModelConnectors((request) =>
+        plugins.inference.getConnectorList(request)
+      ),
       onlineScoreService: this.onlineScoreService,
     };
   }

@@ -5,19 +5,34 @@
  * 2.0.
  */
 
-import type { CoreRequestHandlerContext, KibanaRequest } from '@kbn/core/server';
+import type {
+  SavedObjectsClientContract,
+  IUiSettingsClient,
+  KibanaRequest,
+} from '@kbn/core/server';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
+import type { MetricsDataClient } from '@kbn/metrics-data-access-plugin/server';
+import type { MlPluginSetup } from '@kbn/ml-plugin/server';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { InfraPluginRequestHandlerContext } from '../types';
-import type { InfraServerPluginSetupDeps } from '../lib/adapters/framework';
+
+export interface InfraToolRequestServices {
+  metricsDataAccess: { client: Pick<MetricsDataClient, 'getMetricIndices'> };
+  ml?: Pick<MlPluginSetup, 'mlSystemProvider' | 'anomalyDetectorsProvider'>;
+  spaces?: { spacesService: Pick<SpacesPluginStart['spacesService'], 'getSpaceId'> };
+}
 
 export async function getInfraRequestHandlerContext({
   coreContext,
   request,
   plugins,
 }: {
-  coreContext: CoreRequestHandlerContext;
+  coreContext: {
+    savedObjects: { client: SavedObjectsClientContract };
+    uiSettings: { client: IUiSettingsClient };
+  };
   request: KibanaRequest;
-  plugins: InfraServerPluginSetupDeps;
+  plugins: InfraToolRequestServices;
 }): Promise<InfraPluginRequestHandlerContext['infra']> {
   const savedObjectsClient = coreContext.savedObjects.client;
   const uiSettingsClient = coreContext.uiSettings.client;

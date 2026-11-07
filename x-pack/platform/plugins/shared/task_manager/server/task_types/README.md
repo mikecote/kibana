@@ -48,7 +48,8 @@ xpack.task_manager.task_execution:
 
 **`child_process`.** Each run forks the task type's bundle, sends it Kibana's own Elasticsearch
 connection over the fork channel, runs the task in it and stops it when the run ends. If the process
-cannot be started, that run goes to Kibana.
+cannot be started, Task Manager retries process execution according to the task retry policy.
+A process-routed task never runs inside Kibana as a fallback. Required bundles are validated at startup.
 
 ```yaml
 xpack.task_manager.task_execution:
@@ -57,6 +58,28 @@ xpack.task_manager.task_execution:
 ```
 
 Build the bundles with `node scripts/task_bundle` (the distributable builds them for you).
+
+For the PoC, process reuse is opt-in. Each child still runs one task at a time, but may serve
+subsequent runs of the same task type after successful completion, flushing, and cleanup:
+
+```yaml
+xpack.task_manager.task_execution:
+  mode: child_process
+  reuse:
+    enabled: true # default: false
+    idle_timeout_ms: 30000 # retain a child for up to 30 seconds between runs
+    max_age_ms: 300000 # retire after five minutes; does not interrupt an active run
+    max_runs: 100 # retire after this many executions
+    max_idle_processes: 10 # global cap across all task types, in addition to active processes
+```
+
+Omitting `reuse` retains a fresh process per run. Reuse requires rebuilt bundles: older bundles do
+not report successful cleanup and are retired after each run. Changes to startup settings (including
+Elasticsearch credentials and encryption keys) retire incompatible idle children before dispatch.
+Run credentials, feature flags, and task state are supplied for each execution. Cancellation sends
+`SIGKILL` after the task type's optional cancellation grace period, and failed runs or failed cleanup retire the process. Process memory and module
+state can survive between successful runs; this mode preserves isolation from Kibana but not a clean
+process for every execution. Reused children log `Reusing process <pid> for task <type>` at info.
 
 ```yaml
 xpack.task_manager.task_execution:
@@ -85,11 +108,16 @@ xpack.task_manager.task_execution:
   resident memory with the same startup time, at about 7% more CPU in allocation-heavy work (4 MB: about 2%).
 - **Capacity.** At most `max_concurrent_processes` processes are held by runs at once (the default is
   `max_workers`, the most runs Kibana has in flight, so it only bites when lowered). A run past the cap is
-  not queued: Kibana runs it itself and counts a `capacity` fallback. Memory is the reason for the cap; a
+  retried by Task Manager and counted as a `capacity` dispatch failure. Memory is the reason for the cap; a
   process's memory depends on its task type and settings; the paired measurements below cover startup,
   idle memory and the first real task. Every spawn and exit logs the number of live processes at debug.
 - **Shutdown.** On stop the supervisor refuses new runs, waits up to 10 s for the runs in flight (each
   stops its own process when it ends) and then stops what is left with `SIGTERM`, and `SIGKILL` after 2 s.
+- **Cancellation.** Task types may declare `cancelGracePeriodMs`. Workflow tasks allow five seconds
+  for the execution to persist cancellation and clean up before forced termination. The cancellation
+  endpoint acknowledges only after the execution finishes. Other task types retain immediate
+  `SIGKILL`; an unresponsive workflow process is killed when its grace period expires. Cancelled
+  processes are always retired. Normal completion uses `SIGTERM` unless reuse is enabled.
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
   `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
   process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the
@@ -97,39 +125,45 @@ xpack.task_manager.task_execution:
   execution id) and `child_logger` (the context inside the process, such as `plugins.alerting`). A line that
   is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
   copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
-- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns the fallbacks by task type
+- **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns `dispatchFailures` by task type
   and reason (`declined` for a 422, `not_served` for a 404, `capacity`, `spawn_failed`, `spawn_timeout`,
   `unavailable`) and the supervisor's numbers (`live`, `active`, `max`, `spawned`, `spawnFailures`,
-  `spawnTimeouts`, `capacityRejections`). Fallbacks are also in the `taskManager` usage counter as
-  `taskProcessFallback:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
+  `spawnTimeouts`, `capacityRejections`). Dispatch failures are also in the `taskManager` usage counter as
+  `taskProcessDispatchFailure:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
   response schema is public; that would be its own change.
 
-**`remote`.** Runs go to a task process you start yourself from the same bundle, so it can live on
-another host. It serves the one task type of its bundle and answers 404 for any other, which then
-runs in Kibana.
+**`remote`.** Runs go to an authenticated task worker supervisor. It serves the task types in its
+bundle manifest and starts or reuses an isolated execution process for each dispatch. Both modes use
+the same serialized initialization snapshot, including current connectors, registration ids, encryption
+keys, UI overrides and plugin settings. Credentials and evaluated feature flags belong to each run.
 
 ```yaml
 xpack.task_manager.task_execution:
   mode: remote
   remote:
     url: http://localhost:4100
-    token: secret # the process's TASK_PROCESS_TOKEN, if it has one
+    token: secret # matches the worker's required TASK_PROCESS_TOKEN
 ```
 
-```
-ES_URL=http://localhost:9200 ES_USERNAME=kibana_system ES_PASSWORD=secret PORT=4100 TASK_PROCESS_TOKEN=secret \
-  node target/task_bundles/taskManager__delete_inactive_nodes.mjs
+```sh
+PORT=4100 TASK_PROCESS_TOKEN=secret node scripts/task_worker
 ```
 
-A remote process does not receive Kibana's settings, so it takes `ES_URL`, `ES_API_KEY` or both of
-`ES_USERNAME` and `ES_PASSWORD` (there is no default user), `PORT` and `TASK_PROCESS_TOKEN` from its
-environment. A run for a process that is down is retried shortly. A process built for another Kibana
-version refuses runs.
+The worker reads `TASK_PROCESS_BUNDLE_DIR` (default `target/task_bundles`),
+`TASK_PROCESS_MAX_CONCURRENT` (default `4`), `PORT` (default `5602`) and `HOST` (default `127.0.0.1`).
+Set `TASK_PROCESS_REUSE=true` to retain compatible workers for up to 100 runs, five minutes of age,
+or 30 seconds idle, with at most four idle workers. Off-host deployments terminate TLS in front of
+the authenticated endpoint because dispatch snapshots carry secrets. Elasticsearch credentials and
+Kibana settings come from the dispatch; a static settings file is not needed.
+
+Missing task types and incompatible deployments fail explicitly. Capacity and startup failures remain
+on the process route. Existing standalone bundle endpoints are useful for development, but remote
+mode now targets the supervisor so every dispatch receives its current configuration.
 
 ## What a process is
 
 A task process boots Core's `TaskRoot` with a fixed set of task plugins. It shares Core's configuration,
-logging, Elasticsearch, saved objects, UI settings, analytics, security, status and plugin lifecycle
+logging, Elasticsearch, saved objects, data streams, UI settings, analytics, security, status and plugin lifecycle
 implementations. It does not construct inbound HTTP servers, rendering, Core apps or browser assets.
 Index migration orchestration is skipped; document migrations, mappings, serialization and repository
 extensions remain available. Outbound HTTP uses Core's real self client, including base paths and UIAM.
@@ -151,10 +185,13 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
+| `createSavedObjectTypes`    | native saved object migrations | Builds definitions with genuine encryption setup and revived dispatch settings; static and created definitions are deduplicated by name                     | Already registered by the owning plugin |
+| `dataStreams`               | `dataStreams`                 | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped                                     | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
-| `eventLog`                  | `eventLog`                    | the writer of the event log plugin, stamped with Kibana's server UUID, flushed at exit                                                                    | `hostExtensions.eventLog`               |
+| `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
 | `uiSettings`                | `uiSettings`                  | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core                                    |
+| `registerUiSettings`        | `uiSettings`                  | Registers configuration-dependent native defaults during Core setup, using the revived dispatch settings                                                  | Already registered by the owning plugins |
 | `licensing`                 | `licensing`                   | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares                                         | the licensing plugin                    |
 | `usageCounters`             | `usageCounters`               | the usage collection plugin's own counters service, stored when the run ends                                                                              | the usage collection plugin             |
 | `settings: ['pluginId']`    | `settings.pluginId`           | the validated config Kibana sends                                                                                                                         | the getter passed to `registerTaskType` |
@@ -163,6 +200,9 @@ task type hands over its own service for the same capability.
 | `taskPlugins`               | `plugins[id]`                 | the `start` contract of each plugin                                                                                                                       | the real plugins                        |
 
 `host.analytics`, `host.security`, `host.elasticsearch` and `host.onRunEnd` (in a process) are always there.
+
+Task-mode Core reads user-provided UI settings through fresh clients. This lets retained workers
+observe namespace and global preferences changed by Kibana between executions.
 
 **A process does every side effect itself.** Kibana does nothing with a run but reschedule it, so
 nothing a run produces comes back in the response, and the process finishes it before it answers (bounded
@@ -181,6 +221,9 @@ by a few seconds, so a slow endpoint cannot hold the run; a warning is logged on
   object (`licensing-feature-usage`, one per feature) that every node and process writes, and
   `/api/licensing/feature_usage` and `getLastUsages()` read it merged with the node's memory.
   `host.licensing.featureUsage.notifyUsage` writes through the same store.
+- **Connector execution logs.** The Actions client uses the native Event Log reader with the
+  execution request's saved-object authorization and space. The writer drains queued batches before
+  replying and remains open for later runs of a reused worker.
 - **Anything else with a queue.** `host.onRunEnd(flusher)` registers what has to finish before the
   process answers. Security telemetry builds its own sender from a snapshot of Kibana's telemetry
   settings (opt-in, endpoint, cluster and license) and flushes its queue there.
@@ -194,25 +237,25 @@ credentials; never log them.
 **Installs.** A run does what it would do in Kibana, and nothing a plugin's startup does. What a run
 triggers (the alerts resources of a space it runs in for the first time, a signing key, the endpoint
 action requests data stream) happens in the process with the plugin's own idempotent code. Startup
-installs are Kibana's: Core's migrations and data streams are skipped, and a plugin's factory takes
-definitions that are already installed.
+installs are Kibana's: Core's eager migrations and data stream initialization are skipped. Modules
+declare lazily used storage through `dataStreams`; Core registers those definitions locally and its
+real `initializeClient` initializes the requested stream when business execution first needs it,
+as it does in Kibana. Factories that only open existing resources retain that behavior.
 
 ### Plugin factories
 
 A plugin that a run depends on exposes a function with explicit dependencies, used by both its own
 `plugin.ts` and the process (`createMlRunServices`, `createInfraAlertingLibs`,
 `createFleetRunServices`, `createRuleDataService`, `createRunTimeSecurity` ...). There is one
-implementation and no copy to drift. Where something cannot exist in a process it throws a clear
-"only available in Kibana" error when used.
+implementation and no copy to drift. Any execution dependency missing from a process is a parity
+defect to complete before the affected capability is enabled.
 
-### Declining a run
+### Capability failures
 
-A runner may throw `DeclinedRunError` when it cannot serve this run, such as a rule that uses a
-connector type the process does not know. The process answers `422`, and Kibana runs the task itself,
-as it does for a `404`. Decide before the run has side effects. It is a safety net: the contributions
-below register every connector type Kibana has, and the parity guard below proves it, so it should not
-fire. Kibana logs every fallback with its reason (`TaskProcessFallbackCounter`, which also counts them in
-Task Manager's usage counter as `taskProcessFallback:<reason>:<taskType>`), so a decline can be alarmed on.
+The existing `DeclinedRunError` reports a capability mismatch as `422`. Task Manager treats it and
+an unserved task type (`404`) as an explicit failure without local execution. Process dispatch failures
+are logged and counted by `TaskProcessDispatchFailureCounter`, including the reason returned by the
+process. A capability mismatch is a parity defect to fix before enabling the affected feature.
 
 ### Parity with Kibana
 
@@ -236,14 +279,11 @@ as Kibana does not.
 
 ### Remote processes
 
-A remote process reads the same things from its environment: `ES_URL` with `ES_API_KEY` or
-`ES_USERNAME` and `ES_PASSWORD`, `PORT`, `TASK_PROCESS_TOKEN`, `ESO_ENCRYPTION_KEY` and
-`ESO_DECRYPTION_ONLY_KEYS` (comma separated), `KIBANA_SERVER_UUID`, `KIBANA_BUILD_NUM`,
-`KIBANA_PUBLIC_BASE_URL` (leave it unset when Kibana has none), `KIBANA_BASE_PATH`, `KIBANA_SERVERLESS`,
-`KIBANA_DEV`, and `TASK_PROCESS_SETTINGS`, the path of a JSON file `{ "settings": { "<pluginId>": <config> },
-"uiSettingsOverrides": {}, "uiSettingsGlobalOverrides": {}, "parity": [{ "kind": "...", "ids": [] }] }` whose
-configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`). A remote
-process is not sent the settings Kibana reads per dispatch, so it skips the parity check unless the file has `parity`.
+The remote supervisor receives the same versioned dispatch snapshot as child-process mode and
+passes initialization secrets to its execution child over IPC. Compatible snapshots permit sequential
+reuse; changed plugin settings, registration ids, UI overrides or credentials retire incompatible idle
+children. Evaluated feature flags and run identities are supplied for each execution. A worker requires
+its bearer token on execution and cancellation requests and validates the dispatch version and deadline.
 
 ## Bundles
 
@@ -297,14 +337,14 @@ using the median of five interleaved runs per variant. The baseline includes PR 
 Both variants use the same validated settings and an active trial security license. These real-rule
 fixtures differ from the minimal settings used for earlier startup-only measurements.
 
-| Platform | Task | Startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) | Peak RSS through first task (MiB) |
-| --- | --- | --- | --- | --- | --- |
-| macOS ARM64 | Task Manager | 504 → 337 | 200 → 158 | 87 → 49 | 201 → 158 |
-| macOS ARM64 | `.es-query` | 880 → 676 | 344 → 266 | 173 → 114 | 365 → 267 |
-| macOS ARM64 | `siem.queryRule` | 1363 → 870 | 483 → 312 | 263 → 156 | 495 → 327 |
-| Linux ARM64 | Task Manager | 575 → 381 | 181 → 142 | 86 → 49 | 181 → 142 |
-| Linux ARM64 | `.es-query` | 1065 → 805 | 301 → 235 | 150 → 115 | 314 → 238 |
-| Linux ARM64 | `siem.queryRule` | 1674 → 1036 | 394 → 276 | 247 → 153 | 419 → 291 |
+| Platform    | Task             | Startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) | Peak RSS through first task (MiB) |
+| ----------- | ---------------- | ------------ | -------------- | -------------------- | --------------------------------- |
+| macOS ARM64 | Task Manager     | 504 → 337    | 200 → 158      | 87 → 49              | 201 → 158                         |
+| macOS ARM64 | `.es-query`      | 880 → 676    | 344 → 266      | 173 → 114            | 365 → 267                         |
+| macOS ARM64 | `siem.queryRule` | 1363 → 870   | 483 → 312      | 263 → 156            | 495 → 327                         |
+| Linux ARM64 | Task Manager     | 575 → 381    | 181 → 142      | 86 → 49              | 181 → 142                         |
+| Linux ARM64 | `.es-query`      | 1065 → 805   | 301 → 235      | 150 → 115            | 314 → 238                         |
+| Linux ARM64 | `siem.queryRule` | 1674 → 1036  | 394 → 276      | 247 → 153            | 419 → 291                         |
 
 Linux used `node:24.21.0-bookworm-slim` containers with a 1 GiB memory limit and two CPUs. Each run
 started a fresh process and executed a real task against Elasticsearch; rule samples used fresh
@@ -322,7 +362,9 @@ A plugin adds what other plugins' task types need under `plugin.taskTypeContribu
 exports `contribution`. A task type that lists the key in `contributions` gets every plugin's export:
 the bundler imports them and the process hands them to the module. Stack connectors, cases and the
 observability AI assistant contribute the connector types and adapters of their system actions, so a
-rule module never names the plugins that add connectors.
+rule module never names the plugins that add connectors. The workflow task types take two more keys:
+`workflow-steps` (steps and triggers) and `agent-builder` (what plugins register with agent builder's
+registries, see "Agent builder in a process").
 
 ## Making a plugin's services available to other plugins' tasks
 
@@ -336,9 +378,10 @@ from explicit inputs. These are the steps, in the order most plugins need them.
    implementation. Examples: `createMlRunServices`, `createFleetRunServices`, `createRuleDataService`,
    `createInferenceRunServices`, `createRunTimeSecurity`. Read services lazily when they are used, not
    while the factory runs, because the process builds things in a different order than Kibana.
-2. **Throw for what cannot exist.** If a part needs something only Kibana has (HTTP routes, the
-   session, a long-lived poller), make it throw "only available in Kibana" when used, so a path that
-   reaches it fails loudly. Do not return an empty object that silently does nothing.
+2. **Complete every execution dependency.** Extract the shared runtime service, contribute executable
+   registrations, and snapshot current metadata from Kibana. Keep HTTP route installation and
+   long-lived pollers in Kibana. Missing capabilities must fail explicitly while being completed;
+   throwing placeholders and silent no-ops do not establish parity.
 3. **Do not install anything at startup.** Index, template and data stream creation belongs to Kibana.
    Take already-installed definitions (build a client from its definition, skip mapping updates on
    read). Installs a run itself triggers in Kibana, such as an alerts index for a new space, stay as
@@ -402,7 +445,7 @@ export const taskType = createRuleTaskType(
 );
 ```
 
-Options: `locators`, `savedObjectTypes`, `encryptedSavedObjectTypes`, `uiSettings`, `eventLogProviders`,
+Options: `locators`, `savedObjectTypes`, `createSavedObjectTypes`, `encryptedSavedObjectTypes`, `uiSettings`, `eventLogProviders`,
 `settings`, `executeConnectors`, `schedulableTaskTypes`, `taskPlugins`. A plugin whose rule types read
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
@@ -422,7 +465,7 @@ reschedule, the task state, the retries). What differs, and why:
 - **In-memory metrics.** The `node_rules` collector reads Kibana's counters, so Kibana counts what its processes
   served from the end of the run (`observeRemoteRun`): a result is an execution, a result with a
   `taskRunError` is also a failure (it is the same condition as the outcome of `TaskRunner`), a run Kibana
-  cancels for its timeout is a timeout and no execution. A run Kibana serves itself (a fallback) counts itself.
+  cancels for its timeout is a timeout and no execution. An intentionally local run counts itself.
 - **Settings Kibana decides.** `settings.alertingRun` carries what alerting learns from the plugins around
   it: whether the maintenance windows plugin is enabled (without it no window applies), the data views'
   `scriptedFieldsEnabled` (off by default in serverless), and the `data.search` config, the Elasticsearch
@@ -435,8 +478,8 @@ reschedule, the task state, the retries). What differs, and why:
   short-lived process cannot export the same series (cumulative counters of one resource from many
   processes overwrite each other, and Prometheus cannot scrape them). A rule that uses a connector type or
   adapter the process does not know, or a workflow rule whose executions are stored where the process cannot
-  store them, is declined, and each run is a fresh process, so it pays for the encryption service, the license
-  and the alerts resource checks every time.
+  store them, fails explicitly. Fresh workers pay for the encryption service, license and alerts resource
+  checks at startup. Reused workers retain Core while rebuilding execution services for each run.
 
 ### Testing a rule type in a process
 
@@ -480,11 +523,11 @@ loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_R
 and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
 records, with Task Manager at debug, so the tests can see where each run happened.
 
-| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap fall back (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
-| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and Kibana runs the rules (`declined`)                                                                                                                                                                                                                                                                                |
-| `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                 |
+| Config set (`kbn-scout/src/servers/configs/config_sets/`) | Tests (`task_manager/test/`)             | Proves                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `task_processes`                                          | `scout_task_processes`                   | an es query rule runs in a process (process started, lines of the process logged by Kibana with `task_type`, `run_id` and `child_logger`), writes its alert, and its server log action runs in Kibana; a webhook connector with secrets is used by an action; the extra runs past the cap retry in a process (`capacity`) and every rule completes; a run that Kibana cancels (timeout of 1 s for index threshold) leaves no process |
+| `task_processes_unknown_connector`                        | `scout_task_processes_unknown_connector` | with a plugin that registers connector types no bundle knows (the parity check), the process declines and the rules fail (`declined`)                                                                                                                                                                                                                                                                                                |
+| `task_processes_es_tls`                                   | `scout_task_processes_es_tls`            | the same over Elasticsearch with TLS, reached as `kibana_system` with the CA of the cluster                                                                                                                                                                                                                                                                                                                                          |
 
 ```
 node scripts/scout.js start-server --arch stateful --domain classic --serverConfigSet task_processes
@@ -496,3 +539,398 @@ exist before Kibana starts), serverless (no serverless config set for it yet), a
 process is running (the jest tests of the supervisor cover it).
 
 The distributable builds the bundles into `task_bundles/`.
+
+## Workflows
+
+`workflow:run`, `workflow:resume` and `workflow:scheduled` (`workflows_execution_engine/server/task_types`)
+are modules too. The engine's run-time is `createWorkflowRuntime(deps)`, built with explicit
+dependencies: Kibana's plugin builds it from its services and a process builds it from its host
+(`task_types/process_runtime.ts`). Kibana registers the three modules with `registerTaskType` and hands
+the same module code the engine's runtime as `hostExtensions.plugins`, so a module reads
+`host.plugins.workflowsExecutionEngine.runtime` in both.
+
+What a workflow run needs beyond a rule run, and where it comes from in a process:
+
+- **Calls to Kibana.** `host.http` is Core's self client aimed at the Kibana that dispatched the run:
+  Kibana sends the address where a process reaches it (`kibanaUrl`) and `server.basePath` in `init`.
+  `callKibanaApi` and `kibana.*` steps use it with the credential of the run. Links (the `kibanaUrl`
+  template variable, execution and approval links, rule URLs) are built from Kibana's own
+  `server.publicBaseUrl`, which a process gets raw, so they are what Kibana builds.
+- **Task Manager.** `host.taskManager` has `schedule`, `bulkSchedule`, `get`, `bulkGet`, `fetch`, `remove`,
+  `removeIfExists`, `bulkRemove`, `runSoon` and `ensureScheduled`, written over the same `task` saved
+  objects as `TaskStore`, including the invalidation of the API keys of removed tasks. `runSoon` sets
+  `runAt` to now and Kibana's claim cycle picks it up: there is no nudge from a process.
+- **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
+  run and schedule a `workflow:resume` task; a second process finishes it.
+- **Data streams.** Clients are built with `DataStreamClient.fromDefinition` over the engine's shared
+  definitions: nothing is installed.
+- **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
+  plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
+  `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
+  project type, for UIAM) and, with UIAM, the contents of the mTLS certificate, key and certificate
+  authorities (not their paths, so that a remote process can connect). The two hidden saved object types
+  (workload bindings, credentials) are registered by the plugin's own functions, and the service needs the
+  encrypted saved objects plugin, which a module gets by declaring encrypted saved object types (the
+  workflows module does). The engine's task plugin registers the `workflow` workload type and hands
+  `core.security.serviceAccounts` to the runtime, because Core scopes the workload methods to the plugin
+  that registered the type. Both backends are served: Elasticsearch service accounts (the credential is
+  read and decrypted in the process) and UIAM (the process exchanges the account for a token itself). Without
+  the encrypted saved objects plugin or with `serviceAccounts.enabled: false`, `canRunAs()` is false and the
+  workflow is declined.
+- **Metering.** The process reports the usage record itself. Kibana sends the Usage API connection (URL
+  and TLS, setting `workflowsUsageApi`, only when it reports metering), the process builds the same
+  `WorkflowsMeteringService` over the usage API's own `UsageReportingService` (the same retries, the same
+  deduplicating record id, the same error log when the endpoint is down) and flushes it with
+  `host.onRunEnd` before it answers. Without a connection, nothing is metered, as in Kibana.
+- **Side effects.** Analytics events (the telemetry task plugin, the event types of the engine, the
+  connectors and every step contribution's `declares.analyticsEventTypes`) and usage counters
+  (`usageCounters: true`, such as the cases counter) are the process's own; nothing is returned to Kibana.
+  A run's answer holds the result and nothing else, and Kibana only reschedules.
+- **Connector steps.** The actions executor is initialized as for attack discovery, with the connector
+  types of the `alerting-rule-run` contributions.
+- **Steps.** The process step registry (`createServerStepRegistry`) holds the internal `data.*` steps and
+  what plugins contribute under the key `workflow-steps`.
+
+### Contributing steps
+
+A plugin lists a file under `plugin.taskTypeContributions['workflow-steps']` in its `kibana.jsonc`. It
+exports `contribution: WorkflowStepsContribution` whose `register(registry, context)` calls the same
+registration function the plugin's `setup()` calls, with services built from `context.host` and
+`context.services`. `declares` adds the saved object types, encrypted types, ui settings, settings, feature
+flags and event log providers it needs to the module. Rules to follow:
+
+- A plugin sends its settings with `workflowsExtensions.registerTaskProcessSettings(id, getter)` in `setup`.
+  They are optional: a disabled plugin sends none and the contribution registers nothing.
+- Do not register a step that reads a registry other plugins fill in their own `setup()` (cases attachment
+  types, the features registry) unless the registry is filled by contributions too, as agent builder's is
+  (see below). It would behave differently from Kibana. A workflow that uses a step the process lacks is
+  declined before anything is written, and the task fails.
+- `context.registerRunCheck(check)` verifies required registrations and capabilities before a run writes.
+  Templated values resolve through the handler at execution time, as in Kibana. A missing capability fails
+  the task without changing executors.
+- A service that queues events registers a drain with `services.registerRunCompletion`. These drains
+  finish before execution-service cleanup and before telemetry and event-log flushing. Drains added by
+  other drains are awaited too; a drain failure is reported after all pending work settles.
+- A step that reports analytics events lists their types in `declares.analyticsEventTypes`. For
+  heterogeneous payloads with optional nested schemas, use `declares.registerAnalyticsEventTypes`
+  and call the same typed registration function as the native plugin. Task Core deduplicates event
+  names across arrays and callbacks. Agent Builder contributions support the same declaration. A step that
+  counts usage reads `host.usageCounters.getUsageCounter(domain)`.
+
+Contributions can provide lazy execution services with `provides: { serviceId: (context) => service }`.
+`context.services.getService<T>(serviceId)` returns the same instance throughout one run. Agent Builder
+contributions use the same resolver. Providers and their mutable registries are rebuilt for the next run,
+including when Core and the bundle are reused.
+
+The `workflows.management` and `workflows.extensions` providers share one `WorkflowsRuntime`: the full
+management API, request-scoped trigger clients and owner-bound managed workflow clients use the same
+services and license checks as Kibana. The `spaces` provider uses the real spaces client and security
+wrapper over stored space documents, with the captured feature registry, solution visibility and CPS
+routing. `nightshiftSources` uses the source catalog's shared client factory; its change emitter awaits
+subscribers before writes return.
+
+`alertingVTwo` uses the plugin's dependency-injection modules for its request-scoped clients. Resource
+initializers check deployed data streams, templates and pipelines; Kibana owns installing and upgrading
+them. Its event bus drains queued handlers, including nested events, before the run completes. Event
+subscribers and the response-format subscription are released for each execution.
+
+Evals exposes its executable registry as `evals.taskProviders`. A plugin that calls `registerTaskProvider`
+in Kibana also registers the same provider from its workflow contribution through that service. The
+`evalsTaskProviders` dispatch snapshot lists the expected provider names, which are checked against the
+completed execution registry. Both literal and templated `task_ref` values execute through that registry.
+
+### Agent builder in a process
+
+`ai.agent`, `ai.conversation.*` and `ai.attachment.*` read agent builder's registries (tools, agents, agent
+types, skills, attachment types, conversation templates and event types, renderers, hooks, plugins, the AI
+index resolver), which about two dozen plugins fill in their `setup()`. A process has no plugin lifecycle,
+so it is built the way the plugin builds it, from explicit dependencies, and filled by contributions.
+
+**The run services.** `createAgentBuilderRunServices(deps)` (`agent_builder/server/run_services`) builds the
+`ServiceManager`, registers what agent builder itself registers (the connector tools, the SML tools, the hooks,
+the Deductive agent) and returns the registries (`serviceSetups`), the registration surface plugins use in
+`setup()` (`setupContract`, an `AgentBuilderPluginSetup`) and a recorder of the ids registered with each
+registry. The plugin's `setup()` calls it with Kibana's services; the process
+(`task_types/create_agent_builder_process_services.ts`) calls it with the host: the inference services of
+`createInferenceTaskProcessServices` (chat models and clients are built from the connectors, with the run's
+request and credential), the search inference endpoints with Kibana's complete feature snapshot and the recommended
+endpoints Kibana's poller had found (sent as a setting), Core's Elasticsearch, saved objects and ui settings,
+the actions client of the run, the usage counter and analytics of the host, the deployment information Kibana
+sent, and a space taken from the run's request. The start contract plugins read (`getAgentBuilderStart()`) is
+built by `createAgentBuilderStartContract`, which the plugin's `start()` calls too. Asynchronous execution
+callbacks use the shared actions configuration and relay client. Conversation events are forwarded to the
+workflows triggers with the engine's runtime and flushed before the run answers.
+
+**Contributions.** A plugin lists a file under `plugin.taskTypeContributions['agent-builder']` in its
+`kibana.jsonc` that exports `contribution: AgentBuilderContribution` (`@kbn/agent-builder-server`):
+
+```ts
+export const contribution: AgentBuilderContribution = {
+  // What the registrations read besides Core: merged into what the workflow task types declare.
+  declares: {
+    settings: [MY_SETTINGS_ID],
+    savedObjectTypes: [],
+    uiSettings: [],
+    featureFlags: {},
+    analyticsEventTypes: [],
+  },
+  register: (agentBuilder, { host, logger, settings, services }) => {
+    if (!settings[MY_SETTINGS_ID]) return; // the plugin is not enabled in this Kibana
+    registerMyPluginAgentBuilder(agentBuilder, {
+      /* services built from `host` and `services` */
+    });
+  },
+};
+```
+
+`agentBuilder` is the same `AgentBuilderPluginSetup` plugins register with in `setup()`, and `register` calls the
+function `setup()` calls (`registerXAgentBuilder(setup, services)`), so there is one implementation. Rules:
+
+- Everything conditional (config, the serverless project type, a feature flag, whether another plugin is there)
+  is decided in Kibana and sent: `agentBuilder.taskProcess?.registerSettings(id, () => value)` in `setup()`, read as
+  `settings[id]` and listed in `declares.settings`. Send `() => ({})` at least, so that a plugin that is not
+  enabled in this Kibana (a plugin of another solution, `enabled: false`) registers nothing in the process.
+- `services` has what a registration reads in Kibana from `coreSetup.getStartServices()` (`getCoreStart`,
+  `getActionsStart`, `getInferenceStart`, `getAgentBuilderStart`, `getWorkflowsManagement`), lazily. A registration that
+  needs a service the process does not have is not made, and the parity guard reports it: do not register a tool that
+  would answer "not available" instead. Services that other plugins own are built from explicit dependencies by a
+  function the plugin and the process share (`createLlmTasksStartContract` with `createProductDocReadServices`, and
+  `createFilesRunServices`, which the platform contribution uses for the product documentation tool and the image
+  attachment type).
+- SML types (`agentBuilderSml.registerType`) are registered with `context.registerSmlType`, which takes the place of
+  the SML plugin's setup contract (`{ registerType: context.registerSmlType }`). The process owns an SML service
+  (`createSmlService`, started with the privileges of the security task plugin) and an SML start contract
+  (`createSmlStartContract`), which the SML tools read. Kibana's ids come from `getRegisteredTypeIds()` of the SML plugin,
+  and are compared under the `agentBuilder.smlTypes` parity kind.
+- Import leaf files, and take the registration function's services as arguments, as for every plugin factory.
+
+**Parity.** Kibana sends the ids it registered with each registry (`workflowsExtensions.registerTaskProcessParity`,
+one kind per registry: `agentBuilder.tools`, `.agents`, `.skills`, `.attachmentTypes` ...), read at every dispatch,
+and the process compares them with what it registered, in both directions: an id Kibana has that the process lacks
+(a plugin that does not contribute yet, a registration the process cannot make) and an id only the process has (a
+plugin that contributes but is disabled in this Kibana). The steps that read the registries are declined, with a
+warning that names the ids, and the task fails; every other step is served as before. This is not
+`TaskTypeModule.parity`, which declines every run of the process: most workflows do not use agents, and they keep
+running in a process while contributions are still being added. The parity is `host.parity`, compared with
+`findMissingParity`. In Kibana today `ai.agent` is still declined, until the plugins listed below as not yet
+contribute.
+
+**The workflows management API.** The hooks that run an agent's workflows, the `workflow` tool type and the tools of
+the plugins that run workflows read `workflowsManagement.management`. The process uses the same
+`WorkflowsRuntime` and `WorkflowsManagementApi` as Kibana, composed from explicit execution, authorization,
+actions, storage, and registry dependencies. The plugin's lifecycle adapter supplies these dependencies
+from Core; the `workflows.management` contribution supplies them from the run. CRUD, validation,
+inline and saved execution, managed workflows, history, resume, and cancellation share one implementation.
+Management side effects include audit events and SML indexing, which the process flushes before replying.
+Change history opens the data stream Kibana installed instead of installing assets at worker startup.
+
+`WorkflowStepsContribution.provides` declares lazy run-service providers. `services.getService(id)` resolves
+one instance per execution; `registerService` publishes services after asynchronous composition, and
+`getExecutionEngine` resolves once all step contributions have registered. Duplicate and circular providers
+fail explicitly. Agent Builder publishes its start contract as `agentBuilder`; proposal steps use its
+attachment client. KI verifier workflows are scheduled as separate tasks, so their caller can poll and
+cancel them through the same access-controlled management API.
+
+**Global ui settings.** `declares.globalUiSettings` (of an `agent-builder` or `workflow-steps` contribution) are
+registered with `registerGlobal` in the process (`TaskTypeModule.uiSettings.globalDefaults`) and read with
+`host.uiSettings.globalAsScopedToClient`; a key several contributions declare is registered once. The Deductive
+agent's settings and the context engine's memory setting are declared this way, so the Deductive agent no longer
+declines runs.
+
+**Services a tool reads.** Build them from explicit dependencies in a function the plugin's `setup()`/`start()` and
+the contribution share (`createContextEngineRunServices`, `createCasesRunServices`, `createProposalsRunServices`)
+and create them lazily: the contribution registers (also with the stub host of `collectRegisteredIds`) before the
+services can be built from the host.
+
+A checked-in list of the ids the contributions register (`agent_builder_contribution_ids.json`) and a test that
+every plugin that takes `AgentBuilderPluginSetup` either contributes or is listed as not yet (with what it needs)
+fail when a plugin registers something new without a contribution. Test a contribution with
+`collectRegisteredIds`, and a registration end to end with
+`workflow_agent_builder_process.test.ts` (a real bundle, Elasticsearch and a stub LLM behind a `.gen-ai`
+connector).
+
+Who contributes: discover, elasticsearch_home, search_getting_started, apm (service map), custom_content,
+agent_builder_visualizations and agent_builder_platform (tools, attachment types, skills, templates, event types),
+proposals (the services over the plugin's storage, and agent builder's attachments), context_engine_agent_builder
+(the AI index services, the signals and improvements stores), cases (the cases client of `createCasesRunServices`,
+with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
+capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
+license switchers). Differences from Kibana are in the comment of each contribution (the AI
+indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
+data-view capabilities in rule runtimes).
+Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
+the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
+are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
+execution, and scheduling), and the SML types of visualizations, platform, dashboards and
+workflows. Product documentation counts as installed from the status saved objects (an installation in flight is
+not looked at; Security Labs is not available).
+
+Also contributing since: streams (the scoped clients of `createStreamsRunServices`: the streams client over its
+storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata
+service resolved from the shared metadata registry; the rules client of alerting that the attachment client uses and the
+encrypted saved objects client still throw when used; tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
+evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
+service and the privileges of the security task plugin; saving and running an experiment use the shared workflow management runtime).
+
+The engine also exposes the native field metadata service as `fieldsMetadata` in the workflow service
+registry. It uses the active extractor provider IDs captured from Kibana at dispatch, and resolves each
+provider through `fieldsMetadata.extractors.<id>`. Missing registered providers fail explicitly. Fleet
+capabilities are evaluated with the task's credentials by the shared Security switcher, then restricted
+by the current authorized space and native solution gate. The Streams extractor is available through
+this registry, and Streams consumes the shared service. Fleet contributes its native package client and
+extractors using the package registry configuration and portable file material captured at dispatch.
+
+Fleet's shared execution initializer now takes genuine Core saved objects services and explicit security
+and encryption capabilities. Core's FIPS setting is carried into worker boot and exposed through the task
+host. Its package-material capture helper snapshots the native bundled archives and cached signing key;
+the archive decoder reads captured bytes and checks their SHA-256 digest. The native bundled-package
+and signature loaders select this material explicitly in workers, so a remote host does not need the
+original file paths. The worker package client uses real Core saved objects and Elasticsearch services;
+run cleanup releases Fleet configuration and license subscriptions. Response actions use the same
+snapshot and genuine task Security license and audit services. Rule modules declare the snapshot in
+`optionalSettings`, matching Fleet's optional plugin dependency; executing a response action requires
+the snapshot.
+
+Workflows resolve native Fleet services through `fleet.runServices`. The shared initializer runs
+once per task run and releases its subscriptions at run end. Fleet contributes its complete native
+saved-object definitions using the dispatch configuration, including the space-awareness namespace
+setting. Enrollment queries use the native scoped agent service and current Elasticsearch documents;
+retained workers do not cache agent availability between runs.
+
+The nine archives pinned in `fleet_packages.json` have registry content lengths totaling 26,063,815
+bytes, or 34,751,764 bytes after base64 encoding (33.1 MiB, measured November 7, 2026). Full dispatch
+size validation must also include build-time version rewrites, the signing key, configuration and
+other plugins' settings against the remote host's 64 MiB request limit.
+
+Native observability data services are available through the workflow service registry:
+
+- `apmSourcesAccess.setup` and `apmDataAccess.setup` use the validated APM source configuration and
+  current saved-object overrides. Kibana and APM rule workers share the same index resolver.
+- `dataViews` uses the native data-view factory, saved-object definition, field formats and
+  request-scoped Security and Spaces capability switchers. Its dispatch snapshot carries the
+  plugin's actual scripted-field and rollup settings. Conditional defaults use the same UI
+  registration helper as Kibana; meta-field and default-view settings share their native definitions
+  with the Data plugin.
+- `ml.setup` uses the shared ML service factory with native authorization, licensing, audit,
+  data views and Spaces. The module recognizer reads a dispatch snapshot of its installed manifests,
+  job and datafeed definitions, logos and saved-object assets. It does not need source-tree paths
+  on the worker. Shared capability checks receive the actual authorization, license and feature
+  settings for credential-bearing workflow requests. ML rule workers use the same factories and
+  portable assets, require their dispatch settings, and use captured Cloud facts and native Spaces
+  services. ML capabilities read current space-disabled features on each request, including the
+  native AIOps gate. Real workflow tests cover credential denial and space disable/re-enable in
+  fresh and retained local and remote workers; rule tests cover both ML types and their APM,
+  Uptime and Security consumers.
+- `logsDataAccess` uses the native logs service factory and Core UI settings clients, including
+  request-scoped reads and writes of the configured log sources.
+- `observabilityAgentBuilder.dataProviders.apm` and `.infra` register the same providers as Kibana
+  over native APM, Infrastructure, ML, SLO and alert clients. The Observability agent contribution
+  restores the captured successful tool, attachment and skill registrations and binds each data
+  provider to its captured owner. Missing owners or providers fail explicitly. Real worker tests
+  cover APM error updates, host CPU changes, log-source changes and credential denial in fresh and
+  retained local and remote workers.
+- `metricsDataAccess.setup` uses the native metrics client. Its dispatch snapshot identifies any
+  installed default resolver; `metricsDataAccess.defaultIndices.<owner>` restores that resolver
+  through its owning plugin's factory. Infra contributes its native source resolver. Missing or
+  unowned resolvers fail explicitly. Explicit metric-index saved objects retain their native priority.
+- `slo` and `observabilityAgentBuilder.dataProviders.slo` share the native scoped SLO client and
+  details provider. Each request resolves its current space and uses its scoped saved object and ES clients.
+- `observabilityAgentBuilder.dataProviders.synthetics` shares the native monitor repository and public
+  field selection. Both monitor saved object types use the real encryption migration factories;
+  reading monitor details does not decrypt secrets.
+- `ruleRegistry.getRacClientWithRequest` uses the native alert client, authorization class, audit
+  logger and rule data service. Alerting captures its current rule identifiers, alias metadata,
+  feature definitions and Security/Spaces availability at dispatch. Requests retain native read and
+  write privileges and space filters. A changed bootstrap snapshot starts a fresh worker; unchanged
+  snapshots retain the worker while credentials and alert documents change between runs.
+
+**Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
+`agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
+feature flag flips on). A contribution adds `registerAtStart(start, context)`, which calls the function the plugin
+calls with `start` (`AgentBuilderContributionStart`: `skills.register` and `agents.ensure`). Kibana decides the
+current set and sends it as settings with each dispatch (`registerSettings(id, () => current)`, evaluated at every
+dispatch), the process runs `registerAtStart` with these settings, so it registers exactly that set and skills
+registered at start count in the `agentBuilder.skills` parity. `agents.ensure` in a process only keeps the
+availability and visibility of the agent in memory (`setAgentAvailability`): Kibana persisted the agent, a process
+does not write it. An availability that holds a callback is sent as data (the result Kibana evaluated for this
+dispatch) and rebuilt by the registration as a handler that answers it, or is the process-side equivalent built by the
+same factory. Test it with `collectRegisteredIds`, which runs `registerAtStart` too.
+
+**Discovery.** Attachment and skill registration follows the exact successful registration snapshot from Kibana,
+including flag-off startup. The shared runtime supplies authorized workflow management, scoped Spaces and
+inference services, and the native discovery data client. Asynchronous generation is queued as a separately
+owned, nonbillable workflow task before returning `pending`. Synchronous agent calls read that task's persisted
+result and stop waiting at their existing deadline while the queued job continues. Execution UUID, source,
+request identity and space are preserved across the task boundary; the source keeps the native gate and result
+policies. Only metadata bound to an owned ephemeral execution can choose these policies; caller metadata and
+rendered context overrides cannot. Each pipeline phase and the optional report are scheduled by the native orchestration.
+
+**Significant Events.** The worker calls the native tool, attachment, agent type, skill and SML registration
+factories using the successful registration snapshot. Scoped clients use native Security, licensing, source
+catalog, field metadata, V2 alerting, workflow management and Core data-stream services. Agent installers rebuild
+runtime availability policies while persisted agent profiles remain owned by Kibana. Feature flags and caller
+privileges are evaluated for each execution, including executions in a retained worker. Interactive confirmation
+requests retain the native non-interactive refusal behavior.
+
+**Agentic Investigations.** Native impact, subject and hypotheses attachments, investigation tools and escalation
+conversation events use the same registration and document-store factories as Kibana. All four investigation
+workflow steps use the run's Agent Builder conversation and attachment clients, native Security privilege checks
+and Core user attribution. Reopening preserves native rename authorization and template checks; appending workflow
+execution ids preserves ordering and avoids duplicates.
+
+**AlertZero agent contribution.** Kibana and workers use the same registration function for the
+action-discovery tool and skill, three attachments, agent type and conversation-update trigger. The
+catalog uses the native action service and request-scoped workflows client. Reads retain the caller's
+privileges, workflow ACLs, category filters and space setting. Kibana captures whether the action and
+management services started; workers do not substitute another service when either is unavailable.
+The owning workflow contribution registers the same native UI setting when AlertZero is enabled.
+Outcome reporting uses the native owner-bound managed-workflows client and the request-scoped
+execution reader to verify persisted lineage. Its event schemas use the same registration helper
+as Kibana. Worker tests change and restore the workflow owner before accepting another report.
+`alertzero.investigation.summarize` reads the native conversation timeline, runs the native agent
+with structured output, and patches the conversation's metadata. Kibana and workers share its
+connector resolver, including the configured AlertZero frontier feature policy. The step checks
+the shared `agentBuilder.parity` preflight before executing. Agent Builder declares the native
+inference-settings type its model-policy client reads, independently of the optional inference
+workflow steps. Real summary tests cover private-conversation denial, persisted metadata and
+feature-specific connector selection in fresh and retained local and remote workers.
+
+`hunt.packageReport` uses the native conversation and attachment clients, action catalog, scoped
+Fleet enrollment and Proposals service. Kibana and workers construct Proposals through the same
+factory. Packaging checks Agent Builder registration parity before execution and resolves the
+current Context Engine setting through native scoped UI settings. Execution tests change the
+task's proposal-read privileges and agent enrollment between runs, including a same-named agent
+in another space, across fresh and retained local and remote workers.
+
+Triage reads live workflow executions through the same native authorized reader in Kibana and
+workers. It shares the HTTP license policy and managed-execution gate, checks API privileges for
+each read, and delegates ACL filtering to the management API. The reader derives its space from
+the native request. Tests cover changing privileges, private workflows, current execution statuses,
+and actual default and non-default-space dispatches in every worker mode.
+
+Agent contributions still needed: security_solution (endpoint, detections and entity analytics
+services) and nightshift_investigations (investigations, sandbox and agent execution services).
+
+### Remaining workflow parity gaps
+
+These remaining capability gaps currently fail process execution; they must be completed for full parity:
+
+- **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
+  message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
+  what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
+- **cases:** `cases.addAlerts`, `cases.addEvents`, `cases.addAttachments`, `cases.deleteAttachments` and
+  `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
+  files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
+  a close reason validator or an email service the process lacks.
+- **alertzero:** native adapters for detection-alert search/tag operations, which still
+  call Kibana routes.
+- **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
+  plugin and agent execution).
+
+Inference features are sent as the `inferenceFeatures` settings snapshot at each dispatch, including parent
+relationships, model policies and the current recommended endpoints. Both AI steps and Agent Builder restore
+that registry, so features registered by other plugins and templated `connector-id-by-feature` values resolve
+as they do in Kibana. A missing or invalid snapshot fails execution explicitly.
+
+The common cause is the registries. Agent builder's have a contribution mechanism now; the plugins above that
+register with it move into processes as they contribute.

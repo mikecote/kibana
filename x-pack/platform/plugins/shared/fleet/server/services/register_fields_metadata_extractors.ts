@@ -5,42 +5,80 @@
  * 2.0.
  */
 
-import type { CoreSetup } from '@kbn/core/server';
-import type { FieldsMetadataServerSetup } from '@kbn/fields-metadata-plugin/server';
+import type { CoreSetup, Logger } from '@kbn/core/server';
+
+import type {
+  FieldsMetadataExtractors,
+  FieldsMetadataServerSetup,
+} from '@kbn/fields-metadata-plugin/server';
 
 import type { FleetStartContract, FleetStartDeps } from '../plugin';
 
 import { appContextService } from '.';
 
-interface RegistrationDeps {
-  core: CoreSetup<FleetStartDeps, FleetStartContract>;
-  fieldsMetadata: FieldsMetadataServerSetup;
-}
+export const FLEET_FIELDS_METADATA_EXTRACTOR_ID = 'fleet';
 
-export const registerFieldsMetadataExtractors = ({ core, fieldsMetadata }: RegistrationDeps) => {
-  fieldsMetadata.registerIntegrationFieldsExtractor(async ({ integration, dataset }) => {
+type PackageMetadataClient = Pick<
+  FleetStartContract['packageService']['asInternalUser'],
+  'getPackageFieldsMetadata' | 'getPackages'
+>;
+
+/** Creates Fleet's field metadata extractors from its package client. */
+export const createFleetFieldsMetadataExtractors = ({
+  getPackageService,
+  getLogger,
+}: {
+  getPackageService: () => Promise<PackageMetadataClient>;
+  getLogger: () => Pick<Logger, 'warn'>;
+}): Required<
+  Pick<FieldsMetadataExtractors, 'integrationFieldsExtractor' | 'integrationListExtractor'>
+> => ({
+  integrationFieldsExtractor: async ({ integration, dataset }) => {
     try {
-      const [_core, _startDeps, { packageService }] = await core.getStartServices();
-
-      return packageService.asInternalUser.getPackageFieldsMetadata({
-        packageName: integration,
-        datasetName: dataset,
-      });
+      const packages = await getPackageService();
+      return packages.getPackageFieldsMetadata({ packageName: integration, datasetName: dataset });
     } catch (error) {
-      appContextService.getLogger().warn(`registerIntegrationFieldsExtractor error: ${error}`);
+      getLogger().warn(`registerIntegrationFieldsExtractor error: ${error}`);
       throw error;
     }
-  });
-
-  fieldsMetadata.registerIntegrationListExtractor(async () => {
-    const [_core, _startDeps, { packageService }] = await core.getStartServices();
-
+  },
+  integrationListExtractor: async () => {
+    const packages = await getPackageService();
     try {
-      const packages = await packageService.asInternalUser.getPackages();
-
-      return packages.map(({ id, name, version }) => ({ id, name, version }));
+      const entries = await packages.getPackages();
+      return entries.map(({ id, name, version }) => ({ id, name, version }));
     } catch (error) {
       return [];
     }
+  },
+});
+
+interface RegistrationDeps {
+  core: CoreSetup<FleetStartDeps, FleetStartContract>;
+  fieldsMetadata: Pick<
+    FieldsMetadataServerSetup,
+    'registerIntegrationFieldsExtractor' | 'registerIntegrationListExtractor'
+  >;
+}
+
+/** Registers the shared Fleet extractors with the native field metadata registry. */
+export const registerFieldsMetadataExtractors = ({
+  core,
+  fieldsMetadata,
+}: RegistrationDeps): void => {
+  const extractors = createFleetFieldsMetadataExtractors({
+    getPackageService: async () => {
+      const [, , { packageService }] = await core.getStartServices();
+      return packageService.asInternalUser;
+    },
+    getLogger: () => appContextService.getLogger(),
   });
+  fieldsMetadata.registerIntegrationFieldsExtractor(
+    extractors.integrationFieldsExtractor,
+    FLEET_FIELDS_METADATA_EXTRACTOR_ID
+  );
+  fieldsMetadata.registerIntegrationListExtractor(
+    extractors.integrationListExtractor,
+    FLEET_FIELDS_METADATA_EXTRACTOR_ID
+  );
 };

@@ -12,19 +12,20 @@ import type {
   Logger,
   Plugin,
   PluginInitializerContext,
-  SavedObjectsClientContract,
-  SavedObjectsServiceStart,
 } from '@kbn/core/server';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import { ApiPrivileges } from '@kbn/core-security-server';
 
 import { defineRoutes } from './routes';
 import { InferenceFeatureRegistry } from './inference_feature_registry';
+import { INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 import { getForFeature as getForFeatureFn } from './inference_endpoints';
-import { resolveModelsForFeature } from './lib/resolve_models_for_feature';
+import {
+  createSearchInferenceEndpointsStart,
+  getInferenceSettingsClient,
+} from './create_search_inference_endpoints_start';
 import { createInferenceSettingsSavedObjectType } from './saved_objects/inference_settings';
 import type {
-  GetForFeatureOptions,
   SearchInferenceEndpointsPluginSetup,
   SearchInferenceEndpointsPluginSetupDependencies,
   SearchInferenceEndpointsPluginStart,
@@ -39,20 +40,6 @@ import {
   PLUGIN_ID,
   PLUGIN_NAME,
 } from '../common/constants';
-
-// Model settings are admin policy that must apply to every user, including those
-// without read access to the settings saved object, so the read bypasses user authz
-// while staying scoped to the request's active space.
-const getInferenceSettingsClient = (
-  savedObjects: SavedObjectsServiceStart,
-  request: KibanaRequest
-): SavedObjectsClientContract => {
-  const internalClient = savedObjects.getUnsafeInternalClient({
-    includedHiddenTypes: [INFERENCE_SETTINGS_SO_TYPE],
-  });
-  const namespace = savedObjects.getScopedClient(request).getCurrentNamespace();
-  return namespace ? internalClient.asScopedToNamespace(namespace) : internalClient;
-};
 
 export class SearchInferenceEndpointsPlugin
   implements
@@ -84,6 +71,10 @@ export class SearchInferenceEndpointsPlugin
     core.savedObjects.registerType(createInferenceSettingsSavedObjectType());
 
     const featureRegistry = this.featureRegistry;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID,
+      () => ({ features: featureRegistry.getAll() })
+    );
 
     const getForFeature = async (featureId: string, request: KibanaRequest) => {
       const [coreStart, pluginsStart] = await core.getStartServices();
@@ -172,54 +163,12 @@ export class SearchInferenceEndpointsPlugin
   }
 
   public start(core: CoreStart, plugins: SearchInferenceEndpointsPluginStartDependencies) {
-    const featureRegistry = this.featureRegistry;
-
-    return {
-      features: {
-        get: featureRegistry.get.bind(featureRegistry),
-        getAll: featureRegistry.getAll.bind(featureRegistry),
-        register: featureRegistry.register.bind(featureRegistry),
-        updateRecommendedEndpoints:
-          featureRegistry.updateRecommendedEndpoints.bind(featureRegistry),
-      },
-      endpoints: {
-        getForFeature: async (
-          featureId: string,
-          request: KibanaRequest,
-          opts?: GetForFeatureOptions
-        ) => {
-          const soClient = getInferenceSettingsClient(core.savedObjects, request);
-          const getConnectorById = (id: string) => plugins.inference.getConnectorById(id, request);
-          const uiSettingsClient = core.uiSettings.asScopedToClient(
-            core.savedObjects.getScopedClient(request)
-          );
-
-          // `onlyReturnConfigured` has to reach endpoint-id resolution. Otherwise a
-          // feature with no saved row and no recommended endpoints answers with the
-          // platform default, and a caller cannot tell that nothing was configured.
-          const resolveFeatureEndpoints = (fId: string) =>
-            getForFeatureFn(featureRegistry, soClient, getConnectorById, fId, this.logger, opts);
-          const getConnectorList = () => plugins.inference.getConnectorList(request);
-          const feature = featureRegistry.get(featureId);
-
-          const result = await resolveModelsForFeature({
-            getForFeature: resolveFeatureEndpoints,
-            getConnectorList,
-            getConnectorById,
-            uiSettingsClient,
-            featureId,
-            ignoreGlobalDefault: feature?.ignoreGlobalDefault ?? false,
-            opts,
-            logger: this.logger,
-          });
-
-          return {
-            endpoints: result.connectors,
-            warnings: result.warnings,
-            soEntryFound: result.soEntryFound,
-          };
-        },
-      },
-    };
+    // The start contract is built by the function a task process builds it with.
+    return createSearchInferenceEndpointsStart({
+      core,
+      inference: plugins.inference,
+      featureRegistry: this.featureRegistry,
+      logger: this.logger,
+    });
   }
 }

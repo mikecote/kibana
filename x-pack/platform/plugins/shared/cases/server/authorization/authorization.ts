@@ -8,9 +8,8 @@
 import type { SavedObject } from '@kbn/core-saved-objects-server';
 import type { KibanaRequest, Logger } from '@kbn/core/server';
 import Boom from '@hapi/boom';
-import type { SecurityPluginStart } from '@kbn/security-plugin/server';
-import type { FeaturesPluginStart } from '@kbn/features-plugin/server';
 import type { Space, SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { CasesFeatures, CasesSecurityStart } from '../client/types';
 import type { AuthFilterHelpers, OwnerEntity } from './types';
 import { getOwnersFilter, groupByAuthorization } from './utils';
 import type { OperationDetails } from '.';
@@ -23,7 +22,7 @@ import { createCaseError } from '../common/error';
  */
 export class Authorization {
   private readonly request: KibanaRequest;
-  private readonly securityAuth: SecurityPluginStart['authz'] | undefined;
+  private readonly securityAuth: CasesSecurityStart['authz'] | undefined;
   private readonly featureCaseOwners: Set<string>;
   private readonly auditLogger: AuthorizationAuditLogger;
 
@@ -34,7 +33,7 @@ export class Authorization {
     auditLogger,
   }: {
     request: KibanaRequest;
-    securityAuth?: SecurityPluginStart['authz'];
+    securityAuth?: CasesSecurityStart['authz'];
     caseOwners: Set<string>;
     auditLogger: AuthorizationAuditLogger;
   }) {
@@ -56,9 +55,9 @@ export class Authorization {
     logger,
   }: {
     request: KibanaRequest;
-    securityAuth?: SecurityPluginStart['authz'];
-    spaces?: SpacesPluginStart;
-    features: FeaturesPluginStart;
+    securityAuth?: CasesSecurityStart['authz'];
+    spaces?: { spacesService: Pick<SpacesPluginStart['spacesService'], 'getActiveSpace'> };
+    features: CasesFeatures;
     auditLogger: AuthorizationAuditLogger;
     logger: Logger;
   }): Promise<Authorization> {

@@ -10,6 +10,10 @@
     "configPath": ["xpack", "agenticInvestigations"],
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    },
     "requiredPlugins": ["agentBuilder", "agentBuilderPlatform", "features", "workflowsExtensions"],
     "requiredBundles": ["kibanaReact", "proposals"],
     "optionalPlugins": ["security", "spaces", "proposals", "workflowsManagement", "entityStore"],

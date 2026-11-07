@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { httpServerMock } from '@kbn/core/server/mocks';
 import { ALERT_FETCH_LIMIT, BATCH_ALERT_CAP, RULE_FETCH_LIMIT } from '../../alert_triage/constants';
 import {
   fetchTriageAlerts,
@@ -56,27 +57,28 @@ describe('tagAlerts', () => {
 });
 
 describe('listLiveExecutionIds', () => {
-  it('lists the live execution ids of the batch workflow', async () => {
-    const callKibanaApi = jest.fn().mockResolvedValue({
-      status: 200,
-      headers: {},
-      body: { results: [{ id: 'e1' }, { id: 'e2' }] },
-    });
-
-    await expect(listLiveExecutionIds({ callKibanaApi }, 'batch')).resolves.toEqual(
-      new Set(['e1', 'e2'])
+  const context = {
+    getFakeRequest: () => httpServerMock.createKibanaRequest(),
+    getContext: jest.fn().mockReturnValue({ workflow: { spaceId: 'default' } }),
+  };
+  it('lists the live execution ids through the native scoped reader', async () => {
+    const getWorkflowExecutions = jest
+      .fn()
+      .mockResolvedValue({ results: [{ id: 'e1' }, { id: 'e2' }] });
+    await expect(
+      listLiveExecutionIds({ getWorkflowExecutions }, context, 'batch')
+    ).resolves.toEqual(new Set(['e1', 'e2']));
+    expect(getWorkflowExecutions).toHaveBeenCalledWith(
+      expect.objectContaining({ workflowId: 'batch', size: 100 })
     );
   });
-
-  // The sweep treats an unreadable list as "unknown" and starts nothing, so a permission failure
-  // would otherwise be indistinguishable from a transient one.
-  it('logs why the live executions could not be read and reports them unknown', async () => {
-    const callKibanaApi = jest.fn().mockRejectedValue(new Error('HTTP 403: Forbidden'));
+  it('logs a denied native read and reports the list unknown', async () => {
+    const getWorkflowExecutions = jest.fn().mockRejectedValue(new Error('Forbidden'));
     const logger = { warn: jest.fn() };
-
-    await expect(listLiveExecutionIds({ callKibanaApi }, 'batch', logger)).resolves.toBeUndefined();
-
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('HTTP 403: Forbidden'));
+    await expect(
+      listLiveExecutionIds({ getWorkflowExecutions }, context, 'batch', logger)
+    ).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Forbidden'));
   });
 });
 

@@ -90,6 +90,7 @@ dependsOn:
   - '@kbn/ui-callout'
   - '@kbn/core-user-profile-common'
   - '@kbn/core-chrome-browser-components'
+  - '@kbn/task-manager-plugin'
 tags:
   - plugin
   - prod

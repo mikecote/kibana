@@ -8,16 +8,15 @@
 import type { LoggerFactory } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { RuleTypeModuleDeps } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
-import type { FleetConfigType } from '@kbn/fleet-plugin/common/types';
+import { FLEET_PACKAGE_METADATA_SETTINGS_ID } from '@kbn/fleet-plugin/server/package_metadata_task_process_settings';
+import type { FleetPackageMetadataTaskProcessSettings } from '@kbn/fleet-plugin/server/package_metadata_task_process_settings';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { SecurityRuleRunConfig } from '../config';
 import {
   getIsEndpointExceptionsPerPolicyEnabled,
   REFERENCE_DATA_SAVED_OBJECT_TYPE,
 } from '../endpoint/lib/reference_data';
 import type { SecurityRuleRunServicesDeps } from '../lib/detection_engine/rule_types/create_security_rule_run_services';
-
-/** The id of Fleet's settings in a task process, `host.settings[id]`. */
-export const FLEET_TASK_PROCESS_SETTINGS_ID = 'fleet';
 
 const KIBANA_ONLY =
   'is only available in Kibana, not in a task process: a rule run only reads the per-policy endpoint exceptions opt-in and schedules response actions';
@@ -48,17 +47,21 @@ export const getResponseActionsServices = (
 
   let built: ReturnType<typeof build> | undefined;
   const build = async () => {
-    const fleetConfig = settings[FLEET_TASK_PROCESS_SETTINGS_ID] as FleetConfigType | undefined;
-    if (!fleetConfig) {
+    const packageMetadata = settings[FLEET_PACKAGE_METADATA_SETTINGS_ID] as
+      | FleetPackageMetadataTaskProcessSettings
+      | undefined;
+    if (!packageMetadata) {
       throw new Error(
-        `The task process was not given the settings of ${FLEET_TASK_PROCESS_SETTINGS_ID}`
+        `The task process was not given the settings of ${FLEET_PACKAGE_METADATA_SETTINGS_ID}`
       );
     }
+    const security = host.plugins?.security as SecurityTaskPluginStart | undefined;
+    if (!security) throw new Error('Fleet execution requires the native task security services');
     if (!host.licensing || !host.encryptedSavedObjects) {
       throw new Error('The module must declare the licensing and encrypted saved objects');
     }
     const [
-      { createFleetRunServices, startFleetRunAppContext },
+      { createFleetRunServices, startFleetRunAppContext, stopFleetRunAppContext },
       { createOsqueryActionService },
       { createEndpointResponseActionsRunServices },
     ] = await Promise.all([
@@ -78,14 +81,18 @@ export const getResponseActionsServices = (
     };
     await startFleetRunAppContext({
       ...fleetDeps,
-      config: fleetConfig,
+      packageMetadata,
       license$,
-      audit: host.security.audit as never,
+      audit: security.audit,
+      securityLicense: security.license,
       kibanaVersion: deps.kibanaVersion,
-      // Only used to pick the package registry and the install of Fleet, which a process never does.
-      kibanaBranch: 'main',
       kibanaInstanceId: host.server.uuid,
-      isProductionMode: true,
+      isFipsEnabled: host.security.fips.isEnabled(),
+    });
+    if (!host.onRunEnd) throw new Error('Fleet execution requires the native task run lifecycle');
+    host.onRunEnd(() => {
+      stopFleetRunAppContext();
+      return Promise.resolve();
     });
     const fleetRunServices = createFleetRunServices(fleetDeps);
     const osqueryActionService = await createOsqueryActionService({

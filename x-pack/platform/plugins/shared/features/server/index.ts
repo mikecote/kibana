@@ -23,6 +23,7 @@ export type {
 } from '../common';
 export type { SubFeaturePrivilegeIterator } from './feature_privilege_iterator';
 export { KibanaFeature, ElasticsearchFeature } from '../common';
+export { uiCapabilitiesForFeatures } from './ui_capabilities_for_features';
 export type { GetKibanaFeaturesParams } from './feature_registry';
 export type { FeaturesPluginSetup, FeaturesPluginStart } from './plugin';
 

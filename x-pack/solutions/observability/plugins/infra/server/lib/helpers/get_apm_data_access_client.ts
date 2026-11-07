@@ -6,11 +6,15 @@
  */
 
 import { APMEventClient } from '@kbn/apm-data-access-plugin/server';
-import type { KibanaRequest } from '@kbn/core/server';
+import type {
+  KibanaRequest,
+  IScopedClusterClient,
+  IUiSettingsClient,
+  SavedObjectsClientContract,
+} from '@kbn/core/server';
+import type { ApmDataAccessPluginSetup } from '@kbn/apm-data-access-plugin/server';
 import { UI_SETTINGS } from '@kbn/data-plugin/server';
 import { getProjectRoutingFromRequest } from '@kbn/observability-utils-server/es/get_project_routing_from_request';
-import type { InfraPluginRequestHandlerContext } from '../../types';
-import type { InfraBackendLibs } from '../infra_types';
 
 export type ApmDataAccessClient = ReturnType<typeof getApmDataAccessClient>;
 export type ApmDataAccessServicesWrapper = Awaited<ReturnType<ApmDataAccessClient['getServices']>>;
@@ -20,8 +24,18 @@ export const getApmDataAccessClient = ({
   context,
   request,
 }: {
-  libs: InfraBackendLibs;
-  context: InfraPluginRequestHandlerContext;
+  libs: {
+    plugins: {
+      apmDataAccess: { setup: Pick<ApmDataAccessPluginSetup, 'getApmIndices' | 'getServices'> };
+    };
+  };
+  context: {
+    core: Promise<{
+      savedObjects: { client: SavedObjectsClientContract };
+      uiSettings: { client: Pick<IUiSettingsClient, 'get'> };
+      elasticsearch: { client: Pick<IScopedClusterClient, 'asCurrentUser'> };
+    }>;
+  };
   request: KibanaRequest;
 }) => {
   const getServices = async () => {

@@ -11,8 +11,17 @@
  */
 
 import { config as ruleRegistryConfig } from '@kbn/rule-registry-plugin/server';
+import { getMlRuleTestSettings } from '@kbn/ml-plugin/server/integration_tests/fixtures/ml_rule_test_settings';
 import { ConfigSchema as listsConfigSchema } from '@kbn/lists-plugin/server/config';
 import { config as fleetConfig } from '@kbn/fleet-plugin/server/config';
+import { appContextService } from '@kbn/fleet-plugin/server/services';
+import { parseExperimentalConfigValue } from '@kbn/fleet-plugin/common/experimental_features';
+import {
+  getFleetPackageMetadataTaskProcessSettings,
+  stopFleetRunAppContext,
+} from '@kbn/fleet-plugin/server/services/run_time';
+import type { FleetPackageMetadataTaskProcessSettings } from '@kbn/fleet-plugin/server/package_metadata_task_process_settings';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import { startRuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import {
@@ -125,6 +134,14 @@ describe('the detection rule types served from bundles', () => {
   };
 
   beforeAll(async () => {
+    const settings = {
+      securitySolution: getTaskProcessSettings(createMockConfig()),
+      ruleRegistry: ruleRegistryConfig.schema.validate({}),
+      lists: listsConfigSchema.validate({}),
+      fleet: fleetConfig.schema.validate({}),
+      ml: await getMlRuleTestSettings(),
+      fleetPackageMetadata: undefined as FleetPackageMetadataTaskProcessSettings | undefined,
+    };
     harness = await startRuleProcessHarness({
       // The ML rule first: the module the harness seeds with has the saved object types of the ML jobs.
       rules: [
@@ -138,13 +155,7 @@ describe('the detection rule types served from bundles', () => {
         { taskType: indicatorMatch, bundle: 'securitySolution__indicator_match' },
         { taskType: notifications, bundle: 'securitySolution__notifications' },
       ],
-      settings: {
-        securitySolution: getTaskProcessSettings(createMockConfig()),
-        ruleRegistry: ruleRegistryConfig.schema.validate({}),
-        lists: listsConfigSchema.validate({}),
-        fleet: fleetConfig.schema.validate({}),
-        ml: { cpsEnabled: false },
-      },
+      settings,
       indices: {
         [SOURCE_INDEX]: {
           properties: {
@@ -262,6 +273,24 @@ describe('the detection rule types served from bundles', () => {
 
     // What Fleet and the Endpoint metadata hold for an enrolled Elastic Defend host, and the data streams of the
     // Elastic Defend package (which Kibana installs): what the isolate response action of a rule reads and writes.
+    const { host } = harness.seeder;
+    const security = host.plugins?.security as SecurityTaskPluginStart | undefined;
+    if (!security) throw new Error('The rule fixture requires native task Security');
+    appContextService.startExecution({
+      elasticsearch: host.elasticsearch,
+      savedObjects: host.savedObjects,
+      securitySetup: { audit: security.audit, license: security.license },
+      registry: { kind: 'native' },
+      configInitialValue: settings.fleet,
+      experimentalFeatures: parseExperimentalConfigValue([], {}),
+      logger: host.logger.get('fleet-fixture'),
+      kibanaVersion: harness.kibanaVersion,
+      kibanaBranch: 'main',
+      kibanaInstanceId: host.server.uuid,
+      isProductionMode: false,
+      isFipsEnabled: host.security.fips.isEnabled(),
+    });
+    settings.fleetPackageMetadata = await getFleetPackageMetadataTaskProcessSettings();
     const fleetClient = harness.seeder.host.savedObjects.getUnsafeInternalClient({
       includedHiddenTypes: ['ingest-agent-policies', 'ingest-package-policies'],
     });
@@ -399,6 +428,7 @@ describe('the detection rule types served from bundles', () => {
   });
 
   afterAll(async () => {
+    stopFleetRunAppContext();
     await harness?.stop();
   });
 

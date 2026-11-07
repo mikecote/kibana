@@ -23,17 +23,19 @@ const significantEventsModelSteps = [
   'kiQueryGeneration',
 ] as const satisfies readonly NightshiftModelStep[];
 
+/** What the step reads of the rest of the system, each read when the step runs. */
+export interface ResolveModelStepServices {
+  getInference: () => InferenceServerStart | undefined;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
+}
+
 export const resolveModelStepDefinition = ({
   getInference,
   getSavedObjects,
   getUiSettings,
   logger,
-}: {
-  getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
-  logger: Logger;
-}) =>
+}: ResolveModelStepServices & { logger: Logger }) =>
   createServerStepDefinition({
     id: 'significantEvents.resolveModel',
     label: 'Resolve significant events model',

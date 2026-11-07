@@ -7,6 +7,7 @@
 
 module.exports = {
   preset: '@kbn/jest/jest_integration_node',
+  testEnvironment: 'node',
   rootDir: '../../../../..',
-  roots: ['<rootDir>/x-pack/solutions/observability/plugins/infra'],
+  roots: ['<rootDir>/x-pack/solutions/observability/plugins/infra/server'],
 };

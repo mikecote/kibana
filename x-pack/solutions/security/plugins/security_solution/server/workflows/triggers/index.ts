@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import {
   alertStatusChangedTriggerDef,
   alertTagsChangedTriggerDef,
@@ -18,7 +18,7 @@ import {
 } from '../../../common/workflows/triggers';
 
 export const registerSecurityWorkflowTriggers = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup
+  workflowsExtensions: WorkflowStepsRegistry
 ): void => {
   workflowsExtensions.registerTriggerDefinition(alertStatusChangedTriggerDef);
   workflowsExtensions.registerTriggerDefinition(alertTagsChangedTriggerDef);

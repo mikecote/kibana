@@ -41,6 +41,8 @@ export interface SmlServiceSetup {
    * Should be called during plugin setup.
    */
   registerType: (definition: SmlTypeDefinition) => void;
+  /** The ids of the types registered so far (what a task process compares with its own). */
+  getRegisteredTypeIds: () => string[];
 }
 
 interface SmlServiceStartDeps {
@@ -73,6 +75,11 @@ class SmlServiceImpl implements SmlServiceInstance {
         this.registry.register(definition);
         logger.info(`Registered SML type: ${definition.id}`);
       },
+      getRegisteredTypeIds: () =>
+        this.registry
+          .list()
+          .map(({ id }) => id)
+          .sort(),
     };
   }
 

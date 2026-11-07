@@ -8,7 +8,7 @@
  */
 
 import { isDeepStrictEqual } from 'node:util';
-import type { CoreStart, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import { ExecutionStatus } from '@kbn/workflows';
 import { buildFieldsZodValidator } from '@kbn/workflows/spec/lib/build_fields_zod_validator';
 import {
@@ -22,6 +22,7 @@ import {
   type WorkflowExecutionForInputRendering,
 } from '../workflow_context_manager/build_workflow_context';
 import type { ContextDependencies } from '../workflow_context_manager/types';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 const hasInputChanges = (
   currentInputs: Record<string, unknown> | undefined,
@@ -38,7 +39,7 @@ export const validateWorkflowInputs = async (
   workflowExecution: WorkflowExecutionForInputRendering,
   workflowExecutionRepository: WorkflowExecutionRepository,
   logger: Logger,
-  coreStart?: CoreStart,
+  coreStart?: WorkflowCoreStart,
   dependencies?: ContextDependencies
 ): Promise<boolean> => {
   if (!workflowExecution.workflowDefinition) {

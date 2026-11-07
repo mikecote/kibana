@@ -13,15 +13,15 @@ export const registerAgentBuilderSmlTypes = ({
   agentBuilderSml,
   getScopedClients,
   isAvailable,
+  onRegistered,
 }: {
-  agentBuilderSml?: AgentBuilderSmlPluginSetup;
+  agentBuilderSml?: Pick<AgentBuilderSmlPluginSetup, 'registerType'>;
   getScopedClients: GetScopedClients;
   isAvailable: () => Promise<boolean>;
+  onRegistered?: (id: string) => void;
 }): void => {
-  agentBuilderSml?.registerType(
-    createSignificantEventSmlType({
-      getScopedClients,
-      isAvailable,
-    })
-  );
+  if (!agentBuilderSml) return;
+  const definition = createSignificantEventSmlType({ getScopedClients, isAvailable });
+  agentBuilderSml.registerType(definition);
+  onRegistered?.(definition.id);
 };

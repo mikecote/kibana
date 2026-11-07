@@ -24,9 +24,8 @@ import {
   registerSmlCrawlerTaskDefinition,
   scheduleSmlCrawlerTasks,
 } from './services/sml/sml_task_definitions';
-import { resolveSmlAttachItems } from './services/sml/execute_sml_attach_items';
 import type { SmlService } from './services/sml/types';
-import { buildIndexAttachment, buildDeleteAttachment } from './start_contract';
+import { createSmlStartContract } from './start_contract';
 
 export class AgentBuilderSmlPlugin
   implements
@@ -104,6 +103,7 @@ export class AgentBuilderSmlPlugin
 
     return {
       registerType: smlSetup.registerType,
+      getRegisteredTypeIds: smlSetup.getRegisteredTypeIds,
     };
   }
 
@@ -128,25 +128,13 @@ export class AgentBuilderSmlPlugin
       this.logger.error(`Failed to schedule SML crawler tasks: ${error.message}`);
     });
 
-    const startContract: AgentBuilderSmlPluginStart = {
-      search: smlService.search,
-      getTypeDefinition: smlService.getTypeDefinition,
-      resolveSmlAttachItems: (params) => resolveSmlAttachItems({ ...params, sml: smlService }),
-      indexAttachment: buildIndexAttachment({
-        smlService,
-        elasticsearch,
-        savedObjects,
-        spaces,
-        logger: this.logger.get('sml'),
-      }),
-      deleteAttachment: buildDeleteAttachment({
-        smlService,
-        elasticsearch,
-        savedObjects,
-        spaces,
-        logger: this.logger.get('sml'),
-      }),
-    };
+    const startContract = createSmlStartContract({
+      smlService,
+      elasticsearch,
+      savedObjects,
+      spaces,
+      logger: this.logger.get('sml'),
+    });
 
     return startContract;
   }

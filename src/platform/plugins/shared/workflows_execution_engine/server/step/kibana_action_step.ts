@@ -345,6 +345,10 @@ export class KibanaActionStepImpl extends BaseAtomicNodeImplementation<BaseStep>
   private getKibanaUrl(use_server_info = false, use_localhost = false): string {
     const coreStart = this.stepExecutionRuntime.contextManager.getCoreStart();
     const { cloudSetup } = this.stepExecutionRuntime.contextManager.getDependencies();
+    // A task process reaches Kibana at its own address, which is not the public URL links use.
+    if (!use_server_info && !use_localhost && coreStart?.http?.kibanaUrl) {
+      return coreStart.http.kibanaUrl;
+    }
     return getKibanaUrl(coreStart, cloudSetup, use_server_info, use_localhost);
   }
 

@@ -10,6 +10,7 @@
 export { WORKFLOWS_EVENTS_DATA_STREAM } from './constants';
 export {
   initializeTriggerEventsDataStream,
+  WORKFLOWS_EVENTS_DATA_STREAM_DEFINITION,
   initializeTriggerEventsClient,
   type TriggerEventDocument,
   type TriggerEventsDataStreamClient,

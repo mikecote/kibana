@@ -305,7 +305,7 @@ export const createSystemClient = ({
   logger,
 }: {
   space: string;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: Pick<ElasticsearchServiceStart, 'client'>;
   logger: Logger;
 }): SystemAgentClient => {
   const storage = createStorage({ logger, esClient: elasticsearch.client.asInternalUser });

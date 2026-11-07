@@ -84,6 +84,33 @@ describe('indexDocument', () => {
   });
 });
 
+describe('flush()', () => {
+  test('waits for indexed events and remains writable for the next run', async () => {
+    const write = Promise.withResolvers<estypes.BulkResponse>();
+    clusterClient.bulk.mockReturnValueOnce(write.promise);
+    clusterClientAdapter.indexDocument({ body: { message: 'first run' }, index: 'event-log' });
+    let flushed = false;
+    const first = clusterClientAdapter.flush().then(() => {
+      flushed = true;
+    });
+    await retryUntil('first batch starts', () => clusterClient.bulk.mock.calls.length === 1);
+    expect(flushed).toBe(false);
+    write.resolve({ took: 1, errors: false, items: [] });
+    await first;
+
+    clusterClientAdapter.indexDocument({ body: { message: 'second run' }, index: 'event-log' });
+    await clusterClientAdapter.flush();
+    expect(clusterClient.bulk).toHaveBeenCalledTimes(2);
+    expect(clusterClient.bulk.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        body: [{ create: {} }, { message: 'second run' }],
+      })
+    );
+    await clusterClientAdapter.shutdown();
+    await expect(clusterClientAdapter.flush()).resolves.toBeUndefined();
+  });
+});
+
 describe('shutdown()', () => {
   test('should work if no docs have been written', async () => {
     const result = await clusterClientAdapter.shutdown();

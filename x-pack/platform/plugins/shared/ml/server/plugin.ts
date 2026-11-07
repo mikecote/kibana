@@ -61,6 +61,11 @@ import {
   ML_TASK_PROCESS_SETTINGS_ID,
   type MlTaskProcessSettings,
 } from './task_types/ml_task_process_services';
+import { ML_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import { ML_WORKFLOW_SETTINGS_ID } from './task_types/workflow_services_contribution';
+import type { MlWorkflowSettings } from './task_types/workflow_services_contribution';
+import { captureModuleFiles } from './models/data_recognizer/module_files';
+import type { MlAgentBuilderSettings } from './task_types/agent_builder_contribution';
 import { setupCapabilitiesSwitcher } from './lib/capabilities';
 import { registerKibanaSettings } from './lib/register_settings';
 import { trainedModelsRoutes } from './routes/trained_models';
@@ -295,14 +300,27 @@ export class MlServerPlugin
 
     initMlServerLog({ log: this.log });
 
+    let moduleFiles: ReturnType<typeof captureModuleFiles> | undefined;
+    const getMlWorkflowSettings = async (): Promise<MlWorkflowSettings> => ({
+      enabledFeatures: this.enabledFeatures,
+      compatibleModuleType: this.compatibleModuleType,
+      spacesEnabled: this.spacesPlugin !== undefined,
+      cpsEnabled: this.serverless.cpsEnabled,
+      moduleFiles: await (moduleFiles ??= captureModuleFiles()),
+      cloud: {
+        cloudId: plugins.cloud.cloudId,
+        baseUrl: plugins.cloud.baseUrl,
+        isInTrial: plugins.cloud.isInTrial(),
+      },
+    });
+
     if (plugins.alerting) {
       // What a task process that runs an ML rule type reads of this plugin's configuration.
       plugins.alerting.registerTaskProcessSettings(
         ML_TASK_PROCESS_SETTINGS_ID,
-        (): MlTaskProcessSettings => ({
-          cpsEnabled: this.serverless.cpsEnabled,
-          enabledFeatures: this.enabledFeatures,
-          compatibleModuleType: this.compatibleModuleType,
+        async (): Promise<MlTaskProcessSettings> => ({
+          ...(await getMlWorkflowSettings()),
+          spaces: plugins.spaces?.getTaskProcessSettings(),
         })
       );
       registerMlAlerts(
@@ -328,7 +346,23 @@ export class MlServerPlugin
       registerCollector(plugins.usageCollection, getIndexForType);
     }
 
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      ML_WORKFLOW_SETTINGS_ID,
+      getMlWorkflowSettings
+    );
+
     if (plugins.agentBuilder && this.enabledFeatures.ad) {
+      // Installed assets are immutable for this Kibana; runtime switches are captured per dispatch.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        ML_AGENT_BUILDER_SETTINGS_ID,
+        async (): Promise<MlAgentBuilderSettings> => ({
+          enabledFeatures: this.enabledFeatures,
+          compatibleModuleType: this.compatibleModuleType,
+          spacesEnabled: this.spacesPlugin !== undefined,
+          cpsEnabled: this.serverless.cpsEnabled,
+          moduleFiles: await (moduleFiles ??= captureModuleFiles()),
+        })
+      );
       registerAnomalyDetectionAgentBuilder({
         agentBuilder: plugins.agentBuilder,
         resolveMlCapabilities,

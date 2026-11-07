@@ -60,7 +60,18 @@ import {
   ProposalNotFoundError,
 } from './errors';
 
-type WorkflowsManagementApi = WorkflowsServerPluginSetup['management'];
+/**
+ * What the service reads of the workflows management API (the rest, such as scheduling, is for the
+ * callers that have it): a task process reads workflows and executions with the read API, and
+ * only Kibana resumes an execution.
+ */
+type WorkflowsManagementApi = Pick<
+  WorkflowsServerPluginSetup['management'],
+  | 'getWorkflow'
+  | 'getWorkflowExecution'
+  | 'getWorkflowExecutionStatuses'
+  | 'resumeWorkflowExecution'
+>;
 
 /** The parts of an action workflow definition this service reads. */
 interface ActionWorkflowDefinition {

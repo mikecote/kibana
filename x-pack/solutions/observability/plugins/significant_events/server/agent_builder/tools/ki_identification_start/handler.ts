@@ -26,7 +26,7 @@ interface StartKiIdentificationHandlerParams {
     queries?: string;
   };
   streamsKIsOnboardingClient: SignificantEventsKIsOnboardingClient;
-  maintenanceService: SignificantEventsMaintenanceService;
+  maintenanceService: Pick<SignificantEventsMaintenanceService, 'getState'>;
   request: KibanaRequest;
 }
 

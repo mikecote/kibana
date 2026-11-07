@@ -12,7 +12,6 @@
   ],
   "exclude": ["target/**/*"],
   "kbn_references": [
-    "@kbn/stack-connectors-plugin",
     "@kbn/i18n",
     "@kbn/i18n-react",
     "@kbn/shared-ux-router",
@@ -139,6 +138,12 @@
     "@kbn/cps-utils",
     "@kbn/cps-server-utils",
     "@kbn/app-header",
-    "@kbn/ui-callout"
+    "@kbn/ui-callout",
+    "@kbn/core-logging-server-mocks",
+    "@kbn/core-saved-objects-server-mocks",
+    "@kbn/core-http-server-mocks",
+    "@kbn/workflows-extensions",
+    "@kbn/workflows",
+    "@kbn/workflows-execution-engine"
   ]
 }

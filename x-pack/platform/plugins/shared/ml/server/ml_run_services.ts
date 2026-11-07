@@ -6,12 +6,14 @@
  */
 
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { CoreAuditService } from '@kbn/core-security-server';
 import type { SavedObjectsClientContract } from '@kbn/core-saved-objects-api-server';
 import type { ResolveMlCapabilities } from '@kbn/ml-common-types/capabilities';
+import type { MlCloud } from './ml_cloud';
+import type { MlAuthorizationService } from './lib/capabilities/check_capabilities';
+import type { DataRecognizerModuleFiles } from './models/data_recognizer/module_files';
 import type { CompatibleModule, MlFeatures } from '../common/constants/app';
 import type { MlLicense } from '../common/license';
 import type { ServerlessInfo } from './types';
@@ -31,6 +33,7 @@ import type {
  */
 export interface MlRunServicesDeps {
   mlLicense: MlLicense;
+  moduleFiles?: DataRecognizerModuleFiles;
   getClusterClient: () => MlClusterClient | null;
   getInternalSavedObjectsClient: () => SavedObjectsClientContract | null;
   getUiSettings: () => MlUiSettings | null;
@@ -41,10 +44,10 @@ export interface MlRunServicesDeps {
   compatibleModuleType: CompatibleModule | null;
   enabledFeatures: MlFeatures;
   serverless: ServerlessInfo;
-  /** Kibana only: the spaces and security of the user that makes a request. */
+  /** Native Spaces services for the user making the request. */
   getSpaces?: () => Promise<SpacesPluginStart>;
-  cloud: CloudSetup;
-  authorization?: SecurityPluginSetup['authz'];
+  cloud: MlCloud;
+  authorization?: MlAuthorizationService;
   resolveMlCapabilities: ResolveMlCapabilities;
 }
 
@@ -70,5 +73,6 @@ export const createMlRunServices = (
     deps.isMlReady,
     deps.compatibleModuleType,
     deps.enabledFeatures,
-    deps.serverless
+    deps.serverless,
+    deps.moduleFiles
   );

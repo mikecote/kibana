@@ -47,6 +47,7 @@ import type {
   TaskDefinition,
   TaskEventLogger,
   TaskRunAsContext,
+  TaskRunAs,
   TaskTypeGroup,
 } from '../task';
 import { isFailedRunResult, TaskStatus, TaskCost, getTaskCostFromInstance } from '../task';
@@ -177,7 +178,7 @@ export type RanTask = TaskRunning<TaskRunningStage.RAN, ConcreteTaskInstance>;
 export type TaskRunningInstance = PendingTask | ReadyToRunTask | RanTask;
 
 type CredentialCheck =
-  | { outcome: 'run'; runAs?: TaskRunAsContext }
+  | { outcome: 'run'; runAs?: TaskRunAsContext; runAsIdentity?: TaskRunAs }
   | { outcome: 'retry' | 'fail'; error: DecoratedError };
 
 /**
@@ -501,7 +502,7 @@ export class TaskManagerRunner implements TaskRunner {
             if (apmTrans) apmTrans.end('failure');
             return processedResult;
           }
-          const { runAs } = credentialCheck;
+          const { runAs, runAsIdentity } = credentialCheck;
 
           const sanitizedTaskInstance = omit(modifiedContext.taskInstance, [
             'apiKey',
@@ -548,10 +549,9 @@ export class TaskManagerRunner implements TaskRunner {
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
             });
 
-          // Service-account (`runAs`) tasks carry a closure that cannot cross a process boundary,
-          // so they always run in this process.
-          const route = runAs ? undefined : this.taskProcessDispatch?.getRoute(this.taskType);
+          const route = this.taskProcessDispatch?.getRoute(this.taskType);
           if (route && this.taskProcessDispatch) {
+            const snapshot = await this.taskProcessDispatch.getSnapshot?.(this.taskType);
             this.task = new RemoteTaskRunner({
               route,
               request: {
@@ -559,20 +559,24 @@ export class TaskManagerRunner implements TaskRunner {
                 taskInstance: JSON.parse(JSON.stringify(sanitizedTaskInstance)),
                 executionUuid: this.uuid,
                 apiKey: apiKeyForRequest,
+                runAs: runAsIdentity,
+                snapshot,
+                cancelGracePeriodMs: this.taskProcessDispatch.getCancelGracePeriodMs?.(
+                  this.taskType
+                ),
                 spaceId: modifiedContext.taskInstance.userScope?.spaceId,
                 uiamApiKeyExternal: modifiedContext.taskInstance.userScope?.uiamApiKeyExternal,
                 userProfileId,
                 userName,
-                featureFlags: await this.taskProcessDispatch.getFeatureFlags?.(this.taskType),
+                featureFlags: snapshot
+                  ? snapshot.featureFlags
+                  : await this.taskProcessDispatch.getFeatureFlags?.(this.taskType),
                 kibanaVersion: this.taskProcessDispatch.kibanaVersion,
               },
               timeoutMs: parseIntervalAsMillisecond(this.timeout),
               signal: abortController.signal,
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
-              // A process that cannot be started, or does not serve this type, leaves the run to
-              // this process.
-              fallback: runInThisProcess,
-              onFallback: this.taskProcessDispatch.onFallback,
+              onDispatchFailure: this.taskProcessDispatch.onDispatchFailure,
               observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {
@@ -714,7 +718,11 @@ export class TaskManagerRunner implements TaskRunner {
       );
     }
 
-    return { outcome: 'run', runAs: createRunAsContext(runAs, verifiedRunAs) };
+    return {
+      outcome: 'run',
+      runAs: createRunAsContext(runAs, verifiedRunAs),
+      runAsIdentity: verifiedRunAs,
+    };
   }
 
   /**

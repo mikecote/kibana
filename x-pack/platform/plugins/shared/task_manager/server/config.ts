@@ -245,6 +245,15 @@ export const configSchema = schema.object(
            * most runs Kibana has in flight, so only a lower value makes runs fall back.
            */
           max_concurrent_processes: schema.maybe(schema.number({ min: 1, max: 1000 })),
+          reuse: schema.maybe(
+            schema.object({
+              enabled: schema.boolean({ defaultValue: false }),
+              idle_timeout_ms: schema.number({ min: 1, max: 3_600_000, defaultValue: 30_000 }),
+              max_age_ms: schema.number({ min: 1, max: 86_400_000, defaultValue: 300_000 }),
+              max_runs: schema.number({ min: 1, max: 100_000, defaultValue: 100 }),
+              max_idle_processes: schema.number({ min: 1, max: 1000, defaultValue: 10 }),
+            })
+          ),
           /*
            * child_process: `--max-old-space-size` of each process, in MB. Unset, a process does not
            * inherit the heap flags Kibana was started with, and Node picks the heap size.

@@ -12,6 +12,7 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
+import { LOGS_DATA_TASK_PROCESS_SETTINGS_ID } from './task_types/logs_data_task_process_settings';
 import { uiSettings } from '../common/ui_settings';
 import { registerServices } from './services/register_services';
 import type { LogsDataAccessPluginStartDeps, LogsDataAccessPluginSetupDeps } from './types';
@@ -35,6 +36,10 @@ export class LogsDataAccessPlugin
   }
   public setup(core: CoreSetup, plugins: LogsDataAccessPluginSetupDeps) {
     core.uiSettings.register(uiSettings);
+    plugins?.workflowsExtensions?.registerTaskProcessSettings(
+      LOGS_DATA_TASK_PROCESS_SETTINGS_ID,
+      () => ({ enabled: true })
+    );
   }
 
   public start(core: CoreStart, plugins: LogsDataAccessPluginStartDeps) {

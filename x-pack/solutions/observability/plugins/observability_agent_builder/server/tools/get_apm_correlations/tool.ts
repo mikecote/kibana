@@ -14,8 +14,8 @@ import { i18n } from '@kbn/i18n';
 import type { ILicense } from '@kbn/licensing-types';
 import { firstValueFrom } from 'rxjs';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../../types';
 import { timeRangeSchemaRequired } from '../../utils/tool_schemas';
 import { MAX_KQL_FILTER_LENGTH, MAX_SHORT_STRING_LENGTH } from '../../utils/schema_limits';
@@ -87,8 +87,8 @@ export function createGetApmCorrelationsTool({
   plugins,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   logger: Logger;
 }): StaticToolRegistration<typeof getApmCorrelationsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof getApmCorrelationsSchema> = {

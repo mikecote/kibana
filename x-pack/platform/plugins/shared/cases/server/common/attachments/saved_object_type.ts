@@ -8,7 +8,7 @@
 import type { SavedObject, SavedObjectsClientContract } from '@kbn/core/server';
 import type { SavedObjectError } from '@kbn/core-saved-objects-common';
 import { CASE_ATTACHMENT_SAVED_OBJECT, CASE_COMMENT_SAVED_OBJECT } from '../../../common/constants';
-import type { ConfigType } from '../../config';
+import type { CasesClientConfig } from '../../config';
 import { createCaseErrorFromSOError, isSOError } from '../error';
 import type { SOWithErrors } from '../types';
 
@@ -22,7 +22,7 @@ export type ResolvedAttachmentSavedObjectType =
  * the `cases.attachments.enabled` config flag.
  */
 export function getAttachmentSavedObjectType(
-  config: ConfigType
+  config: CasesClientConfig
 ): typeof CASE_ATTACHMENT_SAVED_OBJECT | typeof CASE_COMMENT_SAVED_OBJECT {
   if (config.attachments?.enabled) {
     return CASE_ATTACHMENT_SAVED_OBJECT;

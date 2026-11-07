@@ -34,7 +34,7 @@ export type UsageCountersSavedObject = SavedObject<UsageCountersSavedObjectAttri
 export const USAGE_COUNTERS_SAVED_OBJECT_TYPE = 'usage-counter';
 
 export const registerUsageCountersSavedObjectTypes = (
-  savedObjectsSetup: SavedObjectsServiceSetup
+  savedObjectsSetup: Pick<SavedObjectsServiceSetup, 'registerType'>
 ) => {
   savedObjectsSetup.registerType({
     name: USAGE_COUNTERS_SAVED_OBJECT_TYPE,

@@ -579,7 +579,7 @@ export class DocumentationManager implements DocumentationManagerAPI {
   }
 }
 
-const getOverallStatus = (statuses: InstallationStatus[]): InstallationStatus => {
+export const getOverallStatus = (statuses: InstallationStatus[]): InstallationStatus => {
   const statusOrder: InstallationStatus[] = [
     'error',
     'installing',

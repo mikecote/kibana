@@ -8,46 +8,13 @@
  */
 
 import type { RequestHandler, RouteMethod } from '@kbn/core/server';
-import { i18n } from '@kbn/i18n';
-import { type CheckLicense, wrapRouteWithLicenseCheck } from '@kbn/licensing-plugin/server';
-import { isLicenseValid, REQUIRED_LICENSE_TYPE } from '../../../availability/is_license_valid';
+import { wrapRouteWithLicenseCheck } from '@kbn/licensing-plugin/server';
+import { checkWorkflowsLicense } from '../../../availability/check_workflows_license';
 import type { WorkflowsRequestHandlerContext } from '../../../types';
 
 interface AvailabilityCheckOptions {
   bootstrapExecutionDataViews?: boolean;
 }
-
-const checkLicense: CheckLicense = (license) => {
-  if (!license.isAvailable) {
-    return {
-      valid: false,
-      message: i18n.translate('workflows.checkLicense.unavailable', {
-        defaultMessage: 'License information is not available.',
-      }),
-    };
-  }
-  if (!license.isActive) {
-    return {
-      valid: false,
-      message: i18n.translate('workflows.checkLicense.inactive', {
-        defaultMessage: 'License is expired. Please renew your license.',
-      }),
-    };
-  }
-
-  if (!isLicenseValid(license)) {
-    return {
-      valid: false,
-      message: i18n.translate('workflows.checkLicense.invalidLicense', {
-        defaultMessage:
-          'Your {licenseType} license does not support Workflows. Please upgrade to an {requiredLicenseType} license.',
-        values: { licenseType: license.type, requiredLicenseType: REQUIRED_LICENSE_TYPE },
-      }),
-    };
-  }
-
-  return { valid: true, message: null };
-};
 
 const withServerlessAvailabilityCheck =
   <P = unknown, Q = unknown, B = unknown, Method extends RouteMethod = never>(
@@ -84,4 +51,7 @@ export const withAvailabilityCheck = <
   handler: RequestHandler<P, Q, B, WorkflowsRequestHandlerContext, Method>,
   options: AvailabilityCheckOptions = {}
 ): RequestHandler<P, Q, B, WorkflowsRequestHandlerContext, Method> =>
-  wrapRouteWithLicenseCheck(checkLicense, withServerlessAvailabilityCheck(handler, options));
+  wrapRouteWithLicenseCheck(
+    checkWorkflowsLicense,
+    withServerlessAvailabilityCheck(handler, options)
+  );

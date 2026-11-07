@@ -10,22 +10,29 @@ import type { Logger } from '@kbn/logging';
 import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
-import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
+import type { SecurityServiceStart, SecurityServiceSetup } from '@kbn/core-security-server';
+import type {
+  AnalyticsServiceSetup,
+  AnalyticsServiceStart,
+  EventTypeOpts,
+} from '@kbn/core-analytics-server';
+import type { DataStreamsSetup, DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
+import type { HttpServiceStart } from '@kbn/core-http-server';
 import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
-import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
+import type { UiSettingsServiceSetup, UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type {
   EncryptedSavedObjectTypeRegistration,
   EncryptedSavedObjectsClient,
+  EncryptedSavedObjectsPluginSetup,
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
-import type { TaskManagerStartContract } from './plugin';
-import type { TaskTypeParityHook } from './task_process/parity';
+import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
+import type { TaskProcessParity, TaskTypeParityHook } from './task_process/parity';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
 
 export interface TaskHostEventLog {
@@ -49,7 +56,7 @@ export interface TaskEventLogCapability {
     kibanaUuid?: string;
     kibanaVersion: string;
     providers: TaskEventLogCapability['providers'];
-  }) => { eventLog: TaskHostEventLog; stop: () => Promise<void> };
+  }) => { eventLog: TaskHostEventLog; flush: () => Promise<void>; stop: () => Promise<void> };
 }
 
 /**
@@ -60,14 +67,12 @@ export interface TaskEventLogCapability {
 export interface TaskHost {
   logger: Logger;
   elasticsearch: Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
-  savedObjects: Pick<
-    SavedObjectsServiceStart,
-    'createInternalRepository' | 'getScopedClient' | 'getUnsafeInternalClient' | 'getTypeRegistry'
-  >;
+  /** Core's native saved objects clients and import/export services. */
+  savedObjects: SavedObjectsServiceStart;
   /** A pass-through in a task process. */
   executionContext: Pick<ExecutionContextStart, 'withContext' | 'getAsLabels'>;
-  /** Core's default implementation in a task process: no user, no audit, no UIAM. */
-  security: Pick<SecurityServiceStart, 'authc' | 'audit'>;
+  /** Core's security delegate and the FIPS service supplied during Core setup. */
+  security: SecurityServiceStart & Pick<SecurityServiceSetup, 'fips'>;
   /** Kibana's identity and public address. */
   server: {
     uuid: string;
@@ -83,6 +88,11 @@ export interface TaskHost {
    */
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
 
+  /**
+   * Core's HTTP contract for calling Kibana itself. In a task process there is no listener: the self
+   * client calls the Kibana that dispatched the run, at the address it sent in `server`.
+   */
+  http: Pick<HttpServiceStart, 'selfClient' | 'basePath' | 'getServerInfo'>;
   /** Core's user profile service; in a task process the security task plugin's delegate answers. */
   userProfile?: UserProfileServiceStart;
   /**
@@ -97,6 +107,15 @@ export interface TaskHost {
     'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'
   >;
 
+  /**
+   * A task process only: what Kibana had registered when it dispatched the run, by kind (see
+   * `TaskTypeRegistrationOptions.parity`). A module that cannot be served as Kibana serves it unless
+   * everything of a kind is registered (such as the agent builder registries, which only some of the
+   * plugins fill in a process) compares it itself with {@link findMissingParity} and declines only the
+   * runs that need it, instead of the process declining every run (`TaskTypeModule.parity`).
+   */
+  parity?: TaskProcessParity;
+
   /** Declared with `encryptedSavedObjectTypes`. */
   encryptedSavedObjects?: {
     getClient: (options?: { includedHiddenTypes?: string[] }) => EncryptedSavedObjectsClient;
@@ -109,7 +128,9 @@ export interface TaskHost {
    */
   eventLog?: TaskHostEventLog;
   /** Declared with `taskManager`. */
-  taskManager?: Pick<TaskManagerStartContract, 'schedule' | 'bulkSchedule' | 'aggregate'>;
+  taskManager?: HostTaskManager;
+  /** Declared with `dataStreams`; uses Core's lazy initialization when a run requests a client. */
+  dataStreams?: DataStreamsStart;
   /** Declared with `uiSettings`. */
   uiSettings?: Pick<UiSettingsServiceStart, 'asScopedToClient' | 'globalAsScopedToClient'>;
   /** Declared with `licensing`. */
@@ -141,11 +162,20 @@ export interface TaskHost {
 export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTaskRunner'> {
   /** The Task Manager task type, such as `task_manager:delete_inactive_background_task_nodes`. */
   type: string;
+  /** Time allowed to persist cancellation before a worker is forcibly terminated. */
+  cancelGracePeriodMs?: number;
   /**
    * Saved object types the runner reads or writes. A task process registers them; Kibana already
    * has them.
    */
   savedObjectTypes?: SavedObjectsType[];
+  /** Builds native saved objects from the process's encryption setup and captured plugin settings. */
+  createSavedObjectTypes?: (
+    encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
+    settings: NonNullable<TaskHost['settings']>
+  ) => SavedObjectsType[];
+  /** Data streams owned by the module; registered locally without eager initialization. */
+  dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** Encrypted saved object registrations the runner needs; a task process registers them. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** Gives the runner `host.eventLog`. */
@@ -165,18 +195,33 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
     defaults?: Array<Record<string, UiSettingsParams>>;
     globalDefaults?: Array<Record<string, UiSettingsParams>>;
   };
+  /** Registers config-dependent native UI settings with the dispatch's captured settings. */
+  registerUiSettings?: (
+    uiSettings: Pick<UiSettingsServiceSetup, 'register' | 'registerGlobal'>,
+    settings: NonNullable<TaskHost['settings']>
+  ) => void;
   /**
    * The analytics event types the runner reports, which Core's analytics requires to be registered
    * before an event is reported. A task process registers them; Kibana's plugins already have.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   analyticsEventTypes?: Array<EventTypeOpts<any>>;
+  /** Registers heterogeneous event schemas through Core's generic registration API. */
+  registerAnalyticsEventTypes?: (
+    analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+  ) => void;
   /** Gives the runner `host.licensing`. */
   licensing?: true;
   /** Gives the runner `host.usageCounters`. */
   usageCounters?: true;
   /** Ids of the plugins whose validated config the runner reads, as `host.settings[id]`. */
   settings?: string[];
+  /**
+   * Ids of plugins whose config the runner reads when it has it, as `host.settings[id]`. Unlike
+   * `settings`, a missing one is not an error: the plugin may be disabled in Kibana, and whatever
+   * reads it then does not apply (a contribution of that plugin registers nothing).
+   */
+  optionalSettings?: string[];
   /**
    * Plugins this task type's process runs besides Core, which Core composes like the plugins of
    * Kibana: their config, dependencies, `setup` and `start` run in dependency order, so a plugin
@@ -224,6 +269,12 @@ export interface TaskTypeHostExtensions {
    */
   getEncryptionKeys?: () => { encryptionKey?: string; decryptionOnlyKeys: string[] };
   eventLog?: TaskHost['eventLog'];
+  /**
+   * What a module reads as `host.plugins[id]` when it runs in Kibana: the plugin's own services, as a
+   * task process gets the `start` contracts of the module's `taskPlugins`. A module then reaches the
+   * same capability the same way in both. Resolved when the first run is created.
+   */
+  plugins?: () => Promise<Record<string, unknown>>;
 }
 
 export interface TaskTypeRegistrationOptions {
@@ -231,8 +282,9 @@ export interface TaskTypeRegistrationOptions {
   logger?: Logger;
   hostExtensions?: TaskTypeHostExtensions;
   /**
-   * Validated plugin configs by plugin id, read when a run or a process starts. Every one is sent to
-   * the task process of this task type; the module it runs reads the ones it lists in `settings`.
+   * Validated plugin configs by plugin id; getters may return promises and are awaited for each
+   * run or dispatch snapshot. Every one is sent to the task process of this task type; the module
+   * it runs reads the ones it lists in `settings`.
    */
   settings?: Record<string, () => unknown>;
   /**
@@ -255,7 +307,7 @@ export const assertHostExtensions = (
 ) => {
   const missing: string[] = [];
   const { hostExtensions: ext = {}, settings = {} } = options;
-  if (module.encryptedSavedObjectTypes?.length) {
+  if (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) {
     if (!ext.encryptedSavedObjects) missing.push('hostExtensions.encryptedSavedObjects');
     if (!ext.getEncryptionKeys) missing.push('hostExtensions.getEncryptionKeys');
   }
@@ -287,18 +339,24 @@ export const toTaskDefinition = (
 ): TaskRegisterDefinition => {
   const {
     type,
+    cancelGracePeriodMs,
     savedObjectTypes,
+    createSavedObjectTypes,
+    dataStreams,
     encryptedSavedObjectTypes,
     eventLog,
     taskManager,
     uiSettings,
+    registerUiSettings,
     licensing,
     analyticsEventTypes,
+    registerAnalyticsEventTypes,
     usageCounters,
     settings,
     contributions,
     taskPlugins,
     featureFlags,
+    optionalSettings,
     parity,
     createTaskRunner,
     ...definition

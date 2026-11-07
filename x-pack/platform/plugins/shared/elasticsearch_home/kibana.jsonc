@@ -11,6 +11,9 @@
     "id": "elasticsearchHome",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "configPath": [
       "xpack",
       "elasticsearchHome"

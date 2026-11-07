@@ -18,11 +18,27 @@ import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import { config as fleetConfig } from '@kbn/fleet-plugin/server/config';
+import { appContextService } from '@kbn/fleet-plugin/server/services';
+import { parseExperimentalConfigValue } from '@kbn/fleet-plugin/common/experimental_features';
+import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
+import {
+  createSecurityTaskPlugin,
+  getTaskProcessSettings as getSecurityTaskProcessSettings,
+} from '@kbn/security-plugin/server/task_plugin';
+import {
+  createConfig as createSecurityConfig,
+  ConfigSchema as securityConfigSchema,
+} from '@kbn/security-plugin/server/config';
+import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
+import { License } from '@kbn/licensing-plugin/common/license';
+import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import {
   createFleetRunServices,
   getFleetRunEncryptedSavedObjectTypes,
   getFleetRunSavedObjectTypes,
   startFleetRunAppContext,
+  stopFleetRunAppContext,
+  getFleetPackageMetadataTaskProcessSettings,
 } from '@kbn/fleet-plugin/server/services/run_time';
 import {
   createOsqueryActionService,
@@ -64,6 +80,7 @@ describe('the response action services built from a task host', () => {
     savedObjectTypes: types,
     encryptedSavedObjectTypes: getFleetRunEncryptedSavedObjectTypes(),
     licensing: true,
+    taskPlugins: [createSecurityTaskPlugin(KIBANA_VERSION)],
     createTaskRunner: () => ({ run: async () => ({ state: {} }), cancel: async () => {} }),
   };
 
@@ -128,7 +145,33 @@ describe('the response action services built from a task host', () => {
         authToken: '',
         server: { uuid: '5b2de169-2785-441b-ae8c-186a1936b17d', buildNum: 1, isServerless: false },
         encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
-        settings: {} as never,
+        settings: {
+          security: serializeSettings(
+            getSecurityTaskProcessSettings({
+              license: new License({
+                license: {
+                  uid: 'response-actions',
+                  type: 'trial',
+                  mode: 'trial',
+                  status: 'active',
+                  expiryDateInMillis: Date.now() + 86400000,
+                },
+                features: { security: { isAvailable: true, isEnabled: true } },
+                signature: 'response-actions',
+              }),
+              config: createSecurityConfig(
+                securityConfigSchema.validate({
+                  audit: { enabled: false },
+                  serviceAccounts: { enabled: false },
+                }),
+                loggingSystemMock.createLogger(),
+                { isTLSEnabled: false }
+              ),
+              applicationName: 'kibana-.kibana',
+              kibanaServerResourceURL: 'http://localhost:5601',
+            })
+          ),
+        },
       },
       module,
     });
@@ -247,6 +290,7 @@ describe('the response action services built from a task host', () => {
   });
 
   afterAll(async () => {
+    stopFleetRunAppContext();
     await core?.stop();
     await esServer?.stop();
   });
@@ -263,15 +307,32 @@ describe('the response action services built from a task host', () => {
       encryptedSavedObjects,
       loggerFactory: { get: (...parts: string[]) => host.logger.get(...parts) } as never,
     };
-    await startFleetRunAppContext({
-      ...fleetDeps,
-      config: fleetConfigValue as never,
-      license$,
-      audit: host.security.audit as never,
+    const security = host.plugins?.security as SecurityTaskPluginStart | undefined;
+    if (!security) throw new Error('The fixture requires native task security');
+    appContextService.startExecution({
+      elasticsearch: host.elasticsearch,
+      savedObjects: host.savedObjects,
+      securitySetup: { audit: security.audit, license: security.license },
+      registry: { kind: 'native' },
+      configInitialValue: fleetConfigValue,
+      experimentalFeatures: parseExperimentalConfigValue([], {}),
+      logger: host.logger.get('fleet-fixture'),
       kibanaVersion: KIBANA_VERSION,
-      kibanaBranch: 'main',
+      kibanaBranch: kibanaPackageJson.branch,
       kibanaInstanceId: host.server.uuid,
       isProductionMode: false,
+      isFipsEnabled: host.security.fips.isEnabled(),
+    });
+    const packageMetadata = await getFleetPackageMetadataTaskProcessSettings();
+    await startFleetRunAppContext({
+      ...fleetDeps,
+      packageMetadata,
+      license$,
+      audit: security.audit,
+      securityLicense: security.license,
+      kibanaVersion: KIBANA_VERSION,
+      kibanaInstanceId: host.server.uuid,
+      isFipsEnabled: host.security.fips.isEnabled(),
     });
     const fleetRunServices = createFleetRunServices(fleetDeps);
 

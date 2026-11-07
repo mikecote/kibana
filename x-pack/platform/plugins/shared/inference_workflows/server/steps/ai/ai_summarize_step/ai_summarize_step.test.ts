@@ -134,7 +134,9 @@ describe('aiSummarizeStepDefinition', () => {
     let handler: Function;
 
     beforeEach(() => {
-      stepDefinition = aiSummarizeStepDefinition(mockCoreSetup);
+      stepDefinition = aiSummarizeStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       handler = stepDefinition.handler;
     });
 

@@ -29,6 +29,8 @@ export interface RuleRunContributionContext {
    * flags Kibana sent, `host.featureFlags`), not while it registers.
    */
   host: TaskHost;
+  /** Resolves execution services lazily, after all workflow contributions have registered. */
+  getService?: <T extends object>(id: string) => T;
 }
 
 /** The parts of the actions and alerting setup contracts a plugin registers its connectors through. */

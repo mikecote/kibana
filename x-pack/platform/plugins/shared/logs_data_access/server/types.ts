@@ -4,6 +4,7 @@
  * 2.0; you may not use this file except in compliance with the Elastic License
  * 2.0.
  */
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type {
   PluginSetup as DataPluginSetup,
   PluginStart as DataPluginStart,
@@ -11,6 +12,7 @@ import type {
 import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
 
 export interface LogsDataAccessPluginSetupDeps {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   data: DataPluginSetup;
 }
 

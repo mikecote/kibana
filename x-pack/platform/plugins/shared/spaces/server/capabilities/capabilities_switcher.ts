@@ -15,34 +15,50 @@ import { withSpaceSolutionDisabledFeatures } from '../lib/utils/space_solution_d
 import type { SpacesServiceStart } from '../spaces_service';
 import type { SpacesPluginStartDeps } from '../types';
 
+interface SpacesCapabilitiesServices {
+  getActiveSpace: SpacesServiceStart['getActiveSpace'];
+  getKibanaFeatures: () => Promise<KibanaFeature[]>;
+  logger: Logger;
+}
+
+/** Creates the space capability gate from the active-space and feature services. */
+export const createSpacesCapabilitiesSwitcher =
+  ({
+    getActiveSpace,
+    getKibanaFeatures,
+    logger,
+  }: SpacesCapabilitiesServices): CapabilitiesSwitcher =>
+  async (request, capabilities, useDefaultCapabilities) => {
+    const isAuthRequiredOrOptional = !request.route.options.authRequired;
+    const shouldNotToggleCapabilities = isAuthRequiredOrOptional || useDefaultCapabilities;
+    if (shouldNotToggleCapabilities) return {};
+
+    try {
+      const [activeSpace, registeredFeatures] = await Promise.all([
+        getActiveSpace(request),
+        getKibanaFeatures(),
+      ]);
+      return toggleCapabilities(registeredFeatures, capabilities, activeSpace);
+    } catch (error) {
+      logger.debug(`Error toggling capabilities for request to ${request.url.pathname}: ${error}`);
+      return capabilities;
+    }
+  };
+
+/** Adapts the native Spaces lifecycle to the shared capability gate. */
 export function setupCapabilitiesSwitcher(
   core: CoreSetup<SpacesPluginStartDeps>,
   getSpacesService: () => SpacesServiceStart,
   logger: Logger
 ): CapabilitiesSwitcher {
-  return async (request, capabilities, useDefaultCapabilities) => {
-    const isAuthRequiredOrOptional = !request.route.options.authRequired;
-    const shouldNotToggleCapabilities = isAuthRequiredOrOptional || useDefaultCapabilities;
-
-    if (shouldNotToggleCapabilities) {
-      return {};
-    }
-
-    try {
-      const [activeSpace, [, { features }]] = await Promise.all([
-        getSpacesService().getActiveSpace(request),
-        core.getStartServices(),
-      ]);
-
-      const registeredFeatures = features.getKibanaFeatures();
-
-      // try to retrieve capabilities for authenticated or "maybe authenticated" users
-      return toggleCapabilities(registeredFeatures, capabilities, activeSpace);
-    } catch (e) {
-      logger.debug(`Error toggling capabilities for request to ${request.url.pathname}: ${e}`);
-      return capabilities;
-    }
-  };
+  return createSpacesCapabilitiesSwitcher({
+    getActiveSpace: (request) => getSpacesService().getActiveSpace(request),
+    getKibanaFeatures: async () => {
+      const [, { features }] = await core.getStartServices();
+      return features.getKibanaFeatures();
+    },
+    logger,
+  });
 }
 
 function toggleCapabilities(

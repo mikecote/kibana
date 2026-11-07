@@ -7,7 +7,6 @@
 
 import type { CoreSetup, CoreStart, Plugin, PluginInitializerContext } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
-import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type { PluginConfig } from './config';
@@ -18,22 +17,8 @@ import type {
   AgentBuilderWorkflowsPluginStart,
 } from './types';
 import { WorkflowsAiTelemetryClient } from './telemetry/workflows_ai_telemetry_client';
-import { createWorkflowSmlType } from './sml_types/workflow';
-import { registerWorkflowYamlAttachment } from './attachment_types/workflow_yaml_attachment';
-import { registerWorkflowYamlDiffAttachment } from './attachment_types/workflow_yaml_diff_attachment';
-import { workflowAuthoringSkill } from './skills/workflow_authoring_skill';
-import { registerGetConnectorsTool } from './tools/get_connectors_tool';
-import { registerGetExamplesTool } from './tools/get_examples_tool';
-import { registerGetStepDefinitionsTool } from './tools/get_step_definitions_tool';
-import { registerGetTriggerDefinitionsTool } from './tools/get_trigger_definitions_tool';
-import { registerGetWorkflowTool } from './tools/get_workflow_tool';
-import { registerValidateWorkflowTool } from './tools/validate_workflow_tool';
-import { registerWorkflowExecuteStepTool } from './tools/workflow_execute_step_tool';
-import { getWorkflowExecutionStatusTool } from './tools/get_workflow_execution_status';
-import { listWorkflowExecutionsTool } from './tools/list_workflow_executions';
-import { resumeWorkflowExecutionTool } from './tools/resume_workflow_execution';
-import { generateWorkflowTool } from './tools/generate_workflow';
-import { executeWorkflowTool } from './tools/execute_workflow';
+import { registerWorkflowsAgentBuilder } from './register_agent_builder';
+import { WORKFLOWS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 
 type WorkflowsManagementApi = WorkflowsServerPluginSetup['management'];
 
@@ -59,41 +44,18 @@ export class AgentBuilderWorkflowsPlugin
     setupDeps: PluginSetupDependencies
   ): AgentBuilderWorkflowsPluginSetup {
     const { agentBuilder, agentBuilderSml, workflowsManagement } = setupDeps;
-    const api = workflowsManagement.management;
-    this.api = api;
+    this.api = workflowsManagement.management;
 
-    const getSecurity = () => this.security;
-
-    const aiTelemetryClient = new WorkflowsAiTelemetryClient(coreSetup.analytics, this.logger);
-
-    // Workflow tools
-    registerValidateWorkflowTool(agentBuilder, api);
-    registerGetWorkflowTool(agentBuilder, api, getSecurity);
-    registerGetStepDefinitionsTool(agentBuilder, api);
-    registerGetTriggerDefinitionsTool(agentBuilder, api);
-    registerGetConnectorsTool(agentBuilder, api);
-    registerGetExamplesTool(agentBuilder);
-    registerWorkflowExecuteStepTool(agentBuilder, api, getSecurity);
-
-    // Workflow attachment types
-    registerWorkflowYamlAttachment(agentBuilder, api, getSecurity);
-    registerWorkflowYamlDiffAttachment(agentBuilder);
-
-    // Workflow authoring skill
-    agentBuilder.skills.register(workflowAuthoringSkill);
-
-    // Workflow SML type for the agent context layer
-    agentBuilderSml.registerType(createWorkflowSmlType(api));
-
-    // Platform-level workflow execution tools
-    const platformTools: Array<BuiltinToolDefinition<any>> = [
-      getWorkflowExecutionStatusTool({ workflowsManagement, getSecurity }),
-      resumeWorkflowExecutionTool({ workflowsManagement, getSecurity }),
-      listWorkflowExecutionsTool({ workflowsManagement, getSecurity }),
-      generateWorkflowTool({ workflowsManagement, aiTelemetryClient }),
-      executeWorkflowTool({ workflowsManagement, getSecurity }),
-    ];
-    platformTools.forEach((tool) => agentBuilder.tools.register(tool));
+    // What a task process needs to register what this Kibana registers: the plugin is enabled.
+    agentBuilder.taskProcess?.registerSettings(WORKFLOWS_AGENT_BUILDER_SETTINGS_ID, () => ({}));
+    registerWorkflowsAgentBuilder(
+      { agentBuilder, agentBuilderSml },
+      {
+        workflowsManagement,
+        getSecurity: () => this.security,
+        aiTelemetryClient: new WorkflowsAiTelemetryClient(coreSetup.analytics, this.logger),
+      }
+    );
 
     return {};
   }

@@ -13,6 +13,7 @@ import { ExecutionStatus } from '@kbn/workflows';
 import { ExecutionError } from '@kbn/workflows/server';
 import { createVerifyKiStepDefinition } from './verify_ki_step';
 import { createVerifyKi } from './verify_ki';
+import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import { ESQL_VALID_RUNTIME_VERIFIER_ID, ESQL_VALID_SYNTAX_VERIFIER_ID } from '../ki_verification';
 import type { KiVerifierWorkflowRunner } from '../ki_verification';
 import { mockKiStepTelemetry } from './test_utils';
@@ -101,7 +102,7 @@ describe('verify_ki workflow step', () => {
         definition: { name: id, triggers: [{ type: 'manual' }], steps: [] },
         yaml: '',
       })),
-      runWorkflow: jest.fn().mockResolvedValue('exec-1'),
+      scheduleWorkflow: jest.fn().mockResolvedValue('exec-1'),
       getWorkflowExecution: jest.fn(),
       cancelWorkflowExecution: jest.fn(),
     };
@@ -110,7 +111,14 @@ describe('verify_ki workflow step', () => {
 
   const makeDefinition = (withWorkflows = true) =>
     createVerifyKiStepDefinition(
-      coreSetup,
+      async (spaceId) => {
+        const [coreStart] = await coreSetup.getStartServices();
+        return isContextEngineEnabledInSpace({
+          savedObjects: coreStart.savedObjects,
+          uiSettings: coreStart.uiSettings,
+          spaceId,
+        });
+      },
       createVerifyKi({
         getAuditLogger: async (request) => {
           const [coreStart] = await coreSetup.getStartServices();
@@ -514,7 +522,7 @@ describe('verify_ki workflow step', () => {
       expect(workflowsManagement.getWorkflow).toHaveBeenCalledWith('no-pii', 'space-a', {
         headers: {},
       });
-      expect(workflowsManagement.runWorkflow).toHaveBeenCalledWith(
+      expect(workflowsManagement.scheduleWorkflow).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'no-pii' }),
         'space-a',
         { ki: { title: 'x' } },
@@ -538,7 +546,7 @@ describe('verify_ki workflow step', () => {
         passed: true,
         results: [{ verifier: 'workflow:no-pii', passed: true }],
       });
-      expect(workflowsManagement.runWorkflow).toHaveBeenCalledWith(
+      expect(workflowsManagement.scheduleWorkflow).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'no-pii' }),
         'space-a',
         { ki: { title: 'orients only', attributes: { unit: 'sku-1' } } },
@@ -556,7 +564,7 @@ describe('verify_ki workflow step', () => {
         { verifiers: [{ workflow_id: 'runbook-only', applies_to: { types: ['runbook'] } }] }
       );
 
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
       expect(output).toEqual({ passed: true, results: [] });
     });
 
@@ -617,7 +625,7 @@ describe('verify_ki workflow step', () => {
         { verifiers: [{ workflow_id: 'no-pii' }], metadata: { ki_verifier_chain: ['root-wf'] } }
       );
 
-      expect(workflowsManagement.runWorkflow).toHaveBeenCalledWith(
+      expect(workflowsManagement.scheduleWorkflow).toHaveBeenCalledWith(
         expect.anything(),
         'space-a',
         expect.anything(),
@@ -640,7 +648,7 @@ describe('verify_ki workflow step', () => {
       expect(thrown.message).toBe(
         "Verifier workflow 'parent-wf' would call itself (chain: parent-wf -> parent-wf)"
       );
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it('rejects a verifier workflow already in the calling chain', async () => {
@@ -655,7 +663,7 @@ describe('verify_ki workflow step', () => {
       expect(thrown.message).toBe(
         "Verifier workflow 'root-wf' would call itself (chain: root-wf -> parent-wf -> root-wf)"
       );
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it('blocks a cycle even when the loop runs through a workflow.execute step', async () => {
@@ -684,7 +692,7 @@ describe('verify_ki workflow step', () => {
       expect(thrown.message).toBe(
         "Verifier workflow 'root-wf' would call itself (chain: root-wf -> verifier-wf -> parent-wf -> root-wf)"
       );
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it('blocks the run when a parent workflow run record cannot be read', async () => {
@@ -700,7 +708,7 @@ describe('verify_ki workflow step', () => {
           }
         )
       ).rejects.toThrow("parent workflow run 'gone' is not readable");
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it('rejects verifier workflows nested beyond the maximum depth', async () => {
@@ -716,7 +724,7 @@ describe('verify_ki workflow step', () => {
 
       expect(thrown.type).toBe('InputValidationError');
       expect(thrown.message).toContain('nested too deeply');
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
     });
 
     it('lets built-ins run at any depth', async () => {
@@ -753,7 +761,7 @@ describe('verify_ki workflow step', () => {
 
       expect(thrown).toBeInstanceOf(ExecutionError);
       expect(thrown.type).toBe('PermissionError');
-      expect(workflowsManagement.runWorkflow).not.toHaveBeenCalled();
+      expect(workflowsManagement.scheduleWorkflow).not.toHaveBeenCalled();
       expect(telemetry.analyticsService.reportKiVerification).toHaveBeenCalledWith({
         outcome: 'failure',
         workflowId: 'parent-wf',

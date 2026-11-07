@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type {
   ApmDataAccessPluginSetup,
   ApmDataAccessPluginStart,
@@ -84,6 +85,7 @@ export interface APMPluginSetupDependencies {
   logsDataAccess: LogsDataAccessPluginSetup;
   // optional dependencies
   observabilityAgentBuilder?: ObservabilityAgentBuilderPluginSetup;
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   observabilityAIAssistant?: ObservabilityAIAssistantServerSetup;
   agentBuilder?: AgentBuilderPluginSetup;
   actions?: ActionsPlugin['setup'];
@@ -115,6 +117,7 @@ export interface APMPluginStartDependencies {
   logsDataAccess: LogsDataAccessPluginStart;
   // optional dependencies
   observabilityAgentBuilder?: ObservabilityAgentBuilderPluginStart;
+  workflowsExtensions?: undefined;
   observabilityAIAssistant?: ObservabilityAIAssistantServerStart;
   agentBuilder?: AgentBuilderPluginStart;
   actions?: ActionsPlugin['start'];

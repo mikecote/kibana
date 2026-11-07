@@ -12,6 +12,7 @@
 
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import { startRuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
+import { getMlRuleTestSettings } from '@kbn/ml-plugin/server/integration_tests/fixtures/ml_rule_test_settings';
 import { CLIENT_ALERT_TYPES } from '../../common/constants/uptime_alerts';
 import { getMLJobId } from '../../common/lib';
 import { taskType as durationAnomaly } from '../task_types/duration_anomaly.task';
@@ -63,7 +64,7 @@ describe('the uptime rule types served from bundles', () => {
         { taskType: tlsCertificate, bundle: 'uptime__tls_certificate' },
         { taskType: tlsLegacy, bundle: 'uptime__tls_legacy' },
       ],
-      settings: { ml: { cpsEnabled: false } },
+      settings: { ml: await getMlRuleTestSettings() },
       indices: {
         [HEARTBEAT_INDEX]: {
           properties: {

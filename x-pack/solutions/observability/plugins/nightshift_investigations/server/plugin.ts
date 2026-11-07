@@ -50,13 +50,10 @@ import { handleInvestigationFailureStepDefinition } from './step_definitions/han
 import { renderSlackMessageStepDefinition } from './step_definitions/render_slack_message';
 import { triggerInvestigationStepDefinition } from './step_definitions/trigger_investigation';
 import { obtainSandboxStepDefinition } from './step_definitions/obtain_sandbox';
-import { composeHydrateNotificationsStepDefinition } from './step_definitions/compose_hydrate_notifications';
-import { resolveModelStepDefinition } from './step_definitions/resolve_model';
 import { cortexHydrateStepDefinition } from './step_definitions/cortex_hydrate';
 import { memoryMaterializeToSandboxStepDefinition } from './step_definitions/memory_materialize_to_sandbox';
 import { cortexOptimizeStepDefinition } from './step_definitions/cortex_optimize';
 import { decisionTreeHydrateStepDefinition } from './step_definitions/decision_tree_hydrate';
-import { decisionTreePrepareStepDefinition } from './step_definitions/decision_tree_prepare';
 import { decisionTreeReinforceStepDefinition } from './step_definitions/decision_tree_reinforce';
 import { memoryOptimizeStepDefinition } from './step_definitions/memory_optimize';
 import { createCortexStore, registerCortexAiIndex } from './cortex/register_cortex';
@@ -67,6 +64,11 @@ import { createDecisionTreeStore } from './decision_trees/store';
 import { registerDecisionTreeAiIndex } from './decision_trees/register_decision_trees';
 import { setupNightshiftTelemetry } from './telemetry';
 import { createTriggerEmitter, type TriggerEmitter } from './workflows/triggers/emit';
+import {
+  NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID,
+  getNightshiftTaskProcessSettings,
+} from './task_types/nightshift_task_process_settings';
+import { registerNightshiftProcessSteps } from './workflows/register_process_steps';
 import { registerInvestigationsWorkflowTriggers } from './workflows/triggers/register_triggers';
 import { registerInvestigationAgentType } from './agents/investigation';
 import { registerDecisionTreeReinforcementAgentType } from './agents/decision_tree_reinforcement';
@@ -170,6 +172,17 @@ export class NightshiftInvestigationsPlugin
       this.ctx.config.get().decision_trees.enabled &&
       this.cortexEnabled &&
       Boolean(plugins.sandbox?.isAvailable);
+    // What the steps and triggers read of this plugin in a task process of the workflow task types.
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID,
+      () =>
+        getNightshiftTaskProcessSettings({
+          workflowsManagementAvailable: Boolean(plugins.workflowsManagement),
+          decisionTreesEnabled: this.decisionTreesEnabled,
+          telemetryConnectorId: this.ctx.config.get().sandbox?.telemetry_connector_id,
+        })
+    );
+
     if (this.decisionTreesEnabled) {
       registerDecisionTreeAiIndex(plugins.contextEngine, this.logger.get('decision_trees'));
     }
@@ -337,6 +350,14 @@ export class NightshiftInvestigationsPlugin
 
     if (plugins.workflowsManagement) {
       if (plugins.workflowsExtensions) {
+        registerNightshiftProcessSteps(plugins.workflowsExtensions, {
+          getInference: () => this.inference,
+          getSavedObjects: () => this.savedObjects,
+          getUiSettings: () => this.uiSettings,
+          getTelemetryConnectorId: () => this.ctx.config.get().sandbox?.telemetry_connector_id,
+          isDecisionTreesEnabled: () => this.decisionTreesEnabled,
+          logger: this.logger,
+        });
         plugins.workflowsExtensions.registerStepDefinition(
           triggerInvestigationStepDefinition(
             this.getInvestigationsClient,
@@ -348,14 +369,6 @@ export class NightshiftInvestigationsPlugin
           ensureInvestigationAgentStepDefinition({
             getAgentBuilder: () => this.agentBuilder,
             getAgentAvailability: () => this.getInvestigationAvailability(),
-          })
-        );
-        plugins.workflowsExtensions.registerStepDefinition(
-          resolveModelStepDefinition({
-            getInference: () => this.inference,
-            getSavedObjects: () => this.savedObjects,
-            getUiSettings: () => this.uiSettings,
-            logger: this.logger.get('resolve_model'),
           })
         );
         plugins.workflowsExtensions.registerStepDefinition(
@@ -405,9 +418,6 @@ export class NightshiftInvestigationsPlugin
             telemetry,
           })
         );
-        plugins.workflowsExtensions.registerStepDefinition(
-          composeHydrateNotificationsStepDefinition()
-        );
         // Registered unconditionally: the combined materialize workflow installs with Cortex
         // or Memory, so a trees-off install would otherwise reference an unknown step type.
         // The handler no-ops on the flag instead, matching cortex/memory above.
@@ -438,16 +448,6 @@ export class NightshiftInvestigationsPlugin
             logger: this.logger.get('memory'),
             isEnabled: () => this.memoryEnabled,
             telemetry,
-          })
-        );
-        // Registered unconditionally for the same reason as the tree hydrate above: the
-        // combined optimize workflow installs with Cortex or Memory and now runs the
-        // reinforcement phase too. The handler no-ops on the flag.
-        plugins.workflowsExtensions.registerStepDefinition(
-          decisionTreePrepareStepDefinition({
-            getTelemetryConnectorId: () => this.ctx.config.get().sandbox?.telemetry_connector_id,
-            logger: this.logger.get('decision_trees'),
-            isEnabled: () => this.decisionTreesEnabled,
           })
         );
         plugins.workflowsExtensions.registerStepDefinition(

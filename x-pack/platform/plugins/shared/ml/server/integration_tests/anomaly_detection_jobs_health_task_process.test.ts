@@ -1,8 +1,3 @@
-/**
- * @jest-environment node
- */
-
-/* eslint-disable @kbn/eslint/require-license-header */
 /*
  * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
  * or more contributor license agreements. Licensed under the Elastic License
@@ -10,278 +5,50 @@
  * 2.0.
  */
 
-import { mkdtempSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { fetch as undiciFetch } from 'undici';
-import type { Client } from '@elastic/elasticsearch';
-import { REPO_ROOT, kibanaPackageJson } from '@kbn/repo-info';
-import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
-import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
-import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
-import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
-import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
-import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
-import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
-import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
-import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
-import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
+import { startRuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
+import { ML_ALERT_TYPES } from '../../common/constants/alerts';
 import { taskType } from '../task_types/anomaly_detection_jobs_health.task';
+import { getMlRuleTestSettings } from './fixtures/ml_rule_test_settings';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getTaskBundleEntries, buildTaskBundle } = require(join(
-  REPO_ROOT,
-  'src/dev/task_bundles/build'
-));
+const RULE_TYPE = ML_ALERT_TYPES.AD_JOBS_HEALTH;
 
-// Core, which a task process runs, refuses an Elasticsearch older than itself.
-const KIBANA_VERSION = kibanaPackageJson.version;
-const KIBANA_UUID = '5b2de169-2785-441b-ae8c-186a1936b17d';
-const ENCRYPTION_KEY = 'a'.repeat(32);
-const TASK_TYPE = 'alerting:xpack.ml.anomaly_detection_jobs_health';
-const RULE_ID = 'rule-1';
-
-/**
- * Runs the `xpack.ml.anomaly_detection_jobs_health` rule type from its own bundle, forked by the supervisor the way Kibana does,
- * against a real Elasticsearch: the process decrypts the rule with the encryption key it is sent,
- * runs the executor, writes the alert and the event log, and enqueues the action task for Kibana.
- */
 describe('the anomaly detection jobs health rule type served from a bundle', () => {
-  let esServer: TestElasticsearchUtils;
-  let es: Client;
-  let supervisor: TaskProcessSupervisor;
-  let seeder: Awaited<ReturnType<typeof startTaskProcessCore>>;
-
-  const settings = () => ({
-    alerting: alertingConfigSchema.validate({}),
-    actions: actionsConfigSchema.validate({}),
-    // What Kibana sends for the ML plugin.
-    ml: { cpsEnabled: false },
-  });
-
-  const initFor = () => ({
-    server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false },
-    encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
-    settings: Object.fromEntries(
-      Object.entries(settings()).map(([id, config]) => [id, serializeSettings(config)])
-    ) as never,
-  });
-
-  const run = (ruleId: string, fallback?: jest.Mock) =>
-    new RemoteTaskRunner({
-      route: supervisor.getRoute(TASK_TYPE)!,
-      request: {
-        taskType: TASK_TYPE,
-        taskInstance: {
-          id: ruleId,
-          taskType: TASK_TYPE,
-          params: { alertId: ruleId, spaceId: 'default', consumer: 'alerts' },
-          state: {},
-          attempts: 0,
-          status: 'running',
-          scheduledAt: new Date().toISOString(),
-          runAt: new Date().toISOString(),
-          startedAt: new Date().toISOString(),
-          retryAt: null,
-          ownerId: null,
-        },
-        executionUuid: `${ruleId}-${Date.now()}`,
-        kibanaVersion: KIBANA_VERSION,
-      },
-      timeoutMs: 120000,
-      setCustomTaskRunEventFields: jest.fn(),
-      fetchFn: undiciFetch as unknown as typeof fetch,
-      fallback: fallback as never,
-    }).run();
+  let harness: RuleProcessHarness;
 
   beforeAll(async () => {
-    const { startES } = createTestServers({
-      adjustTimeout: (t) => jest.setTimeout(t),
-      settings: { es: { license: 'trial' } },
+    harness = await startRuleProcessHarness({
+      rules: [{ taskType, bundle: 'ml__anomaly_detection_jobs_health' }],
+      settings: { ml: await getMlRuleTestSettings() },
     });
-    esServer = await startES();
-    es = esServer.es.getClient();
-    const esConfig = () =>
-      elasticsearchConfigFromEnv({
-        ES_URL: esServer.hosts[0],
-        ES_USERNAME: esServer.username,
-        ES_PASSWORD: esServer.password,
-      });
+  });
 
-    // The indices and aliases Kibana's migrator would have created for the saved object types a rule
-    // run uses, with their real mappings.
-    const indexMappings = new Map<string, Record<string, unknown>>();
-    for (const type of taskType.savedObjectTypes ?? []) {
-      const index = type.indexPattern ?? '.kibana';
-      indexMappings.set(index, {
-        ...(indexMappings.get(index) ?? {}),
-        [type.name]: type.mappings,
-      });
-    }
-    indexMappings.set('.kibana_task_manager', {
-      ...(indexMappings.get('.kibana_task_manager') ?? {}),
-      task: {
-        properties: {
-          taskType: { type: 'keyword' },
-          scope: { type: 'keyword' },
-          enabled: { type: 'boolean' },
-          status: { type: 'keyword' },
-          runAt: { type: 'date' },
-        },
-      },
-    });
-    for (const [index, properties] of indexMappings) {
-      await es.indices.create({
-        index: `${index}_${KIBANA_VERSION}_001`,
-        aliases: { [index]: {}, [`${index}_${KIBANA_VERSION}`]: {} },
-        mappings: {
-          dynamic: false,
-          properties: {
-            type: { type: 'keyword' },
-            namespace: { type: 'keyword' },
-            namespaces: { type: 'keyword' },
-            updated_at: { type: 'date' },
-            ...Object.fromEntries(
-              Object.entries(properties).map(([name, mapping]) => [
-                name,
-                (mapping as { properties?: unknown })?.properties
-                  ? { properties: (mapping as { properties: unknown }).properties }
-                  : mapping,
-              ])
-            ),
-          },
-        } as never,
-      });
-    }
-    // The event log data stream, which Kibana owns.
-    await es.indices.putIndexTemplate({
-      name: '.kibana-event-log-template',
-      index_patterns: ['.kibana-event-log-*'],
-      data_stream: { hidden: true },
-      priority: 100,
-      template: { mappings: eventLogMappings as never },
-    });
-    await es.indices.createDataStream({ name: '.kibana-event-log-ds' });
+  afterAll(async () => {
+    await harness?.stop();
+  });
 
-    // Seeds through a host of the same kind the process gets, which writes documents the way Kibana
-    // does: migrated, encrypted and in the default space.
-    seeder = await startTaskProcessCore({
-      init: {
-        kind: 'init',
-        elasticsearch: esConfig(),
-        kibanaVersion: KIBANA_VERSION,
-        authToken: '',
-        ...initFor(),
-      },
-      module: taskType,
-    });
-    const client = seeder.host.savedObjects.getUnsafeInternalClient({
-      includedHiddenTypes: ['alert', 'action'],
-    });
-    const { encoded } = await es.security.createApiKey({ name: 'rule-key' });
-    await client.create(
-      'alert',
+  it('declares the job saved object type its process reads', () => {
+    expect(taskType.type).toBe(`alerting:${RULE_TYPE}`);
+    expect(taskType.savedObjectTypes?.map(({ name }) => name)).toContain('ml-job');
+  });
+
+  it('runs the real executor, which reports no problem when there are no jobs', async () => {
+    const { forked, inProcess } = await harness.runBoth(
       {
-        name: 'jobs health rule',
-        tags: [],
-        alertTypeId: 'xpack.ml.anomaly_detection_jobs_health',
-        consumer: 'alerts',
-        legacyId: null,
-        schedule: { interval: '1m' },
-        enabled: true,
-        actions: [],
+        id: 'jobs-health-no-jobs',
+        ruleTypeId: RULE_TYPE,
         params: {
           includeJobs: { jobIds: ['*'], groupIds: [] },
           excludeJobs: null,
           testsConfig: null,
         },
-        mapped_params: {},
-        createdBy: 'elastic',
-        updatedBy: 'elastic',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        apiKey: encoded,
-        apiKeyOwner: 'elastic',
-        apiKeyCreatedByUser: false,
-        throttle: null,
-        notifyWhen: null,
-        muteAll: false,
-        mutedInstanceIds: [],
-        snoozeSchedule: [],
-        scheduledTaskId: null,
-        revision: 0,
-        running: false,
-        meta: { versionApiKeyLastmodified: KIBANA_VERSION },
-        executionStatus: {
-          status: 'pending',
-          lastExecutionDate: new Date().toISOString(),
-          error: null,
-          warning: null,
-        },
-      } as never,
-      { id: RULE_ID, references: [] }
-    );
-
-    // Builds the bundle of the rule type and serves it the way Kibana does.
-    const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
-    const entries = getTaskBundleEntries().filter(
-      ({ name }: { name: string }) => name === 'ml__anomaly_detection_jobs_health'
-    );
-    const [built] = await Promise.all(
-      entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
-    );
-    writeFileSync(
-      join(bundleDir, 'manifest.json'),
-      JSON.stringify({
-        bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: TASK_TYPE } },
-      })
-    );
-    supervisor = new TaskProcessSupervisor({
-      settings: {
-        bundle_dir: bundleDir,
-        kibanaVersion: KIBANA_VERSION,
-        getElasticsearchConfig: esConfig,
-        getInitFor: initFor,
       },
-      logger: loggingSystemMock.createLogger(),
-    });
-    supervisor.start();
-  });
-
-  afterAll(async () => {
-    await supervisor?.stop();
-    await seeder?.stop();
-    await esServer?.stop();
-  });
-
-  it('declares the job saved object type its process reads', () => {
-    expect(taskType.type).toBe(TASK_TYPE);
-    expect(taskType.savedObjectTypes?.map((t) => t.name)).toContain('ml-job');
-  });
-
-  it('runs the real executor, which reports no problem when there are no jobs', async () => {
-    const fallback = jest.fn();
-    const result = await run(RULE_ID, fallback);
-    expect(fallback).not.toHaveBeenCalled();
-    expect(result).toEqual(
-      expect.objectContaining({ schedule: { interval: '1m' }, state: expect.any(Object) })
+      '.alerts-*'
     );
-
-    // The process flushes the events it buffers when it stops, which is right after the run.
-    const searchEvents = () =>
-      es.search<{ event: { action: string; outcome?: string } }>({
-        index: '.kibana-event-log-ds',
-        query: { term: { 'rule.id': RULE_ID } },
-        size: 50,
-      });
-    let events = await searchEvents();
-    for (let i = 0; i < 30 && events.hits.hits.length < 2; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      await es.indices.refresh({ index: '.kibana-event-log-ds' });
-      events = await searchEvents();
-    }
-    const executed = events.hits.hits.find((hit) => hit._source!.event.action === 'execute');
-    expect(executed?._source?.event.outcome).toBe('success');
+    expect(forked.alerts).toHaveLength(0);
+    expect(forked.events.at(-1)).toEqual(
+      expect.objectContaining({ action: 'execute', outcome: 'success' })
+    );
+    expect(forked).toEqual(inProcess);
   });
 });

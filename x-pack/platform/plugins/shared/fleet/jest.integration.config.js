@@ -7,6 +7,7 @@
 
 module.exports = {
   preset: '@kbn/jest/jest_integration',
+  testEnvironment: 'node',
   rootDir: '../../../../..',
   roots: ['<rootDir>/x-pack/platform/plugins/shared/fleet'],
 };

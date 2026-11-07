@@ -6,16 +6,20 @@
  */
 
 import type { SloClient } from '@kbn/slo-plugin/server';
-import type { MinimalAPMRouteHandlerResources } from '../../routes/apm_routes/register_apm_server_routes';
+import type { KibanaRequest } from '@kbn/core/server';
+import type { SLOServerStart } from '@kbn/slo-plugin/server';
 
 export type ApmSloClient = SloClient;
 
 export async function getApmSloClient({
   plugins,
   request,
-}: Pick<MinimalAPMRouteHandlerResources, 'plugins' | 'request'>): Promise<
-  ApmSloClient | undefined
-> {
+}: {
+  plugins: {
+    slo?: { start: () => Promise<Pick<SLOServerStart, 'getSloClientWithRequest'> | undefined> };
+  };
+  request: KibanaRequest;
+}): Promise<ApmSloClient | undefined> {
   const sloStart = await plugins.slo?.start();
 
   if (!sloStart) {

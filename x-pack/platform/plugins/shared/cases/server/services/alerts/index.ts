@@ -44,11 +44,20 @@ import type {
 import type { AggregationBuilder, AggregationResponse } from '../../client/metrics/types';
 import type { CasesEventBus } from '../../events/event_bus';
 
+/** What cases reads of the alerts client of the rule registry. */
+export type CasesAlertsClient = Pick<
+  PublicMethodsOf<AlertsClient>,
+  | 'bulkUpdateCases'
+  | 'removeCaseIdFromAlerts'
+  | 'removeCaseIdsFromAllAlerts'
+  | 'ensureAllAlertsAuthorizedRead'
+>;
+
 export class AlertService {
   constructor(
     private readonly scopedClusterClient: ElasticsearchClient,
     private readonly logger: Logger,
-    private readonly alertsClient: PublicMethodsOf<AlertsClient>,
+    private readonly alertsClient: CasesAlertsClient,
     private readonly casesEventBus?: CasesEventBus,
     private readonly request?: KibanaRequest
   ) {}

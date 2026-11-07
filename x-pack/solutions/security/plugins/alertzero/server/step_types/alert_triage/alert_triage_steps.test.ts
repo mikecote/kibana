@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { httpServerMock } from '@kbn/core/server/mocks';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { StepHandlerContext } from '@kbn/workflows-extensions/server';
 import { TM_DELAY_LIMIT_MS } from '../../alert_triage/constants';
@@ -17,7 +18,11 @@ import {
 const createContext = (input: Record<string, unknown>, callKibanaApi: jest.Mock) =>
   ({
     input,
-    contextManager: { callKibanaApi },
+    contextManager: {
+      callKibanaApi,
+      getFakeRequest: () => httpServerMock.createKibanaRequest(),
+      getContext: () => ({ workflow: { spaceId: 'default' } }),
+    },
   } as unknown as StepHandlerContext<unknown, unknown>);
 
 const taskManagerWithLag = (lagMs: number | 'fails') =>
@@ -28,53 +33,66 @@ const taskManagerWithLag = (lagMs: number | 'fails') =>
     }),
   } as unknown as Pick<TaskManagerStartContract, 'aggregate'>);
 
-const liveExecutions = (ids: string[]) =>
-  jest
-    .fn()
-    .mockResolvedValue({ status: 200, headers: {}, body: { results: ids.map((id) => ({ id })) } });
+const getWorkflowExecutions = jest.fn();
+const getWorkflowExecutionReader = () => ({ getWorkflowExecutions });
+beforeEach(() => {
+  getWorkflowExecutions.mockReset().mockResolvedValue({ results: [] });
+});
 
 describe('triage headroom step', () => {
   const input = { batch_workflow_id: 'system-security-floor-alert-triage-batch' };
 
   it('is ok with the free slots, counting live batches through the executions API', async () => {
-    const callKibanaApi = liveExecutions(['e1', 'e2']);
-    const step = getTriageHeadroomStepDefinition({ getTaskManager: () => taskManagerWithLag(0) });
+    const callKibanaApi = jest.fn();
+    getWorkflowExecutions.mockResolvedValue({ results: [{ id: 'e1' }, { id: 'e2' }] });
+    const step = getTriageHeadroomStepDefinition({
+      getWorkflowExecutionReader,
+      getTaskManager: () => taskManagerWithLag(0),
+    });
 
     const { output } = await step.handler(createContext(input, callKibanaApi));
 
     expect(output).toEqual({ status: 'ok', in_flight: 2, slots: 38 });
-    expect(callKibanaApi.mock.calls[0][0].path).toContain(
-      '/api/workflows/workflow/system-security-floor-alert-triage-batch/executions?'
+    expect(getWorkflowExecutions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: input.batch_workflow_id,
+        statuses: expect.arrayContaining(['queued']),
+        request: expect.anything(),
+      })
     );
-    expect(callKibanaApi.mock.calls[0][0].path).toContain('statuses=queued');
+    expect(callKibanaApi).not.toHaveBeenCalled();
   });
 
   it('is behind when Task Manager lags past the limit', async () => {
     const step = getTriageHeadroomStepDefinition({
+      getWorkflowExecutionReader,
       getTaskManager: () => taskManagerWithLag(TM_DELAY_LIMIT_MS + 5000),
     });
 
-    const { output } = await step.handler(createContext(input, liveExecutions([])));
+    const { output } = await step.handler(createContext(input, jest.fn()));
 
     expect(output).toEqual(expect.objectContaining({ status: 'behind' }));
   });
 
   it('is unknown when the Task Manager read fails', async () => {
     const step = getTriageHeadroomStepDefinition({
+      getWorkflowExecutionReader,
       getTaskManager: () => taskManagerWithLag('fails'),
     });
 
-    const { output } = await step.handler(createContext(input, liveExecutions([])));
+    const { output } = await step.handler(createContext(input, jest.fn()));
 
     expect(output).toEqual({ status: 'unknown' });
   });
 
   it('assumes half the ceiling in flight when the executions list cannot be read', async () => {
-    const step = getTriageHeadroomStepDefinition({ getTaskManager: () => taskManagerWithLag(0) });
+    const step = getTriageHeadroomStepDefinition({
+      getWorkflowExecutionReader,
+      getTaskManager: () => taskManagerWithLag(0),
+    });
 
-    const { output } = await step.handler(
-      createContext(input, jest.fn().mockRejectedValue(new Error('boom')))
-    );
+    getWorkflowExecutions.mockRejectedValue(new Error('boom'));
+    const { output } = await step.handler(createContext(input, jest.fn()));
 
     expect(output).toEqual({ status: 'ok', in_flight: 20, slots: 20 });
   });
@@ -95,7 +113,9 @@ describe('triage plan sweep step', () => {
   it('starts nothing and touches no alert when headroom is behind', async () => {
     const callKibanaApi = jest.fn();
 
-    const { output } = await getTriagePlanSweepStepDefinition().handler(
+    const { output } = await getTriagePlanSweepStepDefinition({
+      getWorkflowExecutionReader,
+    }).handler(
       createContext(
         { ...baseInput, headroom: { status: 'behind', lag_ms: 500_000 } },
         callKibanaApi
@@ -109,9 +129,9 @@ describe('triage plan sweep step', () => {
   });
 
   it('treats ok without its slots as unknown rather than assuming room', async () => {
-    const { output } = await getTriagePlanSweepStepDefinition().handler(
-      createContext({ ...baseInput, headroom: { status: 'ok' } }, jest.fn())
-    );
+    const { output } = await getTriagePlanSweepStepDefinition({
+      getWorkflowExecutionReader,
+    }).handler(createContext({ ...baseInput, headroom: { status: 'ok' } }, jest.fn()));
 
     expect(output).toEqual(expect.objectContaining({ skip_reason: 'tm_unknown' }));
   });
@@ -136,8 +156,6 @@ describe('triage plan sweep step', () => {
         path: string;
         body?: { query?: unknown; aggs?: unknown; track_total_hits?: boolean };
       }) => {
-        if (path.includes('/executions'))
-          return { status: 200, headers: {}, body: { results: [] } };
         if (path.endsWith('/signals/search') && body?.track_total_hits === true) {
           return { status: 200, headers: {}, body: { hits: { total: { value: 13 } } } };
         }
@@ -160,7 +178,9 @@ describe('triage plan sweep step', () => {
       }
     );
 
-    const { output } = await getTriagePlanSweepStepDefinition().handler(
+    const { output } = await getTriagePlanSweepStepDefinition({
+      getWorkflowExecutionReader,
+    }).handler(
       createContext(
         { ...baseInput, headroom: { status: 'ok', in_flight: 0, slots: 40 } },
         callKibanaApi

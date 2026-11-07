@@ -129,7 +129,9 @@ describe('aiPromptStepDefinition', () => {
 
   describe('step definition creation', () => {
     it('should create a step definition with correct structure', () => {
-      const stepDefinition = aiPromptStepDefinition(mockCoreSetup);
+      const stepDefinition = aiPromptStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       expect(mockCreateServerStepDefinition).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -150,7 +152,9 @@ describe('aiPromptStepDefinition', () => {
     let handler: Function;
 
     beforeEach(() => {
-      stepDefinition = aiPromptStepDefinition(mockCoreSetup);
+      stepDefinition = aiPromptStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       handler = stepDefinition.handler;
     });
 

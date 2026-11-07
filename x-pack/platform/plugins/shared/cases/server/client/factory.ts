@@ -16,21 +16,12 @@ import type {
 } from '@kbn/core/server';
 import type { ISavedObjectsSerializer } from '@kbn/core-saved-objects-server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
-import type {
-  AuditLogger,
-  SecurityPluginSetup,
-  SecurityPluginStart,
-} from '@kbn/security-plugin/server';
-import type { FeaturesPluginStart } from '@kbn/features-plugin/server';
+import type { AuditLogger, SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import type { LensServerPluginSetup } from '@kbn/lens-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { NotificationsPluginStart } from '@kbn/notifications-plugin/server';
-import type {
-  AlertsClient,
-  RuleRegistryPluginStartContract,
-} from '@kbn/rule-registry-plugin/server';
 
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
@@ -55,12 +46,19 @@ import { AuthorizationAuditLogger } from '../authorization';
 import type { CasesClient } from '.';
 import { createCasesClient } from '.';
 import type { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
-import type { CasesClientArgs, CasesServices, CasesClientSource } from './types';
+import type {
+  CasesClientArgs,
+  CasesServices,
+  CasesClientSource,
+  CasesSecurityStart,
+  CasesFeatures,
+} from './types';
 import type { ActionSource } from '../../common/types/domain';
 import { getDefaultActionSource } from '../common/get_default_action_source';
 import { LicensingService } from '../services/licensing';
+import type { CasesAlertsClient } from '../services/alerts';
 import { EmailNotificationService } from '../services/notifications/email_notification_service';
-import type { ConfigType } from '../config';
+import type { CasesClientConfig } from '../config';
 import type { CasesEventBus } from '../events/event_bus';
 import { getSavedObjectsTypes } from '../../common';
 import type { CasesWorkflowRunContext } from './workflows/operations';
@@ -72,22 +70,33 @@ import type {
   CasesAttachmentsV2WriterContract,
 } from '../cases_analytics_v2';
 
-interface CasesClientFactoryArgs {
-  securityPluginSetup: SecurityPluginSetup;
-  securityPluginStart: SecurityPluginStart;
-  securityServiceStart: SecurityServiceStart;
-  spacesPluginStart?: SpacesPluginStart;
-  featuresPluginStart: FeaturesPluginStart;
-  actionsPluginStart: ActionsPluginStart;
-  licensingPluginStart: LicensingPluginStart;
+/**
+ * What the factory reads of each service, so that Kibana builds it from its plugins' start
+ * contracts and a task process from what its host has.
+ */
+export interface CasesClientFactoryArgs {
+  securityPluginSetup: Pick<SecurityPluginSetup, 'audit'>;
+  securityPluginStart: CasesSecurityStart;
+  securityServiceStart: Pick<SecurityServiceStart, 'authc'>;
+  spacesPluginStart?: {
+    spacesService: Pick<SpacesPluginStart['spacesService'], 'getSpaceId' | 'getActiveSpace'>;
+  };
+  featuresPluginStart: CasesFeatures;
+  actionsPluginStart: Pick<ActionsPluginStart, 'getActionsClientWithRequest'>;
+  licensingPluginStart: {
+    license$: LicensingPluginStart['license$'];
+    featureUsage: Pick<LicensingPluginStart['featureUsage'], 'notifyUsage'>;
+  };
   lensEmbeddableFactory: LensServerPluginSetup['lensEmbeddableFactory'];
-  notifications: NotificationsPluginStart;
-  ruleRegistry: RuleRegistryPluginStartContract;
+  notifications: Pick<NotificationsPluginStart, 'isEmailServiceAvailable' | 'getEmailService'>;
+  ruleRegistry: {
+    getRacClientWithRequest: (request: KibanaRequest) => Promise<CasesAlertsClient>;
+  };
   unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
   publicBaseUrl?: IBasePath['publicBaseUrl'];
-  filesPluginStart: FilesStart;
+  filesPluginStart: { fileServiceFactory: Pick<FilesStart['fileServiceFactory'], 'asScoped'> };
   usageCounter?: IUsageCounter;
-  config: ConfigType;
+  config: CasesClientConfig;
   casesEventBus?: CasesEventBus;
   closeReasonValidator?: (
     closeReason: string,
@@ -122,9 +131,9 @@ interface CasesClientFactoryArgs {
   analyticsV2DataViewRefresher: CasesAnalyticsV2DataViewRefresher;
 }
 
-interface CreateCasesClientParams {
+export interface CreateCasesClientParams {
   request: KibanaRequest;
-  savedObjectsService: SavedObjectsServiceStart;
+  savedObjectsService: Pick<SavedObjectsServiceStart, 'getScopedClient' | 'createSerializer'>;
   scopedClusterClient: ElasticsearchClient;
   clientSource: CasesClientSource;
   actionSource?: ActionSource;
@@ -260,7 +269,7 @@ export class CasesClientFactory {
 
   private getUnsecuredSavedObjectsClient(
     request: KibanaRequest,
-    savedObjectsService: SavedObjectsServiceStart
+    savedObjectsService: Pick<SavedObjectsServiceStart, 'getScopedClient'>
   ): SavedObjectsClientContract {
     this.validateInitialization();
     return savedObjectsService.getScopedClient(request, {
@@ -313,7 +322,7 @@ export class CasesClientFactory {
     esClient: ElasticsearchClient;
     request: KibanaRequest;
     auditLogger: AuditLogger;
-    alertsClient: PublicMethodsOf<AlertsClient>;
+    alertsClient: CasesAlertsClient;
     auth: PublicMethodsOf<Authorization>;
     actionSource?: ActionSource;
   }): CasesServices {

@@ -11,6 +11,8 @@ import { loggingSystemMock } from '@kbn/core/server/mocks';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SavedObjectsClientContract } from '@kbn/core/server';
+import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
+import { createFakeRequestEnrichment } from '@kbn/security-plugin/server/authentication/fake_request_enrichment';
 import { API_KEY_PENDING_INVALIDATION_TYPE } from '../../../saved_objects';
 import { ALERTING_ERROR_CODES } from '../../errors/error_codes';
 import { ApiKeyService } from './api_key_service';
@@ -73,6 +75,24 @@ const createRequestWithApiKey = (id: string, key: string): KibanaRequest => {
 };
 
 describe('ApiKeyService', () => {
+  it('uses a fake request credential when its enriched user hides authentication details', async () => {
+    const encoded = Buffer.from('task-key:task-secret').toString('base64');
+    const request = kibanaRequestFactory({ headers: { authorization: `ApiKey ${encoded}` } });
+    const security = createMockSecurityService();
+    const { invalidationSavedObjectsClient, logger } = createMockInvalidationDeps();
+    const enrichment = createFakeRequestEnrichment(logger);
+    enrichment.enrichRequestWithUserProfile(request, { username: 'test-user' });
+    jest
+      .mocked(security.authc.getCurrentUser)
+      .mockImplementation((req) => enrichment.getOverride(req) ?? null);
+    expect(security.authc.getCurrentUser(request)?.authentication_type).toBeUndefined();
+    const service = new ApiKeyService(request, security, invalidationSavedObjectsClient, logger);
+    const result = await service.create('Policy from a workflow');
+    expect(result.apiKey === encoded).toBe(true);
+    expect(result.createdByUser).toBe(true);
+    expect(result.owner).toBe('test-user');
+    expect(security.authc.apiKeys.grantAsInternalUser).not.toHaveBeenCalled();
+  });
   describe('create (grant path - password/token auth)', () => {
     it('grants an ES API key when UIAM is not available', async () => {
       const request = httpServerMock.createKibanaRequest();

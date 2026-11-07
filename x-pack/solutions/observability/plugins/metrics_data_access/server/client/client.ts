@@ -6,6 +6,7 @@
  */
 
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
+import type { MetricsDataDefaultHandlerRegistration } from '../task_types/metrics_data_task_process_settings';
 import type {
   DefaultMetricIndicesHandler,
   GetMetricIndicesOptions,
@@ -19,6 +20,7 @@ export const DEFAULT_METRIC_INDICES = 'metrics-*,metricbeat-*';
 export class MetricsDataClient {
   private readonly defaultSavedObjectId = 'default';
   private getDefaultMetricIndices: DefaultMetricIndicesHandler = null;
+  private defaultHandlerOwner?: string;
 
   async getMetricIndices(options: GetMetricIndicesOptions): Promise<string> {
     const metricIndices = await options.savedObjectsClient
@@ -45,7 +47,18 @@ export class MetricsDataClient {
     return object;
   }
 
-  setDefaultMetricIndicesHandler(handler: DefaultMetricIndicesHandler) {
+  setDefaultMetricIndicesHandler(
+    handler: DefaultMetricIndicesHandler,
+    options?: { owner: string }
+  ) {
     this.getDefaultMetricIndices = handler;
+    this.defaultHandlerOwner = handler ? options?.owner : undefined;
+  }
+
+  getDefaultMetricIndicesHandlerRegistration(): MetricsDataDefaultHandlerRegistration {
+    return {
+      installed: this.getDefaultMetricIndices !== null,
+      ...(this.defaultHandlerOwner === undefined ? {} : { owner: this.defaultHandlerOwner }),
+    };
   }
 }

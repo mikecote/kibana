@@ -16,6 +16,8 @@ import type {
   SyntheticsTaskProcessSettings,
 } from '../alert_rules/rule_dependencies';
 import { getSyntheticsRuleSavedObjectTypes } from '../saved_objects/saved_objects';
+import { LEGACY_SYNTHETICS_MONITOR_ENCRYPTED_TYPE_SINGLE } from '../saved_objects/synthetics_monitor/legacy_synthetics_monitor';
+import { SYNTHETICS_MONITOR_ENCRYPTED_TYPE } from '../saved_objects/synthetics_monitor/synthetics_monitor_config';
 
 type RegisterSyntheticsRule = (
   server: SyntheticsRuleServer,
@@ -78,6 +80,10 @@ export const createSyntheticsRuleTaskType = (
       },
     },
     {
-      savedObjectTypes: getSyntheticsRuleSavedObjectTypes(),
+      createSavedObjectTypes: getSyntheticsRuleSavedObjectTypes,
+      encryptedSavedObjectTypes: [
+        LEGACY_SYNTHETICS_MONITOR_ENCRYPTED_TYPE_SINGLE,
+        SYNTHETICS_MONITOR_ENCRYPTED_TYPE,
+      ],
     }
   );

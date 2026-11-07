@@ -15,6 +15,7 @@ import type {
   IClusterClient,
 } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
+import { createStandaloneEventLogClientService } from '@kbn/event-log-plugin/server/standalone_event_log_client';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -23,6 +24,7 @@ import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_co
 import type { LicensingPluginSetup } from '@kbn/licensing-plugin/server';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
+import type { SystemIdentity } from '@kbn/security-plugin-types-server';
 import type { PluginSetupContract, PluginStartContract } from '../plugin';
 import { renderActionParameterTemplates } from '../lib/render_action_parameter_templates';
 import { ActionTypeRegistry } from '../action_type_registry';
@@ -37,6 +39,8 @@ import {
   ALERT_SAVED_OBJECT_TYPE,
 } from '../constants/saved_objects';
 import { createBulkExecutionEnqueuerFunction } from '../create_execute_function';
+import { createBulkUnsecuredExecutionEnqueuerFunction } from '../create_unsecured_execute_function';
+import { UnsecuredActionsClient } from '../unsecured_actions_client/unsecured_actions_client';
 import type { InMemoryConnector } from '../types';
 import { createSystemConnectors } from '../create_system_actions';
 import { ensureSufficientLicense } from '../lib/ensure_sufficient_license';
@@ -54,16 +58,22 @@ import {
 import { createSubActionConnectorFramework } from '../sub_action_framework';
 import { SubActionConnector } from '../sub_action_framework/sub_action_connector';
 import { CaseConnector } from '../sub_action_framework/case';
+import { RelayClient } from '../lib/relay/relay_client';
+import { getAxiosInstanceWithAuth } from '../lib/get_axios_instance';
+import { createActionsEventLogSavedObjectProvider } from '../lib/event_log_saved_object_provider';
 
 /** What a rule run calls on the actions plugin when it enqueues the actions of its alerts. */
 export type RuleRunActionsStart = Pick<
   PluginStartContract,
+  | 'getRelayClient'
+  | 'getUnsecuredActionsClient'
   | 'getActionsClientWithRequest'
   | 'isActionExecutable'
   | 'renderActionParameterTemplates'
   | 'isSystemActionConnector'
   | 'isActionTypeEnabled'
->;
+> &
+  Pick<PluginSetupContract, 'getActionsConfigurationUtilities'>;
 
 /** The part of the actions setup contract that connector types are registered through. */
 export type RuleRunActionsSetup = Pick<
@@ -81,6 +91,7 @@ export interface RuleRunActionsDeps {
   logger: Logger;
   /** The validated actions config, as Kibana has it. */
   config: ActionsConfig;
+  getSystemIdentity?: () => SystemIdentity | undefined;
   /**
    * Kibana's final in-memory connectors (see `ActionsTaskProcessSettings`). Without them, which only
    * a process that was sent none has, they are rebuilt from the config, which cannot know what
@@ -90,7 +101,7 @@ export interface RuleRunActionsDeps {
   inMemoryConnectors?: InMemoryConnector[];
   license$: Observable<ILicense>;
   elasticsearch: Pick<IClusterClient, 'asScoped' | 'asInternalUser'>;
-  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
+  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient' | 'createInternalRepository'>;
   getEncryptedSavedObjectsClient: (options: {
     includedHiddenTypes: string[];
   }) => EncryptedSavedObjectsClient;
@@ -101,6 +112,9 @@ export interface RuleRunActionsDeps {
    * enqueues it, as in Kibana. Without it (security is off) nothing is checked.
    */
   authorization?: ConstructorParameters<typeof ActionsAuthorization>[0]['authorization'];
+  getAuditLoggerWithRequest?: (
+    request: KibanaRequest
+  ) => ConstructorParameters<typeof ActionsClient>[0]['auditLogger'];
   /**
    * Set for rule types that execute connectors themselves in the process, such as attack discovery
    * calling a model connector: the executor is initialized as the actions plugin initializes it.
@@ -123,15 +137,7 @@ export interface RuleRunActionsDeps {
   ) => void;
 }
 
-const unavailable = (what: string) => () => {
-  throw new Error(`${what} is not available when a rule run enqueues actions`);
-};
-
-/**
- * What a rule run needs from actions in a task process: its own connector type registry, preconfigured
- * connectors and enqueuer, built from the same classes the plugin uses, with nothing that executes a
- * connector. Executing is Kibana's job: the enqueued `actions:*` tasks are claimed there.
- */
+/** Builds the connector registry, execution services, and enqueuer used by a task execution. */
 export const createRuleRunActions = (
   deps: RuleRunActionsDeps
 ): {
@@ -139,10 +145,20 @@ export const createRuleRunActions = (
   hasActionType: (id: string) => boolean;
   /** The ids of the connector types registered, for comparing with Kibana's. */
   getActionTypeIds: () => string[];
-  stop: () => void;
+  stop: () => Promise<void>;
 } => {
   const { logger, config } = deps;
+  let eventLogReader: ReturnType<typeof createStandaloneEventLogClientService> | undefined;
   const configurationUtilities = getActionsConfigurationUtilities(config);
+  const relayClient = config.relay
+    ? new RelayClient({
+        baseUrl: config.relay.url,
+        configurationUtilities,
+        logger: logger.get('relay-client'),
+        useSystemIdentity: config.relay.uiam?.enabled ?? false,
+        getSystemIdentity: () => deps.getSystemIdentity?.(),
+      })
+    : undefined;
   const licenseState = new LicenseState(deps.license$);
   // As the actions plugin does at start: using a licensed connector type is recorded.
   if (deps.featureUsage) licenseState.setNotifyUsage(deps.featureUsage.notifyUsage);
@@ -256,40 +272,78 @@ export const createRuleRunActions = (
     });
   }
 
+  const getActionsClientWithRequest = async (request: KibanaRequest): Promise<ActionsClient> => {
+    const unsecuredSavedObjectsClient = deps.savedObjects.getScopedClient(request, {
+      excludedExtensions: [SECURITY_EXTENSION_ID],
+      includedHiddenTypes,
+    });
+    return new ActionsClient({
+      publicBaseUrl: deps.publicBaseUrl,
+      connectorSigningKeysEnabled: config.connectorSigningKeys.enabled,
+      logger,
+      unsecuredSavedObjectsClient,
+      actionTypeRegistry,
+      authTypeRegistry,
+      kibanaIndices: ['.kibana', '.kibana_alerting_cases'],
+      scopedClusterClient: deps.elasticsearch.asScoped(request),
+      inMemoryConnectors,
+      request,
+      authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
+      auditLogger: deps.getAuditLoggerWithRequest?.(request),
+      actionExecutor,
+      bulkExecutionEnqueuer,
+      usageCounter: deps.usageCounter as UsageCounter | undefined,
+      connectorTokenClient: new ConnectorTokenClient({
+        unsecuredSavedObjectsClient,
+        encryptedSavedObjectsClient,
+        logger,
+        configurationUtilities,
+      }),
+      getEventLogClient: async () => {
+        eventLogReader ??= createStandaloneEventLogClientService({
+          asInternalUser: deps.elasticsearch.asInternalUser,
+          logger: logger.get('eventLogReader'),
+          savedObjects: deps.savedObjects,
+          providers: {
+            action: createActionsEventLogSavedObjectProvider(getActionsClientWithRequest),
+          },
+        });
+        return eventLogReader.clientService.getClient(request);
+      },
+      getAxiosInstanceWithAuth: getAxiosInstanceWithAuth({
+        authTypeRegistry,
+        configurationUtilities,
+        logger,
+      }),
+      isESOCanEncrypt: true,
+      encryptedSavedObjectsClient,
+    } as ConstructorParameters<typeof ActionsClient>[0]);
+  };
+
   return {
     actionsPlugin: {
-      getActionsClientWithRequest: async (request: KibanaRequest) => {
-        const unsecuredSavedObjectsClient = deps.savedObjects.getScopedClient(request, {
-          excludedExtensions: [SECURITY_EXTENSION_ID],
-          includedHiddenTypes,
-        });
-        return new ActionsClient({
-          publicBaseUrl: deps.publicBaseUrl,
-          connectorSigningKeysEnabled: config.connectorSigningKeys.enabled,
-          logger,
-          unsecuredSavedObjectsClient,
-          actionTypeRegistry,
-          authTypeRegistry,
-          kibanaIndices: ['.kibana', '.kibana_alerting_cases'],
-          scopedClusterClient: deps.elasticsearch.asScoped(request),
-          inMemoryConnectors,
-          request,
-          authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
+      getActionsConfigurationUtilities: () => configurationUtilities,
+      getRelayClient: () => relayClient,
+      getUnsecuredActionsClient: () =>
+        new UnsecuredActionsClient({
           actionExecutor,
-          bulkExecutionEnqueuer,
-          usageCounter: deps.usageCounter as UsageCounter | undefined,
-          connectorTokenClient: new ConnectorTokenClient({
-            unsecuredSavedObjectsClient,
-            encryptedSavedObjectsClient,
-            logger,
+          clusterClient: deps.elasticsearch as IClusterClient,
+          executionEnqueuer: createBulkUnsecuredExecutionEnqueuerFunction({
+            taskManager: deps.taskManager,
+            connectorTypeRegistry: actionTypeRegistry,
+            inMemoryConnectors,
             configurationUtilities,
           }),
-          getEventLogClient: unavailable('The event log client') as never,
-          getAxiosInstanceWithAuth: unavailable('An authenticated HTTP client') as never,
-          isESOCanEncrypt: true,
-          encryptedSavedObjectsClient,
-        } as ConstructorParameters<typeof ActionsClient>[0]);
-      },
+          inMemoryConnectors,
+          internalSavedObjectsRepository: deps.savedObjects.createInternalRepository([
+            ACTION_SAVED_OBJECT_TYPE,
+            ACTION_TASK_PARAMS_SAVED_OBJECT_TYPE,
+          ]),
+          kibanaIndices: ['.kibana', '.kibana_alerting_cases'],
+          logger,
+          connectorTypeRegistry: actionTypeRegistry,
+        }),
+      getActionsClientWithRequest,
       isActionTypeEnabled: (id, options = { notifyUsage: false }) =>
         actionTypeRegistry.isActionTypeEnabled(id, options),
       isActionExecutable: (actionId, actionTypeId, options) =>
@@ -303,9 +357,10 @@ export const createRuleRunActions = (
     },
     hasActionType: (id) => actionTypeRegistry.has(id),
     getActionTypeIds: () => actionTypeRegistry.getAllTypes(),
-    stop: () => {
+    stop: async () => {
       licenseState.clean();
       clientLeasePool.stop();
+      await eventLogReader?.stop();
     },
   };
 };

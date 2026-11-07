@@ -65,17 +65,17 @@ export const getStartedProcesses = (taskType: string, since: string) =>
     .flatMap((r) => {
       const match = r.message.match(
         new RegExp(
-          `^Task process (\\d+) started for ${taskType}$|^Task process (\\d+) started for ${taskType};`
+          `^Task process (\\d+) started for ${taskType}$|^Task process (\\d+) started for ${taskType};|^Spinning up process (\\d+) for task ${taskType};`
         )
       );
-      return match ? [Number(match[1] ?? match[2])] : [];
+      return match ? [Number(match[1] ?? match[2] ?? match[3])] : [];
     });
 
-export const getFallbacks = (taskType: string, reason: string, since: string) =>
+export const getDispatchFailures = (taskType: string, reason: string, since: string) =>
   readKibanaLog().filter(
     (r) =>
       isSince(r, since) &&
-      r.message.includes(`Task ${taskType} ran in Kibana instead of its task process (${reason})`)
+      r.message.includes(`Task ${taskType} could not run in its task process (${reason})`)
   );
 
 /** Lines a task process wrote, which Kibana logged again with the labels of the run. */

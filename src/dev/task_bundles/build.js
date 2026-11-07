@@ -191,13 +191,17 @@ const buildTaskBundle = async ({
   kibanaVersion,
   sourcemap = true,
   metafile = false,
+  additionalContributions = {},
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const outfile = path.join(outDir, `${entry.name}.mjs`);
   const loaded = loadTaskType(entry.file);
   // What the module says it takes from other plugins: every plugin's file under each key.
   const contributions = Object.fromEntries(
-    (loaded?.contributions?.keys ?? []).map((key) => [key, getContributionFiles(key)])
+    (loaded?.contributions?.keys ?? []).map((key) => [
+      key,
+      [...getContributionFiles(key), ...(additionalContributions[key] ?? [])],
+    ])
   );
   const contributionImports = Object.values(contributions).flat();
   const result = await build({
@@ -257,6 +261,7 @@ const buildTaskBundle = async ({
     loader: {
       '.md': 'text',
       '.txt': 'text',
+      '.text': 'text',
       '.html': 'text',
       '.yaml': 'text',
       '.css': 'empty',

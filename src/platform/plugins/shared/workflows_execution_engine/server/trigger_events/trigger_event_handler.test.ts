@@ -11,6 +11,7 @@ import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { coreMock } from '@kbn/core/server/mocks';
 import type { EsWorkflowExecution, WorkflowDetailDto } from '@kbn/workflows';
 import type { WorkflowRepository } from '@kbn/workflows/server';
+import { writeTriggerEvent } from './event_logs';
 import { TriggerEventHandler, type TriggerEventHandlerDeps } from './trigger_event_handler';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 
@@ -214,6 +215,33 @@ describe('TriggerEventHandler', () => {
     expect(contextArg.event.caseId).toBe('case-123');
     expect(contextArg.event.eventChainDepth).toBe(1);
     expect(contextArg.event.eventChainVisitedWorkflowIds).toEqual([]);
+  });
+
+  it('uses the execution runtime event context when one is provided', async () => {
+    const getContext = jest.fn(() => ({ depth: 2, sourceExecutionId: 'current-execution' }));
+    const scheduleWorkflow = jest.fn().mockResolvedValue({ workflowExecutionId: 'exec-1' });
+    const deps = createDeps({
+      getEventChainContext: getContext,
+      triggerEventsClientPromise: Promise.resolve({} as never),
+      scheduleWorkflow,
+      workflowRepository: createWorkflowRepositoryMock([createMockWorkflow()]),
+    });
+    await new TriggerEventHandler(deps).handleEvent({
+      triggerId: 'cases.updated',
+      payload: {},
+      request: mockRequest,
+    });
+    expect(getContext).toHaveBeenCalledWith(mockRequest);
+    expect(mockGetEventChainContext).not.toHaveBeenCalled();
+    expect(writeTriggerEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ sourceExecutionId: 'current-execution' })
+    );
+    expect(scheduleWorkflow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ event: expect.objectContaining({ eventChainDepth: 3 }) }),
+      mockRequest
+    );
   });
 
   it('should pass the same eventChainDepth into KQL resolution as into the scheduled event payload', async () => {

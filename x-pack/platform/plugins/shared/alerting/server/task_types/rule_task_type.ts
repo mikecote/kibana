@@ -86,6 +86,7 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  createSavedObjectTypes?: TaskTypeModule['createSavedObjectTypes'];
   /** A task process only: encrypted saved objects the executor reads, besides what every rule run reads. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** A task process only: event log providers the executor writes with, besides alerting's own. */
@@ -97,6 +98,8 @@ export interface RuleTaskTypeOptions {
   analyticsEventTypes?: TaskTypeModule['analyticsEventTypes'];
   /** A task process only: ids of plugins whose config the executor reads, besides alerting and actions. */
   settings?: string[];
+  /** Settings from optional plugins, captured when those plugins are enabled. */
+  optionalSettings?: string[];
   /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
   uiSettings?: Array<Record<string, UiSettingsParams>>;
   /**
@@ -111,9 +114,8 @@ export interface RuleTaskTypeOptions {
    */
   schedulableTaskTypes?: RegExp[];
   /**
-   * A task process only: says why this process cannot serve this rule, so Kibana runs it instead
-   * (`DeclinedRunError`, before the run has side effects). It reads the settings Kibana sent and the
-   * rule's parameters; a string is the reason, nothing means the process serves the rule.
+   * Validates process execution prerequisites before side effects; a returned reason fails the run.
+   * It reads the dispatch settings and rule parameters.
    */
   declineRun?: (info: {
     settings: Record<string, unknown>;
@@ -315,6 +317,7 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
+    createSavedObjectTypes: options.createSavedObjectTypes,
     // When a task process serves the run, Kibana still counts it for the `node_rules` usage collector.
     ...(kibanaRuleType && options.getRuntime
       ? {
@@ -365,6 +368,7 @@ export function createRuleTaskType(
               ...(options.settings ?? []),
             ]),
           ],
+          optionalSettings: options.optionalSettings,
           // Kibana sends the connector types and adapters it registered; the process must have
           // registered the same, or it declines the run: a rule would otherwise behave differently.
           parity: [

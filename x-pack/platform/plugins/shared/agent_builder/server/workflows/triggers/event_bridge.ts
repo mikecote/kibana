@@ -23,10 +23,21 @@ export function registerConversationWorkflowEventBridge(
   workflowsExtensions: WorkflowsExtensionsServerPluginStart | undefined,
   logger: Logger,
   conversationUpdatedOptIns: readonly ConversationUpdatedOptIn[]
-): void {
+): () => Promise<void> {
   if (!workflowsExtensions) {
-    return;
+    return async () => {};
   }
+  const pending = new Set<Promise<void>>();
+  const track = (work: Promise<void>): void => {
+    pending.add(work);
+    void work.then(
+      () => pending.delete(work),
+      (error) => {
+        pending.delete(work);
+        logger.warn(`Failed to forward workflow conversation event: ${error}`);
+      }
+    );
+  };
 
   const forward = async (eventType: string, payload: unknown, request: KibanaRequest) => {
     try {
@@ -60,13 +71,15 @@ export function registerConversationWorkflowEventBridge(
   };
 
   conversationEventBus.onMetadataPatched((request, payload) => {
-    void forward(ConversationMetadataUpdatedTriggerId, payload, request);
+    track(forward(ConversationMetadataUpdatedTriggerId, payload, request));
   });
 
   conversationEventBus.onAttachmentEvents((request, { conversationId, events }) => {
-    void forwardBatch(
-      request,
-      events.map((event) => toAttachmentTriggerEvent(conversationId, event))
+    track(
+      forwardBatch(
+        request,
+        events.map((event) => toAttachmentTriggerEvent(conversationId, event))
+      )
     );
   });
 
@@ -101,10 +114,15 @@ export function registerConversationWorkflowEventBridge(
     if (optIns.length === 0) {
       return;
     }
-    void (async () => {
-      if (await isConversationUpdatedEnabled(request, optIns)) {
-        await forward(ConversationUpdatedTriggerId, payload, request);
-      }
-    })();
+    track(
+      (async () => {
+        if (await isConversationUpdatedEnabled(request, optIns)) {
+          await forward(ConversationUpdatedTriggerId, payload, request);
+        }
+      })()
+    );
   });
+  return async () => {
+    while (pending.size > 0) await Promise.allSettled(pending);
+  };
 }

@@ -73,6 +73,7 @@
     "@kbn/logging-mocks",
     "@kbn/search-inference-endpoints",
     "@kbn/agent-builder-server",
+    "@kbn/task-manager-plugin",
     "@kbn/agent-builder-common",
     "@kbn/datemath",
     "@kbn/setup-node-env",

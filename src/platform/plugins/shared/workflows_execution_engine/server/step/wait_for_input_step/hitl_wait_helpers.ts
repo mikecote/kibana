@@ -8,6 +8,7 @@
  */
 
 import { ExecutionStatus } from '@kbn/workflows';
+import type { HitlLifecycleAuditRegistry } from './hitl_lifecycle_auditor';
 import { emitHitlLifecycle } from './hitl_lifecycle_auditor';
 import type { StepExecutionRuntime } from '../../workflow_context_manager/step_execution_runtime';
 import type { WorkflowExecutionRuntimeManager } from '../../workflow_context_manager/workflow_execution_runtime_manager';
@@ -86,13 +87,17 @@ export function emitHitlWaitingAudit(params: {
   executionId: string;
   stepExecutionId: string;
   stepType: string;
+  registry?: Pick<HitlLifecycleAuditRegistry, 'emit'>;
 }): void {
-  emitHitlLifecycle({
-    type: 'waiting',
-    executionId: params.executionId,
-    stepExecutionId: params.stepExecutionId,
-    stepType: params.stepType,
-  });
+  emitHitlLifecycle(
+    {
+      type: 'waiting',
+      executionId: params.executionId,
+      stepExecutionId: params.stepExecutionId,
+      stepType: params.stepType,
+    },
+    params.registry
+  );
 }
 
 export function failHitlWaitOnTimeout(params: {
@@ -100,8 +105,9 @@ export function failHitlWaitOnTimeout(params: {
   executionId: string;
   stepType: string;
   error: Error;
+  registry?: Pick<HitlLifecycleAuditRegistry, 'emit'>;
 }): void {
-  const { stepExecutionRuntime, executionId, stepType, error } = params;
+  const { stepExecutionRuntime, executionId, stepType, error, registry } = params;
   const respondedAt = new Date().toISOString();
   const hitl = {
     respondedBy: 'system',
@@ -109,12 +115,15 @@ export function failHitlWaitOnTimeout(params: {
     channel: 'timeout',
   };
   stepExecutionRuntime.stampHitlAudit(hitl);
-  emitHitlLifecycle({
-    type: 'timed_out',
-    executionId,
-    stepExecutionId: stepExecutionRuntime.stepExecutionId,
-    stepType,
-  });
+  emitHitlLifecycle(
+    {
+      type: 'timed_out',
+      executionId,
+      stepExecutionId: stepExecutionRuntime.stepExecutionId,
+      stepType,
+    },
+    registry
+  );
   // Persist HITL audit fields as partial output so the Error tab can show them
   // alongside the TimeoutError without a separate callout.
   stepExecutionRuntime.failStep(error, {

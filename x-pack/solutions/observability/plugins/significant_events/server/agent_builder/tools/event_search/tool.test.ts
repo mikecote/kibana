@@ -14,13 +14,10 @@ import {
   sourceWithSlug,
 } from '../../utils/test_helpers';
 import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { searchEventsToolHandler } from './handler';
 import { createSearchEventsTool, SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID } from './tool';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 jest.mock('./handler', () => ({
   ...jest.requireActual('./handler'),
@@ -40,6 +37,7 @@ describe('event_search tool', () => {
 
   it('uses expected tool id', () => {
     const tool = createSearchEventsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: jest.fn() as unknown as GetScopedClients,
       server: readerServer,
       logger: loggingSystemMock.createLogger(),
@@ -51,6 +49,7 @@ describe('event_search tool', () => {
 
   it('validates bounded filters and normalizes query', () => {
     const tool = createSearchEventsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: jest.fn() as unknown as GetScopedClients,
       server: readerServer,
       logger: loggingSystemMock.createLogger(),
@@ -113,6 +112,7 @@ describe('event_search tool', () => {
     const telemetry = createMockTelemetry();
 
     const tool = createSearchEventsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: getScopedClients as unknown as GetScopedClients,
       server: readerServer,
       logger: loggingSystemMock.createLogger(),
@@ -186,6 +186,7 @@ describe('event_search tool', () => {
     });
 
     const tool = createSearchEventsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: getScopedClients as unknown as GetScopedClients,
       server: readerServer,
       logger: loggingSystemMock.createLogger(),
@@ -220,6 +221,7 @@ describe('event_search tool', () => {
     (assertSignificantEventsAccess as jest.Mock).mockResolvedValue(undefined);
 
     const tool = createSearchEventsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: jest.fn().mockResolvedValue({
         getEventSearchClient: jest.fn(),
         licensing: {},

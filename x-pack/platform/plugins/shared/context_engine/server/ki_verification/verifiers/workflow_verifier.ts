@@ -102,7 +102,7 @@ export interface KiVerifierWorkflowRunner {
     spaceId: string,
     request: KibanaRequest
   ): Promise<WorkflowDetailDto | null>;
-  runWorkflow(
+  scheduleWorkflow(
     workflow: WorkflowExecutionEngineModel,
     spaceId: string,
     inputs: Record<string, unknown>,
@@ -260,7 +260,7 @@ export const createWorkflowVerifier = (
       try {
         const workflow = await resolveRunnableWorkflow(workflowId, dependencies);
         abortSignal?.throwIfAborted();
-        workflowExecutionId = await workflowsManagement.runWorkflow(
+        workflowExecutionId = await workflowsManagement.scheduleWorkflow(
           workflow,
           spaceId,
           { ki },

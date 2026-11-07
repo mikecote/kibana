@@ -8,5 +8,8 @@
 module.exports = {
   preset: '@kbn/jest/jest_integration',
   rootDir: '../../../../..',
-  roots: ['<rootDir>/x-pack/solutions/security/plugins/security_solution/server/task_types'],
+  roots: [
+    '<rootDir>/x-pack/solutions/security/plugins/security_solution/server/task_types',
+    '<rootDir>/x-pack/solutions/security/plugins/security_solution/server/workflows',
+  ],
 };

@@ -17,6 +17,10 @@ project:
   owner: '@elastic/nightshift-context-and-research-team'
   sourceRoot: x-pack/platform/plugins/shared/evals
 dependsOn:
+  - '@kbn/security-plugin-types-server'
+  - '@kbn/logging-mocks'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/task-manager-plugin'
   - '@kbn/core'
   - '@kbn/core-elasticsearch-server-utils'
   - '@kbn/config-schema'

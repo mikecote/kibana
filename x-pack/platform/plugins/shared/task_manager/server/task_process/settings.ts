@@ -84,3 +84,13 @@ export const reviveSettingsByPlugin = (
   settings: Record<string, SerializedValue> | undefined
 ): Record<string, unknown> =>
   Object.fromEntries(Object.entries(settings ?? {}).map(([id, v]) => [id, reviveSettings(v)]));
+
+/** Awaits each plugin's current settings before a task host or dispatch snapshot consumes them. */
+export const resolveSettingsByPlugin = async <T>(
+  settings: Readonly<Record<string, () => T>>
+): Promise<Record<string, Awaited<T>>> =>
+  Object.fromEntries(
+    await Promise.all(
+      Object.entries(settings).map(async ([id, getSettings]) => [id, await getSettings()] as const)
+    )
+  );

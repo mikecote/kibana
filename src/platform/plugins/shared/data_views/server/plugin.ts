@@ -23,7 +23,11 @@ import { registerIndexPatternsUsageCollector } from './register_index_pattern_us
 import { createScriptedFieldsDeprecationsConfig } from './deprecations';
 import { DATA_VIEW_SAVED_OBJECT_TYPE, LATEST_VERSION } from '../common';
 import type { ClientConfigType } from '../common/types';
-import { dataTiersUiSettingsConfig } from './ui_settings';
+import { registerDataViewsUiSettings } from './register_ui_settings';
+import type {
+  DataViewsTaskProcessSettings,
+  DataViewsUiRegistrationSettings,
+} from './task_types/data_views_task_process_settings';
 import type {
   DataViewsServerPluginSetup,
   DataViewsServerPluginStart,
@@ -31,7 +35,6 @@ import type {
   DataViewsServerPluginStartDependencies,
 } from './types';
 import { DataViewsStorage } from './content_management';
-import { cacheMaxAge } from './ui_settings';
 
 export class DataViewsServerPlugin
   implements
@@ -44,6 +47,8 @@ export class DataViewsServerPlugin
 {
   private readonly logger: Logger;
   private rollupsEnabled: boolean = false;
+  private uiRegistrationSettings?: DataViewsUiRegistrationSettings;
+  private taskProcessSettings?: DataViewsTaskProcessSettings;
 
   constructor(private readonly initializerContext: PluginInitializerContext) {
     this.logger = initializerContext.logger.get('dataView');
@@ -58,12 +63,11 @@ export class DataViewsServerPlugin
 
     const config = this.initializerContext.config.get<ClientConfigType>();
 
-    if (config.dataTiersExcludedForFields) {
-      core.uiSettings.register(dataTiersUiSettingsConfig);
-    }
-    if (config.fieldListCachingEnabled) {
-      core.uiSettings.register(cacheMaxAge);
-    }
+    this.uiRegistrationSettings = {
+      dataTiersExcludedForFields: Boolean(config.dataTiersExcludedForFields),
+      fieldListCachingEnabled: Boolean(config.fieldListCachingEnabled),
+    };
+    registerDataViewsUiSettings(core.uiSettings, this.uiRegistrationSettings);
 
     const dataViewRestCounter = usageCollection?.createUsageCounter('dataViewsRestApi');
 
@@ -93,6 +97,10 @@ export class DataViewsServerPlugin
 
     return {
       enableRollups: () => (this.rollupsEnabled = true),
+      getTaskProcessSettings: (): DataViewsTaskProcessSettings => {
+        if (!this.taskProcessSettings) throw new Error('Data view services have not started');
+        return { ...this.taskProcessSettings };
+      },
     };
   }
 
@@ -102,6 +110,13 @@ export class DataViewsServerPlugin
   ) {
     const config = this.initializerContext.config.get<ClientConfigType>();
     const scriptedFieldsEnabled = config.scriptedFieldsEnabled === false ? false : true; // accounting for null value
+
+    if (!this.uiRegistrationSettings) throw new Error('Data view services have not been set up');
+    this.taskProcessSettings = {
+      ...this.uiRegistrationSettings,
+      scriptedFieldsEnabled,
+      rollupsEnabled: this.rollupsEnabled,
+    };
 
     const serviceFactory = dataViewsServiceFactory({
       logger: this.logger.get('indexPatterns'),

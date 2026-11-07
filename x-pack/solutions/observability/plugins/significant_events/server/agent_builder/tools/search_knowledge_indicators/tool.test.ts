@@ -15,7 +15,6 @@ import {
   createSearchKnowledgeIndicatorsTool,
   SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATORS_SEARCH_TOOL_ID,
 } from './tool';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import {
   createMockToolContext,
   createSignificantEventsServer,
@@ -24,9 +23,7 @@ import {
   type NightshiftFeaturePrivilege,
 } from '../../utils/test_helpers';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 describe('ki_search tool', () => {
   const logger = loggingSystemMock.createLogger();
@@ -37,6 +34,7 @@ describe('ki_search tool', () => {
   it('uses the expected tool id', () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -49,6 +47,7 @@ describe('ki_search tool', () => {
   it('accepts typed filters and pagination', () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -87,6 +86,7 @@ describe('ki_search tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -104,6 +104,7 @@ describe('ki_search tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -124,6 +125,7 @@ describe('ki_search tool', () => {
       } as unknown as RouteHandlerScopedClients;
     }) as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server: createSignificantEventsServer({ featurePrivilege }),
       logger,
@@ -157,6 +159,7 @@ describe('ki_search tool', () => {
       } as unknown as RouteHandlerScopedClients;
     }) as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createSearchKnowledgeIndicatorsTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server: createSignificantEventsServer({ featurePrivilege: 'read' }),
       logger,

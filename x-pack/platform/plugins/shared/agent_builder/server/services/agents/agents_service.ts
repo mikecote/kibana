@@ -186,6 +186,15 @@ export class AgentsService {
       await systemClient.ensureAgent(agent);
     };
 
+    const setAgentAvailability: AgentsServiceStart['setAgentAvailability'] = ({
+      agentId,
+      availability,
+      hidden,
+    }) => {
+      if (availability) this.availabilityByAgentId.set(agentId, availability);
+      if (hidden !== undefined) this.hiddenByAgentId.set(agentId, hidden);
+    };
+
     const resolveAgentConfiguration: AgentsServiceStart['resolveAgentConfiguration'] = ({
       agent,
       request,
@@ -257,6 +266,7 @@ export class AgentsService {
     return {
       getRegistry,
       ensure,
+      setAgentAvailability,
       resolveAgentConfiguration,
       resolveAgentBaseConfiguration,
       removeToolRefsFromAgents,

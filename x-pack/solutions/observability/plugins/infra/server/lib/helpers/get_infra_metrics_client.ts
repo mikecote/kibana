@@ -17,7 +17,10 @@ import type { DataTier } from '@kbn/observability-shared-plugin/common';
 import { getInspectResponse } from '@kbn/observability-shared-plugin/common';
 import { excludeTiersQuery } from '@kbn/observability-utils-common/es/queries/exclude_tiers_query';
 import type { InfraPluginRequestHandlerContext } from '../../types';
-import type { InfraBackendLibs } from '../infra_types';
+import type {
+  callWithRequest,
+  InfraSearchRequestContext,
+} from '../adapters/framework/call_with_request';
 import { inspectableEsQueriesMap } from './with_inspect';
 
 type RequiredParams = Omit<ESSearchRequest, 'index'> & {
@@ -39,8 +42,10 @@ export async function getInfraMetricsClient({
   context,
   request,
 }: {
-  libs: InfraBackendLibs;
-  context: InfraPluginRequestHandlerContext;
+  libs: { framework: { callWithRequest: typeof callWithRequest } };
+  context: InfraSearchRequestContext & {
+    infra: Promise<Pick<Awaited<InfraPluginRequestHandlerContext['infra']>, 'getMetricsIndices'>>;
+  };
   request?: KibanaRequest;
 }) {
   const { framework } = libs;

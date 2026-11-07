@@ -32,7 +32,6 @@ import {
   ELASTIC_MODEL_TYPE,
   BUILT_IN_MODEL_TYPE,
 } from '@kbn/ml-trained-models-utils';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { ElasticCuratedModelName } from '@kbn/ml-trained-models-utils';
 import { isDefined } from '@kbn/ml-is-defined';
 import { isPopulatedObject } from '@kbn/ml-is-populated-object';
@@ -54,6 +53,7 @@ import {
   type PipelineDefinition,
   type TrainedModelConfigResponse,
 } from '@kbn/ml-common-types/trained_models';
+import type { MlCloud } from '../../ml_cloud';
 import type { MlFeatures } from '../../../common/constants/app';
 import { DEFAULT_TRAINED_MODELS_PAGE_SIZE } from '../../../common/constants/trained_models';
 import type { MlClient } from '../../lib/ml_client';
@@ -68,7 +68,7 @@ export type ModelService = ReturnType<typeof modelsProvider>;
 export const modelsProvider = (
   client: IScopedClusterClient,
   mlClient: MlClient,
-  cloud: CloudSetup,
+  cloud: MlCloud,
   enabledFeatures: MlFeatures
 ) => new ModelsProvider(client, mlClient, cloud, enabledFeatures);
 
@@ -97,7 +97,7 @@ export class ModelsProvider {
   constructor(
     private _client: IScopedClusterClient,
     private _mlClient: MlClient,
-    private _cloud: CloudSetup,
+    private _cloud: MlCloud,
     private _enabledFeatures: MlFeatures
   ) {}
 

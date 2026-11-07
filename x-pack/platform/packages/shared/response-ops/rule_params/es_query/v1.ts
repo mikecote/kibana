@@ -27,6 +27,13 @@ import {
 } from '../common/constants';
 
 const EsQueryRuleParamsSchemaProperties = {
+  // Local process-isolation demo; the executor refuses this outside a forked task process.
+  processIsolationDemo: schema.maybe(
+    schema.object({
+      blockEventLoopSeconds: schema.number({ min: 1, max: 3600 }),
+      memoryMb: schema.number({ min: 0, max: 1536, defaultValue: 0 }),
+    })
+  ),
   size: schema.number({
     min: 0,
     max: ES_QUERY_MAX_HITS_PER_EXECUTION,

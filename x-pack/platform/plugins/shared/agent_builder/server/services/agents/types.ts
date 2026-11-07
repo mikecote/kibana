@@ -51,6 +51,15 @@ export interface AgentsServiceStart {
     availability?: AgentAvailabilityConfig;
     hidden?: boolean;
   }) => Promise<void>;
+  /**
+   * Keeps the availability and visibility of an agent in memory without persisting it: a task process
+   * does this for the agents Kibana persisted.
+   */
+  setAgentAvailability: (opts: {
+    agentId: string;
+    availability?: AgentAvailabilityConfig;
+    hidden?: boolean;
+  }) => void;
   resolveAgentConfiguration: (opts: {
     agent: AgentDefinition;
     request: KibanaRequest;

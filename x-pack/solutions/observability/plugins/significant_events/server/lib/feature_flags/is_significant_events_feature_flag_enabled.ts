@@ -10,5 +10,6 @@ import type { FeatureFlagsStart } from '@kbn/core/server';
 import { NIGHTSHIFT_ENABLED_FLAG } from '@kbn/nightshift-shared';
 
 /** Feature-flag gate only; use `isSignificantEventsAvailable` for the full requirement set. */
-export const isSignificantEventsFeatureFlagEnabled = (featureFlags: FeatureFlagsStart) =>
-  firstValueFrom(featureFlags.getBooleanValue$(NIGHTSHIFT_ENABLED_FLAG, false));
+export const isSignificantEventsFeatureFlagEnabled = (
+  featureFlags: Pick<FeatureFlagsStart, 'getBooleanValue$'>
+) => firstValueFrom(featureFlags.getBooleanValue$(NIGHTSHIFT_ENABLED_FLAG, false));

@@ -5,11 +5,11 @@
  * 2.0.
  */
 
-import type { TaskProcessFallbackReason } from './fallback_counter';
+import type { TaskProcessDispatchFailureReason } from './dispatch_failure_counter';
 
 /** Thrown by a route's `acquire` when it cannot give a process; the reason is what gets counted. */
 export class TaskProcessAcquireError extends Error {
-  constructor(public readonly reason: TaskProcessFallbackReason, message: string) {
+  constructor(public readonly reason: TaskProcessDispatchFailureReason, message: string) {
     super(message);
   }
 }

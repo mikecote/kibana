@@ -24,63 +24,76 @@ export const setupCapabilitiesSwitcher = (
   enabledFeatures: MlFeatures,
   logger: Logger
 ) => {
+  const switcher = createMlCapabilitiesSwitcher({
+    license$,
+    enabledFeatures,
+    getIsServerless: async () => {
+      const [coreStart] = await coreSetup.getStartServices();
+      return coreStart.elasticsearch.getCapabilities().serverless;
+    },
+  });
   coreSetup.capabilities.registerSwitcher(
-    getSwitcher(license$, logger, enabledFeatures, coreSetup.getStartServices),
+    async (request, capabilities, useDefaultCapabilities) => {
+      try {
+        return await switcher(request, capabilities, useDefaultCapabilities);
+      } catch (error) {
+        logger.debug(`Error updating capabilities for ML based on licensing: ${error}`);
+        return {};
+      }
+    },
     {
       capabilityPath: 'ml.*',
     }
   );
 };
 
-function getSwitcher(
-  license$: Observable<ILicense>,
-  logger: Logger,
-  enabledFeatures: MlFeatures,
-  getStartServices: CoreSetup['getStartServices']
-): CapabilitiesSwitcher {
+/** Creates the native ML license and enabled-feature capability gate. */
+export const createMlCapabilitiesSwitcher = ({
+  license$,
+  enabledFeatures,
+  getIsServerless,
+}: {
+  license$: Observable<ILicense>;
+  enabledFeatures: MlFeatures;
+  getIsServerless: () => Promise<boolean>;
+}): CapabilitiesSwitcher => {
   return async (request, capabilities) => {
     const isAnonymousRequest = !request.route.options.authRequired;
     if (isAnonymousRequest) {
       return {};
     }
 
-    try {
-      const [license, [coreStart]] = await Promise.all([
-        firstValueFrom(license$),
-        getStartServices(),
-      ]);
-      const isServerless = coreStart.elasticsearch.getCapabilities().serverless;
-      const mlEnabled = isMlEnabled(license);
+    const [license, isServerless] = await Promise.all([
+      firstValueFrom(license$),
+      getIsServerless(),
+    ]);
+    const mlEnabled = isMlEnabled(license);
 
-      const originalCapabilities = capabilities.ml as MlCapabilities;
-      const mlCaps = cloneDeep(originalCapabilities);
+    const originalCapabilities = capabilities.ml as MlCapabilities;
+    const mlCaps = cloneDeep(originalCapabilities);
 
-      if (capabilities.aiops.enabled === false) {
-        mlCaps.canUseAiops = false;
-      }
-
-      // full license, leave capabilities as they were
-      if (mlEnabled && isFullLicense(license)) {
-        return { ml: applyEnabledFeatures(mlCaps, enabledFeatures, isServerless) };
-      }
-
-      // not full license, switch off all capabilities
-      Object.keys(mlCaps).forEach((k) => {
-        mlCaps[k as keyof MlCapabilities] = false;
-      });
-
-      // for a basic license, reapply the original capabilities for the basic license features
-      if (mlEnabled && isMinimumLicense(license)) {
-        basicLicenseMlCapabilities.forEach((c) => (mlCaps[c] = originalCapabilities[c]));
-      }
-
-      return { ml: mlCaps };
-    } catch (e) {
-      logger.debug(`Error updating capabilities for ML based on licensing: ${e}`);
-      return {};
+    if (capabilities.aiops.enabled === false) {
+      mlCaps.canUseAiops = false;
     }
+
+    // full license, leave capabilities as they were
+    if (mlEnabled && isFullLicense(license)) {
+      return { ml: applyEnabledFeatures(mlCaps, enabledFeatures, isServerless) };
+    }
+
+    // not full license, switch off all capabilities
+    Object.keys(mlCaps).forEach((k) => {
+      mlCaps[k as keyof MlCapabilities] = false;
+    });
+
+    // for a basic license, reapply the original capabilities for the basic license features
+    if (mlEnabled && isMinimumLicense(license)) {
+      basicLicenseMlCapabilities.forEach((c) => (mlCaps[c] = originalCapabilities[c]));
+    }
+
+    return { ml: mlCaps };
   };
-}
+};
 
 function applyEnabledFeatures(
   mlCaps: MlCapabilities,

@@ -145,6 +145,12 @@ dependsOn:
   - '@kbn/cps-server-utils'
   - '@kbn/app-header'
   - '@kbn/ui-callout'
+  - '@kbn/core-logging-server-mocks'
+  - '@kbn/core-saved-objects-server-mocks'
+  - '@kbn/core-http-server-mocks'
+  - '@kbn/workflows-extensions'
+  - '@kbn/workflows'
+  - '@kbn/workflows-execution-engine'
 tags:
   - plugin
   - prod

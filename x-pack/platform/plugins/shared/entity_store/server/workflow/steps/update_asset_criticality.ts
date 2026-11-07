@@ -6,12 +6,10 @@
  */
 
 import { truncate } from 'lodash';
-import {
-  createServerStepDefinition,
-  type WorkflowsExtensionsServerPluginStart,
-} from '@kbn/workflows-extensions/server';
+import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import { ExecutionError } from '@kbn/workflows/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+import type { KibanaRequest } from '@kbn/core/server';
+import type { ILicense } from '@kbn/licensing-types';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import { checkEntityStoreIndexPrivileges } from '../../routes/apis/utils/check_and_format_privileges';
 import { ENTITY_ANALYTICS_KIBANA_FEATURE_PRIVILEGES } from '../../routes/constants';
@@ -25,11 +23,31 @@ import type { EntityStoreStartContract } from '../../types';
 // combined message still fits within `MAX_WORKFLOW_MESSAGE_LENGTH` after truncation below.
 const MAX_RECALC_ERROR_MESSAGE_LENGTH = 200;
 
+/** What the step reads of the workflows plugin: the client that emits the trigger events of a request. */
+export interface WorkflowsEventsStart {
+  getClient: (request: KibanaRequest) => Promise<{
+    emitEvent: (triggerId: string, payload: Record<string, unknown>) => Promise<void>;
+  }>;
+  /**
+   * Settles the events emitted so far. The entity client emits without waiting, which is enough in
+   * Kibana but not in a task process, which ends with the run and would drop an event in flight.
+   */
+  flushEvents?: () => Promise<void>;
+}
+
+/** What the step reads of the licensing plugin. */
+export interface LicensingStart {
+  getLicense: () => Promise<Pick<ILicense, 'hasAtLeast'>>;
+}
+
+/** What the step reads of the security plugin: the privilege checks. */
+export type SecurityStart = Pick<SecurityPluginStart, 'authz'>;
+
 export const getUpdateAssetCriticalityStepDefinition = (
   getCreateCRUDClient: () => Promise<EntityStoreStartContract['createCRUDClient']>,
-  getWorkflowsExtensionsStart: () => Promise<WorkflowsExtensionsServerPluginStart | undefined>,
-  getLicensingStart: () => Promise<LicensingPluginStart>,
-  getSecurityStart: () => Promise<SecurityPluginStart>
+  getWorkflowsExtensionsStart: () => Promise<WorkflowsEventsStart | undefined>,
+  getLicensingStart: () => Promise<LicensingStart>,
+  getSecurityStart: () => Promise<SecurityStart>
 ) =>
   createServerStepDefinition({
     ...updateAssetCriticalityStepCommonDefinition,
@@ -96,6 +114,7 @@ export const getUpdateAssetCriticalityStepDefinition = (
           { entity: { id: entityId }, asset: { criticality: criticalityLevel } },
           true
         );
+        await workflowsExtensions?.flushEvents?.();
 
         let message =
           criticalityLevel === null

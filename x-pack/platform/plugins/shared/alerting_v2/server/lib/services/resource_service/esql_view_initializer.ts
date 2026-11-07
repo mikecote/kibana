@@ -19,11 +19,20 @@ export class ESQLViewInitializer implements IResourceInitializer {
   constructor(
     private readonly logger: Logger,
     private readonly esClient: ElasticsearchClient,
-    private readonly viewDefinition: EsqlViewDefinition
+    private readonly viewDefinition: EsqlViewDefinition,
+    private readonly install = true
   ) {}
 
   public async initialize(): Promise<void> {
     const { name, query } = this.viewDefinition;
+
+    if (!this.install) {
+      const response = await this.esClient.esql.getView({ name });
+      if (!response.views.some((view) => view.name === name && view.query === query)) {
+        throw new Error(`Required ES|QL view ${name} is missing or outdated`);
+      }
+      return;
+    }
 
     this.logger.debug(`ESQLViewInitializer: Initializing view [${name}].`);
 

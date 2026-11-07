@@ -17,6 +17,7 @@ project:
   owner: '@elastic/search-ml-ux'
   sourceRoot: x-pack/platform/plugins/shared/search_inference_endpoints
 dependsOn:
+  - '@kbn/workflows-extensions'
   - '@kbn/config-schema'
   - '@kbn/core'
   - '@kbn/i18n'

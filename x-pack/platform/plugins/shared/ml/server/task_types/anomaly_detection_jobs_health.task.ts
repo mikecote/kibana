@@ -11,6 +11,7 @@ import { getJobsMonitoringRuleType } from '../lib/alerts/register_jobs_monitorin
 import {
   createMlTaskProcessServices,
   getMlTaskProcessSavedObjectTypes,
+  ML_TASK_PROCESS_SETTINGS_ID,
 } from './ml_task_process_services';
 
 /** The anomaly detection jobs health rule type, which a task process can run. */
@@ -27,5 +28,8 @@ export const taskType = createRuleTaskType(
       ) as never;
     },
   },
-  { savedObjectTypes: getMlTaskProcessSavedObjectTypes() }
+  {
+    settings: [ML_TASK_PROCESS_SETTINGS_ID],
+    savedObjectTypes: getMlTaskProcessSavedObjectTypes(),
+  }
 );

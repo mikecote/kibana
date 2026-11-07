@@ -17,6 +17,7 @@ project:
   owner: '@elastic/security-threat-hunting'
   sourceRoot: x-pack/solutions/security/plugins/discoveries
 dependsOn:
+  - '@kbn/workflows-execution-engine'
   - '@kbn/agent-builder-common'
   - '@kbn/agent-builder-plugin'
   - '@kbn/agent-builder-server'

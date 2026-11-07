@@ -6,6 +6,9 @@
  */
 
 import { of } from 'rxjs';
+import { httpServerMock } from '@kbn/core-http-server-mocks';
+import { ConnectorAuditAction } from '../lib/audit_events';
+import { auditLoggerMock } from '@kbn/security-plugin/server/audit/mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
@@ -59,6 +62,18 @@ describe('createRuleRunActions', () => {
     stop();
   });
 
+  it('exposes the same host restrictions and relay configuration to workflow tools', () => {
+    const { actionsPlugin, stop } = create({
+      allowedHosts: ['allowed.example'],
+      relay: { url: 'https://relay.example' },
+    });
+    const config = actionsPlugin.getActionsConfigurationUtilities();
+    expect(config.isHostnameAllowed('allowed.example')).toBe(true);
+    expect(config.isHostnameAllowed('other.example')).toBe(false);
+    expect(actionsPlugin.getRelayClient()?.uiamEnabled).toBe(false);
+    stop();
+  });
+
   it('answers whether an action is executable from the registry and the license', () => {
     const { actionsPlugin, stop } = create();
     expect(actionsPlugin.isActionExecutable('connector-1', '.server-log')).toBe(true);
@@ -104,6 +119,28 @@ describe('createRuleRunActions', () => {
       isSystemAction: false,
       isDynamic: true,
     };
+
+    it('audits connector access with the execution request', async () => {
+      const request = httpServerMock.createFakeKibanaRequest({});
+      const auditLogger = auditLoggerMock.create();
+      const getAuditLoggerWithRequest = jest.fn(() => auditLogger);
+      const { actionsPlugin, stop } = create(
+        {},
+        { inMemoryConnectors: [dynamic], getAuditLoggerWithRequest }
+      );
+      try {
+        const client = await actionsPlugin.getActionsClientWithRequest(request);
+        await client.get({ id: dynamic.id });
+        expect(getAuditLoggerWithRequest).toHaveBeenCalledWith(request);
+        expect(auditLogger.log).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: expect.objectContaining({ action: ConnectorAuditAction.GET }),
+          })
+        );
+      } finally {
+        await stop();
+      }
+    });
 
     it('uses a connector another plugin registered in Kibana, which the config does not have', () => {
       // `.server-log` is not enabled, so only a preconfigured connector may use it.

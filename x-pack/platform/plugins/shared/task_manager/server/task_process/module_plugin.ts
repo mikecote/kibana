@@ -35,6 +35,7 @@ import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
 import { createHostFeatureFlags } from './run_context';
+import { registerTaskAnalyticsEventTypes } from './host_capabilities/analytics';
 import { createParityGuard } from './parity';
 import type { TaskProcessTaskManagerSetup } from './task_manager_task_plugin';
 
@@ -65,19 +66,35 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
   let resolveHost!: (host: TaskHost) => void;
   const hostPromise = new Promise<TaskHost>((resolve) => (resolveHost = resolve));
   context.host = hostPromise;
+  let fips: CoreSetup['security']['fips'] | undefined;
   let encryption: EncryptedSavedObjectsPluginSetup | undefined;
   let usageCounters: StandaloneUsageCounters | undefined;
 
   return {
     setup(core: CoreSetup, deps: SetupDeps) {
+      fips = core.security.fips;
+      encryption = deps.encryptedSavedObjects;
       const types: SavedObjectsType[] = [];
       const seen = new Set<string>();
-      for (const type of module.savedObjectTypes ?? []) {
+      if (module.createSavedObjectTypes && !deps.encryptedSavedObjects) {
+        throw new Error('Native saved object factories require encrypted saved objects setup');
+      }
+      const createdTypes =
+        module.createSavedObjectTypes && deps.encryptedSavedObjects
+          ? module.createSavedObjectTypes(
+              deps.encryptedSavedObjects,
+              reviveSettingsByPlugin(init.settings)
+            )
+          : [];
+      for (const type of [...(module.savedObjectTypes ?? []), ...createdTypes]) {
         if (seen.has(type.name)) continue;
         seen.add(type.name);
         types.push(type);
       }
       types.forEach((type) => core.savedObjects.registerType(type));
+      for (const definition of new Set(module.dataStreams ?? [])) {
+        core.dataStreams.registerDataStream(definition);
+      }
       // The `task` type and its neighbours, which `host.taskManager` writes.
       if (module.taskManager) registerTaskManagerSavedObjects(core.savedObjects);
 
@@ -85,7 +102,6 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         if (!deps.encryptedSavedObjects) {
           throw new Error('The module declares encrypted saved objects but the process has no ESO');
         }
-        encryption = deps.encryptedSavedObjects;
         module.encryptedSavedObjectTypes.forEach((registration) =>
           deps.encryptedSavedObjects!.registerType(registration)
         );
@@ -95,13 +111,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         core.uiSettings.registerGlobal(defaults)
       );
 
+      module.registerUiSettings?.(core.uiSettings, reviveSettingsByPlugin(init.settings));
+
       // The event types the runner reports; Core's analytics refuses an event it does not know.
-      const eventTypes = new Set<string>();
-      for (const eventType of module.analyticsEventTypes ?? []) {
-        if (eventTypes.has(eventType.eventType)) continue;
-        eventTypes.add(eventType.eventType);
-        core.analytics.registerEventType(eventType);
-      }
+      registerTaskAnalyticsEventTypes(module, core.analytics);
 
       // Where the feature usage of the cluster is kept; the licensing plugin registers it in Kibana.
       core.savedObjects.registerType(featureUsageSavedObjectType);
@@ -133,6 +146,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
     },
 
     start(core: CoreStart, deps: StartDeps) {
+      if (!fips) throw new Error('Core FIPS service has not initialized');
       const { env } = initializerContext;
       const host: TaskHost = {
         analytics: {
@@ -149,11 +163,17 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           context.flushers.push(flusher);
         },
         logger,
+        parity: init.parity,
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,
-        security: core.security,
+        security: { ...core.security, fips },
         userProfile: core.userProfile,
+        http: {
+          selfClient: core.http.selfClient,
+          basePath: core.http.basePath,
+          getServerInfo: core.http.getServerInfo,
+        },
         server: {
           uuid: init.server?.uuid ?? env.instanceUuid,
           version: env.packageInfo.version,
@@ -163,7 +183,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         },
       };
 
-      if (module.encryptedSavedObjectTypes?.length && deps.encryptedSavedObjects) {
+      if (
+        (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) &&
+        deps.encryptedSavedObjects
+      ) {
         host.encryptedSavedObjects = {
           getClient: deps.encryptedSavedObjects.getClient,
           isEncryptionError: deps.encryptedSavedObjects.isEncryptionError,
@@ -171,7 +194,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         };
       }
       if (module.eventLog) {
-        const { eventLog, stop } = module.eventLog.create({
+        const { eventLog, flush, stop } = module.eventLog.create({
           asInternalUser: core.elasticsearch.client.asInternalUser,
           logger: initializerContext.logger.get('eventLog'),
           kibanaUuid: init.server?.uuid,
@@ -179,6 +202,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           providers: module.eventLog.providers,
         });
         host.eventLog = eventLog;
+        context.flushers.push(flush);
         // Flushes what the adapter still buffers before the process exits.
         stops.push(stop);
       }
@@ -198,6 +222,9 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
                 apiKeyType: taskManagerSettings.api_key_type as never,
                 grantUiamApiKeys: taskManagerSettings.grant_uiam_api_keys === true,
                 canEncrypt: encryption?.canEncrypt ?? false,
+                encryptedSavedObjects: deps.encryptedSavedObjects
+                  ? { getClient: deps.encryptedSavedObjects.getClient }
+                  : undefined,
               }
             : undefined,
           allowedTypes: new RegExp(
@@ -213,13 +240,16 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       if (usageCounters) {
         host.usageCounters = usageCounters.start(core.savedObjects);
         // What the run counted is stored before the run answers, and once more on the way out.
-        context.flushers.push(usageCounters.flush);
+        const counters = usageCounters;
+        const flushUsageCounters = () => counters.flush();
+        context.flushers.push(flushUsageCounters);
         stops.push(async () => {
           await usageCounters!.flush();
           usageCounters!.stop();
         });
       }
-      if (module.uiSettings) host.uiSettings = core.uiSettings;
+      if (module.uiSettings || module.registerUiSettings) host.uiSettings = core.uiSettings;
+      if (module.dataStreams) host.dataStreams = core.dataStreams;
       if (module.featureFlags) host.featureFlags = createHostFeatureFlags();
       if (module.licensing) {
         const { featureUsage, flush } = createStandaloneFeatureUsage({
@@ -227,7 +257,8 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           logger: initializerContext.logger.get('licensing'),
         });
         // What the run used is stored before it answers.
-        context.flushers.push(flush);
+        const flushFeatureUsage = () => flush();
+        context.flushers.push(flushFeatureUsage);
         host.licensing = {
           ...createStandaloneLicensing({
             asInternalUser: core.elasticsearch.client.asInternalUser,

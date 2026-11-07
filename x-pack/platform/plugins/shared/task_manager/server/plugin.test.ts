@@ -18,6 +18,7 @@ import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from './constants';
 import { defineTaskType } from './task_type_module';
+import type { TaskTypeRegistrationOptions } from './task_type_module';
 import { TaskProcessSupervisor } from './task_process/supervisor';
 import { of } from 'rxjs';
 import moment from 'moment';
@@ -187,7 +188,7 @@ describe('TaskManagerPlugin', () => {
       const startServices = coreMock.createStart();
       core.getStartServices.mockResolvedValue([startServices, {} as never, {} as never]);
       const setup = plugin.setup(core, { usageCollection: undefined });
-      return { plugin, setup, startServices, logger: pluginInitializerContext.logger.get() };
+      return { plugin, setup, core, startServices, logger: pluginInitializerContext.logger.get() };
     };
 
     test('registers the task types of Task Manager itself as modules', () => {
@@ -199,7 +200,7 @@ describe('TaskManagerPlugin', () => {
     });
 
     test('runs a module with Core as its host', async () => {
-      const { plugin, setup, startServices, logger } = setupPlugin();
+      const { plugin, setup, core, startServices, logger } = setupPlugin();
       const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
       setup.registerTaskType(defineTaskType({ type: 'test:module', createTaskRunner }));
 
@@ -222,7 +223,7 @@ describe('TaskManagerPlugin', () => {
           elasticsearch: startServices.elasticsearch.client,
           savedObjects: startServices.savedObjects,
           executionContext: startServices.executionContext,
-          security: startServices.security,
+          security: { ...startServices.security, fips: core.security.fips },
           server: expect.objectContaining({ version: expect.any(String), isServerless: false }),
         })
       );
@@ -232,15 +233,20 @@ describe('TaskManagerPlugin', () => {
       const { plugin, setup } = setupPlugin();
       const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
       const eventLog = { registerProviderActions: jest.fn(), getLogger: jest.fn() };
+      const unusedSettings = jest.fn().mockRejectedValue(new Error('Unrelated settings were read'));
       setup.registerTaskType(
         defineTaskType({
           type: 'test:capabilities',
           eventLog: { providers: [], create: jest.fn() },
           uiSettings: {},
+          dataStreams: [],
           settings: ['alerting'],
           createTaskRunner,
         }),
-        { hostExtensions: { eventLog }, settings: { alerting: () => ({ max: 1 }) } }
+        {
+          hostExtensions: { eventLog },
+          settings: { alerting: async () => ({ max: 1 }), unused: unusedSettings },
+        }
       );
       const definitions = (
         plugin as unknown as {
@@ -257,7 +263,9 @@ describe('TaskManagerPlugin', () => {
       const host = createTaskRunner.mock.calls[0][1];
       expect(host.eventLog).toBe(eventLog);
       expect(host.settings).toEqual({ alerting: { max: 1 } });
+      expect(unusedSettings).not.toHaveBeenCalled();
       expect(host.uiSettings).toBeDefined();
+      expect(host.dataStreams).toBeDefined();
       expect(host.encryptedSavedObjects).toBeUndefined();
       expect(host.taskManager).toBeUndefined();
     });
@@ -424,7 +432,12 @@ describe('TaskManagerPlugin', () => {
   });
 
   describe('what a task process is sent', () => {
-    const setupWithModule = (startServices: Record<string, unknown>) => {
+    const setupWithModule = (
+      startServices: Record<string, unknown>,
+      settings: TaskTypeRegistrationOptions['settings'] = {
+        connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }),
+      }
+    ) => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
         task_execution: { mode: 'child_process' },
@@ -456,7 +469,7 @@ describe('TaskManagerPlugin', () => {
           createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
         }),
         {
-          settings: { connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }) },
+          settings,
           parity: { connectorTypes: () => connectorTypes },
         }
       );
@@ -511,6 +524,40 @@ describe('TaskManagerPlugin', () => {
       expect((await getInitFor('test:module')).parity).toEqual([
         { kind: 'connectorTypes', ids: ['.email', '.later'] },
       ]);
+    });
+
+    test('awaits file-backed settings and snapshots their current value on each dispatch', async () => {
+      const pending = Promise.withResolvers<{ material: string }>();
+      const getSettings = jest.fn().mockReturnValue(pending.promise);
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}), { material: getSettings });
+      let ready = false;
+      const first = getInitFor('test:module').then(
+        (init: { settings: { material: { material: string } } }) => {
+          ready = true;
+          return init;
+        }
+      );
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      pending.resolve({ material: 'first' });
+      expect((await first).settings.material).toEqual({ material: 'first' });
+      getSettings.mockResolvedValue({ material: 'second' });
+      expect((await getInitFor('test:module')).settings.material).toEqual({ material: 'second' });
+      expect(getSettings).toHaveBeenCalledTimes(2);
+    });
+
+    test('rejects a failed settings read and retries the getter on the next dispatch', async () => {
+      const error = new Error('Registry material could not be read');
+      const getSettings = jest
+        .fn()
+        .mockRejectedValueOnce(error)
+        .mockResolvedValue({ material: 'recovered' });
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}), { material: getSettings });
+      await expect(getInitFor('test:module')).rejects.toBe(error);
+      expect((await getInitFor('test:module')).settings.material).toEqual({
+        material: 'recovered',
+      });
+      expect(getSettings).toHaveBeenCalledTimes(2);
     });
 
     test('sends the public base URL as Core has it: none when Kibana has none', async () => {

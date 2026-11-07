@@ -93,8 +93,13 @@ export interface WatchWorkflowsManagementClient {
   ): Promise<UpdatedWorkflowResponseDto>;
 }
 
+export type WatchWorkflowsManagementApi = Pick<
+  NonNullable<WorkflowsServerPluginSetup['management']>,
+  'getClient' | 'searchExecutionsView' | 'cancelAllActiveWorkflowExecutions' | 'updateWorkflow'
+>;
+
 export class WatchWorkflowsManagementClientImpl implements WatchWorkflowsManagementClient {
-  constructor(private readonly management: NonNullable<WorkflowsServerPluginSetup['management']>) {}
+  constructor(private readonly management: WatchWorkflowsManagementApi) {}
 
   getWorkflows(
     params: {

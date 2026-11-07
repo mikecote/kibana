@@ -29,6 +29,7 @@ type IntegrationFieldsMetadataTree = Record<IntegrationName, DatasetFieldsMetada
 export class IntegrationFieldsRepository {
   private cache: HashedCache<IntegrationFieldsSearchParams, IntegrationFieldsMetadataTree>;
   private integrationsMap: Map<string, ExtractedIntegration>;
+  private integrationList?: Promise<void>;
 
   private constructor(
     private readonly integrationFieldsExtractor: IntegrationFieldsExtractor,
@@ -36,8 +37,6 @@ export class IntegrationFieldsRepository {
   ) {
     this.cache = new HashedCache();
     this.integrationsMap = new Map();
-
-    this.extractIntegrationList();
   }
 
   async getByName(
@@ -46,7 +45,11 @@ export class IntegrationFieldsRepository {
   ): Promise<FieldMetadata | undefined> {
     const { integration, dataset } = this.extractIntegrationFieldsSearchParams(fieldName, params);
 
-    if (!integration || !this.integrationsMap.has(integration)) {
+    if (!integration) {
+      return undefined;
+    }
+    await this.extractIntegrationList();
+    if (!this.integrationsMap.has(integration)) {
       return undefined;
     }
 
@@ -121,10 +124,18 @@ export class IntegrationFieldsRepository {
       .then((fieldMetadataTree) => this.storeFieldsInCache(cacheKey, fieldMetadataTree));
   }
 
-  private extractIntegrationList(): void {
-    void this.integrationListExtractor()
+  private async extractIntegrationList(): Promise<void> {
+    const pending = (this.integrationList ??= this.integrationListExtractor()
       .then(this.mapExtractedIntegrationListToMap)
-      .then((integrationsMap) => (this.integrationsMap = integrationsMap));
+      .then((integrationsMap) => {
+        this.integrationsMap = integrationsMap;
+      }));
+    try {
+      await pending;
+    } catch (error) {
+      if (this.integrationList === pending) this.integrationList = undefined;
+      throw error;
+    }
   }
 
   private getCachedField(

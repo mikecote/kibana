@@ -88,6 +88,7 @@ const createMockEventLog = () => ({
 
 const createMockWorkflowsExtensions = () => ({
   registerManagedWorkflowOwner: jest.fn(),
+  registerTaskProcessSettings: jest.fn(),
   registerStepType: jest.fn(),
 });
 
@@ -149,6 +150,25 @@ const createPluginStartDeps = (
   workflowsExtensions:
     createMockWorkflowsExtensionsStart() as unknown as DiscoveriesPluginStartDeps['workflowsExtensions'],
   ...overrides,
+});
+
+describe('Discovery generation telemetry registration', () => {
+  it.each([true, false])(
+    'registers generation schemas once with Elastic Assistant enabled: %s',
+    (enabled) => {
+      const core = createSetupWithStartServices();
+      const plugin = new DiscoveriesPlugin(createPluginInitializerContext());
+      plugin.setup(
+        core,
+        createPluginSetupDeps({
+          elasticAssistant: enabled ? createMockElasticAssistant() : undefined,
+        })
+      );
+      const ids = core.analytics.registerEventType.mock.calls.map(([event]) => event.eventType);
+      expect(ids.filter((id) => id === 'attack_discovery_success')).toHaveLength(enabled ? 0 : 1);
+      expect(ids.filter((id) => id === 'attack_discovery_error')).toHaveLength(enabled ? 0 : 1);
+    }
+  );
 });
 
 describe('DiscoveriesPlugin', () => {

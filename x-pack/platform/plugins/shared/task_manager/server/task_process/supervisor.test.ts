@@ -11,11 +11,14 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { TaskProcessLease } from './remote_task_runner';
+import type { TaskProcessDispatchSnapshot } from './wire';
 import { TaskProcessSupervisor } from './supervisor';
 import type { TaskProcessSettings } from './supervisor';
 
 const createBundleDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+  writeFileSync(join(dir, 'a.js'), '');
+  writeFileSync(join(dir, 'b.js'), '');
   writeFileSync(
     join(dir, 'manifest.json'),
     JSON.stringify({
@@ -61,13 +64,15 @@ describe('TaskProcessSupervisor', () => {
         kibanaVersion: '9.9.9',
         ...overrides,
         getElasticsearchConfig: () => ({ hosts: ['http://es:9200'] } as never),
-        getInitFor: (taskType) =>
-          taskType === 'alerting_v2:cleanup'
-            ? {
-                server: { uuid: 'uuid', buildNum: 1, isServerless: false },
-                encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
-              }
-            : {},
+        getInitFor:
+          overrides.getInitFor ??
+          ((taskType) =>
+            taskType === 'alerting_v2:cleanup'
+              ? {
+                  server: { uuid: 'uuid', buildNum: 1, isServerless: false },
+                  encryptedSavedObjects: { encryptionKey: 'k'.repeat(32), decryptionOnlyKeys: [] },
+                }
+              : {}),
       },
       logger: loggingSystemMock.createLogger(),
       forkFn: forkFn as never,
@@ -84,13 +89,178 @@ describe('TaskProcessSupervisor', () => {
     delete process.env.NODE_OPTIONS;
   });
 
+  const reuse = { idleTimeoutMs: 1000, maxAgeMs: 5000, maxRuns: 3, maxIdleProcesses: 2 };
+
+  it('reuses a compatible child sequentially and retires it at the run limit', async () => {
+    const { supervisor, children, forkFn, acquire, ready } = setup({ reuse });
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0);
+    const first = await pending;
+    first.release({ reusable: true });
+    expect(children[0].child.kill).not.toHaveBeenCalled();
+    const second = await acquire('alerting_v2:cleanup');
+    expect(second.url).toBe(first.url);
+    expect(forkFn).toHaveBeenCalledTimes(1);
+    // A stale lease must not release or kill the next run's child.
+    first.release({ force: true });
+    expect(supervisor.getStats().active).toBe(1);
+    expect(children[0].child.kill).not.toHaveBeenCalled();
+    second.release({ reusable: true });
+    const third = await acquire('alerting_v2:cleanup');
+    third.release({ reusable: true });
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it.each([
+    ['idle timeout', { ...reuse, idleTimeoutMs: 100 }],
+    ['maximum age', { ...reuse, maxAgeMs: 100 }],
+  ])('retires an idle child at its %s', async (_name, policy) => {
+    jest.useFakeTimers();
+    const { supervisor, children, acquire, ready } = setup({ reuse: policy });
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0);
+    const lease = await pending;
+    lease.release({ reusable: true });
+    jest.advanceTimersByTime(100);
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('never shares a busy child or an idle child of a different task type', async () => {
+    const { supervisor, forkFn, acquire, ready } = setup({ reuse });
+    supervisor.start();
+    const first = acquire('alerting_v2:cleanup');
+    ready(0);
+    const busy = await first;
+    const second = acquire('alerting_v2:cleanup');
+    ready(1);
+    const other = await second;
+    busy.release({ reusable: true });
+    const third = acquire('task_manager:nodes');
+    ready(2);
+    const different = await third;
+    expect(forkFn).toHaveBeenCalledTimes(3);
+    other.release();
+    different.release();
+    await supervisor.stop();
+  });
+
+  it('retires idle children when startup settings change', async () => {
+    let encryptionKey = 'a'.repeat(32);
+    const { supervisor, children, forkFn, acquire, ready } = setup({
+      reuse,
+      getInitFor: () => ({ encryptedSavedObjects: { encryptionKey, decryptionOnlyKeys: [] } }),
+    });
+    supervisor.start();
+    const first = acquire('alerting_v2:cleanup');
+    ready(0);
+    (await first).release({ reusable: true });
+    encryptionKey = 'b'.repeat(32);
+    const second = acquire('alerting_v2:cleanup');
+    ready(1);
+    const lease = await second;
+    expect(forkFn).toHaveBeenCalledTimes(2);
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    lease.release();
+  });
+
+  it('initializes and reuses workers from the dispatch snapshot', async () => {
+    const getInitFor = jest.fn();
+    const { supervisor, children, forkFn, ready } = setup({ reuse, getInitFor });
+    supervisor.start();
+    const snapshot: TaskProcessDispatchSnapshot = {
+      protocolVersion: 1,
+      init: {
+        kibanaVersion: '9.9.9',
+        elasticsearch: { hosts: ['http://dispatch-es:9200'] } as never,
+        settings: { contributed: { enabled: true } },
+        parity: [{ kind: 'tools', ids: ['tool1'] }],
+      },
+      featureFlags: { flag: true },
+    };
+    const route = supervisor.getRoute('alerting_v2:cleanup');
+    if (!('acquire' in route)) throw new Error('Expected a supervised route');
+    const first = route.acquire({ snapshot });
+    ready(0);
+    (await first).release({ reusable: true });
+    expect(children[0].child.send).toHaveBeenCalledWith(expect.objectContaining(snapshot.init));
+    expect(getInitFor).not.toHaveBeenCalled();
+    const second = await route.acquire({
+      snapshot: { ...snapshot, featureFlags: { flag: false } },
+    });
+    expect(forkFn).toHaveBeenCalledTimes(1);
+    second.release({ reusable: true });
+    const third = route.acquire({
+      snapshot: {
+        ...snapshot,
+        init: { ...snapshot.init, settings: { contributed: { enabled: false } } },
+      },
+    });
+    ready(1);
+    (await third).release();
+    expect(forkFn).toHaveBeenCalledTimes(2);
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+  });
+
+  it('bounds idle children globally and kills cancelled reused children', async () => {
+    const { supervisor, children, acquire, ready } = setup({
+      reuse: { ...reuse, maxIdleProcesses: 1 },
+    });
+    supervisor.start();
+    const first = acquire('alerting_v2:cleanup');
+    ready(0);
+    const a = await first;
+    const second = acquire('alerting_v2:cleanup');
+    ready(1);
+    const b = await second;
+    a.release({ reusable: true });
+    b.release({ reusable: true });
+    expect(children[1].child.kill).toHaveBeenCalledWith('SIGTERM');
+    const reused = await acquire('alerting_v2:cleanup');
+    reused.release({ force: true });
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(supervisor.getStats().live).toBe(0);
+  });
+
+  it('does not retain failed runs or children that exit while idle', async () => {
+    const { supervisor, children, forkFn, acquire, ready } = setup({ reuse });
+    supervisor.start();
+    const first = acquire('alerting_v2:cleanup');
+    ready(0);
+    (await first).release({ reusable: false });
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    const second = acquire('alerting_v2:cleanup');
+    ready(1);
+    (await second).release({ reusable: true });
+    children[1].child.kill('SIGTERM');
+    const third = acquire('alerting_v2:cleanup');
+    ready(2);
+    (await third).release();
+    expect(forkFn).toHaveBeenCalledTimes(3);
+  });
+
   it('routes the task types the bundles serve and starts no process', () => {
     const { supervisor, forkFn } = setup();
     supervisor.start();
     expect(supervisor.getRoute('alerting_v2:cleanup')).toEqual({ acquire: expect.any(Function) });
     expect(supervisor.getRoute('task_manager:nodes')).toEqual({ acquire: expect.any(Function) });
-    expect(supervisor.getRoute('other:type')).toBeUndefined();
+    expect(supervisor.getRoute('other:type')).toEqual({ acquire: expect.any(Function) });
     expect(forkFn).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unavailable bundle without spawning a process', async () => {
+    const { supervisor, acquire, forkFn } = setup();
+    supervisor.start();
+    await expect(acquire('other:type')).rejects.toMatchObject({ reason: 'not_served' });
+    expect(forkFn).not.toHaveBeenCalled();
+  });
+
+  it('validates required task bundles before accepting work', () => {
+    const { supervisor } = setup();
+    expect(() => supervisor.start(['workflow:run'])).toThrow(
+      'Missing task bundles for workflow:run'
+    );
   });
 
   it('starts the bundle for a run, with the settings sent over the fork channel', async () => {
@@ -173,6 +343,20 @@ describe('TaskProcessSupervisor', () => {
     expect(children[1].child.kill).not.toHaveBeenCalled();
   });
 
+  it('kills a cancelled process immediately without waiting for a timer', async () => {
+    const { supervisor, children, acquire, ready } = setup();
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0);
+    const lease = await pending;
+    lease.release({ force: true });
+    expect(children[0].child.kill).toHaveBeenCalledTimes(1);
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGKILL');
+    lease.release({ force: true });
+    expect(children[0].child.kill).toHaveBeenCalledTimes(1);
+    expect(supervisor.getStats().active).toBe(0);
+  });
+
   it('rejects a run, and stops the process, when it exits before it is ready', async () => {
     const { supervisor, children, acquire } = setup();
     supervisor.start();
@@ -191,7 +375,7 @@ describe('TaskProcessSupervisor', () => {
     await expect(failed).rejects.toThrow(/ready/);
   });
 
-  it('stops routing and terminates the running processes on stop', async () => {
+  it('rejects process acquisition and terminates running processes on stop', async () => {
     const { supervisor, children, acquire, ready } = setup({ drainTimeoutMs: 10 });
     supervisor.start();
     const pending = acquire('alerting_v2:cleanup');
@@ -199,7 +383,7 @@ describe('TaskProcessSupervisor', () => {
     await pending;
     await supervisor.stop();
     expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
-    expect(supervisor.getRoute('alerting_v2:cleanup')).toBeUndefined();
+    await expect(acquire('alerting_v2:cleanup')).rejects.toMatchObject({ reason: 'unavailable' });
   });
 
   it('declines a run past max_concurrent_processes with the capacity reason, and takes it again when one is released', async () => {

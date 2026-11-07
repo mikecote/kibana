@@ -31,7 +31,6 @@ import {
   LEGACY_SYNTHETICS_MONITOR_ENCRYPTED_TYPE_SINGLE,
 } from './synthetics_monitor/legacy_synthetics_monitor';
 import { syntheticsServiceApiKey } from './service_api_key';
-import { syntheticsMonitorSOTypes } from '../../common/types/saved_objects';
 
 export const registerSyntheticsSavedObjects = (
   savedObjectsService: SavedObjectsServiceSetup,
@@ -70,26 +69,12 @@ export const registerSyntheticsSavedObjects = (
   encryptedSavedObjects.registerType(SYNTHETICS_SECRET_CONNECTION_ENCRYPTED_TYPE);
 };
 
-/**
- * The saved object types a task process reads to run the rules of this plugin: the monitors and the
- * private locations. Collected from the code that registers them in Kibana, so both agree. Migrations
- * are built but never run, because Kibana migrates every document before any task runs.
- */
-export const getSyntheticsRuleSavedObjectTypes = (): SavedObjectsType[] => {
-  const savedObjectTypes: SavedObjectsType[] = [];
-  registerSyntheticsSavedObjects(
-    { registerType: (type: SavedObjectsType) => savedObjectTypes.push(type) } as never,
-    {
-      registerType: () => undefined,
-      createMigration: () => () => {
-        throw new Error('A saved object migration is not available in a task process');
-      },
-    } as never
-  );
-  const names = new Set<string>([
-    ...syntheticsMonitorSOTypes,
-    PRIVATE_LOCATION_SAVED_OBJECT_TYPE.name,
-    LEGACY_PRIVATE_LOCATIONS_SAVED_OBJECT_TYPE.name,
-  ]);
-  return savedObjectTypes.filter(({ name }) => names.has(name));
-};
+/** Builds native monitor and private location definitions with real encryption migrations. */
+export const getSyntheticsRuleSavedObjectTypes = (
+  encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+): SavedObjectsType[] => [
+  getLegacySyntheticsMonitorSavedObjectType(encryption),
+  getSyntheticsMonitorConfigSavedObjectType(),
+  PRIVATE_LOCATION_SAVED_OBJECT_TYPE,
+  LEGACY_PRIVATE_LOCATIONS_SAVED_OBJECT_TYPE,
+];

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { HomeServerPluginSetup } from '@kbn/home-plugin/server';
 import type { IRouter } from '@kbn/core/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
@@ -72,6 +73,7 @@ export interface PluginsSetup {
   cases?: CasesServerSetup;
   cps?: CPSServerSetup;
   agentBuilder?: AgentBuilderPluginSetup;
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
 }
 
 export interface PluginsStart {

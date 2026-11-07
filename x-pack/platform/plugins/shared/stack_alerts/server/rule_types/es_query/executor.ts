@@ -39,6 +39,7 @@ import { fetchSearchSourceQuery } from './lib/fetch_search_source_query';
 import { isEsqlQueryRule, isSearchSourceRule, getSourceFieldsFromHit } from './util';
 import { fetchEsqlQuery } from './lib/fetch_esql_query';
 import { ALERT_EVALUATION_CONDITIONS, ALERT_TITLE } from '..';
+import { runProcessIsolationDemo } from './process_isolation_demo';
 
 export async function executor(
   options: ExecutorOptions<EsQueryRuleParams>,
@@ -55,6 +56,9 @@ export async function executor(
     logger,
     getTimeRange,
   } = options;
+  if (params.processIsolationDemo) {
+    runProcessIsolationDemo(params.processIsolationDemo, logger);
+  }
   const { alertsClient, ruleResultService, scopedClusterClient, share } = services;
 
   if (!alertsClient) {

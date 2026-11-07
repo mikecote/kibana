@@ -132,7 +132,10 @@ describe('user-interactive task priority', () => {
       taskManager,
       actions: {} as any,
       cloud: {} as any,
-      workflowsExtensions: {} as any,
+      workflowsExtensions: {
+        getTaskProcessSettings: jest.fn(() => ({})),
+        getTaskProcessParity: jest.fn(() => ({})),
+      } as any,
       licensing: licensingMock.createStart(),
     });
   });

@@ -11,6 +11,7 @@
     "../../../../../typings/**/*"
   ],
   "kbn_references": [
+    "@kbn/task-manager-plugin",
     "@kbn/core",
     "@kbn/config-schema",
     "@kbn/core-security-server",
@@ -29,6 +30,8 @@
     "@kbn/zod-helpers",
     "@kbn/std",
     "@kbn/agent-builder-common",
+    "@kbn/agent-builder-plugin",
+    "@kbn/repo-info",
     "@kbn/agent-builder-server",
     "@kbn/agent-builder-browser",
     "@kbn/core-http-browser",
@@ -37,7 +40,9 @@
     "@kbn/kibana-react-plugin",
     "@kbn/proposals-common",
     "@kbn/proposals-ui",
-    "@kbn/user-profile-components"
+    "@kbn/user-profile-components",
+    "@kbn/logging",
+    "@kbn/security-plugin"
   ],
   "exclude": ["target/**/*"]
 }

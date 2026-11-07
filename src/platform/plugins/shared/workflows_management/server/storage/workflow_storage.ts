@@ -15,7 +15,7 @@ import { workflowSystemIndex } from './indices';
 
 export const workflowIndexName = workflowSystemIndex('workflows');
 
-const storageSettings = {
+export const workflowStorageSettings = {
   name: workflowIndexName,
   schema: {
     properties: {
@@ -101,7 +101,7 @@ export interface WorkflowProperties extends WorkflowAccessSubject {
   updated_at: string;
 }
 
-export type WorkflowStorageSettings = typeof storageSettings;
+export type WorkflowStorageSettings = typeof workflowStorageSettings;
 
 /**
  * The storage adapter generic constraint expects `tags` to be `string`
@@ -127,7 +127,7 @@ export const createStorage = ({
   return new StorageIndexAdapter<WorkflowStorageSettings, WorkflowProperties>(
     esClient,
     logger,
-    storageSettings,
+    workflowStorageSettings,
     readOnly ? { skipMappingUpdatesOnRead: true } : undefined
   );
 };

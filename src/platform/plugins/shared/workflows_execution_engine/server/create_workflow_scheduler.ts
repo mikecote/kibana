@@ -9,7 +9,6 @@
 
 import Boom from '@hapi/boom';
 import isEqual from 'lodash/isEqual';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type {
   CoreStart,
   ElasticsearchClient,
@@ -19,7 +18,6 @@ import type {
   SecurityServiceStart,
 } from '@kbn/core/server';
 import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
-import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import { ExecutionStatus, WorkflowRepository } from '@kbn/workflows';
 import type {
   EsWorkflowExecution,
@@ -47,6 +45,7 @@ import type {
 } from './repositories/data_access_layer';
 import { StepExecutionRepository } from './repositories/step_execution_repository';
 import { WorkflowExecutionRepository } from './repositories/workflow_execution_repository';
+import type { ExecutionIdentityContexts } from './service_account_execution';
 import {
   ensureInheritedBindingCurrent,
   getWorkflowOriginalRequest,
@@ -58,6 +57,7 @@ import { generateExecutionTaskScope } from './utils';
 import type { KibanaUrlSource } from './utils/get_kibana_url';
 import { buildWorkflowRenderContext } from './workflow_context_manager/build_workflow_context';
 import type { WorkflowExecutionForInputRendering } from './workflow_context_manager/build_workflow_context';
+import type { WorkflowCloudInfo, WorkflowRuntimeTaskManager } from './workflow_core_services';
 import { WORKFLOW_RUN_TASK_TYPE } from './workflow_task_manager/types';
 import type { StartWorkflowExecutionParams } from './workflow_task_manager/types';
 import {
@@ -66,18 +66,7 @@ import {
 } from './workflow_task_manager/workflow_task_manager';
 
 /** The task manager methods a scheduler uses; the plugin hands over Task Manager's start contract. */
-export type WorkflowSchedulerTaskManager = Pick<
-  TaskManagerStartContract,
-  | 'get'
-  | 'schedule'
-  | 'bulkSchedule'
-  | 'fetch'
-  | 'removeIfExists'
-  | 'runSoon'
-  | 'bulkGet'
-  | 'bulkRemove'
-  | 'ensureScheduled'
->;
+export type WorkflowSchedulerTaskManager = WorkflowRuntimeTaskManager;
 
 /**
  * What the scheduler needs, explicitly, so the execution engine plugin and a task process build it
@@ -101,9 +90,11 @@ export interface WorkflowSchedulerDeps {
   stepExecutionsDataClient: StepExecutionsDataClient;
   /** What links to an execution are built from (`server.publicBaseUrl`). */
   kibanaUrlSource?: KibanaUrlSource;
-  cloudSetup?: CloudSetup;
+  cloudSetup?: WorkflowCloudInfo;
   /** Resumes the parent of a finished child; only the plugin can, a task process cannot. */
   getInternalResumeWorkflowExecution?: () => InternalResumeWorkflowExecution | undefined;
+  /** Where runs as a service account remember the request that scheduled them. */
+  identityContexts?: ExecutionIdentityContexts;
 }
 
 export interface WorkflowScheduler {
@@ -159,8 +150,9 @@ export const createWorkflowScheduler = ({
   kibanaUrlSource,
   cloudSetup,
   getInternalResumeWorkflowExecution = () => undefined,
+  identityContexts,
 }: WorkflowSchedulerDeps): WorkflowScheduler => {
-  const workflowTaskManager = new WorkflowTaskManager(taskManager);
+  const workflowTaskManager = new WorkflowTaskManager(taskManager, identityContexts);
   const workflowExecutionRepository = new WorkflowExecutionRepository(workflowExecutionsDataClient);
   const stepExecutionRepository = new StepExecutionRepository(stepExecutionsDataClient);
   const workflowRepository = new WorkflowRepository({ esClient, logger });
@@ -245,7 +237,8 @@ export const createWorkflowScheduler = ({
         current,
         request,
         { userProfile, security },
-        { id: workflow.id, spaceId }
+        { id: workflow.id, spaceId },
+        identityContexts
       ))
     ) {
       throw new Error('You do not have permission to execute this workflow.');
@@ -262,23 +255,28 @@ export const createWorkflowScheduler = ({
     workflowExecution: WorkflowExecutionForInputRendering;
     repository: WorkflowExecutionRepository;
   }> => {
-    const request = getWorkflowOriginalRequest(originalRequest);
+    const request = getWorkflowOriginalRequest(originalRequest, identityContexts);
     const spaceId = (context.spaceId as string | undefined) || 'default';
     await ensureExecutionAccess(workflow, spaceId, request);
     await ensureWorkflowEnabled(workflow, spaceId);
-    const inheritedIdentity = resolveInheritedWorkflowIdentity(originalRequest, workflow, {
-      inheritParentIdentity: context.inheritParentIdentity === true,
-      parentWorkflowId:
-        typeof context.parentWorkflowId === 'string' ? context.parentWorkflowId : undefined,
-      parentWorkflowExecutionId:
-        typeof context.parentWorkflowExecutionId === 'string'
-          ? context.parentWorkflowExecutionId
-          : undefined,
-      parentStepId: typeof context.parentStepId === 'string' ? context.parentStepId : undefined,
-      parentStepName:
-        typeof context.parentStepName === 'string' ? context.parentStepName : undefined,
-      spaceId,
-    });
+    const inheritedIdentity = resolveInheritedWorkflowIdentity(
+      originalRequest,
+      workflow,
+      {
+        inheritParentIdentity: context.inheritParentIdentity === true,
+        parentWorkflowId:
+          typeof context.parentWorkflowId === 'string' ? context.parentWorkflowId : undefined,
+        parentWorkflowExecutionId:
+          typeof context.parentWorkflowExecutionId === 'string'
+            ? context.parentWorkflowExecutionId
+            : undefined,
+        parentStepId: typeof context.parentStepId === 'string' ? context.parentStepId : undefined,
+        parentStepName:
+          typeof context.parentStepName === 'string' ? context.parentStepName : undefined,
+        spaceId,
+      },
+      identityContexts
+    );
     if (inheritedIdentity) {
       await ensureInheritedBindingCurrent({ security }, inheritedIdentity, spaceId);
     }
@@ -349,7 +347,7 @@ export const createWorkflowScheduler = ({
   };
 
   const scheduleWorkflow: ScheduleWorkflow = async (workflow, context, originalRequest) => {
-    const request = getWorkflowOriginalRequest(originalRequest);
+    const request = getWorkflowOriginalRequest(originalRequest, identityContexts);
     await checkLicense(licensing);
 
     const { workflowExecution } = await createAndPersistWorkflowExecution(

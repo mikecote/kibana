@@ -52,6 +52,32 @@ describe('AsyncDomainEventBus', () => {
   });
 
   describe('publish / subscribe', () => {
+    it('flushes queued handlers and events published by those handlers', async () => {
+      const pending = Promise.withResolvers<void>();
+      const done = jest.fn();
+      bus.subscribe<FooEvent>('foo', async () => {
+        await pending.promise;
+        bus.publish(barEvent());
+      });
+      bus.subscribe<BarEvent>('bar', done);
+      bus.publish(fooEvent());
+      const flushed = bus.flush();
+      expect(done).not.toHaveBeenCalled();
+      pending.resolve();
+      await flushed;
+      expect(done).toHaveBeenCalledTimes(1);
+    });
+
+    it('drains queued handlers and releases listeners when stopped', async () => {
+      const handler = jest.fn();
+      bus.subscribe<FooEvent>('foo', handler);
+      bus.publish(fooEvent());
+      await bus.stop();
+      expect(handler).toHaveBeenCalledTimes(1);
+      bus.publish(fooEvent());
+      await bus.flush();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
     const reservedTypes = ['error', 'newListener', 'removeListener'] as const;
 
     it('invokes the subscribed handler when a matching event is published', async () => {

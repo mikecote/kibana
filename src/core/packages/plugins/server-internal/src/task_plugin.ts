@@ -27,6 +27,7 @@ export type TaskCoreStart = Pick<
   | 'executionContext'
   | 'savedObjects'
   | 'uiSettings'
+  | 'dataStreams'
   | 'security'
   | 'userProfile'
 > & {
@@ -40,6 +41,7 @@ export type TaskCoreSetup<TPluginsStart extends object = object, TStart = unknow
   | 'logging'
   | 'savedObjects'
   | 'uiSettings'
+  | 'dataStreams'
   | 'security'
   | 'userProfile'
 > & {
@@ -54,6 +56,7 @@ export type TaskCoreSetupServices = Pick<
   | 'logging'
   | 'savedObjects'
   | 'uiSettings'
+  | 'dataStreams'
   | 'security'
   | 'userProfile'
   | 'status'
@@ -66,6 +69,7 @@ export type TaskCoreStartServices = Pick<
   | 'executionContext'
   | 'savedObjects'
   | 'uiSettings'
+  | 'dataStreams'
   | 'security'
   | 'userProfile'
 > & {

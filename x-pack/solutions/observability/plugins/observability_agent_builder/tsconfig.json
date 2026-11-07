@@ -57,6 +57,11 @@
     "@kbn/react-query",
     "@kbn/sse-utils",
     "@kbn/cloud-plugin",
+    "@kbn/core-http-server-mocks",
+    "@kbn/core-logging-server-mocks",
+    "@kbn/task-manager-plugin",
+    "@kbn/repo-info",
+    "@kbn/workflows-execution-engine",
   ],
   "exclude": ["target/**/*"]
 }

@@ -56,10 +56,13 @@ export async function workflowExecutionLoop(params: WorkflowExecutionLoopParams)
         cancelledBy: 'system',
       });
       if (wasWaitingForInput) {
-        emitHitlLifecycle({
-          type: 'canceled',
-          executionId: workflowRuntime.getWorkflowExecution().id,
-        });
+        emitHitlLifecycle(
+          {
+            type: 'canceled',
+            executionId: workflowRuntime.getWorkflowExecution().id,
+          },
+          params.hitlLifecycle
+        );
       }
       persistenceAbortController.abort();
       return;
@@ -72,10 +75,13 @@ export async function workflowExecutionLoop(params: WorkflowExecutionLoopParams)
       status: ExecutionStatus.CANCELLED,
     });
     if (wasWaitingForInput) {
-      emitHitlLifecycle({
-        type: 'canceled',
-        executionId: workflowRuntime.getWorkflowExecution().id,
-      });
+      emitHitlLifecycle(
+        {
+          type: 'canceled',
+          executionId: workflowRuntime.getWorkflowExecution().id,
+        },
+        params.hitlLifecycle
+      );
     }
     // Also abort persistence loop when task is aborted
     persistenceAbortController.abort();

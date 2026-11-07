@@ -27,6 +27,7 @@ import {
 } from '@kbn/core-saved-objects-base-server-internal';
 import { config as i18nConfig } from '@kbn/core-i18n-server-internal';
 import { statusConfig } from '@kbn/core-status-server-internal';
+import { config as dataStreamsConfig } from '@kbn/core-data-streams-server-internal';
 import { uiSettingsConfig } from '@kbn/core-ui-settings-server-internal';
 import { config as pluginsConfig } from '@kbn/core-plugins-server-internal';
 import { elasticApmConfig } from './root/elastic_config';
@@ -53,6 +54,7 @@ export const registerTaskServiceConfig = (configService: ConfigService): void =>
     i18nConfig,
     statusConfig,
     uiSettingsConfig,
+    dataStreamsConfig,
     pluginsConfig,
     elasticApmConfig,
     serverlessConfig,

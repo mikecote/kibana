@@ -8,13 +8,13 @@
 import type { estypes } from '@elastic/elasticsearch';
 
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { MlInfoResponse } from '@kbn/ml-common-types/ml_server_info';
 import type {
   MlCapabilitiesResponse,
   ResolveMlCapabilities,
 } from '@kbn/ml-common-types/capabilities';
+import type { MlCloud } from '../../ml_cloud';
 import type { GetGuards } from '../shared_services';
 import type { MlLicense } from '../../../common/license';
 import type { ServerlessInfo } from '../../types';
@@ -37,7 +37,7 @@ export function getMlSystemProvider(
   getGuards: GetGuards,
   mlLicense: MlLicense,
   getSpaces: (() => Promise<SpacesPluginStart>) | undefined,
-  cloud: CloudSetup | undefined,
+  cloud: MlCloud | undefined,
   resolveMlCapabilities: ResolveMlCapabilities,
   serverless: ServerlessInfo
 ): MlSystemProvider {

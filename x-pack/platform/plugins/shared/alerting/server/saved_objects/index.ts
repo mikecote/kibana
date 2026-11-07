@@ -10,6 +10,7 @@ import type {
   SavedObject,
   SavedObjectsExportTransformContext,
   SavedObjectsServiceSetup,
+  SavedObjectsType,
 } from '@kbn/core/server';
 import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { MigrateFunctionsObject } from '@kbn/kibana-utils-plugin/common';
@@ -261,40 +262,7 @@ export function setupSavedObjects(
     modelVersions: adHocRunParamsModelVersions,
   });
 
-  savedObjects.registerType({
-    name: RULE_TEMPLATE_SAVED_OBJECT_TYPE,
-    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-    hidden: true,
-    namespaceType: 'multiple-isolated',
-    management: {
-      importableAndExportable: true,
-      getTitle(ruleTemplateSavedObject: SavedObject<RawRuleTemplate>) {
-        const { attributes } = ruleTemplateSavedObject;
-        if (attributes.engine === 'v2' && 'rule' in attributes) {
-          const ruleName = (attributes.rule as { metadata?: { name?: string } }).metadata?.name;
-          if (ruleName) {
-            return ruleName;
-          }
-        }
-        if ('name' in attributes && attributes.name) {
-          return attributes.name;
-        }
-        return ruleTemplateSavedObject.id;
-      },
-
-      getInAppUrl: (savedObject: SavedObject<RawRuleTemplate>) => {
-        return {
-          path: `${triggersActionsRoute}${createRuleFromTemplateRoute.replace(
-            ':templateId',
-            encodeURIComponent(savedObject.id)
-          )}`,
-          uiCapabilitiesPath: '',
-        };
-      },
-    },
-    mappings: ruleTemplateMappings,
-    modelVersions: ruleTemplateModelVersions,
-  });
+  savedObjects.registerType(getRuleTemplateSavedObjectType());
 
   // Historical saved object used to track UIAM API key provisioning status. The
   // background provisioning tasks have been removed; this type remains so existing
@@ -355,3 +323,39 @@ export function setupSavedObjects(
     attributesToIncludeInAAD: new Set(AdHocRunAttributesIncludedInAAD),
   });
 }
+
+/** Returns the rule template definition shared by plugin and task-process registration. */
+export const getRuleTemplateSavedObjectType = (): SavedObjectsType => ({
+  name: RULE_TEMPLATE_SAVED_OBJECT_TYPE,
+  indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+  hidden: true,
+  namespaceType: 'multiple-isolated',
+  management: {
+    importableAndExportable: true,
+    getTitle(ruleTemplateSavedObject: SavedObject<RawRuleTemplate>) {
+      const { attributes } = ruleTemplateSavedObject;
+      if (attributes.engine === 'v2' && 'rule' in attributes) {
+        const ruleName = (attributes.rule as { metadata?: { name?: string } }).metadata?.name;
+        if (ruleName) {
+          return ruleName;
+        }
+      }
+      if ('name' in attributes && attributes.name) {
+        return attributes.name;
+      }
+      return ruleTemplateSavedObject.id;
+    },
+
+    getInAppUrl: (savedObject: SavedObject<RawRuleTemplate>) => {
+      return {
+        path: `${triggersActionsRoute}${createRuleFromTemplateRoute.replace(
+          ':templateId',
+          encodeURIComponent(savedObject.id)
+        )}`,
+        uiCapabilitiesPath: '',
+      };
+    },
+  },
+  mappings: ruleTemplateMappings,
+  modelVersions: ruleTemplateModelVersions,
+});

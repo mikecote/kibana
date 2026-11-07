@@ -7,17 +7,31 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
+import type {
+  PluginSetupContract as ActionsPluginSetupContract,
+  PluginStartContract as ActionsPluginStartContract,
+} from '@kbn/actions-plugin/server';
 import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { CoreStart, KibanaRequest } from '@kbn/core/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+import type { PluginSetup as DataPluginSetup } from '@kbn/data-plugin/server';
+import type { DataViewsServerPluginSetup } from '@kbn/data-views-plugin/server';
+import type {
+  EncryptedSavedObjectsPluginSetup,
+  EncryptedSavedObjectsPluginStart,
+} from '@kbn/encrypted-saved-objects-plugin/server';
+import type { IEventLogService } from '@kbn/event-log-plugin/server';
+import type { FieldsMetadataServerSetup } from '@kbn/fields-metadata-plugin/server';
+import type { LicensingPluginSetup, LicensingPluginStart } from '@kbn/licensing-plugin/server';
+import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
+import type { TelemetryPluginSetup } from '@kbn/telemetry-plugin/server';
 import type { UsageApiSetup } from '@kbn/usage-api-plugin/server';
+import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
 import type { BulkScheduleWorkflowResult, WorkflowExecutionEngineModel } from '@kbn/workflows';
 import type {
   WorkflowsExtensionsServerPluginSetup,
@@ -91,15 +105,28 @@ export interface WorkflowsExecutionEnginePluginStart {
 }
 
 export interface WorkflowsExecutionEnginePluginSetupDeps {
+  dataViews?: Pick<DataViewsServerPluginSetup, 'getTaskProcessSettings'>;
+  data?: DataPluginSetup;
   /**
    * Optional: the config a task process reads when it schedules workflows is registered with it,
    * so rule types that schedule workflows can run in a task process.
    */
   alerting?: AlertingServerSetup;
+  fieldsMetadata?: Pick<FieldsMetadataServerSetup, 'getTaskProcessSettings'>;
   taskManager: TaskManagerSetupContract;
+  licensing?: LicensingPluginSetup;
   cloud: CloudSetup;
   usageApi?: UsageApiSetup;
+  /** Optional: the opt-in, labels and endpoint a task process ships analytics events with. */
+  telemetry?: TelemetryPluginSetup;
+  /** Optional: how a task process counts and stores usage counters. */
+  usageCollection?: UsageCollectionSetup;
   workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  /** What the task process of the workflow task types is given: the actions config, the keys to decrypt with, the event log and the security settings. */
+  actions?: ActionsPluginSetupContract;
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginSetup;
+  eventLog?: IEventLogService;
+  security?: SecurityPluginSetup;
 }
 
 export interface WorkflowsExecutionEnginePluginStartDeps {
@@ -109,6 +136,7 @@ export interface WorkflowsExecutionEnginePluginStartDeps {
   workflowsExtensions: WorkflowsExtensionsServerPluginStart;
   licensing: LicensingPluginStart;
   spaces?: SpacesPluginStart;
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginStart;
 }
 
 export type ExecuteWorkflow = (

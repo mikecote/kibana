@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { renderAlertNarrativeStepDefinition } from './render_alert_narrative_step';
 import { buildAlertEntityGraphStepDefinition } from './build_alert_entity_graph_step';
 import { setAlertStatusStepDefinition } from './set_alert_status_step/set_alert_status_step';
@@ -30,9 +30,7 @@ import { getAlertEntitiesStepDefinition } from './get_alert_entities_step';
 /**
  * Registers all security workflow steps with the workflowsExtensions plugin.
  */
-export const registerWorkflowSteps = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup
-): void => {
+export const registerWorkflowSteps = (workflowsExtensions: WorkflowStepsRegistry): void => {
   workflowsExtensions.registerStepDefinition(renderAlertNarrativeStepDefinition);
   workflowsExtensions.registerStepDefinition(buildAlertEntityGraphStepDefinition);
   workflowsExtensions.registerStepDefinition(setAlertStatusStepDefinition);

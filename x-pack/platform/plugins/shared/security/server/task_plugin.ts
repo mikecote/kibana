@@ -15,7 +15,14 @@ import type {
   TaskPluginInitializer,
   TaskStaticPlugin,
 } from '@kbn/core-plugins-server-internal';
-import type { CoreSecurityDelegateContract } from '@kbn/core-security-server';
+import type {
+  CoreSecurityDelegateContract,
+  CoreSecurityDelegateServiceAccounts,
+} from '@kbn/core-security-server';
+import type {
+  EncryptedSavedObjectsPluginSetup,
+  EncryptedSavedObjectsPluginStart,
+} from '@kbn/encrypted-saved-objects-plugin/server';
 import { License } from '@kbn/licensing-plugin/common/license';
 import type { ILicense } from '@kbn/licensing-types';
 import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
@@ -24,11 +31,21 @@ import { getTaskProcessContext } from '@kbn/task-manager-plugin/server/task_proc
 import { reviveSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 
 import { AuditService } from './audit/audit_service';
-import { buildSecurityApi } from './build_delegate_apis';
+import { buildSecurityApi, buildUserProfileApi } from './build_delegate_apis';
 import type { ConfigType, UiamConfigType } from './config';
 import type { RunTimeSecurity } from './run_time_security';
 import { createRunTimeSecurity } from './run_time_security';
 import { setupSavedObjects } from './saved_objects';
+import type { CloudProjectContext, ServiceAccountsServiceStart } from './service_accounts';
+import {
+  registerServiceAccountCredentialSavedObjectType,
+  registerWorkloadBindingSavedObjectType,
+  ServiceAccountsService,
+} from './service_accounts';
+import type { UiamTlsMaterial } from './uiam';
+import { readUiamTlsMaterial } from './uiam';
+import type { UserProfileServiceStartInternal } from './user_profile/user_profile_service';
+import { UserProfileService } from './user_profile/user_profile_service';
 import type { AuthenticatedUser, SecurityLicense } from '../common';
 import { SecurityLicenseService } from '../common/licensing/license_service';
 
@@ -39,9 +56,18 @@ import { SecurityLicenseService } from '../common/licensing/license_service';
 export interface SecurityTaskProcessSettings {
   /** The license as Kibana knows it, so that the process checks runs against the same one. */
   license?: ReturnType<License['toJSON']>;
+  /** The UIAM config without the paths of its TLS files: a process may not have them. */
   uiam?: UiamConfigType;
+  /** The contents of the files `xpack.security.uiam.ssl` names, so that a remote process can connect. */
+  uiamTls?: UiamTlsMaterial;
   audit: ConfigType['audit'];
-  serviceAccounts: { enabled: boolean };
+  fipsMode: ConfigType['fipsMode'];
+  serviceAccounts: {
+    enabled: boolean;
+    requestLifetime: ConfigType['serviceAccounts']['requestLifetime'];
+  };
+  /** The project the Kibana is of, which the UIAM service accounts are created in (serverless). */
+  cloudProjectContext?: CloudProjectContext;
   /** The application the Kibana privileges are registered under in Elasticsearch. */
   applicationName: string;
   kibanaServerResourceURL: string;
@@ -58,17 +84,27 @@ export const getTaskProcessSettings = ({
   applicationName,
   kibanaServerResourceURL,
   elasticsearchUrl,
+  cloudProjectContext,
 }: {
   license?: ILicense;
-  config: Pick<ConfigType, 'uiam' | 'audit' | 'serviceAccounts'>;
+  config: Pick<ConfigType, 'uiam' | 'audit' | 'serviceAccounts' | 'fipsMode'>;
   applicationName: string;
   kibanaServerResourceURL: string;
   elasticsearchUrl?: string;
+  cloudProjectContext?: CloudProjectContext;
 }): SecurityTaskProcessSettings => ({
   license: license ? (license as License).toJSON() : undefined,
-  uiam: config.uiam,
+  uiam: config.uiam?.enabled
+    ? { ...config.uiam, ssl: { verificationMode: config.uiam.ssl.verificationMode } }
+    : config.uiam,
+  uiamTls: config.uiam?.enabled ? readUiamTlsMaterial(config.uiam.ssl) : undefined,
   audit: config.audit,
-  serviceAccounts: { enabled: config.serviceAccounts.enabled },
+  fipsMode: config.fipsMode,
+  serviceAccounts: {
+    enabled: config.serviceAccounts.enabled,
+    requestLifetime: config.serviceAccounts.requestLifetime,
+  },
+  cloudProjectContext,
   applicationName,
   kibanaServerResourceURL,
   elasticsearchUrl,
@@ -76,8 +112,21 @@ export const getTaskProcessSettings = ({
 
 /** What the security task plugin returns from `start`, as `host.plugins.security`. */
 export type SecurityTaskPluginStart = Pick<RunTimeSecurity, 'authc' | 'authz'> & {
+  license: SecurityLicense;
+  userProfile: UserProfileServiceStartInternal;
   audit: AuditServiceSetup;
+  /** The service accounts of the plugin, when they are enabled and the process can serve them. */
+  serviceAccounts: ServiceAccountsServiceStart | null;
 };
+
+interface SetupDeps {
+  /** Optional: only a module that declares encrypted saved objects has it. Service accounts need it. */
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginSetup;
+}
+
+interface StartDeps {
+  encryptedSavedObjects?: EncryptedSavedObjectsPluginStart;
+}
 
 // Core reads `xpack.security.uiam` from the raw config, to authenticate its Elasticsearch client with
 // UIAM. The rest of the settings reach the plugin through the task process context.
@@ -92,7 +141,9 @@ type SpaceId = ReturnType<SpacesPluginSetup['spacesService']['getSpaceId']>;
 
 const configSchema = schema.object({ uiam: schema.maybe(uiamSchema) }, { unknowns: 'allow' });
 
-const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (initializerContext) => {
+const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, StartDeps> = async (
+  initializerContext
+) => {
   const settings = reviveSettings(
     getTaskProcessContext().init.settings?.security ?? null
   ) as SecurityTaskProcessSettings | null;
@@ -109,18 +160,27 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (init
   let license: SecurityLicense | undefined;
   let auditSetup: AuditServiceSetup | undefined;
   let delegate: CoreSecurityDelegateContract | undefined;
-  // A process has no session: the user is what the run's fake request was enriched with, which the
-  // delegate reads the same way, so this must not go back through the delegate.
-  const getCurrentUser = (request: KibanaRequest) =>
+  // The delegate adds trusted task identity over this base authentication state without recursion.
+  const getUnenrichedUser = (request: KibanaRequest) =>
     (request as { auth?: { credentials?: AuthenticatedUser } }).auth?.credentials ?? null;
+  const getCurrentUser = (request: KibanaRequest): AuthenticatedUser | null => {
+    if (!delegate) throw new Error('The security task delegate has not initialized');
+    return delegate.authc.getCurrentUser(request);
+  };
   let runTime: RunTimeSecurity | undefined;
+  let workloadTypes: CoreSecurityDelegateServiceAccounts | undefined;
+  let serviceAccounts: ServiceAccountsServiceStart | null = null;
+  let userProfile: UserProfileServiceStartInternal | undefined;
+  let canEncrypt = false;
+  // Whether this process serves service accounts, which Core reports through the delegate.
+  let serviceAccountsAvailable = false;
   const getRunTime = () => {
     if (!runTime) throw new Error('The security services are not available before Core starts');
     return runTime;
   };
 
   return {
-    setup(core: CoreSetup) {
+    setup(core: CoreSetup, deps: SetupDeps) {
       // The license Kibana had when it started the process, which is what it checked the run against.
       const rawLicense = settings.license
         ? License.fromJSON(settings.license)
@@ -142,14 +202,45 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (init
       });
 
       delegate = buildSecurityApi({
-        getAuthc: () => getRunTime().authc,
+        getAuthc: () => ({
+          apiKeys: getRunTime().authc.apiKeys,
+          getCurrentUser: getUnenrichedUser,
+        }),
         getSession: () => ({ getSID: async () => undefined }),
-        getServiceAccounts: () => null,
+        getServiceAccounts: () => serviceAccounts,
         audit,
-        config,
+        config: {
+          uiam: config.uiam,
+          serviceAccounts: {
+            get enabled() {
+              return serviceAccountsAvailable;
+            },
+          },
+        },
         logger,
       });
-      core.security.registerSecurityDelegate(delegate);
+      ({ serviceAccounts: workloadTypes } = core.security.registerSecurityDelegate(delegate));
+      core.userProfile.registerUserProfileDelegate(
+        buildUserProfileApi({
+          getUserProfile: () => {
+            if (!userProfile) throw new Error('The task user profile service has not started');
+            return userProfile;
+          },
+        })
+      );
+
+      // The two hidden types service accounts keep their bindings and credentials in, registered by
+      // the plugin's own functions as in Kibana. Without the encrypted saved objects plugin (a module
+      // that declares no encrypted types) service accounts are not offered.
+      if (deps.encryptedSavedObjects) {
+        canEncrypt = deps.encryptedSavedObjects.canEncrypt;
+        registerWorkloadBindingSavedObjectType(core.savedObjects, deps.encryptedSavedObjects);
+        registerServiceAccountCredentialSavedObjectType(
+          core.savedObjects,
+          deps.encryptedSavedObjects
+        );
+        serviceAccountsAvailable = settings.serviceAccounts.enabled;
+      }
       auditSetup = audit;
 
       // What the plugin registers with saved objects: a scoped client reads and writes with Kibana's
@@ -172,11 +263,12 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (init
       });
     },
 
-    start(core) {
+    start(core, deps) {
+      if (!license || !auditSetup) throw new Error('Security task setup has not completed');
       runTime = createRunTimeSecurity({
         logger,
         clusterClient: core.elasticsearch.client,
-        license: license!,
+        license,
         config,
         applicationName: settings.applicationName,
         buildFlavor,
@@ -184,12 +276,45 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart> = async (init
           kibanaServerResourceURL: settings.kibanaServerResourceURL,
           elasticsearchUrl: settings.elasticsearchUrl,
           kibanaVersion,
+          tls: settings.uiamTls,
         },
-        audit: auditSetup!,
+        audit: auditSetup,
         getCurrentUser,
       });
       const { authc, authz, audit } = runTime;
-      return { authc, authz, audit };
+      const profiles = new UserProfileService(logger.get('user-profile'));
+      profiles.setup({ authz, license });
+      const profileClient = profiles.start({
+        clusterClient: core.elasticsearch.client,
+        getCurrentUser,
+      });
+      userProfile = profileClient;
+
+      if (settings.serviceAccounts.enabled && deps.encryptedSavedObjects && workloadTypes) {
+        serviceAccounts = new ServiceAccountsService(logger.get('service-accounts')).start({
+          config: { serviceAccounts: settings.serviceAccounts },
+          isServerless: buildFlavor === 'serverless',
+          license,
+          uiam: runTime.uiam,
+          checkPrivilegesWithRequest: authz.checkPrivilegesWithRequest,
+          audit,
+          cloudProjectContext: settings.cloudProjectContext,
+          clusterClient: core.elasticsearch.client,
+          savedObjects: core.savedObjects,
+          encryptedSavedObjects: deps.encryptedSavedObjects,
+          canEncrypt,
+          getCurrentUser,
+          // Only a request that binds a workload reads the profile, which is Kibana's to serve.
+          getCurrentUserProfileId: (request) => profileClient.getCurrentProfileId({ request }),
+          getSpaceId: (request) => (request as { spaceId?: string }).spaceId ?? 'default',
+          workloadTypes,
+        });
+      } else if (settings.serviceAccounts.enabled) {
+        logger.debug(
+          'Service accounts are not available: the process has no encrypted saved objects'
+        );
+      }
+      return { authc, authz, audit, serviceAccounts, userProfile, license };
     },
   };
 };
@@ -206,7 +331,7 @@ export const createSecurityTaskPlugin = (kibanaVersion: string): TaskStaticPlugi
     type: PluginType.standard,
     configPath: ['xpack', 'security'],
     requiredPlugins: [],
-    optionalPlugins: [],
+    optionalPlugins: ['encryptedSavedObjects'],
     requiredBundles: [],
     runtimePluginDependencies: [],
     server: true,

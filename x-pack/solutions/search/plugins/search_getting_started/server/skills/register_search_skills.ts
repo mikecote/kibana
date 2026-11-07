@@ -7,20 +7,15 @@
 
 import type { Logger } from '@kbn/core/server';
 import { skills } from '@kbn/search-agent';
-import type { SearchGettingStartedSetupDependencies } from '../types';
+import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 
 export const registerSearchSkills = ({
-  plugins,
+  agentBuilder,
   logger,
 }: {
-  plugins: SearchGettingStartedSetupDependencies;
+  agentBuilder: AgentBuilderPluginSetup;
   logger: Logger;
 }) => {
-  if (!plugins.agentBuilder) {
-    logger.debug('Agent Builder plugin is not available, skipping search skills registration');
-    return;
-  }
-  const { agentBuilder } = plugins;
   for (const skill of skills) {
     const id = `search.${skill.id}`;
     agentBuilder.skills.register({

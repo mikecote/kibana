@@ -8,7 +8,15 @@
  */
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
-import type { WorkflowsExtensionsServerPluginStart } from './types';
+import type { WorkflowsClient } from '@kbn/workflows/server/types';
+
+/**
+ * What the forwarder reads of the workflows extensions: the start contract in Kibana, or an adapter
+ * over the engine's runtime in a task process.
+ */
+export interface WorkflowTriggerEmitterSource {
+  getClient(request: KibanaRequest): Promise<Pick<WorkflowsClient, 'emitEvent'>>;
+}
 
 /**
  * Creates a forwarder function that emits workflow trigger events.
@@ -16,7 +24,7 @@ import type { WorkflowsExtensionsServerPluginStart } from './types';
  * failure must never break the calling mutation.
  */
 export const createWorkflowTriggerForwarder = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart,
+  workflowsExtensions: WorkflowTriggerEmitterSource,
   logger: Logger
 ) => {
   return async (eventType: string, payload: unknown, request: KibanaRequest): Promise<void> => {

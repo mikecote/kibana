@@ -21,7 +21,11 @@ describe('toTaskDefinition', () => {
         type: 'test:one',
         title: 'One',
         timeout: '1m',
+        cancelGracePeriodMs: 5000,
         savedObjectTypes: [],
+        createSavedObjectTypes: () => [],
+        registerUiSettings: () => {},
+        dataStreams: [],
         createTaskRunner: () => ({ run: async () => undefined }),
       }),
       async () => host()

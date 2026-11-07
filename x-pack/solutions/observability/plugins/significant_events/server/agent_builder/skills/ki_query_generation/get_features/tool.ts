@@ -16,6 +16,7 @@ import {
   toFeatureForLlmContext,
 } from '@kbn/nightshift-ai';
 import { z, lazySchema } from '@kbn/zod/v4';
+import type { SignificantEventsAuthorizationServices } from '../../../../run_services/authorization';
 import type { GetScopedClients } from '../../../../routes/types';
 import {
   loadSourceCatalog,
@@ -23,7 +24,6 @@ import {
   toSourceRef,
 } from '../../../utils/resolve_source_slugs';
 import { assertCanReadSignificantEvents } from '../../../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../../../types';
 
 export const SIGNIFICANT_EVENTS_GET_FEATURES_TOOL_ID = 'platform.sig_events.ki_features_get';
 
@@ -61,7 +61,7 @@ export const createGetFeaturesTool = ({
   logger,
 }: {
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   logger: Logger;
 }): BuiltinSkillBoundedTool<typeof getFeaturesSchema> => {
   return {

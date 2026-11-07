@@ -8,6 +8,7 @@ import { isEmpty } from 'lodash';
 import type { SearchRequest as ESSearchRequest } from '@elastic/elasticsearch/lib/api/types';
 import type { InferSearchResponseOf } from '@kbn/es-types';
 import type { ParsedTechnicalFields } from '@kbn/rule-registry-plugin/common';
+import type { WorkflowRuleRegistryServices } from '@kbn/rule-registry-plugin/server/task_types/create_workflow_alerts_client';
 import type { KibanaRequest } from '@kbn/core/server';
 import { OBSERVABILITY_RULE_TYPE_IDS } from '@kbn/rule-data-utils';
 import type { estypes } from '@elastic/elasticsearch';
@@ -31,6 +32,17 @@ export async function getInfraAlertsClient({
   request: KibanaRequest;
 }) {
   const [, { ruleRegistry }] = await libs.getStartServices();
+  return createInfraAlertsClient({ ruleRegistry, request });
+}
+
+/** Creates the native authorized Infrastructure alert search client for a request. */
+export async function createInfraAlertsClient({
+  ruleRegistry,
+  request,
+}: {
+  ruleRegistry: WorkflowRuleRegistryServices;
+  request: KibanaRequest;
+}) {
   const alertsClient = await ruleRegistry.getRacClientWithRequest(request);
   const infraAlertsIndices = await alertsClient.getAuthorizedAlertsIndices(
     OBSERVABILITY_RULE_TYPE_IDS

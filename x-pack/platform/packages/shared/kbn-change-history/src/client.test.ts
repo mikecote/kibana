@@ -17,6 +17,7 @@ import type { ObjectChange } from './types';
 jest.mock('@kbn/data-streams', () => ({
   DataStreamClient: {
     initialize: jest.fn(),
+    fromDefinition: jest.fn(),
   },
 }));
 
@@ -83,6 +84,23 @@ describe('ChangeHistoryClient', () => {
   });
 
   describe('initialize', () => {
+    it('opens an installed data stream in a worker without installing assets', async () => {
+      const esClient = elasticsearchServiceMock.createElasticsearchClient();
+      DataStreamClientMock.fromDefinition.mockReturnValue(dataStreamClientMock as never);
+      const client = new ChangeHistoryClient({
+        module: 'workflows',
+        dataset: 'definitions',
+        kibanaVersion: '9.0.0',
+        logger,
+      });
+      await client.initialize(esClient, { install: false });
+      expect(client.isInitialized()).toBe(true);
+      expect(DataStreamClientMock.initialize).not.toHaveBeenCalled();
+      expect(DataStreamClientMock.fromDefinition).toHaveBeenCalledWith(
+        expect.objectContaining({ elasticsearchClient: esClient })
+      );
+    });
+
     it('initializes the data stream with DSL lifecycle enabled and infinite retention', async () => {
       const esClient = elasticsearchServiceMock.createElasticsearchClient();
 

@@ -16,24 +16,24 @@ const setup = () => {
     registerAiIndexResolver: jest.fn(),
   } as any;
   const uiSettings = { registerGlobal } as any;
-  const coreSetup = { getStartServices: jest.fn() } as any;
-  return { coreSetup, uiSettings, agents, registerGlobal, register };
+  const getCoreStart = jest.fn();
+  return { getCoreStart, uiSettings, agents, registerGlobal, register };
 };
 
 describe('registerDeductiveAgent', () => {
   it('registers nothing when the deployment has not opted in', () => {
-    const { coreSetup, uiSettings, agents, registerGlobal, register } = setup();
+    const { getCoreStart, uiSettings, agents, registerGlobal, register } = setup();
 
-    registerDeductiveAgent({ coreSetup, uiSettings, agents, register: false });
+    registerDeductiveAgent({ getCoreStart, uiSettings, agents, register: false });
 
     expect(registerGlobal).not.toHaveBeenCalled();
     expect(register).not.toHaveBeenCalled();
   });
 
   it('registers the agent and its global settings when opted in', () => {
-    const { coreSetup, uiSettings, agents, registerGlobal, register } = setup();
+    const { getCoreStart, uiSettings, agents, registerGlobal, register } = setup();
 
-    registerDeductiveAgent({ coreSetup, uiSettings, agents, register: true });
+    registerDeductiveAgent({ getCoreStart, uiSettings, agents, register: true });
 
     expect(registerGlobal).toHaveBeenCalledWith(
       expect.objectContaining({

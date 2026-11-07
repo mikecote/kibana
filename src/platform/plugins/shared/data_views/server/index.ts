@@ -10,6 +10,8 @@
 import type { TypeOf } from '@kbn/config-schema';
 import { schema } from '@kbn/config-schema';
 import type { PluginConfigDescriptor } from '@kbn/core/server';
+export { DATA_VIEWS_TASK_PROCESS_SETTINGS_ID } from './task_types/data_views_task_process_settings';
+export type { DataViewsTaskProcessSettings } from './task_types/data_views_task_process_settings';
 export { getFieldByName, findIndexPatternById } from './utils';
 export type { FieldDescriptor, RollupIndexCapability } from './fetcher';
 export { IndexPatternsFetcher, getCapabilitiesForRollupIndices } from './fetcher';
@@ -23,7 +25,12 @@ export type {
 import type { PluginInitializerContext } from '@kbn/core/server';
 import type { DataViewsServerPlugin } from './plugin';
 import type { DataViewsServerPluginSetup, DataViewsServerPluginStart } from './types';
-export type { dataViewsServiceFactory } from './data_views_service_factory';
+export { dataViewsServiceFactory } from './data_views_service_factory';
+export type { DataViewsCapabilities } from './data_views_service_factory';
+export { dataViewSavedObjectType } from './saved_objects';
+export { dataViewServiceUiSettings } from './ui_settings';
+export { registerDataViewsUiSettings } from './register_ui_settings';
+export { capabilitiesProvider as getDataViewsDefaultCapabilities } from './capabilities_provider';
 
 /**
  * Static code to be shared externally

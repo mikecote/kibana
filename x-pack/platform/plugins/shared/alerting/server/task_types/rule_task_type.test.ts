@@ -209,9 +209,13 @@ describe('createRuleTaskType', () => {
       });
     });
 
-    it('declares what a rule run needs from the host', () => {
-      const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
+    it('declares required and optional plugin settings separately', () => {
+      const taskType = createRuleTaskType(
+        { ruleTypeId: 'test.rule', getRuleType },
+        { optionalSettings: ['fleetPackageMetadata'] }
+      );
       expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
+      expect(taskType.optionalSettings).toEqual(['fleetPackageMetadata']);
       // The privileges of a connector are checked when a run enqueues it, as in Kibana.
       expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',

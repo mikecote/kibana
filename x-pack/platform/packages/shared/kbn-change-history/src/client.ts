@@ -50,6 +50,8 @@ type ChangeHistoryDataStreamClient = DataStreamClient<
 >;
 
 export interface ChangeHistoryClientInitializeOptions {
+  /** False in workers, which use the data stream already installed by Kibana. */
+  install?: boolean;
   /** When supplied, `getHistory` and `getEvent` resolve `user.full_name` and `user.email` at read time; lookup failures are swallowed. */
   userProfileService?: UserProfileServiceStart;
 }
@@ -153,6 +155,14 @@ export class ChangeHistoryClient implements IChangeHistoryClient {
           lifecycle: { enabled: true },
         },
       };
+
+    if (opts?.install === false) {
+      this.client = DataStreamClient.fromDefinition({
+        dataStream: definition,
+        elasticsearchClient,
+      });
+      return;
+    }
 
     // Enroll the data stream in DSL lifecycle with infinite retention by default.
     // Cluster admins can add retention later via Index Management (stateful and serverless).

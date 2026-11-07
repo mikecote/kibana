@@ -11,9 +11,13 @@ import { v4 as generateUuid } from 'uuid';
 import type { Logger } from '@kbn/core/server';
 import type { ConcreteTaskInstance } from '@kbn/task-manager-plugin/server';
 import type { EsWorkflowExecution, WorkflowExecutionEngineModel } from '@kbn/workflows';
-import { ExecutionStatus, pickManagedWorkflowFields } from '@kbn/workflows';
+import { ExecutionStatus, isTerminalStatus, pickManagedWorkflowFields } from '@kbn/workflows';
 
-import { markExecutionFailedTaskRecovery, taskRecoveryMessages } from '../lib/task_recovery';
+import {
+  markExecutionFailedTaskRecovery,
+  TASK_RECOVERY_ERROR_TYPE,
+  taskRecoveryMessages,
+} from '../lib/task_recovery';
 import type { StepExecutionRepository } from '../repositories/step_execution_repository';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 
@@ -90,7 +94,7 @@ export async function checkAndSkipIfExistingScheduledExecution(
   );
 
   if (runningExecutions.length > 0) {
-    const existingExecution = runningExecutions[0]?._source;
+    let existingExecution = runningExecutions[0]?._source;
     if (!existingExecution) {
       return { skipped: false };
     }
@@ -157,20 +161,30 @@ export async function checkAndSkipIfExistingScheduledExecution(
             `(taskRunAt: ${executionTaskRunAt}); not treating as abandoned orphan`
         );
       } else {
-        logger.warn(
-          `Found abandoned pending execution ${existingExecution.id} from a prior scheduled run ` +
-            `(taskRunAt: ${executionTaskRunAt}, current taskRunAt: ${currentTaskRunAt}) - marking as failed and proceeding`
-        );
-        await markExecutionFailedTaskRecovery(
-          workflowExecutionRepository,
-          stepExecutionRepository,
+        const error = {
+          type: TASK_RECOVERY_ERROR_TYPE,
+          message: taskRecoveryMessages.scheduledAbandonedPending,
+        };
+        const failed = await workflowExecutionRepository.tryFailPendingWorkflowExecution({
+          executionId: existingExecution.id,
+          spaceId,
+          error,
+        });
+        if (failed) {
+          logger.warn(
+            `Found abandoned pending execution ${existingExecution.id} from a prior scheduled run ` +
+              `(taskRunAt: ${executionTaskRunAt}, current taskRunAt: ${currentTaskRunAt}) - marked as failed and proceeding`
+          );
+          await stepExecutionRepository.markNonTerminalStepsFailed(existingExecution.id, error);
+          return { skipped: false };
+        }
+        // Search can still see PENDING after a fast execution finished before the next refresh.
+        const current = await workflowExecutionRepository.getWorkflowExecutionById(
           existingExecution.id,
-          {
-            message: taskRecoveryMessages.scheduledAbandonedPending,
-          },
-          { refresh: 'wait_for' }
+          spaceId
         );
-        return { skipped: false };
+        if (!current || isTerminalStatus(current.status)) return { skipped: false };
+        existingExecution = current;
       }
     }
 

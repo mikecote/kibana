@@ -160,32 +160,32 @@ const getSubActionMetadata = (
 /**
  * Get registered step definitions from workflowExtensions, converted to BaseConnectorContract
  */
-function getRegisteredStepDefinitions(): BaseConnectorContract[] {
-  return stepSchemas
-    .getAllRegisteredStepDefinitions()
-    .map((stepDefinition): BaseConnectorContract => {
-      // Match the convention used by every other connector source: summary is the
-      // short label, description is the longer behavioral explanation.
-      const definition = {
-        type: stepDefinition.id,
-        paramsSchema: stepDefinition.inputSchema,
-        outputSchema: stepDefinition.outputSchema,
-        configSchema: stepDefinition.configSchema,
-        deprecation: stepDefinition.deprecation,
-        summary: stepDefinition.label,
-        description: stepDefinition.description,
-        documentation: stepDefinition.documentation?.url,
-        examples: stepDefinition.documentation?.examples
-          ? { snippet: stepDefinition.documentation.examples.join('\n') }
-          : undefined,
-      };
+function getRegisteredStepDefinitions(
+  definitions = stepSchemas.getAllRegisteredStepDefinitions()
+): BaseConnectorContract[] {
+  return definitions.map((stepDefinition): BaseConnectorContract => {
+    // Match the convention used by every other connector source: summary is the
+    // short label, description is the longer behavioral explanation.
+    const definition = {
+      type: stepDefinition.id,
+      paramsSchema: stepDefinition.inputSchema,
+      outputSchema: stepDefinition.outputSchema,
+      configSchema: stepDefinition.configSchema,
+      deprecation: stepDefinition.deprecation,
+      summary: stepDefinition.label,
+      description: stepDefinition.description,
+      documentation: stepDefinition.documentation?.url,
+      examples: stepDefinition.documentation?.examples
+        ? { snippet: stepDefinition.documentation.examples.join('\n') }
+        : undefined,
+    };
 
-      // Editor handlers are the one field the server definition does not carry.
-      if ('editorHandlers' in stepDefinition) {
-        return { ...definition, editorHandlers: stepDefinition.editorHandlers };
-      }
-      return definition;
-    });
+    // Editor handlers are the one field the server definition does not carry.
+    if ('editorHandlers' in stepDefinition) {
+      return { ...definition, editorHandlers: stepDefinition.editorHandlers };
+    }
+    return definition;
+  });
 }
 
 /**
@@ -335,9 +335,17 @@ export function getAllConnectorsInternal(): ConnectorContractUnion[] {
  * Internal implementation - use exported getAllConnectorsWithDynamic() instead
  */
 function getAllConnectorsWithDynamicInternal(
-  dynamicConnectorTypes?: Record<string, ConnectorTypeInfo>
+  dynamicConnectorTypes?: Record<string, ConnectorTypeInfo>,
+  registeredSteps?: ReturnType<typeof stepSchemas.getAllRegisteredStepDefinitions>
 ): ConnectorContractUnion[] {
-  const stepDefinitions = getAllConnectorsInternal();
+  const stepDefinitions = registeredSteps
+    ? [
+        ...getConnectorSchemas().staticConnectors,
+        ...getElasticsearchConnectors(),
+        ...getKibanaConnectors(),
+        ...getRegisteredStepDefinitions(registeredSteps),
+      ]
+    : getAllConnectorsInternal();
 
   // Graceful fallback if dynamic connectors are not available
   if (!dynamicConnectorTypes || Object.keys(dynamicConnectorTypes).length === 0) {
@@ -484,9 +492,10 @@ export function isDeprecatedStepType(stepType: string): boolean {
 }
 
 export function getAllConnectorsWithDynamic(
-  dynamicConnectorTypes?: Record<string, ConnectorTypeInfo>
+  dynamicConnectorTypes?: Record<string, ConnectorTypeInfo>,
+  registeredSteps?: ReturnType<typeof stepSchemas.getAllRegisteredStepDefinitions>
 ): ConnectorContractUnion[] {
-  return getAllConnectorsWithDynamicInternal(dynamicConnectorTypes);
+  return getAllConnectorsWithDynamicInternal(dynamicConnectorTypes, registeredSteps);
 }
 
 export const getWorkflowZodSchema = (

@@ -15,7 +15,7 @@ import {
   deleteRule,
   getChildLines,
   getExecutions,
-  getFallbacks,
+  getDispatchFailures,
   uniqueName,
   waitFor,
 } from '../../../scout_task_processes/api/fixtures';
@@ -59,7 +59,7 @@ apiTest.describe(
           'spawn_timeout',
           'unavailable',
         ]) {
-          expect(getFallbacks(TASK_TYPE, reason, since)).toHaveLength(0);
+          expect(getDispatchFailures(TASK_TYPE, reason, since)).toHaveLength(0);
         }
       }
     );

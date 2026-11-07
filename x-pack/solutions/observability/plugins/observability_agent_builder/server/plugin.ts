@@ -13,6 +13,11 @@ import type {
   Logger,
 } from '@kbn/core/server';
 import { registerTools } from './tools/register_tools';
+import {
+  OBSERVABILITY_AGENT_BUILDER_TASK_PROCESS_SETTINGS_ID,
+  createObservabilityAgentBuilderRegistrationState,
+  getObservabilityAgentBuilderTaskProcessSettings,
+} from './task_types/observability_agent_builder_task_process_settings';
 import { registerAttachments } from './attachments/register_attachments';
 import { registerSkills } from './skills/register_skills';
 import type {
@@ -38,6 +43,9 @@ export class ObservabilityAgentBuilderPlugin
     >
 {
   private readonly logger: Logger;
+  private readonly taskProcessRegistrations = createObservabilityAgentBuilderRegistrationState();
+  private mlEnabled = false;
+  private spacesEnabled = false;
   private readonly dataRegistry: ObservabilityAgentBuilderDataRegistry;
 
   constructor(initContext: PluginInitializerContext) {
@@ -52,13 +60,29 @@ export class ObservabilityAgentBuilderPlugin
     >,
     plugins: ObservabilityAgentBuilderPluginSetupDependencies
   ): ObservabilityAgentBuilderPluginSetup {
-    registerSkills({ plugins, logger: this.logger });
+    this.mlEnabled = Boolean(plugins.ml);
+    plugins.agentBuilder.taskProcess?.registerSettings(
+      OBSERVABILITY_AGENT_BUILDER_TASK_PROCESS_SETTINGS_ID,
+      () =>
+        getObservabilityAgentBuilderTaskProcessSettings({
+          registrations: this.taskProcessRegistrations,
+          dataProviders: this.dataRegistry.getRegistrations(),
+          mlEnabled: this.mlEnabled,
+          spacesEnabled: this.spacesEnabled,
+        })
+    );
+    registerSkills({
+      plugins,
+      logger: this.logger,
+      onRegistered: (id) => this.taskProcessRegistrations.skillIds.add(id),
+    });
 
     registerTools({
       core,
       plugins,
       dataRegistry: this.dataRegistry,
       logger: this.logger,
+      onRegistered: (id) => this.taskProcessRegistrations.toolIds.add(id),
     }).catch((error) => {
       this.logger.error(`Error registering observability tools: ${error}`);
     });
@@ -68,6 +92,7 @@ export class ObservabilityAgentBuilderPlugin
       plugins,
       logger: this.logger,
       dataRegistry: this.dataRegistry,
+      onRegistered: (id) => this.taskProcessRegistrations.attachmentTypeIds.add(id),
     }).catch((error) => {
       this.logger.error(`Error registering observability attachments: ${error}`);
     });
@@ -98,14 +123,16 @@ export class ObservabilityAgentBuilderPlugin
     }
 
     return {
-      registerDataProvider: (id, provider) => this.dataRegistry.registerDataProvider(id, provider),
+      registerDataProvider: (id, provider, options) =>
+        this.dataRegistry.registerDataProvider(id, provider, options),
     };
   }
 
   public start(
     _core: CoreStart,
-    _plugins: ObservabilityAgentBuilderPluginStartDependencies
+    plugins: ObservabilityAgentBuilderPluginStartDependencies
   ): ObservabilityAgentBuilderPluginStart {
+    this.spacesEnabled = Boolean(plugins.spaces);
     return {};
   }
 

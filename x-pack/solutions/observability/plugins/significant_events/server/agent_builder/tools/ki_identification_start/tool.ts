@@ -13,12 +13,12 @@ import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
 import { KIsOnboardingStep } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import type { SignificantEventsMaintenanceService } from '../../../lib/maintenance/maintenance_service';
 import type { SignificantEventsKIsOnboardingClient } from '../../../lib/workflows/onboarding_workflow_client';
 import { NIGHTSHIFT_SOURCES_APP_PATH } from '../../../../common/constants';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../../types';
 import { classifyError } from '../../utils/error_utils';
 import {
   assertSourceEnabled,
@@ -56,10 +56,10 @@ export const createKiIdentificationStartTool = ({
   maintenanceService,
   getScopedClients,
 }: {
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   telemetry: EbtTelemetryClient;
   streamsKIsOnboardingClient: SignificantEventsKIsOnboardingClient;
-  maintenanceService: SignificantEventsMaintenanceService;
+  maintenanceService: Pick<SignificantEventsMaintenanceService, 'getState'>;
   getScopedClients: GetScopedClients;
 }): BuiltinSkillBoundedTool<typeof onboardingStartSchema> => ({
   id: SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATOR_IDENTIFICATION_START_TOOL_ID,

@@ -9,7 +9,6 @@ import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { SignificantEventsServer } from '../../../types';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { createMockToolContext, invokeHandler } from '../../utils/test_helpers';
 import { attachEventInvestigationToolHandler } from './handler';
 import { createEventInvestigationAttachTool } from './tool';
@@ -18,9 +17,7 @@ jest.mock('../../../routes/utils/assert_can_manage_significant_events', () => ({
   assertCanManageSignificantEvents: jest.fn(),
 }));
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 jest.mock('./handler', () => ({
   attachEventInvestigationToolHandler: jest.fn(),
@@ -37,6 +34,7 @@ describe('event_investigation_attach tool', () => {
 
     const logger = loggingSystemMock.createLogger();
     const tool = createEventInvestigationAttachTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: jest.fn().mockResolvedValue({
         getEventSearchClient: jest.fn().mockResolvedValue({}),
         getAlertEventsClient: jest.fn().mockResolvedValue(undefined),

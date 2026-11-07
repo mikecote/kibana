@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import Boom from '@hapi/boom';
 import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import typeDetect from 'type-detect';
@@ -16,6 +15,7 @@ import type {
   TaskTypeRegistrationOptions,
 } from '@kbn/task-manager-plugin/server';
 import { TaskPriority } from '@kbn/task-manager-plugin/server/task';
+import { getRegisteredRuleType } from './lib/get_registered_rule_type';
 import type { TaskRunnerFactory } from './task_runner';
 import type {
   RuleType,
@@ -349,22 +349,13 @@ export class RuleTypeRegistry {
     RecoveryActionGroupId,
     AlertData
   > {
-    if (!this.has(id)) {
-      throw Boom.badRequest(
-        i18n.translate('xpack.alerting.ruleTypeRegistry.get.missingRuleTypeError', {
-          defaultMessage: 'Rule type "{id}" is not registered.',
-          values: {
-            id,
-          },
-        })
-      );
-    }
+    const ruleType = getRegisteredRuleType(this.ruleTypes, id);
     /**
      * When we store the RuleTypes in the Map we strip the typing.
      * This means that returning a typed RuleType in `get` is an inherently
      * unsafe operation. Down casting to `unknown` is the only way to achieve this.
      */
-    return this.ruleTypes.get(id)! as unknown as NormalizedRuleType<
+    return ruleType as unknown as NormalizedRuleType<
       Params,
       ExtractedParams,
       State,

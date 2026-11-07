@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CasesServerSetupDependencies } from '../../types';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import {
   caseCreatedTriggerCommonDefinition,
   caseUpdatedTriggerCommonDefinition,
@@ -18,7 +18,7 @@ import {
 } from '../../../common/workflows/triggers';
 
 export function registerCaseWorkflowTriggers(
-  workflowsExtensions: CasesServerSetupDependencies['workflowsExtensions']
+  workflowsExtensions: Pick<WorkflowStepsRegistry, 'registerTriggerDefinition'> | undefined
 ) {
   if (!workflowsExtensions) {
     return;

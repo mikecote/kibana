@@ -42,6 +42,8 @@ export interface AgentBuilderSmlStartDependencies {
 
 export interface AgentBuilderSmlPluginSetup {
   registerType: (definition: SmlTypeDefinition) => void;
+  /** The ids of the types registered so far, sorted. */
+  getRegisteredTypeIds: () => string[];
 }
 
 export interface AgentBuilderSmlPluginStart {

@@ -12,6 +12,7 @@ import { schema } from '@kbn/config-schema';
 import type { IClusterClient, KibanaRequest } from '@kbn/core/server';
 import type { estypes } from '@elastic/elasticsearch';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
+import { SavedObjectsUtils } from '@kbn/core/server';
 
 import type { KueryNode } from '@kbn/es-query';
 import type { SpaceId } from '@kbn/core-spaces-common';
@@ -172,7 +173,7 @@ export class EventLogClient implements IEventLogClient {
     return await this.esContext.esAdapter.queryEventsWithAuthFilter({
       index: this.esContext.esNames.indexPattern,
       namespace: namespace
-        ? this.spacesService?.spaceIdToNamespace(namespace)
+        ? SavedObjectsUtils.namespaceStringToId(namespace)
         : await this.getNamespace(),
       type,
       ids,
@@ -298,9 +299,12 @@ export class EventLogClient implements IEventLogClient {
 
   private async getNamespace() {
     if (this.spaceId) {
-      return this.spacesService?.spaceIdToNamespace(this.spaceId);
+      return SavedObjectsUtils.namespaceStringToId(this.spaceId);
     }
-    const space = await this.spacesService?.getActiveSpace(this.request);
-    return space && this.spacesService?.spaceIdToNamespace(space.id);
+    if (!this.spacesService) {
+      return SavedObjectsUtils.namespaceStringToId(this.request.spaceId ?? 'default');
+    }
+    const space = await this.spacesService.getActiveSpace(this.request);
+    return this.spacesService.spaceIdToNamespace(space.id);
   }
 }

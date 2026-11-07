@@ -22,10 +22,16 @@ export type * from './repositories/types';
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface FieldsMetadataServiceStartDeps {}
 
+export interface FieldsMetadataExtractors {
+  integrationFieldsExtractor?: IntegrationFieldsExtractor;
+  integrationListExtractor?: IntegrationListExtractor;
+  streamsFieldsExtractor?: StreamsFieldsExtractor;
+}
+
 export interface FieldsMetadataServiceSetup {
-  registerIntegrationFieldsExtractor: (extractor: IntegrationFieldsExtractor) => void;
-  registerIntegrationListExtractor: (extractor: IntegrationListExtractor) => void;
-  registerStreamsFieldsExtractor: (extractor: StreamsFieldsExtractor) => void;
+  registerIntegrationFieldsExtractor: (extractor: IntegrationFieldsExtractor, id: string) => void;
+  registerIntegrationListExtractor: (extractor: IntegrationListExtractor, id: string) => void;
+  registerStreamsFieldsExtractor: (extractor: StreamsFieldsExtractor, id: string) => void;
 }
 
 export interface FieldsMetadataServiceStart {

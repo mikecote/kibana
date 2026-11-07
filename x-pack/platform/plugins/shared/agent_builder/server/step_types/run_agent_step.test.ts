@@ -76,6 +76,7 @@ describe('ai.agent workflow step (Agent Builder)', () => {
       config: {},
       rawInput: {},
       contextManager: {
+        getExecutionMetadata: jest.fn().mockReturnValue({ id: 'exec-1', workflowId: 'workflow-1' }),
         getFakeRequest: jest.fn().mockReturnValue(fakeRequest),
         getContext: jest.fn().mockReturnValue({ execution: { id: 'exec-1' } }),
         getScopedEsClient: jest.fn(),

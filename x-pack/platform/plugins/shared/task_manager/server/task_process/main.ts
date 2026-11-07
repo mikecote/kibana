@@ -40,6 +40,7 @@ export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessIn
       uuid: env.KIBANA_SERVER_UUID ?? '',
       buildNum: env.KIBANA_BUILD_NUM ? Number(env.KIBANA_BUILD_NUM) : Number.MAX_SAFE_INTEGER,
       publicBaseUrl: env.KIBANA_PUBLIC_BASE_URL,
+      kibanaUrl: env.KIBANA_URL ?? env.KIBANA_PUBLIC_BASE_URL,
       basePath: env.KIBANA_BASE_PATH,
       isServerless: env.KIBANA_SERVERLESS === 'true',
       isDev: env.KIBANA_DEV === 'true',
@@ -102,6 +103,7 @@ export const runTaskProcess = async (
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      enrichFakeRequest: core.enrichFakeRequest,
       port: Number(process.env.PORT ?? 0),
       // Only a forked process is Kibana's own; its runs carry credentials, so it is loopback only.
       host: process.send ? '127.0.0.1' : process.env.HOST || undefined,

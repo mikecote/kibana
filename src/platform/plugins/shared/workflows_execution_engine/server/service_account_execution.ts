@@ -8,7 +8,7 @@
  */
 
 import Boom from '@hapi/boom';
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import { visitNestedSteps, WorkflowExecuteStepInputSchema } from '@kbn/workflows';
 import type { EsWorkflowExecution, WorkflowExecutionEngineModel } from '@kbn/workflows';
 
@@ -17,10 +17,35 @@ type IdentityExecution = Pick<
   EsWorkflowExecution,
   'id' | 'workflowId' | 'spaceId' | 'workflowDefinition' | 'effectiveIdentity' | 'managed'
 >;
-const executionContexts = new WeakMap<
-  KibanaRequest,
-  { originalRequest: KibanaRequest; execution: IdentityExecution }
->();
+
+/**
+ * Remembers, for the scoped request of a run as a service account, the request that scheduled it
+ * and the execution it runs. One lives in each workflow runtime (one per Kibana node, one per task
+ * process); the default instance is what code built without a runtime uses.
+ */
+export class ExecutionIdentityContexts {
+  private readonly contexts = new WeakMap<
+    KibanaRequest,
+    { originalRequest: KibanaRequest; execution: IdentityExecution }
+  >();
+
+  get(request: KibanaRequest) {
+    return this.contexts.get(request);
+  }
+
+  set(
+    request: KibanaRequest,
+    context: { originalRequest: KibanaRequest; execution: IdentityExecution }
+  ) {
+    this.contexts.set(request, context);
+  }
+
+  delete(request: KibanaRequest) {
+    this.contexts.delete(request);
+  }
+}
+
+export const defaultExecutionIdentityContexts = new ExecutionIdentityContexts();
 const inheritedIdentitySchema = WorkflowExecuteStepInputSchema.pick({
   'workflow-id': true,
   'allowed-workflow-ids': true,
@@ -44,7 +69,8 @@ export const resolveInheritedWorkflowIdentity = (
     parentStepId?: string;
     parentStepName?: string;
     spaceId?: string;
-  }
+  },
+  executionContexts: Pick<ExecutionIdentityContexts, 'get'> = defaultExecutionIdentityContexts
 ): EsWorkflowExecution['effectiveIdentity'] => {
   if (!context.inheritParentIdentity) return undefined;
   const parent = executionContexts.get(request)?.execution;
@@ -120,7 +146,7 @@ export const resolveInheritedWorkflowIdentity = (
 
 /** Rejects changed delegation before persistence; credential acquisition checks again at run/resume. */
 export const ensureInheritedBindingCurrent = async (
-  core: { security: Pick<CoreStart['security'], 'serviceAccounts'> },
+  core: { security: Pick<SecurityServiceStart, 'serviceAccounts'> },
   identity: NonNullable<EsWorkflowExecution['effectiveIdentity']>,
   spaceId: string
 ): Promise<void> => {
@@ -138,16 +164,19 @@ export const ensureInheritedBindingCurrent = async (
   }
 };
 
-export const getWorkflowOriginalRequest = (request: KibanaRequest): KibanaRequest =>
-  executionContexts.get(request)?.originalRequest ?? request;
+export const getWorkflowOriginalRequest = (
+  request: KibanaRequest,
+  executionContexts: Pick<ExecutionIdentityContexts, 'get'> = defaultExecutionIdentityContexts
+): KibanaRequest => executionContexts.get(request)?.originalRequest ?? request;
 
 export const withWorkflowExecutionIdentity = async <T>(
-  core: CoreStart,
+  core: { security: Pick<SecurityServiceStart, 'serviceAccounts'> },
   execution: IdentityExecution,
   request: KibanaRequest,
-  execute: (request: KibanaRequest) => Promise<T>
+  execute: (request: KibanaRequest) => Promise<T>,
+  executionContexts: ExecutionIdentityContexts = defaultExecutionIdentityContexts
 ): Promise<T> => {
-  const originalRequest = getWorkflowOriginalRequest(request);
+  const originalRequest = getWorkflowOriginalRequest(request, executionContexts);
   const serviceAccountId = getExecutionServiceAccountId(execution);
   if (!serviceAccountId) {
     return execute(originalRequest);

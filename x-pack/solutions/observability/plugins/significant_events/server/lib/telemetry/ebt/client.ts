@@ -38,7 +38,7 @@ import {
 } from './constants';
 
 export class EbtTelemetryClient {
-  constructor(private readonly analytics: AnalyticsServiceSetup) {}
+  constructor(private readonly analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>) {}
 
   public trackSignificantEventsQueriesGenerated(params: KnowledgeIndicatorQueriesGeneratedProps) {
     this.analytics.reportEvent(

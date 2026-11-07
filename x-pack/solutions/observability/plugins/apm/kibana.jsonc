@@ -9,6 +9,10 @@
     "id": "apm",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
+      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
+    },
     "taskTypes": [
       "server/task_types/error_count.task.ts",
       "server/task_types/transaction_error_rate.task.ts",
@@ -70,6 +74,7 @@
       "observabilityAIAssistant",
       "observabilityAgentBuilder",
       "agentBuilder",
+      "workflowsExtensions",
       "slo",
       "cps",
     ],

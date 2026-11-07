@@ -62,6 +62,8 @@
     "@kbn/server-route-repository-client",
     "@kbn/server-route-repository-utils",
     "@kbn/workflows-extensions",
+    "@kbn/task-manager-plugin",
+    "@kbn/workflows-execution-engine",
     "@kbn/zod-helpers",
     "@kbn/licensing-plugin",
     "@kbn/fields-metadata-plugin",

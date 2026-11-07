@@ -10,7 +10,7 @@
 import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import type { UiSettingsParams } from '@kbn/core/server';
-import { DATA_VIEWS_FIELDS_EXCLUDED_TIERS } from '../common/constants';
+import { META_FIELDS, DATA_VIEWS_FIELDS_EXCLUDED_TIERS } from '../common/constants';
 import { DEFAULT_FIELD_CACHE_FRESHNESS } from './constants';
 
 export const dataTiersUiSettingsConfig: Record<string, UiSettingsParams> = {
@@ -39,5 +39,30 @@ export const cacheMaxAge = {
         'Sets how long data view fields API requests are cached in seconds. A value of 0 turns off caching. Modifying this value may not take immediate effect, users need to clear browser cache or wait until the current cache expires. To see immediate changes, try a hard reload of Kibana.',
     }),
     schema: schema.number(),
+  },
+};
+
+export const dataViewServiceUiSettings: Record<string, UiSettingsParams> = {
+  [META_FIELDS]: {
+    name: i18n.translate('data.advancedSettings.metaFieldsTitle', {
+      defaultMessage: 'Meta fields',
+    }),
+    value: ['_source', '_id', '_index', '_score', '_ignored'],
+    description: i18n.translate('data.advancedSettings.metaFieldsText', {
+      defaultMessage:
+        'Fields that exist outside of _source to merge into our document when displaying it',
+    }),
+    schema: schema.arrayOf(schema.string(), { maxSize: 100 }),
+  },
+  defaultIndex: {
+    name: i18n.translate('data.advancedSettings.defaultIndexTitle', {
+      defaultMessage: 'Default data view',
+    }),
+    value: '',
+    type: 'string',
+    description: i18n.translate('data.advancedSettings.defaultIndexText', {
+      defaultMessage: 'Used by discover and visualizations when a data view is not set.',
+    }),
+    schema: schema.string(),
   },
 };

@@ -10,17 +10,21 @@ import type { Logger } from '@kbn/logging';
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import type { HomeServerPluginSetup } from '@kbn/home-plugin/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { ConversationUpdatedOptIn } from '@kbn/agent-builder-server';
 import {
   CHAT_ATTACHMENT_IMAGES_FILE_KIND,
   SUPPORTED_IMAGE_MIME_TYPES,
   MAX_IMAGE_BYTES,
 } from '@kbn/agent-builder-common/attachments';
-import { createConversationPublicClient } from './services/conversation/conversation_public_client';
-import { createAttachmentPublicClient } from './services/attachments';
+import { createAgentBuilderStartContract } from './run_services/create_start_contract';
+import { createAgentBuilderRunServices } from './run_services/create_agent_builder_run_services';
+import {
+  AGENT_BUILDER_RUN_SETTINGS_ID,
+  getAgentBuilderRunSettings,
+} from './run_services/run_settings';
+import { registerAgentBuilderParity } from './run_services/parity';
 import type { AgentBuilderConfig } from './config';
 import { registerTracingExporter } from './tracing/register_tracing';
-import { ServiceManager } from './services';
+import type { ServiceManager } from './services';
 import type {
   AgentBuilderPluginSetup,
   AgentBuilderPluginStart,
@@ -31,7 +35,6 @@ import { registerFeatures } from './features';
 import { registerRoutes } from './routes';
 import { agentBuilderSpaceSettingsType } from './saved_objects';
 import { registerUISettings } from './ui_settings';
-import { getRunAgentStepDefinition, rerankStepDefinition } from './step_types';
 import type { AgentBuilderHandlerContext } from './request_handler_context';
 import { registerAgentBuilderHandlerContext } from './request_handler_context';
 import { createAgentBuilderUsageCounter } from './telemetry/usage_counters';
@@ -39,23 +42,18 @@ import { TrackingService } from './telemetry/tracking_service';
 import { registerTelemetryCollector } from './telemetry/telemetry_collector';
 import { AnalyticsService } from './telemetry';
 import { registerSampleData } from './register_sample_data';
-import { registerBeforeAgentWorkflowsHook } from './hooks/agent_workflows/register_before_agent_workflows_hook';
-import { registerAfterExecutionWorkflowsHook } from './hooks/agent_workflows/register_after_execution_workflows_hook';
-import { registerSkillToolsLoaderHook } from './hooks/skills/register_skill_tools_loader_hook';
 import { registerTaskDefinitions } from './services/execution';
-import { createModelProviderFactory } from './services/execution/runner/model_provider';
-import { createSmlTools } from './services/tools/builtin/sml';
-import { createConnectorTools } from './services/tools/builtin/connectors';
 import { createAdminPrivilegeSwitcher } from './capabilities/admin_privilege_switcher';
 import { registerInferenceFeatures } from './inference_features';
 import { createConversationEventBus } from './workflows/triggers/conversation_event_bus';
-import { registerAttachmentWorkflowSteps, registerConversationWorkflowSteps } from './workflows';
+import { registerAgentBuilderProcessWorkflowDefinitions } from './workflows';
+import { registerAgentBuilderWorkflowSteps } from './workflows/register_workflow_steps';
 import { registerConversationWorkflowEventBridge } from './workflows/triggers/event_bridge';
 import { apiPrivileges } from '../common/features';
 import { runToolIdBackfill } from './backfills/tool_id_backfill';
 import { RecommendedEndpointsPoller } from './recommended_endpoints_poller';
-import { registerDeductiveAgent } from './services/execution/run_agent/deductive/register_deductive_agent';
 import { getDeploymentInfo } from './utils/deployment_info';
+import type { AgentBuilderRunServices } from './run_services/create_agent_builder_run_services';
 
 export class AgentBuilderPlugin
   implements
@@ -69,7 +67,11 @@ export class AgentBuilderPlugin
   private logger: Logger;
   private config: AgentBuilderConfig;
   private readonly env: PluginInitializerContext['env'];
-  private serviceManager: ServiceManager;
+  private services?: AgentBuilderRunServices;
+  private get serviceManager(): ServiceManager {
+    if (!this.services) throw new Error('Agent Builder services are not set up');
+    return this.services.serviceManager;
+  }
   private cloudSetup?: CloudSetup;
   private usageCounter?: UsageCounter;
   private trackingService?: TrackingService;
@@ -78,13 +80,11 @@ export class AgentBuilderPlugin
   private teardownTracing?: () => Promise<void>;
   private startDeps?: AgentBuilderStartDependencies;
   private readonly conversationEventBus = createConversationEventBus();
-  private readonly conversationUpdatedOptIns: ConversationUpdatedOptIn[] = [];
   private recommendedEndpointsPoller?: RecommendedEndpointsPoller;
   constructor(context: PluginInitializerContext<AgentBuilderConfig>) {
     this.logger = context.logger.get();
     this.config = context.config.get();
     this.env = context.env;
-    this.serviceManager = new ServiceManager(this.config);
   }
 
   setup(
@@ -126,14 +126,33 @@ export class AgentBuilderPlugin
     );
     this.analyticsService.registerAgentBuilderEventTypes();
 
-    const serviceSetups = this.serviceManager.setupServices({
-      logger: this.logger.get('services'),
+    const getCoreStart = async () => (await coreSetup.getStartServices())[0];
+    this.services = createAgentBuilderRunServices({
+      config: this.config,
+      logger: this.logger,
       workflowsManagement: setupDeps.workflowsManagement,
       trackingService: this.trackingService,
+      analyticsService: this.analyticsService,
       cloud: setupDeps.cloud,
       usageApi: setupDeps.usageApi,
       actions: setupDeps.actions,
+      getActionsStart: async () => (await coreSetup.getStartServices())[1].actions,
+      getInferenceStart: async () => (await coreSetup.getStartServices())[1].inference,
+      getAgentBuilderSml: () => {
+        if (!this.startDeps) {
+          throw new Error('Agent Builder SML not available — plugin has not started');
+        }
+        return this.startDeps.agentBuilderSml;
+      },
+      getCoreStart,
+      uiSettings: coreSetup.uiSettings,
+      // What a task process needs to register what this Kibana registers: sent with every dispatch.
+      taskProcess: {
+        registerSettings: (pluginId, getSettings) =>
+          setupDeps.workflowsExtensions.registerTaskProcessSettings(pluginId, getSettings),
+      },
     });
+    const { setupContract } = this.services;
 
     registerTaskDefinitions({
       taskManager: setupDeps.taskManager,
@@ -164,71 +183,14 @@ export class AgentBuilderPlugin
     );
 
     registerUISettings({ uiSettings: coreSetup.uiSettings });
-    // External Deductive execution path (agent + Advanced Settings). Self-contained in the
-    // deductive module so the whole temporary integration can be removed by deleting it.
-    registerDeductiveAgent({
-      coreSetup,
-      uiSettings: coreSetup.uiSettings,
-      agents: serviceSetups.agents,
-      register: this.config.deductive?.register ?? false,
+    registerAgentBuilderWorkflowSteps(setupDeps.workflowsExtensions, {
+      serviceManager: this.serviceManager,
+      getCoreStart,
+      getSpaces: async () => (await coreSetup.getStartServices())[1].spaces,
     });
-
-    setupDeps.workflowsExtensions.registerStepDefinition(
-      getRunAgentStepDefinition(this.serviceManager)
-    );
-    setupDeps.workflowsExtensions.registerStepDefinition(rerankStepDefinition);
-
-    registerConversationWorkflowSteps(setupDeps.workflowsExtensions, {
-      getConversationClient: async (request) => {
-        const services = this.serviceManager.internalStart;
-        if (!services) {
-          throw new Error('Conversation service not available — plugin has not started');
-        }
-        return services.conversations.getScopedClient({ request });
-      },
-      getAgentRegistry: async (request) => {
-        const services = this.serviceManager.internalStart;
-        if (!services) {
-          throw new Error('Agents service not available — plugin has not started');
-        }
-        return services.agents.getRegistry({ request });
-      },
-      getExecutionService: () => {
-        const services = this.serviceManager.internalStart;
-        if (!services) {
-          throw new Error('Execution service not available — plugin has not started');
-        }
-        return services.execution;
-      },
-    });
-
-    registerAttachmentWorkflowSteps(setupDeps.workflowsExtensions, {
-      getAttachmentClient: async (request) => {
-        const services = this.serviceManager.internalStart;
-        if (!services) {
-          throw new Error('Attachment client not available — plugin has not started');
-        }
-        const [coreStart, startDeps] = await coreSetup.getStartServices();
-        return createAttachmentPublicClient({
-          request,
-          conversationsService: services.conversations,
-          attachmentsService: services.attachments,
-          coreStart,
-          spaces: startDeps.spaces,
-          source: 'workflow',
-        });
-      },
-    });
+    registerAgentBuilderProcessWorkflowDefinitions(setupDeps.workflowsExtensions);
 
     registerAgentBuilderHandlerContext({ coreSetup });
-
-    const getInternalServices = () => {
-      const services = this.serviceManager.internalStart;
-      if (!services) {
-        throw new Error('getInternalServices called before service init');
-      }
-      return services;
-    };
 
     const router = coreSetup.http.createRouter<AgentBuilderHandlerContext>();
     registerRoutes({
@@ -236,96 +198,29 @@ export class AgentBuilderPlugin
       coreSetup,
       logger: this.logger,
       pluginsSetup: setupDeps,
-      getInternalServices,
+      getInternalServices: this.services.getInternalServices,
       trackingService: this.trackingService,
       analyticsService: this.analyticsService,
     });
 
-    registerBeforeAgentWorkflowsHook(serviceSetups, {
-      workflowsManagement: setupDeps.workflowsManagement,
-      logger: this.logger,
-      getInternalServices,
-    });
+    // What a task process needs to register what this Kibana registered: the config, and the ids
+    // of what the registries hold (read at each dispatch, because a plugin may register any time).
+    const { registrations } = this.services;
+    registerAgentBuilderParity(setupDeps.workflowsExtensions, () => ({
+      ...registrations.ids(),
+      // The SML plugin owns its registry: the types its dependents register, read at each dispatch.
+      smlTypes: setupDeps.agentBuilderSml.getRegisteredTypeIds(),
+    }));
+    setupDeps.workflowsExtensions.registerTaskProcessSettings(AGENT_BUILDER_RUN_SETTINGS_ID, () =>
+      getAgentBuilderRunSettings({
+        config: this.config,
+        cloud: this.cloudSetup,
+        env: this.env,
+        getSearchInferenceEndpoints: () => this.startDeps?.searchInferenceEndpoints,
+      })
+    );
 
-    registerAfterExecutionWorkflowsHook(serviceSetups, {
-      workflowsManagement: setupDeps.workflowsManagement,
-      logger: this.logger,
-      getInternalServices,
-    });
-
-    registerSkillToolsLoaderHook(serviceSetups, {
-      analyticsService: this.analyticsService,
-      trackingService: this.trackingService,
-    });
-
-    const smlTools = createSmlTools({
-      getAgentBuilderSml: () => {
-        if (!this.startDeps) {
-          throw new Error('Agent Builder SML not available — plugin has not started');
-        }
-        return this.startDeps.agentBuilderSml;
-      },
-    });
-    smlTools.forEach((tool) => {
-      serviceSetups.tools.register(tool);
-    });
-
-    const connectorTools = createConnectorTools({
-      getActions: async () => {
-        const [, startDeps] = await coreSetup.getStartServices();
-        return startDeps.actions;
-      },
-      getInference: async () => {
-        const [, startDeps] = await coreSetup.getStartServices();
-        return startDeps.inference;
-      },
-    });
-    connectorTools.forEach((tool) => {
-      serviceSetups.tools.register(tool);
-    });
-
-    return {
-      tools: {
-        register: serviceSetups.tools.register.bind(serviceSetups.tools),
-      },
-      agents: {
-        register: serviceSetups.agents.register.bind(serviceSetups.agents),
-        registerType: serviceSetups.agents.registerType.bind(serviceSetups.agents),
-        registerAiIndexResolver: serviceSetups.agents.registerAiIndexResolver.bind(
-          serviceSetups.agents
-        ),
-      },
-      attachments: {
-        registerType: serviceSetups.attachments.registerType.bind(serviceSetups.attachments),
-      },
-      renderers: {
-        register: serviceSetups.renderers.register.bind(serviceSetups.renderers),
-      },
-      conversationEvents: {
-        register: serviceSetups.conversationEvents.register.bind(serviceSetups.conversationEvents),
-      },
-      hooks: {
-        register: serviceSetups.hooks.register.bind(serviceSetups.hooks),
-        registerCycleHook: serviceSetups.hooks.registerCycleHook.bind(serviceSetups.hooks),
-      },
-      skills: {
-        register: serviceSetups.skills.registerSkill.bind(serviceSetups.skills),
-      },
-      plugins: {
-        register: serviceSetups.plugins.register.bind(serviceSetups.plugins),
-      },
-      conversationTemplates: {
-        register: serviceSetups.conversationTemplates.register.bind(
-          serviceSetups.conversationTemplates
-        ),
-      },
-      conversations: {
-        enableUpdatedTrigger: (optIn) => {
-          this.conversationUpdatedOptIns.push(optIn);
-        },
-      },
-      topSnippets: this.config.topSnippets,
-    };
+    return setupContract;
   }
 
   start(coreStart: CoreStart, startDeps: AgentBuilderStartDependencies): AgentBuilderPluginStart {
@@ -387,35 +282,12 @@ export class AgentBuilderPlugin
       this.conversationEventBus,
       startDeps.workflowsExtensions,
       this.logger,
-      this.conversationUpdatedOptIns
+      this.services?.conversationUpdatedOptIns ?? []
     );
-
-    const {
-      tools,
-      agents,
-      skills,
-      runnerFactory,
-      execution,
-      plugins,
-      conversations,
-      conversationTemplates,
-      attachments,
-    } = startServices;
-    const runner = runnerFactory.getRunner();
 
     if (this.home) {
       registerSampleData(this.home, this.logger);
     }
-
-    const modelProviderFactory = createModelProviderFactory({
-      inference,
-      trackingService: this.trackingService,
-      searchInferenceEndpoints,
-      logger: this.logger.get('model-provider'),
-      spaces,
-      security,
-      elasticsearch,
-    });
 
     this.recommendedEndpointsPoller = new RecommendedEndpointsPoller({
       logger: this.logger.get('recommended-endpoints-poller'),
@@ -424,51 +296,16 @@ export class AgentBuilderPlugin
     });
     this.recommendedEndpointsPoller.start();
 
-    return {
-      agents: {
-        getRegistry: ({ request }) => agents.getRegistry({ request }),
-        ensure: agents.ensure,
-        runAgent: runner.runAgent.bind(runner),
-      },
-      tools: {
-        getRegistry: ({ request }) => tools.getRegistry({ request }),
-        execute: runner.runTool.bind(runner),
-      },
-      skills: {
-        getRegistry: skills.getRegistry.bind(skills),
-        register: skills.registerSkill.bind(skills),
-      },
-      plugins: {
-        getRegistry: ({ request }) => plugins.getRegistry({ request }),
-      },
-      execution: {
-        executeAgent: execution.executeAgent.bind(execution),
-        getExecution: execution.getExecution.bind(execution),
-        findExecutions: execution.findExecutions.bind(execution),
-      },
-      runtime: {
-        createModelProvider: modelProviderFactory,
-      },
-      conversations: {
-        getScopedClient: async ({ request }) => {
-          const client = await conversations.getScopedClient({ request });
-          const agentRegistry = await agents.getRegistry({ request });
-          return createConversationPublicClient({ client, agentRegistry, source: 'server_api' });
-        },
-      },
-      attachments: {
-        getScopedClient: async ({ request }) =>
-          createAttachmentPublicClient({
-            request,
-            conversationsService: conversations,
-            attachmentsService: attachments,
-            coreStart,
-            spaces,
-            source: 'server_api',
-          }),
-      },
-      conversationTemplates,
-    };
+    return createAgentBuilderStartContract({
+      startServices,
+      coreStart,
+      spaces,
+      inference,
+      searchInferenceEndpoints,
+      trackingService: this.trackingService,
+      logger: this.logger,
+      onSkillRegistered: this.services?.registrations.recordSkill,
+    });
   }
 
   async stop() {

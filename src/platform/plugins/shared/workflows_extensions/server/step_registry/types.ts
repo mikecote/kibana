@@ -9,7 +9,7 @@
 
 import type { ElasticsearchClient, KibanaRequest } from '@kbn/core/server';
 import type { OrStringRecursive } from '@kbn/utility-types';
-import type { StepContext } from '@kbn/workflows';
+import type { EsWorkflowExecution, StepContext } from '@kbn/workflows';
 import type { z } from '@kbn/zod/v4';
 import type { CommonStepDefinition } from '../../common';
 
@@ -442,6 +442,16 @@ export interface ContextManager {
    * Get the full context
    */
   getContext(): StepContext;
+
+  /** Reads persisted execution metadata, or undefined when invoked outside a workflow. */
+  getExecutionMetadata():
+    | Readonly<
+        Pick<
+          EsWorkflowExecution,
+          'id' | 'workflowId' | 'isEphemeral' | 'managed' | 'managedBy' | 'metadata'
+        >
+      >
+    | undefined;
 
   /**
    * Get the scoped Elasticsearch client

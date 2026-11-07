@@ -38,6 +38,7 @@
     "runtimePluginDependencies": ["agentBuilder"],
     "extraPublicDirs": ["common"],
     "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"],
       "alerting-rule-run": ["server/task_types/rule_run_contribution.ts"]
     }
   }

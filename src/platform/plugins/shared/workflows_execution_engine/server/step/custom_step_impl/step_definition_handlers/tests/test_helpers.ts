@@ -39,6 +39,7 @@ export const createHandlerTestMocks = (initialPersistedState?: Record<string, un
       renderValueAccordingToContext: jest.fn((v: unknown) => v),
       renderValueWithContext: jest.fn((v: unknown) => v),
       getContext: jest.fn(() => ({})),
+      getExecutionMetadata: jest.fn(() => ({ id: 'execution-1', workflowId: 'workflow-1' })),
       getEsClientAsUser: jest.fn(() => ({})),
       getFakeRequest: jest.fn(() => null),
       callKibanaApi: jest.fn(),

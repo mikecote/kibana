@@ -10,7 +10,7 @@ import type { FeatureFlagsStart } from '@kbn/core/server';
 import { SIGNIFICANT_EVENTS_SEMANTIC_CODE_SEARCH_GROUNDING_ENABLED_FLAG } from '../../../common/feature_flags';
 
 export const isSignificantEventsSemanticCodeSearchGroundingEnabled = (
-  featureFlags: FeatureFlagsStart
+  featureFlags: Pick<FeatureFlagsStart, 'getBooleanValue$'>
 ) =>
   firstValueFrom(
     featureFlags.getBooleanValue$(
