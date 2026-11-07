@@ -8,6 +8,7 @@
 import { INDEX_PREFIX } from '../config';
 import type { IndexOptions } from './index_options';
 import { joinWithDash } from './utils';
+import { getNamespacedRuleDataAlias } from './get_namespaced_rule_data_alias';
 
 interface ConstructorOptions {
   indexOptions: IndexOptions;
@@ -70,7 +71,7 @@ export class IndexInfo {
    * @example '.alerts-security.alerts-default'
    */
   public getPrimaryAlias(namespace: string): string {
-    return joinWithDash(this.baseName, namespace);
+    return getNamespacedRuleDataAlias(this.baseName, namespace);
   }
 
   /**

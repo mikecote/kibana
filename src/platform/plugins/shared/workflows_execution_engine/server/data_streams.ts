@@ -32,8 +32,8 @@ export interface WorkflowDataStreamsStorage {
  * events and, when executions are stored in data streams, the workflow and step executions.
  *
  * This is the one place the definitions are listed. Kibana registers them with Core
- * ({@link registerWorkflowDataStreams}); a task process builds clients straight from them with
- * `DataStreamClient.fromDefinition({ dataStream, elasticsearchClient })`, installing nothing.
+ * ({@link registerWorkflowDataStreams}); task processes register the same definitions with Core
+ * and use its native lazy initialization when a run requests a client.
  */
 export const getWorkflowDataStreamDefinitions = (
   storage: WorkflowDataStreamsStorage

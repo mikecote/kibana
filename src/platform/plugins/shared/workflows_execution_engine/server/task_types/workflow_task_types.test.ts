@@ -26,6 +26,8 @@ import { createWorkflowRuntimeFromHost } from './process_runtime';
 import { taskType as resumeTaskType } from './workflow_resume.task';
 import { taskType as runTaskType } from './workflow_run.task';
 import { taskType as scheduledTaskType } from './workflow_scheduled.task';
+import { config as engineConfig } from '../config';
+import { getWorkflowDataStreamDefinitions } from '../data_streams';
 
 jest.mock('./process_runtime', () => ({ createWorkflowRuntimeFromHost: jest.fn() }));
 
@@ -127,6 +129,19 @@ describe('workflow task type modules', () => {
 });
 
 describe('workflow task type modules with contributions', () => {
+  it.each(['plain_index', 'data_stream'] as const)(
+    'registers native workflow data streams with current %s storage settings',
+    (source) => {
+      const config = engineConfig.schema.validate({ storage: { source, dataRetention: '9d' } });
+      for (const module of [runTaskType, resumeTaskType, scheduledTaskType]) {
+        expect(module.createDataStreams?.({ workflowsExecutionEngine: config })).toEqual(
+          Object.values(getWorkflowDataStreamDefinitions(config.storage))
+        );
+        expect(() => module.createDataStreams?.({})).toThrow('require engine settings');
+      }
+    }
+  );
+
   const contribution = {
     declares: {
       savedObjectTypes: [{ name: 'contributed-type' }],

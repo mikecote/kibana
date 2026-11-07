@@ -18,7 +18,6 @@ import {
 } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
 import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
-import { DataStreamClient } from '@kbn/data-streams';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
@@ -48,7 +47,6 @@ import { WorkflowRuntimeServices } from './workflow_runtime_services';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import { createWorkflowRuntime } from '../create_workflow_runtime';
 import type { WorkflowRuntime } from '../create_workflow_runtime';
-import { getWorkflowDataStreamDefinitions } from '../data_streams';
 import { assertRunnableInProcessPreflight } from '../lib/assert_runnable_in_process';
 import { createRetryingEsClient } from '../lib/create_retrying_es_client';
 import type { WorkflowMeteringCloud } from '../metering';
@@ -58,12 +56,11 @@ import { createPlainIndexDataClients } from '../repositories/data_access_layer/i
 import { ExecutionIdentityContexts } from '../service_account_execution';
 import { HitlLifecycleAuditRegistry } from '../step/wait_for_input_step/hitl_lifecycle_auditor';
 import type { WorkflowsEngineTaskPluginStart } from '../task_plugin';
-import type { WorkflowCoreStart, WorkflowDataStreamsAdapter } from '../workflow_core_services';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 /**
  * The workflow runtime a task process runs, built from the task host: what Kibana builds from Core
- * and the plugins, built from the host's services. Nothing is installed (indices, templates, data
- * streams): Kibana did that before it dispatched the run.
+ * and the plugins, built from the host's services. Core initializes owned data streams lazily.
  */
 export const createWorkflowRuntimeFromHost = async (
   taskHost: TaskHost
@@ -111,18 +108,8 @@ export const createWorkflowRuntimeFromHost = async (
   };
   const esClient = createRetryingEsClient(host.elasticsearch.asInternalUser, logger);
 
-  // Data streams: clients over the shared definitions, nothing installed.
-  const definitions = getWorkflowDataStreamDefinitions(config.storage);
-  const dataStreams: WorkflowDataStreamsAdapter = {
-    initializeClient: (async (name: string) => {
-      const dataStream = definitions[name];
-      if (!dataStream) throw new Error(`Unknown workflows data stream: ${name}`);
-      return DataStreamClient.fromDefinition({
-        dataStream,
-        elasticsearchClient: host.elasticsearch.asInternalUser,
-      });
-    }) as WorkflowDataStreamsAdapter['initializeClient'],
-  };
+  const { dataStreams } = host;
+  if (!dataStreams) throw new Error('The workflow task module requires native Core data streams');
 
   // Execution storage: the clients of the indices or data streams Kibana installed.
   let dataClients: WorkflowRuntimeDataClients;

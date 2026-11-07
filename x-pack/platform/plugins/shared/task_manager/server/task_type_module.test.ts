@@ -26,6 +26,7 @@ describe('toTaskDefinition', () => {
         createSavedObjectTypes: () => [],
         registerUiSettings: () => {},
         dataStreams: [],
+        createDataStreams: () => [],
         createTaskRunner: () => ({ run: async () => undefined }),
       }),
       async () => host()

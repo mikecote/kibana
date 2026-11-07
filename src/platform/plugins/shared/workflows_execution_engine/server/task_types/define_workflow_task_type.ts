@@ -29,7 +29,9 @@ import {
   WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID,
   WORKFLOWS_ENGINE_SETTINGS_ID,
 } from './constants';
+import type { WorkflowsExecutionEngineConfig } from '../config';
 import type { WorkflowRuntime, WorkflowTaskFunction } from '../create_workflow_runtime';
+import { getWorkflowDataStreamDefinitions } from '../data_streams';
 import { workflowExecutionEventSchemas } from '../lib/telemetry/events/workflows_execution';
 import { createWorkflowsEngineTaskPlugin } from '../task_plugin';
 
@@ -177,6 +179,13 @@ export const defineWorkflowTaskType = (
     ...(declared.some(({ dataStreams }) => dataStreams?.length)
       ? { dataStreams: declared.flatMap(({ dataStreams }) => dataStreams ?? []) }
       : {}),
+    createDataStreams: (settings) => {
+      const config = settings[WORKFLOWS_ENGINE_SETTINGS_ID] as
+        | WorkflowsExecutionEngineConfig
+        | undefined;
+      if (!config) throw new Error('Native workflow data streams require engine settings');
+      return Object.values(getWorkflowDataStreamDefinitions(config.storage));
+    },
     // Only when contributions declare some: it gives the runner `host.uiSettings`.
     ...(declared.some(
       ({ uiSettings, globalUiSettings }) => uiSettings?.length || globalUiSettings?.length

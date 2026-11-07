@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { AlertTriageAlertsClientFactory } from '@kbn/alertzero-plugin/server/alert_triage/alerts_client';
 import type { Observable } from 'rxjs';
 import { QUERY_RULE_TYPE_ID, SAVED_QUERY_RULE_TYPE_ID } from '@kbn/securitysolution-rules';
 import type {
@@ -22,6 +23,11 @@ import type { ListPluginSetup } from '@kbn/lists-plugin/server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { NewPackagePolicy, UpdatePackagePolicyWithId } from '@kbn/fleet-plugin/common';
 import { FLEET_ENDPOINT_PACKAGE } from '@kbn/fleet-plugin/common';
+import {
+  SECURITY_ALERTS_SETTINGS_ID,
+  type SecurityAlertsTaskProcessSettings,
+} from './task_types/security_alerts_settings';
+import { createSecurityAlertsClientFactory } from './lib/detection_engine/alerts/create_alerts_client';
 
 import { registerScriptsLibraryRoutes } from './endpoint/routes/scripts_library';
 import { registerCustomYaraSignaturesRoutes } from './endpoint/routes/custom_yara_signatures';
@@ -230,6 +236,8 @@ export class Plugin implements ISecuritySolutionPlugin {
 
   private isServerless: boolean;
   private securityEventBus?: SecuritySolutionEventBus;
+  private securityAlertsClientFactory?: AlertTriageAlertsClientFactory;
+  private completeSecurityWorkflowEvents?: () => Promise<void>;
 
   /** Captured in `setup()`: rule lifecycle telemetry needs the setup contract, not the start one. */
 
@@ -689,6 +697,32 @@ export class Plugin implements ISecuritySolutionPlugin {
     this.securityEventBus = plugins.workflowsExtensions
       ? new SecuritySolutionEventBus()
       : undefined;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      SECURITY_ALERTS_SETTINGS_ID,
+      (): SecurityAlertsTaskProcessSettings => ({
+        searchIndexName: ruleDataClient?.indexName,
+        signalsIndex: config.signalsIndex,
+        appClientInitialized: appClientFactory.isInitialized,
+        kibanaBranch: pluginContext.env.packageInfo.branch,
+        buildFlavor: pluginContext.env.packageInfo.buildFlavor,
+        workflowEventsAvailable: this.securityEventBus !== undefined,
+      })
+    );
+    this.securityAlertsClientFactory = async (request) => {
+      const [coreStart, depsStart] = await core.getStartServices();
+      return createSecurityAlertsClientFactory({
+        getEsClient: (scopedRequest) =>
+          coreStart.elasticsearch.client.asScoped(scopedRequest).asCurrentUser,
+        getSearchIndex: (scopedRequest) =>
+          ruleDataClient?.indexNameWithNamespace(
+            depsStart.spaces?.spacesService.getSpaceId(scopedRequest) ?? 'default'
+          ),
+        getAppClient: (scopedRequest) => appClientFactory.create(scopedRequest),
+        getAuditLogger: (scopedRequest) => coreStart.security.audit.asScoped(scopedRequest),
+        getSecurity: async () => depsStart.security,
+        eventBus: this.securityEventBus,
+      })(request);
+    };
 
     // TODO We need to get the endpoint routes inside of initRoutes
     const enableDataGeneratorRoutes =
@@ -924,7 +958,7 @@ export class Plugin implements ISecuritySolutionPlugin {
     this.ruleMonitoringService.start(core, plugins);
 
     if (this.securityEventBus && plugins.workflowsExtensions) {
-      registerSecurityWorkflowEventBridge(
+      this.completeSecurityWorkflowEvents = registerSecurityWorkflowEventBridge(
         this.securityEventBus,
         plugins.workflowsExtensions,
         logger
@@ -1265,6 +1299,10 @@ export class Plugin implements ISecuritySolutionPlugin {
       this.logger.warn('Task Manager not available, health diagnostic task not started.');
     }
 
+    if (plugins.alertzero && this.securityAlertsClientFactory) {
+      plugins.alertzero.registerTriageAlertsClientFactory(this.securityAlertsClientFactory);
+    }
+
     // Push, not pull: alertzero cannot declare a dependency on this plugin's start contract, since
     // this plugin already depends on alertzero (the `alertzero` setup dependency above) and the
     // reverse edge would fail Kibana's plugin boot with a circular-dependency error. AlertZero Hunt
@@ -1290,7 +1328,7 @@ export class Plugin implements ISecuritySolutionPlugin {
     return {};
   }
 
-  public stop() {
+  public async stop(): Promise<void> {
     this.logger.debug('Stopping plugin');
     this.asyncTelemetryEventsSender.stop().catch(() => {});
     this.telemetryEventsSender.stop();
@@ -1301,6 +1339,7 @@ export class Plugin implements ISecuritySolutionPlugin {
     this.siemMigrationsService.stop();
     securityWorkflowInsightsService.stop();
     licenseService.stop();
+    await this.completeSecurityWorkflowEvents?.();
     this.securityEventBus?.removeAllListeners();
   }
 }

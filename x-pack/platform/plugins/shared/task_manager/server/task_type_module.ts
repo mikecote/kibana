@@ -176,6 +176,10 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   ) => SavedObjectsType[];
   /** Data streams owned by the module; registered locally without eager initialization. */
   dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
+  /** Builds native data stream definitions from the current dispatch settings. */
+  createDataStreams?: (
+    settings: NonNullable<TaskHost['settings']>
+  ) => Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** Encrypted saved object registrations the runner needs; a task process registers them. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** Gives the runner `host.eventLog`. */
@@ -343,6 +347,7 @@ export const toTaskDefinition = (
     savedObjectTypes,
     createSavedObjectTypes,
     dataStreams,
+    createDataStreams,
     encryptedSavedObjectTypes,
     eventLog,
     taskManager,

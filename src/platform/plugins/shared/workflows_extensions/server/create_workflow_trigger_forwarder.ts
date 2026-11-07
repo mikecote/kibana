@@ -25,7 +25,7 @@ export interface WorkflowTriggerEmitterSource {
  */
 export const createWorkflowTriggerForwarder = (
   workflowsExtensions: WorkflowTriggerEmitterSource,
-  logger: Logger
+  logger: Pick<Logger, 'warn'>
 ) => {
   return async (eventType: string, payload: unknown, request: KibanaRequest): Promise<void> => {
     try {

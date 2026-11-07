@@ -17,6 +17,7 @@ import type {
 import type { ProposalsPluginStart } from '@kbn/proposals-plugin/server';
 import type { FleetWorkflowRunServices } from '@kbn/fleet-plugin/server/services/run_time/workflow_run_services';
 import type { WorkflowExecutionReader as AuthorizedWorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
+import type { AlertTriageAlertsClientFactory } from '../alert_triage/alerts_client';
 import type { WorkflowExecutionReader } from '../step_types/report_worker_outcome/report_worker_outcome_step';
 import { registerAlertZeroTelemetryEvents } from '../telemetry';
 import { registerUiSettings } from '../ui_settings';
@@ -150,6 +151,8 @@ export const contribution: WorkflowStepsContribution = {
     registerTriageStepDefinitions({
       workflowsExtensions: registry,
       getTaskManager: () => taskManager,
+      getTriageAlertsClient: async (request) =>
+        services.getService<AlertTriageAlertsClientFactory>('securitySolution.alerts')(request),
       getWorkflowExecutionReader: () =>
         services.getService<AuthorizedWorkflowExecutionReader>('workflows.executionReader'),
     });

@@ -238,7 +238,7 @@ credentials; never log them.
 triggers (the alerts resources of a space it runs in for the first time, a signing key, the endpoint
 action requests data stream) happens in the process with the plugin's own idempotent code. Startup
 installs are Kibana's: Core's eager migrations and data stream initialization are skipped. Modules
-declare lazily used storage through `dataStreams`; Core registers those definitions locally and its
+declare lazily used storage through `dataStreams` or `createDataStreams(settings)`; Core registers those definitions locally and its
 real `initializeClient` initializes the requested stream when business execution first needs it,
 as it does in Kibana. Factories that only open existing resources retain that behavior.
 
@@ -562,8 +562,9 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   `runAt` to now and Kibana's claim cycle picks it up: there is no nudge from a process.
 - **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
   run and schedule a `workflow:resume` task; a second process finishes it.
-- **Data streams.** Clients are built with `DataStreamClient.fromDefinition` over the engine's shared
-  definitions: nothing is installed.
+- **Data streams.** The engine registers its shared definitions with native Core using the current
+  dispatch storage settings. Its log and trigger-event clients use Core's lazy initialization,
+  preserving native template and first-use creation behavior.
 - **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
   plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
   `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
@@ -908,6 +909,12 @@ each read, and delegates ACL filtering to the management API. The reader derives
 the native request. Tests cover changing privileges, private workflows, current execution statuses,
 and actual default and non-default-space dispatches in every worker mode.
 
+Detection-alert reads and tag changes use the shared native Security Solution operations in Main
+and workers, including current API privileges, search validation, request-scoped Elasticsearch,
+audit events and observed tag-change deltas. The native event bridge finishes forwarding before
+a worker answers. Execution tests cover default and foreign spaces, permission changes, filters,
+persisted claims and trigger-event execution lineage in all four worker modes without Kibana calls.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services) and nightshift_investigations (investigations, sandbox and agent execution services).
 
@@ -922,8 +929,6 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **alertzero:** native adapters for detection-alert search/tag operations, which still
-  call Kibana routes.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
 

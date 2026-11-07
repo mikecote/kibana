@@ -22,6 +22,7 @@ export {
   RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID,
 } from './task_types/rule_data_task_process_services';
 export { config, INDEX_PREFIX } from './config';
+export { getNamespacedRuleDataAlias } from './rule_data_plugin_service/get_namespaced_rule_data_alias';
 export type {
   IRuleDataService,
   RuleDataPluginService,

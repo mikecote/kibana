@@ -33,18 +33,22 @@ export const registerTriageStepDefinitions = ({
   workflowsExtensions,
   getTaskManager,
   getWorkflowExecutionReader,
+  getTriageAlertsClient,
 }: {
   workflowsExtensions: WorkflowStepsRegistry;
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
   getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
+  getTriageAlertsClient: AlertTriageStepDependencies['getTriageAlertsClient'];
 }) => {
   workflowsExtensions.registerStepDefinition(
     getTriageHeadroomStepDefinition({ getTaskManager, getWorkflowExecutionReader })
   );
   workflowsExtensions.registerStepDefinition(
-    getTriagePlanSweepStepDefinition({ getWorkflowExecutionReader })
+    getTriagePlanSweepStepDefinition({ getWorkflowExecutionReader, getTriageAlertsClient })
   );
-  workflowsExtensions.registerStepDefinition(getTriageLoadAlertsStepDefinition());
+  workflowsExtensions.registerStepDefinition(
+    getTriageLoadAlertsStepDefinition({ getTriageAlertsClient })
+  );
 };
 
 export const registerStepDefinitions = ({
@@ -59,6 +63,7 @@ export const registerStepDefinitions = ({
   getInternalEsClient,
   getTaskManager,
   getWorkflowExecutionReader,
+  getTriageAlertsClient,
   logger,
 }: {
   workflowsExtensions: WorkflowStepsRegistry;
@@ -72,6 +77,7 @@ export const registerStepDefinitions = ({
   getInternalEsClient?: () => ElasticsearchClient;
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
   getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
+  getTriageAlertsClient: AlertTriageStepDependencies['getTriageAlertsClient'];
   logger?: Logger;
 }) => {
   workflowsExtensions.registerStepDefinition(
@@ -96,6 +102,7 @@ export const registerStepDefinitions = ({
     workflowsExtensions,
     getTaskManager,
     getWorkflowExecutionReader,
+    getTriageAlertsClient,
   });
 };
 

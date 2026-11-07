@@ -5,6 +5,9 @@
  * 2.0.
  */
 
+import type { ElasticsearchClient } from '@kbn/core/server';
+import type { JsonObject } from '@kbn/utility-types';
+import type { estypes } from '@elastic/elasticsearch';
 import type {
   AggregationsAggregationContainer,
   Indices,
@@ -21,13 +24,17 @@ interface SearchAlertsArgs {
   params: QueryAlertsBodyParams;
 }
 
-/**
- * Runs a search/aggregation against `index` using the provided `params`.
- * Returns the raw `search` response; throws on Elasticsearch errors.
- */
-export const searchAlerts = async ({ context, index, params }: SearchAlertsArgs) => {
-  const esClient = (await context.core).elasticsearch.client.asCurrentUser;
-
+/** Runs a search with the caller's native scoped client and the validated signals parameters. */
+export const searchAlertsWithClient = <
+  TDocument = JsonObject,
+  TAggregations = Record<string, estypes.AggregationsAggregate>
+>({
+  esClient,
+  index,
+  params,
+}: Omit<SearchAlertsArgs, 'context'> & {
+  esClient: ElasticsearchClient;
+}): Promise<estypes.SearchResponse<TDocument, TAggregations>> => {
   const {
     query,
     aggs,
@@ -39,7 +46,7 @@ export const searchAlerts = async ({ context, index, params }: SearchAlertsArgs)
     sort,
   } = params;
 
-  return esClient.search({
+  return esClient.search<TDocument, TAggregations>({
     index,
     query,
     aggs: aggs as Record<string, AggregationsAggregationContainer>,
@@ -52,3 +59,11 @@ export const searchAlerts = async ({ context, index, params }: SearchAlertsArgs)
     ignore_unavailable: true,
   });
 };
+
+/** Searches alerts through the request context's genuine scoped Elasticsearch client. */
+export const searchAlerts = async ({ context, index, params }: SearchAlertsArgs) =>
+  searchAlertsWithClient({
+    esClient: (await context.core).elasticsearch.client.asCurrentUser,
+    index,
+    params,
+  });

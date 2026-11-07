@@ -5,8 +5,8 @@
  * 2.0.
  */
 
-import type { KibanaRequest, Logger } from '@kbn/core/server';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
+import type { Logger } from '@kbn/core/server';
+import { httpServerMock } from '@kbn/core/server/mocks';
 import { SecuritySolutionEventBus } from '../../events/event_bus';
 import { registerSecurityWorkflowEventBridge } from './event_bridge';
 import {
@@ -20,13 +20,13 @@ import {
   NoteUpdatedTriggerId,
 } from '../../../common/workflows/triggers';
 
-const mockRequest = {} as KibanaRequest;
+const mockRequest = httpServerMock.createKibanaRequest();
 
 describe('registerSecurityWorkflowEventBridge', () => {
   let bus: SecuritySolutionEventBus;
   let mockEmitEvent: jest.Mock;
   let mockGetClient: jest.Mock;
-  let mockWorkflowsExtensions: WorkflowsExtensionsServerPluginStart;
+  let mockWorkflowsExtensions: Parameters<typeof registerSecurityWorkflowEventBridge>[1];
   let mockLogger: Pick<Logger, 'warn'>;
 
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe('registerSecurityWorkflowEventBridge', () => {
     mockGetClient = jest.fn().mockResolvedValue({ emitEvent: mockEmitEvent });
     mockWorkflowsExtensions = {
       getClient: mockGetClient,
-    } as unknown as WorkflowsExtensionsServerPluginStart;
+    };
     mockLogger = { warn: jest.fn() };
   });
 
@@ -43,8 +43,33 @@ describe('registerSecurityWorkflowEventBridge', () => {
     bus.removeAllListeners();
   });
 
+  it('waits for pending native forwards before run completion', async () => {
+    let finish: (() => void) | undefined;
+    const emitted = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mockEmitEvent.mockReturnValue(emitted);
+    const complete = registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger);
+    bus.emitAlertTagsChanged(mockRequest, {
+      alertIds: ['a'],
+      tagsAdded: ['triage'],
+      tagsRemoved: [],
+      truncated: false,
+    });
+    let completed = false;
+    const completion = complete().then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+    expect(completed).toBe(false);
+    if (!finish) throw new Error('Native event resolver is missing');
+    finish();
+    await completion;
+    expect(completed).toBe(true);
+  });
+
   it('does nothing when workflowsExtensions is undefined', () => {
-    registerSecurityWorkflowEventBridge(bus, undefined, mockLogger as Logger);
+    registerSecurityWorkflowEventBridge(bus, undefined, mockLogger);
     bus.emitAlertStatusChanged(mockRequest, {
       alertIds: [],
       status: 'open',
@@ -184,7 +209,7 @@ describe('registerSecurityWorkflowEventBridge', () => {
     },
   ])('$name', ({ triggerId, emit, expectedPayload }) => {
     it('calls emitEvent with the correct trigger ID and payload', async () => {
-      registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger as Logger);
+      registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger);
       emit(bus);
       // flush async microtasks from void forward(...)
       await new Promise((r) => setTimeout(r, 0));
@@ -195,7 +220,7 @@ describe('registerSecurityWorkflowEventBridge', () => {
 
   it('logs a warning when emitEvent throws and does not rethrow', async () => {
     mockEmitEvent.mockRejectedValue(new Error('workflow platform error'));
-    registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger as Logger);
+    registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger);
     bus.emitAlertStatusChanged(mockRequest, {
       alertIds: [],
       status: 'open',
@@ -210,7 +235,7 @@ describe('registerSecurityWorkflowEventBridge', () => {
 
   it('logs a warning when getClient throws and does not rethrow', async () => {
     mockGetClient.mockRejectedValue(new Error('auth error'));
-    registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger as Logger);
+    registerSecurityWorkflowEventBridge(bus, mockWorkflowsExtensions, mockLogger);
     bus.emitNoteCreated(mockRequest, {
       noteId: 'n1',
       createdBy: 'user',

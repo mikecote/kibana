@@ -6,6 +6,8 @@
  */
 
 import { uniq } from 'lodash/fp';
+import type { ElasticsearchClient } from '@kbn/core/server';
+import type { AuditLogger } from '@kbn/security-plugin-types-server';
 import type { Indices } from '@elastic/elasticsearch/lib/api/types';
 
 import type { SecuritySolutionRequestHandlerContext } from '../../../../../types';
@@ -23,13 +25,17 @@ interface UpdateAlertsTagsArgs {
   tags: SetAlertTagsRequestBody['tags'];
 }
 
-/**
- * Adds/removes workflow tags on the alerts matching the provided `ids` within `index`.
- * Returns the raw `updateByQuery` response; throws on Elasticsearch errors.
- */
-export const updateAlertsTags = async ({ context, index, ids, tags }: UpdateAlertsTagsArgs) => {
-  const esClient = (await context.core).elasticsearch.client.asCurrentUser;
-  const auditLogger = (await context.securitySolution).getAuditLogger();
+/** Updates alert tags with the native scoped client and the owning request's audit logger. */
+export const updateAlertsTagsWithClient = async ({
+  esClient,
+  auditLogger,
+  index,
+  ids,
+  tags,
+}: Omit<UpdateAlertsTagsArgs, 'context'> & {
+  esClient: ElasticsearchClient;
+  auditLogger: AuditLogger | undefined;
+}) => {
   const target = { ids };
 
   auditAlertUpdateIntent(auditLogger, target);
@@ -56,6 +62,13 @@ export const updateAlertsTags = async ({ context, index, ids, tags }: UpdateAler
     );
     throw error;
   }
+};
+
+/** Updates tags through the request context's genuine Elasticsearch and audit services. */
+export const updateAlertsTags = async ({ context, index, ids, tags }: UpdateAlertsTagsArgs) => {
+  const esClient = (await context.core).elasticsearch.client.asCurrentUser;
+  const auditLogger = (await context.securitySolution).getAuditLogger();
+  return updateAlertsTagsWithClient({ esClient, auditLogger, index, ids, tags });
 };
 
 export const getUpdateAlertTagsScript = (tags: SetAlertTagsRequestBody['tags']) => {

@@ -77,6 +77,7 @@ const registeredByKibana = (): string[] => {
     isContextEngineEnabled: jest.fn(),
     getTaskManager: jest.fn(),
     getWorkflowExecutionReader: jest.fn(),
+    getTriageAlertsClient: jest.fn(),
   });
   registerAlertZeroStepDefinitions({
     workflowsExtensions: registry,

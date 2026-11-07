@@ -25,7 +25,7 @@ export class AppClient {
 
   constructor(
     spaceId: string,
-    config: ConfigType,
+    config: Pick<ConfigType, 'signalsIndex'>,
     kibanaVersion: string,
     kibanaBranch: string,
     buildFlavor: BuildFlavor

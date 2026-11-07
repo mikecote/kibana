@@ -21,6 +21,7 @@ import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugi
 import type { AgentService } from '@kbn/fleet-plugin/server';
 import { ALERTZERO_ENABLED_SETTING_ID } from '@kbn/alertzero-common';
 import type { Subscription } from 'rxjs';
+import type { AlertTriageAlertsClientFactory } from './alert_triage/alerts_client';
 import { getSubscriptionAvailability } from '../common/availability';
 import {
   ALERTZERO_API_PRIVILEGE_READ,
@@ -158,8 +159,13 @@ export class AlertZeroPlugin
     this.threatIntelSupplyWorkflowInstaller = installer;
   };
 
+  private triageAlertsClientFactory?: AlertTriageAlertsClientFactory;
+
   private readonly alertZeroStartContract = (): AlertZeroPluginStart => ({
     registerThreatIntelSupplyWorkflowInstaller: this.registerThreatIntelSupplyWorkflowInstaller,
+    registerTriageAlertsClientFactory: (factory) => {
+      this.triageAlertsClientFactory = factory;
+    },
   });
 
   setup(
@@ -270,6 +276,8 @@ export class AlertZeroPlugin
       isContextEngineEnabled: makeIsContextEngineEnabled(() => this.requireCoreStart()),
       getInternalEsClient: () => this.requireCoreStart().elasticsearch.client.asInternalUser,
       getTaskManager: () => this.requireStarted(this.taskManager, 'Task Manager'),
+      getTriageAlertsClient: async (request) =>
+        this.requireStarted(this.triageAlertsClientFactory, 'Security alerts client')(request),
       getWorkflowExecutionReader: () =>
         createWorkflowExecutionReader({
           getSpaceId: async (request) => this.getSpaceId(request),

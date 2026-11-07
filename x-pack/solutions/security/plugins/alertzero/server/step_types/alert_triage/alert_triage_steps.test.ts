@@ -33,10 +33,18 @@ const taskManagerWithLag = (lagMs: number | 'fails') =>
     }),
   } as unknown as Pick<TaskManagerStartContract, 'aggregate'>);
 
+const search = jest.fn();
+const updateTags = jest.fn();
+const getTriageAlertsClient = async () => ({ search, updateTags });
 const getWorkflowExecutions = jest.fn();
 const getWorkflowExecutionReader = () => ({ getWorkflowExecutions });
 beforeEach(() => {
   getWorkflowExecutions.mockReset().mockResolvedValue({ results: [] });
+  search.mockReset().mockResolvedValue({
+    hits: { hits: [], total: { value: 0 } },
+    aggregations: { rules: { buckets: [] } },
+  });
+  updateTags.mockReset().mockResolvedValue({ failures: [], timed_out: false });
 });
 
 describe('triage headroom step', () => {
@@ -115,6 +123,7 @@ describe('triage plan sweep step', () => {
 
     const { output } = await getTriagePlanSweepStepDefinition({
       getWorkflowExecutionReader,
+      getTriageAlertsClient,
     }).handler(
       createContext(
         { ...baseInput, headroom: { status: 'behind', lag_ms: 500_000 } },
@@ -124,13 +133,16 @@ describe('triage plan sweep step', () => {
 
     expect(output).toEqual(expect.objectContaining({ skip_reason: 'tm_behind', batches: [] }));
     // Only the aged-out count runs: it is a read, so a blocked sweep writes and plans nothing.
-    expect(callKibanaApi).toHaveBeenCalledTimes(1);
-    expect(callKibanaApi.mock.calls[0][0].path).toBe('/api/detection_engine/signals/search');
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ track_total_hits: true }));
+    expect(updateTags).not.toHaveBeenCalled();
+    expect(callKibanaApi).not.toHaveBeenCalled();
   });
 
   it('treats ok without its slots as unknown rather than assuming room', async () => {
     const { output } = await getTriagePlanSweepStepDefinition({
       getWorkflowExecutionReader,
+      getTriageAlertsClient,
     }).handler(createContext({ ...baseInput, headroom: { status: 'ok' } }, jest.fn()));
 
     expect(output).toEqual(expect.objectContaining({ skip_reason: 'tm_unknown' }));
@@ -148,38 +160,19 @@ describe('triage plan sweep step', () => {
         '@timestamp': new Date().toISOString(),
       },
     };
-    const callKibanaApi = jest.fn(
-      async ({
-        path,
-        body,
-      }: {
-        path: string;
-        body?: { query?: unknown; aggs?: unknown; track_total_hits?: boolean };
-      }) => {
-        if (path.endsWith('/signals/search') && body?.track_total_hits === true) {
-          return { status: 200, headers: {}, body: { hits: { total: { value: 13 } } } };
-        }
-        if (path.endsWith('/signals/search') && body?.aggs !== undefined) {
-          // The unclaimed alerts come back as the top alerts of each rule.
-          return {
-            status: 200,
-            headers: {},
-            body: {
-              aggregations: {
-                rules: { buckets: [{ top: { hits: { hits: [pendingAlert] } } }] },
-              },
-            },
-          };
-        }
-        if (path.endsWith('/signals/search')) {
-          return { status: 200, headers: {}, body: { hits: { hits: [] } } };
-        }
-        return { status: 200, headers: {}, body: {} };
-      }
-    );
+    const callKibanaApi = jest.fn();
+    search.mockImplementation(async (body) => {
+      if (body.track_total_hits === true) return { hits: { total: { value: 13 } } };
+      if (body.aggs !== undefined)
+        return {
+          aggregations: { rules: { buckets: [{ top: { hits: { hits: [pendingAlert] } } }] } },
+        };
+      return { hits: { hits: [] } };
+    });
 
     const { output } = await getTriagePlanSweepStepDefinition({
       getWorkflowExecutionReader,
+      getTriageAlertsClient,
     }).handler(
       createContext(
         { ...baseInput, headroom: { status: 'ok', in_flight: 0, slots: 40 } },
@@ -194,47 +187,37 @@ describe('triage plan sweep step', () => {
         batches: [{ rule_id: 'rule-a', rule_name: 'Rule A name', alert_ids: ['alert-1'] }],
       })
     );
-    const searchQueries: string[] = callKibanaApi.mock.calls
-      .map(([call]) => call as { path: string; body?: { query?: unknown } })
-      .filter(({ path }) => path.endsWith('/signals/search'))
-      .map(({ body }) => JSON.stringify(body?.query));
+    const searchQueries: string[] = search.mock.calls.map(([body]) => JSON.stringify(body.query));
     const agedOutQuery = searchQueries.find((query) => query.includes('"lt":')) ?? '';
     expect(agedOutQuery).toContain('"range":{"@timestamp":{"lt":');
     const unclaimedQuery = searchQueries.find((query) => query.includes('"gte":')) ?? '';
     // The look-back is the search window, so older alerts are never read.
     expect(unclaimedQuery).toContain('"range":{"@timestamp":{"gte":');
     expect(unclaimedQuery).not.toContain('az:triage_stale');
-    expect(callKibanaApi).toHaveBeenCalledWith(
-      expect.objectContaining({
-        path: '/api/detection_engine/signals/tags',
-        body: {
-          ids: ['alert-1'],
-          tags: { tags_to_add: ['az:triage_pending'], tags_to_remove: [] },
-        },
-      })
-    );
+    expect(updateTags).toHaveBeenCalledWith({
+      ids: ['alert-1'],
+      tags: { tags_to_add: ['az:triage_pending'], tags_to_remove: [] },
+    });
+    expect(callKibanaApi).not.toHaveBeenCalled();
   });
 });
 
 describe('triage load alerts step', () => {
   it('loads the batch documents with _id and _index, as Alert Analysis takes them', async () => {
-    const callKibanaApi = jest.fn().mockResolvedValue({
-      status: 200,
-      headers: {},
-      body: {
-        hits: {
-          hits: [
-            {
-              _id: 'a-1',
-              _index: '.alerts-security.alerts-default',
-              _source: { '@timestamp': 't', 'kibana.alert.rule.uuid': 'rule-a' },
-            },
-          ],
-        },
+    const callKibanaApi = jest.fn();
+    search.mockResolvedValue({
+      hits: {
+        hits: [
+          {
+            _id: 'a-1',
+            _index: '.alerts-security.alerts-default',
+            _source: { '@timestamp': 't', 'kibana.alert.rule.uuid': 'rule-a' },
+          },
+        ],
       },
     });
 
-    const { output } = await getTriageLoadAlertsStepDefinition().handler(
+    const { output } = await getTriageLoadAlertsStepDefinition({ getTriageAlertsClient }).handler(
       createContext({ alert_ids: ['a-1', 'a-2'] }, callKibanaApi)
     );
 
@@ -251,7 +234,7 @@ describe('triage load alerts step', () => {
       // An alert deleted between planning and the batch is reported, not silently dropped.
       missing_alert_ids: ['a-2'],
     });
-    expect(callKibanaApi.mock.calls[0][0].body).toEqual({
+    expect(search.mock.calls[0][0]).toEqual({
       size: 2,
       query: { ids: { values: ['a-1', 'a-2'] } },
     });
