@@ -11,7 +11,16 @@ import type { RuleTypeRegistry } from '../rule_type_registry';
 
 export type GetAlertIndicesAlias = (rulesTypes: string[], spaceId?: string) => string[];
 
-export function createGetAlertIndicesAliasFn(ruleTypeRegistry: RuleTypeRegistry) {
+export interface AlertIndicesRuleTypeRegistry {
+  get: (id: string) => {
+    alerts?: Pick<
+      NonNullable<ReturnType<RuleTypeRegistry['get']>['alerts']>,
+      'context' | 'isSpaceAware'
+    >;
+  };
+}
+
+export function createGetAlertIndicesAliasFn(ruleTypeRegistry: AlertIndicesRuleTypeRegistry) {
   return (rulesTypes: string[], spaceId?: string): string[] => {
     const aliases = new Set<string>();
     rulesTypes.forEach((ruleTypeId) => {

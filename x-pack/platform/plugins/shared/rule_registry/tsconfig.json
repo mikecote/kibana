@@ -36,7 +36,10 @@
     "@kbn/alerting-types",
     "@kbn/management-settings-ids",
     "@kbn/core-spaces-common",
-    "@kbn/workflows-extensions"
+    "@kbn/workflows-extensions",
+    "@kbn/features-plugin",
+    "@kbn/task-manager-plugin",
+    "@kbn/core-logging-server-mocks"
   ],
   "exclude": [
     "target/**/*",

@@ -77,6 +77,10 @@ import type {
 } from './lib/workflow_extensions/events';
 import { registerTriggerDefinitions } from './lib/workflow_extensions/register_trigger_definitions';
 import {
+  ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID,
+  getAlertingAuthorizationTaskProcessSettings,
+} from './task_types/alerting_authorization_task_process_settings';
+import {
   ALERTING_RUN_SETTINGS_ID,
   DEFAULT_ALERTING_RUN_SETTINGS,
 } from './task_types/rule_run_settings';
@@ -597,6 +601,22 @@ export class AlertingPlugin {
       this.ruleTypeRegistry!,
       createGetAlertIndicesAliasFn(this.ruleTypeRegistry!),
       core
+    );
+
+    const getAuthorizationSettings = async () => {
+      const [, startPlugins] = await core.getStartServices();
+      return getAlertingAuthorizationTaskProcessSettings({
+        ruleTypeRegistry,
+        features: plugins.features,
+        spacesEnabled: Boolean(startPlugins.spaces),
+        securityEnabled: Boolean(plugins.security),
+      });
+    };
+    this.taskProcessSettings[ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID] =
+      getAuthorizationSettings;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID,
+      getAuthorizationSettings
     );
 
     if (plugins.workflowsExtensions) {

@@ -33,7 +33,6 @@ describe('remove cases from alerts', () => {
       esClientScoped: esClientMock,
       auditLogger,
       ruleDataService: ruleDataServiceMock.create(),
-      getRuleType: jest.fn(),
       getRuleList: jest.fn(),
       getAlertIndicesAlias: jest.fn(),
     };
@@ -93,7 +92,6 @@ describe('remove cases from alerts', () => {
       esClientScoped: esClientMock,
       auditLogger,
       ruleDataService: ruleDataServiceMock.create(),
-      getRuleType: jest.fn(),
       getRuleList: jest.fn(),
       getAlertIndicesAlias: jest.fn(),
     };

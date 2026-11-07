@@ -802,6 +802,11 @@ Native observability data services are available through the workflow service re
 - `observabilityAgentBuilder.dataProviders.synthetics` shares the native monitor repository and public
   field selection. Both monitor saved object types use the real encryption migration factories;
   reading monitor details does not decrypt secrets.
+- `ruleRegistry.getRacClientWithRequest` uses the native alert client, authorization class, audit
+  logger and rule data service. Alerting captures its current rule identifiers, alias metadata,
+  feature definitions and Security/Spaces availability at dispatch. Requests retain native read and
+  write privileges and space filters. A changed bootstrap snapshot starts a fresh worker; unchanged
+  snapshots retain the worker while credentials and alert documents change between runs.
 
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
