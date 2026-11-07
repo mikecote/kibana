@@ -10,6 +10,7 @@ import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugi
 import { ProposalsService } from '../services/proposals_service';
 import type { ProposalsServiceDeps } from '../services/proposals_service';
 import { createProposalUserResolver } from '../services/resolve_proposal_user';
+import type { ResolveProposalUser } from '../services/resolve_proposal_user';
 import { createProposalsStorageClient } from '../storage/proposals_storage';
 
 export interface ProposalsRunServicesDeps {
@@ -20,6 +21,11 @@ export interface ProposalsRunServicesDeps {
   userProfile: CoreStart['userProfile'];
   getWorkflowsApi: () => WorkflowsServerPluginSetup['management'];
   getAttachmentsClient: ProposalsServiceDeps['getAttachmentsClient'];
+}
+
+export interface ProposalsRunServices {
+  resolveUser: ResolveProposalUser;
+  getProposalsService: () => ProposalsService;
 }
 
 /**
@@ -34,7 +40,7 @@ export const createProposalsRunServices = ({
   userProfile,
   getWorkflowsApi,
   getAttachmentsClient,
-}: ProposalsRunServicesDeps) => {
+}: ProposalsRunServicesDeps): ProposalsRunServices => {
   const resolveUser = createProposalUserResolver({ userProfile, security, logger });
   let service: ProposalsService | undefined;
   const getProposalsService = () => {

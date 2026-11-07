@@ -1,5 +1,7 @@
 {
   "tools": [
+    "agentic_investigations.set_hypotheses",
+    "agentic_investigations.set_impact",
     "custom_content_update_panel",
     "platform.context_engine.describe_ai_index",
     "platform.context_engine.forget",
@@ -124,6 +126,9 @@
     "esql.query_results",
     "graph",
     "image",
+    "investigation_hypotheses",
+    "investigation_impact",
+    "investigation_subject",
     "ml.anomaly_charts",
     "ml.anomaly_swimlane",
     "ml.single_metric_viewer",
@@ -148,7 +153,12 @@
     "workflow.yaml",
     "workflow.yaml.diff"
   ],
-  "conversationEvents": ["text_note"],
+  "conversationEvents": [
+    "escalation_attachments_synced",
+    "escalation_created_from_investigation",
+    "escalation_investigation_linked",
+    "text_note"
+  ],
   "conversationTemplates": ["escalation", "investigation"],
   "renderers": [],
   "hooks": ["after-execution-workflows", "before-agent-workflows", "skill-tools-loader"],

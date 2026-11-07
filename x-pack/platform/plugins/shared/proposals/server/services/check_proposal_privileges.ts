@@ -17,7 +17,15 @@ import { ProposalForbiddenError } from './errors';
  * before `checkPrivileges` will recognise it.
  */
 export interface ProposalPrivilegesDeps {
-  getSecurity: () => Promise<SecurityPluginStart | undefined>;
+  getSecurity: () => Promise<
+    | {
+        authz: Pick<
+          SecurityPluginStart['authz'],
+          'actions' | 'checkPrivilegesDynamicallyWithRequest'
+        >;
+      }
+    | undefined
+  >;
   logger: Logger;
 }
 

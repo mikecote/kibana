@@ -814,7 +814,13 @@ runtime availability policies while persisted agent profiles remain owned by Kib
 privileges are evaluated for each execution, including executions in a retained worker. Interactive confirmation
 requests retain the native non-interactive refusal behavior.
 
-Not yet, with what each needs: security_solution, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
+**Agentic Investigations.** Native impact, subject and hypotheses attachments, investigation tools and escalation
+conversation events use the same registration and document-store factories as Kibana. All four investigation
+workflow steps use the run's Agent Builder conversation and attachment clients, native Security privilege checks
+and Core user attribution. Reopening preserves native rename authorization and template checks; appending workflow
+execution ids preserves ordering and avoids duplicates.
+
+Not yet, with what each needs: security_solution, alertzero, observability_agent_builder (its 16 tools read the start contracts of
 ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
 registry that has to be fed through the same mechanism) and nightshift_investigations.
 
@@ -830,7 +836,6 @@ These remaining capability gaps currently fail process execution; they must be c
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
 - **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`.
-- **agentic_investigations:** all four steps.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
 

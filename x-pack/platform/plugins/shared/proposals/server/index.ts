@@ -15,6 +15,13 @@ export async function plugin(initializerContext: PluginInitializerContext) {
 }
 
 export type { ProposalsPluginSetup, ProposalsPluginStart } from './types';
+export { createProposalsRunServices } from './task_types/create_proposals_run_services';
+export type {
+  ProposalsRunServices,
+  ProposalsRunServicesDeps,
+} from './task_types/create_proposals_run_services';
+export { createProposalPrivilegesChecker } from './services/check_proposal_privileges';
+export type { ProposalPrivilegesDeps } from './services/check_proposal_privileges';
 
 // The errors a caller of the service has to recognise: `get` and `getLatestRevision` throw
 // `ProposalNotFoundError` for an id nothing is under, and `create` throws
