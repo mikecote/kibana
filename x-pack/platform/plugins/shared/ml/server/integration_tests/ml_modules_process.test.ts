@@ -8,6 +8,9 @@
 import { join } from 'node:path';
 import { z } from '@kbn/zod/v4';
 import { dataViewSavedObjectType } from '@kbn/data-views-plugin/server';
+import { ConfigSchema as spacesConfigSchema } from '@kbn/spaces-plugin/server/config';
+import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
+import { getPluginPrivileges } from '@kbn/ml-common-types/capabilities';
 import { captureModuleFiles } from '../models/data_recognizer/module_files';
 import { getMlSavedObjectTypes } from '../saved_objects';
 import { contribution as mlContribution } from '../task_types/workflow_services_contribution';
@@ -41,6 +44,20 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         reuse,
         savedObjectTypes: [dataViewSavedObjectType, ...getMlSavedObjectTypes()],
         settings: {
+          spacesRuntime: {
+            config: spacesConfigSchema.validate({}, { offering: 'traditional' }),
+            buildFlavor: 'traditional',
+            features: [
+              {
+                id: 'ml',
+                name: 'Machine Learning',
+                app: ['ml', 'kibana'],
+                category: DEFAULT_APP_CATEGORIES.kibana,
+                privileges: { all: getPluginPrivileges().admin, read: getPluginPrivileges().user },
+              },
+            ],
+            cpsEnabled: false,
+          },
           dataViewsRuntime: {
             scriptedFieldsEnabled: false,
             rollupsEnabled: false,
@@ -98,7 +115,21 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       const seen = new Set<string>();
       const failure = jest.fn();
       const results: Array<z.infer<typeof resultSchema>> = [];
-      for (const apiKey of [harness.apiKey, deniedKey, harness.apiKey]) {
+      for (const apiKey of [
+        harness.apiKey,
+        deniedKey,
+        harness.apiKey,
+        harness.apiKey,
+        harness.apiKey,
+      ]) {
+        if (results.length === 3 || results.length === 4) {
+          await harness.es.update({
+            index: '.kibana',
+            id: 'space:default',
+            refresh: 'wait_for',
+            doc: { space: { disabledFeatures: results.length === 3 ? ['ml'] : [] } },
+          });
+        }
         await harness.run('modules', failure, { apiKey });
         const execution = (await harness.executionsOf('modules')).find(({ id }) => !seen.has(id));
         if (!execution) throw new Error('No new ML execution was persisted');
@@ -119,7 +150,9 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       expect(results[0]).toEqual(nativeModule);
       expect(results[1]).toEqual({ error: expect.stringContaining('Insufficient') });
       expect(results[2]).toEqual(nativeModule);
-      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 3);
+      expect(results[3]).toEqual({ error: expect.stringContaining('Insufficient') });
+      expect(results[4]).toEqual(nativeModule);
+      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 5);
       expect(harness.kibanaRequests).toEqual([]);
       expect(failure).not.toHaveBeenCalled();
     }, 240000);

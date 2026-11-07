@@ -17,6 +17,7 @@ import {
 import {
   createMlTaskProcessServices,
   getMlTaskProcessSavedObjectTypes,
+  ML_TASK_PROCESS_SETTINGS_ID,
 } from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
 import type { APMConfig } from '..';
 import type { RegisterRuleDependencies } from '../routes/alerts/register_apm_rule_types';
@@ -43,7 +44,10 @@ export const createApmRuleTaskType = (
       ruleTypeId,
       getRuleType: (deps) => {
         const { logger, publicBaseUrl, settings, locators } = deps;
-        const ml = options.usesMl ? createMlTaskProcessServices(deps) : undefined;
+        const ml =
+          options.usesMl && settings[ML_TASK_PROCESS_SETTINGS_ID]
+            ? createMlTaskProcessServices(deps)
+            : undefined;
         const ruleType = getRuleTypeFromRegistration((alerting) =>
           register({
             alerting,
@@ -67,6 +71,7 @@ export const createApmRuleTaskType = (
     },
     {
       locators: [new AlertsLocatorDefinition()],
+      optionalSettings: options.usesMl ? [ML_TASK_PROCESS_SETTINGS_ID] : [],
       savedObjectTypes: [
         apmIndicesSavedObjectDefinition,
         ...(options.usesMl ? getMlTaskProcessSavedObjectTypes() : []),

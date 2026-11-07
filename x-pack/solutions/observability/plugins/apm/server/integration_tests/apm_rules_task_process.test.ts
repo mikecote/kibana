@@ -13,6 +13,7 @@
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import { startRuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import { ApmRuleType } from '@kbn/rule-data-utils';
+import { getMlRuleTestSettings } from '@kbn/ml-plugin/server/integration_tests/fixtures/ml_rule_test_settings';
 import { configSchema as apmSourcesAccessConfigSchema } from '@kbn/apm-sources-access-plugin/common/config_schema';
 import { config as apmConfig } from '..';
 import { taskType as errorCount } from '../task_types/error_count.task';
@@ -50,7 +51,7 @@ describe('the APM rule types served from bundles', () => {
           { serverless: false }
         ),
         apmSourcesAccess: { indices: apmSourcesAccessConfigSchema.validate({}).indices },
-        ml: { cpsEnabled: false },
+        ml: await getMlRuleTestSettings(),
       },
       indices: {
         [APM_INDEX]: {

@@ -9,6 +9,7 @@ import { ML_RULE_TYPE_ID } from '@kbn/securitysolution-rules';
 import {
   createMlTaskProcessServices,
   getMlTaskProcessSavedObjectTypes,
+  ML_TASK_PROCESS_SETTINGS_ID,
 } from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
 import { createMlAlertType } from '../lib/detection_engine/rule_types';
 import { createSecurityRuleTaskType } from './security_rule_task_type';
@@ -21,5 +22,8 @@ export const taskType = createSecurityRuleTaskType(
     const ml = createMlTaskProcessServices(deps);
     return ml.withLicense(wrap(createMlAlertType(ml.sharedServicesProviders)) as never);
   },
-  { savedObjectTypes: getMlTaskProcessSavedObjectTypes() }
+  {
+    settings: [ML_TASK_PROCESS_SETTINGS_ID],
+    savedObjectTypes: getMlTaskProcessSavedObjectTypes(),
+  }
 );

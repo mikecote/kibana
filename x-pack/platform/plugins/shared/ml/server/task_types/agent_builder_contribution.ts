@@ -9,9 +9,10 @@ import { defer } from 'rxjs';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { CoreAuditService } from '@kbn/core-security-server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
-import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
-import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
+import type { SpacesTaskProcessSettings } from '@kbn/spaces-plugin/server/task_process_settings';
 import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
 import { MlLicense } from '../../common/license';
 import { registerAnomalyDetectionAgentBuilder } from '../agent_builder/register_anomaly_detection';
@@ -20,6 +21,8 @@ import { createSnapshotModuleFiles } from '../models/data_recognizer/module_file
 import type { DataRecognizerModuleSnapshot } from '../models/data_recognizer/module_files';
 import type { MlDataViews } from '../shared_services/shared_services';
 import { getMlSavedObjectTypes } from '../saved_objects';
+import { createMlTaskAuthorization } from './create_ml_task_authorization';
+import { createMlTaskSpaceCapabilities } from './create_ml_task_space_capabilities';
 
 /** The id of the settings the plugin sends a task process to register its agent builder skill. */
 export const ML_AGENT_BUILDER_SETTINGS_ID = 'mlAgentBuilder';
@@ -58,23 +61,7 @@ export const contribution: AgentBuilderContribution = {
     // license is the exception: the tools check it synchronously, so it is subscribed to now).
     const taskHost = host as TaskHost;
     const { licensing } = taskHost;
-    const getAuthorization = () => {
-      const security = taskHost.plugins?.security as SecurityTaskPluginStart | undefined;
-      if (!security) throw new Error('ML execution requires the native Security service');
-      return security.authz;
-    };
-    const authorization: MlAuthorizationService = {
-      get actions() {
-        return getAuthorization().actions;
-      },
-      get mode() {
-        return getAuthorization().mode;
-      },
-      checkPrivilegesWithRequest: (request) =>
-        getAuthorization().checkPrivilegesWithRequest(request),
-      checkPrivilegesDynamicallyWithRequest: (request) =>
-        getAuthorization().checkPrivilegesDynamicallyWithRequest(request),
-    };
+    const authorization = createMlTaskAuthorization(taskHost);
     const mlLicense = new MlLicense();
     if (licensing) mlLicense.setup(licensing.license$);
     taskHost.onRunEnd?.(async () => mlLicense.unsubscribe());
@@ -89,6 +76,19 @@ export const contribution: AgentBuilderContribution = {
         }),
         enabledFeatures: sent.enabledFeatures,
         isServerless,
+        spaceCapabilities: sent.spacesEnabled
+          ? createMlTaskSpaceCapabilities(
+              taskHost,
+              async () => services.getService<SpacesPluginStart>('spaces'),
+              () => {
+                const spacesSettings = settings[SPACES_TASK_PROCESS_SETTINGS_ID] as
+                  | SpacesTaskProcessSettings
+                  | undefined;
+                if (!spacesSettings) throw new Error('ML execution requires its Spaces settings');
+                return spacesSettings;
+              }
+            )
+          : undefined,
       }),
       authorization,
       mlLicense,

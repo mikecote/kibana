@@ -11,6 +11,7 @@
  */
 
 import { config as ruleRegistryConfig } from '@kbn/rule-registry-plugin/server';
+import { getMlRuleTestSettings } from '@kbn/ml-plugin/server/integration_tests/fixtures/ml_rule_test_settings';
 import { ConfigSchema as listsConfigSchema } from '@kbn/lists-plugin/server/config';
 import { config as fleetConfig } from '@kbn/fleet-plugin/server/config';
 import { appContextService } from '@kbn/fleet-plugin/server/services';
@@ -138,7 +139,7 @@ describe('the detection rule types served from bundles', () => {
       ruleRegistry: ruleRegistryConfig.schema.validate({}),
       lists: listsConfigSchema.validate({}),
       fleet: fleetConfig.schema.validate({}),
-      ml: { cpsEnabled: false },
+      ml: await getMlRuleTestSettings(),
       fleetPackageMetadata: undefined as FleetPackageMetadataTaskProcessSettings | undefined,
     };
     harness = await startRuleProcessHarness({

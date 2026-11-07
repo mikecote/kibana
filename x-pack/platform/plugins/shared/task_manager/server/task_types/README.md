@@ -754,8 +754,8 @@ agent_builder_visualizations and agent_builder_platform (tools, attachment types
 proposals (the services over the plugin's storage, and agent builder's attachments), context_engine_agent_builder
 (the AI index services, the signals and improvements stores), cases (the cases client of `createCasesRunServices`,
 with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
-capabilities of a request are resolved from its `ui:ml/*` privileges and the license, there being no Core
-capabilities service in a process). Differences from Kibana are in the comment of each contribution (the AI
+capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
+license switchers). Differences from Kibana are in the comment of each contribution (the AI
 indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
 data-view capabilities in rule runtimes).
 Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
@@ -809,7 +809,12 @@ Native observability data services are available through the workflow service re
   data views and Spaces. The module recognizer reads a dispatch snapshot of its installed manifests,
   job and datafeed definitions, logos and saved-object assets. It does not need source-tree paths
   on the worker. Shared capability checks receive the actual authorization, license and feature
-  settings for credential-bearing workflow requests.
+  settings for credential-bearing workflow requests. ML rule workers use the same factories and
+  portable assets, require their dispatch settings, and use captured Cloud facts and native Spaces
+  services. ML capabilities read current space-disabled features on each request, including the
+  native AIOps gate. Real workflow tests cover credential denial and space disable/re-enable in
+  fresh and retained local and remote workers; rule tests cover both ML types and their APM,
+  Uptime and Security consumers.
 - `logsDataAccess` uses the native logs service factory and Core UI settings clients, including
   request-scoped reads and writes of the configured log sources.
 - `observabilityAgentBuilder.dataProviders.apm` and `.infra` register the same providers as Kibana

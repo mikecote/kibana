@@ -10,6 +10,8 @@ import type { AgentBuilderContributionContext } from '@kbn/agent-builder-server'
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
+import type { SpacesTaskProcessSettings } from '@kbn/spaces-plugin/server/task_process_settings';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { createStandaloneFieldFormats } from '@kbn/alerting-plugin/server/task_types/standalone/field_formats';
 import type { MlCloud } from '../ml_cloud';
@@ -20,6 +22,7 @@ import { createInProcessMlCapabilitiesResolver } from '../lib/capabilities/resol
 import { getMlSavedObjectTypes } from '../saved_objects';
 import { createSnapshotModuleFiles } from '../models/data_recognizer/module_files';
 import type { MlAgentBuilderSettings } from './agent_builder_contribution';
+import { createMlTaskSpaceCapabilities } from './create_ml_task_space_capabilities';
 
 export const ML_WORKFLOW_SETTINGS_ID = 'mlWorkflowRuntime';
 export interface MlWorkflowSettings extends MlAgentBuilderSettings {
@@ -63,6 +66,19 @@ export const createWorkflowMlServices = (
       license$,
       enabledFeatures: snapshot.enabledFeatures,
       isServerless: host.server.isServerless,
+      spaceCapabilities: snapshot.spacesEnabled
+        ? createMlTaskSpaceCapabilities(
+            host,
+            async () => getService<SpacesPluginStart>('spaces'),
+            () => {
+              const spacesSettings = host.settings?.[SPACES_TASK_PROCESS_SETTINGS_ID] as
+                | SpacesTaskProcessSettings
+                | undefined;
+              if (!spacesSettings) throw new Error('ML execution requires its Spaces settings');
+              return spacesSettings;
+            }
+          )
+        : undefined,
     }),
     moduleFiles: createSnapshotModuleFiles(snapshot.moduleFiles),
   }).sharedServicesProviders;

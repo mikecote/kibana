@@ -175,7 +175,10 @@ export const createSecurityRuleRunServicesFromHost = (
 export const createSecurityRuleTaskType = (
   ruleTypeId: string,
   createRuleType: (wrap: SecurityRuleTypeWrapper, deps: RuleTypeModuleDeps) => unknown,
-  { savedObjectTypes = [] }: { savedObjectTypes?: SavedObjectsType[] } = {}
+  {
+    savedObjectTypes = [],
+    settings = [],
+  }: { savedObjectTypes?: SavedObjectsType[]; settings?: string[] } = {}
 ): RuleTaskTypeModule =>
   createRuleTaskType(
     {
@@ -197,7 +200,7 @@ export const createSecurityRuleTaskType = (
       ],
       // Core's analytics refuses the events of the plugin unless they are registered.
       analyticsEventTypes: securityEventTypes,
-      settings: SETTINGS,
+      settings: [...SETTINGS, ...settings],
       optionalSettings: [FLEET_PACKAGE_METADATA_SETTINGS_ID],
       encryptedSavedObjectTypes: getFleetRunEncryptedSavedObjectTypes(),
     }

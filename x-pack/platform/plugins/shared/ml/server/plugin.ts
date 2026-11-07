@@ -300,14 +300,27 @@ export class MlServerPlugin
 
     initMlServerLog({ log: this.log });
 
+    let moduleFiles: ReturnType<typeof captureModuleFiles> | undefined;
+    const getMlWorkflowSettings = async (): Promise<MlWorkflowSettings> => ({
+      enabledFeatures: this.enabledFeatures,
+      compatibleModuleType: this.compatibleModuleType,
+      spacesEnabled: this.spacesPlugin !== undefined,
+      cpsEnabled: this.serverless.cpsEnabled,
+      moduleFiles: await (moduleFiles ??= captureModuleFiles()),
+      cloud: {
+        cloudId: plugins.cloud.cloudId,
+        baseUrl: plugins.cloud.baseUrl,
+        isInTrial: plugins.cloud.isInTrial(),
+      },
+    });
+
     if (plugins.alerting) {
       // What a task process that runs an ML rule type reads of this plugin's configuration.
       plugins.alerting.registerTaskProcessSettings(
         ML_TASK_PROCESS_SETTINGS_ID,
-        (): MlTaskProcessSettings => ({
-          cpsEnabled: this.serverless.cpsEnabled,
-          enabledFeatures: this.enabledFeatures,
-          compatibleModuleType: this.compatibleModuleType,
+        async (): Promise<MlTaskProcessSettings> => ({
+          ...(await getMlWorkflowSettings()),
+          spaces: plugins.spaces?.getTaskProcessSettings(),
         })
       );
       registerMlAlerts(
@@ -333,19 +346,6 @@ export class MlServerPlugin
       registerCollector(plugins.usageCollection, getIndexForType);
     }
 
-    let moduleFiles: ReturnType<typeof captureModuleFiles> | undefined;
-    const getMlWorkflowSettings = async (): Promise<MlWorkflowSettings> => ({
-      enabledFeatures: this.enabledFeatures,
-      compatibleModuleType: this.compatibleModuleType,
-      spacesEnabled: this.spacesPlugin !== undefined,
-      cpsEnabled: this.serverless.cpsEnabled,
-      moduleFiles: await (moduleFiles ??= captureModuleFiles()),
-      cloud: {
-        cloudId: plugins.cloud.cloudId,
-        baseUrl: plugins.cloud.baseUrl,
-        isInTrial: plugins.cloud.isInTrial(),
-      },
-    });
     plugins.workflowsExtensions?.registerTaskProcessSettings(
       ML_WORKFLOW_SETTINGS_ID,
       getMlWorkflowSettings

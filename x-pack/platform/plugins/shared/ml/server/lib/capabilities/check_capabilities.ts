@@ -88,11 +88,7 @@ async function checkMlCapabilitiesViaPrivileges(
   return hasAllRequested;
 }
 
-/**
- * License + plugin feature gates for requested ML capabilities.
- * Uses plugin-configured {@link MlFeatures}, not request-resolved UI capabilities
- * (those are all-false on unauthenticated fake requests).
- */
+/** Checks configured ML features and licensing for a credential-bearing task request. */
 export function areCapabilitiesAllowedByLicenseAndFeatures(
   enabledFeatures: MlFeatures,
   requestedCapabilities: MlCapabilitiesKey[],
@@ -133,9 +129,8 @@ export function hasMlCapabilitiesProvider(
   const resolveMlCapabilitiesOnce = once(resolveMlCapabilities);
 
   return async (capabilities: MlCapabilitiesKey[]) => {
-    // Fake requests (Agent Builder / Task Manager) are not authenticated for UI
-    // capability resolution — Security disables all caps. Authorize against the
-    // real user via the request API key, and gate with license + plugin features.
+    // Credential-bearing task requests must pass both the direct privilege guard and
+    // the native capability switchers, including the active space's disabled features.
     if (request.isFakeRequest) {
       if (!authorization || !mlLicense || !enabledFeatures) {
         throw new InsufficientMLCapabilities('Insufficient privileges to access feature');
@@ -147,13 +142,13 @@ export function hasMlCapabilitiesProvider(
         capabilities
       );
       if (
-        hasPrivileges &&
-        areCapabilitiesAllowedByLicenseAndFeatures(enabledFeatures, capabilities, mlLicense)
+        !(
+          hasPrivileges &&
+          areCapabilitiesAllowedByLicenseAndFeatures(enabledFeatures, capabilities, mlLicense)
+        )
       ) {
-        return;
+        throw new InsufficientMLCapabilities('Insufficient privileges to access feature');
       }
-
-      throw new InsufficientMLCapabilities('Insufficient privileges to access feature');
     }
 
     try {
