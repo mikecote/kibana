@@ -10,6 +10,8 @@
 import { firstValueFrom } from 'rxjs';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import { coreMock } from '@kbn/core/server/mocks';
+import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
+import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/server/mocks';
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
 import {
   createHostFeatureFlags,
@@ -265,5 +267,33 @@ describe('workflow process runtime lifecycle', () => {
     await runner.run();
     await expect(runner.cleanup?.()).rejects.toThrow('cleanup failed');
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('workflow native encrypted migration factories', () => {
+  it('passes the same native encryption setup to every contributing saved object factory', () => {
+    const createSavedObjectTypes = jest.fn(
+      (encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>) => {
+        expect(encryption).toBe(nativeEncryption);
+        return [
+          {
+            name: 'native-migrated-type',
+            hidden: false,
+            namespaceType: 'single' as const,
+            mappings: { properties: {} },
+          },
+        ];
+      }
+    );
+    const nativeEncryption = encryptedSavedObjectsMock.createSetup();
+    const steps: WorkflowStepsContribution = {
+      declares: { createSavedObjectTypes },
+      register: () => {},
+    };
+    const applied = runTaskType.contributions?.apply?.({ 'workflow-steps': [steps] });
+    expect(applied?.createSavedObjectTypes?.(nativeEncryption).map(({ name }) => name)).toEqual([
+      'native-migrated-type',
+    ]);
+    expect(createSavedObjectTypes).toHaveBeenCalledTimes(1);
   });
 });

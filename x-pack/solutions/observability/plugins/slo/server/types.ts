@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { AlertingServerSetup, AlertingServerStart } from '@kbn/alerting-plugin/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { CPSServerSetup } from '@kbn/cps/server';
@@ -39,6 +40,7 @@ export interface SLOServerStart {
 }
 
 export interface SLOPluginSetupDependencies {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   alerting: AlertingServerSetup;
   ruleRegistry: RuleRegistryPluginSetupContract;
   share: SharePluginSetup;

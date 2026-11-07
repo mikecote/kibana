@@ -29,7 +29,7 @@ export const LEGACY_SYNTHETICS_MONITOR_ENCRYPTED_TYPE_SINGLE = {
 };
 
 export const getLegacySyntheticsMonitorSavedObjectType = (
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
 ): SavedObjectsType => {
   return {
     name: legacySyntheticsMonitorTypeSingle,

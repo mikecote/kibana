@@ -11,6 +11,9 @@
     "taskTypes": [
       "server/task_types/slo_burn_rate.task.ts"
     ],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
+    },
     "configPath": ["xpack", "slo"],
     "requiredPlugins": [
       "aiops",
@@ -43,6 +46,7 @@
       "apmSourcesAccess"
     ],
     "optionalPlugins": [
+      "workflowsExtensions",
       "cases",
       "cloud",
       "cps",

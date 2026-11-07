@@ -185,6 +185,7 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
+| `createSavedObjectTypes`    | native saved object migrations | Builds definitions with the genuine encryption setup during worker setup; static and created definitions are deduplicated by name                          | Already registered by the owning plugin |
 | `dataStreams`               | `dataStreams`                 | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped                                     | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
@@ -440,7 +441,7 @@ export const taskType = createRuleTaskType(
 );
 ```
 
-Options: `locators`, `savedObjectTypes`, `encryptedSavedObjectTypes`, `uiSettings`, `eventLogProviders`,
+Options: `locators`, `savedObjectTypes`, `createSavedObjectTypes`, `encryptedSavedObjectTypes`, `uiSettings`, `eventLogProviders`,
 `settings`, `executeConnectors`, `schedulableTaskTypes`, `taskPlugins`. A plugin whose rule types read
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
@@ -796,6 +797,11 @@ Native observability data services are available through the workflow service re
   installed default resolver; `metricsDataAccess.defaultIndices.<owner>` restores that resolver
   through its owning plugin's factory. Infra contributes its native source resolver. Missing or
   unowned resolvers fail explicitly. Explicit metric-index saved objects retain their native priority.
+- `slo` and `observabilityAgentBuilder.dataProviders.slo` share the native scoped SLO client and
+  details provider. Each request resolves its current space and uses its scoped saved object and ES clients.
+- `observabilityAgentBuilder.dataProviders.synthetics` shares the native monitor repository and public
+  field selection. Both monitor saved object types use the real encryption migration factories;
+  reading monitor details does not decrypt secrets.
 
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a

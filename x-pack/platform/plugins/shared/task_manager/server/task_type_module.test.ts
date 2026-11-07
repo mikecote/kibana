@@ -23,6 +23,7 @@ describe('toTaskDefinition', () => {
         timeout: '1m',
         cancelGracePeriodMs: 5000,
         savedObjectTypes: [],
+        createSavedObjectTypes: () => [],
         dataStreams: [],
         createTaskRunner: () => ({ run: async () => undefined }),
       }),

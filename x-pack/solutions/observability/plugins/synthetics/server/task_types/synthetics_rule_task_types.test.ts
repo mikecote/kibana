@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/server/mocks';
 import { getRuleTypeFromRegistration } from '@kbn/alerting-plugin/server/task_types/capture_rule_type';
 import { expectModuleToMatchRegisteredRuleType } from '@kbn/alerting-plugin/server/task_types/rule_task_type.mocks';
 import { registerSyntheticsStatusCheckRule } from '../alert_rules/status_rule/monitor_status_rule';
@@ -37,16 +38,15 @@ describe('synthetics task type modules', () => {
     expectModuleToMatchRegisteredRuleType(taskType, registered, { synthetics, observability });
   });
 
-  it('reads the monitors and the private locations, and no secret of the plugin', () => {
-    expect(monitorStatus.savedObjectTypes?.map(({ name }) => name)).toEqual(
+  it('reads the monitors and the private locations, and no service API key of the plugin', () => {
+    const types = monitorStatus.createSavedObjectTypes?.(encryptedSavedObjectsMock.createSetup());
+    expect(types?.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         'synthetics-monitor-multi-space',
         'synthetics-monitor',
         'synthetics-privates-locations',
       ])
     );
-    expect(monitorStatus.savedObjectTypes?.map(({ name }) => name)).not.toContain(
-      'synthetics-service-api-key'
-    );
+    expect(types?.map(({ name }) => name)).not.toContain('synthetics-service-api-key');
   });
 });

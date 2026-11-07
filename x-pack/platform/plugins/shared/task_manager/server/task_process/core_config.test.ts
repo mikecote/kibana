@@ -35,6 +35,18 @@ interface Logging {
 }
 
 describe('buildCoreConfig', () => {
+  it('configures native encryption for saved object migration factories without encrypted declarations', () => {
+    const encryptionKey = 'k'.repeat(32);
+    const { settings, cleanup } = buildCoreConfig(
+      init({ encryptedSavedObjects: { encryptionKey, decryptionOnlyKeys: [] } }),
+      { createSavedObjectTypes: () => [] }
+    );
+    expect(settings.xpack).toEqual({
+      encryptedSavedObjects: { encryptionKey, keyRotation: { decryptionOnlyKeys: [] } },
+    });
+    cleanup();
+  });
+
   it('disables eager data stream installation and migrations in task workers', () => {
     const { settings, cleanup } = buildCoreConfig(init(), {});
     expect(settings.dataStreams).toEqual({ migrations: { skip: true } });

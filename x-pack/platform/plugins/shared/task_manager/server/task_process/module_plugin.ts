@@ -73,9 +73,17 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
   return {
     setup(core: CoreSetup, deps: SetupDeps) {
       fips = core.security.fips;
+      encryption = deps.encryptedSavedObjects;
       const types: SavedObjectsType[] = [];
       const seen = new Set<string>();
-      for (const type of module.savedObjectTypes ?? []) {
+      if (module.createSavedObjectTypes && !deps.encryptedSavedObjects) {
+        throw new Error('Native saved object factories require encrypted saved objects setup');
+      }
+      const createdTypes =
+        module.createSavedObjectTypes && deps.encryptedSavedObjects
+          ? module.createSavedObjectTypes(deps.encryptedSavedObjects)
+          : [];
+      for (const type of [...(module.savedObjectTypes ?? []), ...createdTypes]) {
         if (seen.has(type.name)) continue;
         seen.add(type.name);
         types.push(type);
@@ -91,7 +99,6 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         if (!deps.encryptedSavedObjects) {
           throw new Error('The module declares encrypted saved objects but the process has no ESO');
         }
-        encryption = deps.encryptedSavedObjects;
         module.encryptedSavedObjectTypes.forEach((registration) =>
           deps.encryptedSavedObjects!.registerType(registration)
         );
@@ -171,7 +178,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         },
       };
 
-      if (module.encryptedSavedObjectTypes?.length && deps.encryptedSavedObjects) {
+      if (
+        (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) &&
+        deps.encryptedSavedObjects
+      ) {
         host.encryptedSavedObjects = {
           getClient: deps.encryptedSavedObjects.getClient,
           isEncryptionError: deps.encryptedSavedObjects.isEncryptionError,

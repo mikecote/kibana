@@ -18,7 +18,9 @@ export type SyntheticsMonitorWithSecretsAttributes860 = Omit<
 export type SyntheticsUnsanitizedDoc860 =
   SavedObjectUnsanitizedDoc<SyntheticsMonitorWithSecretsAttributes860>;
 
-export const migration860 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) => {
+export const migration860 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) => {
   return encryptedSavedObjects.createMigration<
     SyntheticsMonitorWithSecretsAttributes860,
     SyntheticsMonitorWithSecretsAttributes860

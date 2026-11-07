@@ -28,6 +28,7 @@ import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_co
 import type {
   EncryptedSavedObjectTypeRegistration,
   EncryptedSavedObjectsClient,
+  EncryptedSavedObjectsPluginSetup,
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { CancellableTask, RunContext } from './task';
 import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
@@ -168,6 +169,10 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * has them.
    */
   savedObjectTypes?: SavedObjectsType[];
+  /** Builds native saved object migrations with the process's genuine encryption setup. */
+  createSavedObjectTypes?: (
+    encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+  ) => SavedObjectsType[];
   /** Data streams owned by the module; registered locally without eager initialization. */
   dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** Encrypted saved object registrations the runner needs; a task process registers them. */
@@ -296,7 +301,7 @@ export const assertHostExtensions = (
 ) => {
   const missing: string[] = [];
   const { hostExtensions: ext = {}, settings = {} } = options;
-  if (module.encryptedSavedObjectTypes?.length) {
+  if (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) {
     if (!ext.encryptedSavedObjects) missing.push('hostExtensions.encryptedSavedObjects');
     if (!ext.getEncryptionKeys) missing.push('hostExtensions.getEncryptionKeys');
   }
@@ -330,6 +335,7 @@ export const toTaskDefinition = (
     type,
     cancelGracePeriodMs,
     savedObjectTypes,
+    createSavedObjectTypes,
     dataStreams,
     encryptedSavedObjectTypes,
     eventLog,

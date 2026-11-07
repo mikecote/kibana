@@ -8,7 +8,6 @@
 import type {
   CoreSetup,
   CoreStart,
-  KibanaRequest,
   Logger,
   Plugin,
   PluginInitializerContext,
@@ -21,7 +20,7 @@ import { SLO_ALERTING_FEATURES } from '@kbn/rule-data-utils';
 import { mapValues } from 'lodash';
 import { LOCK_ID_RESOURCE_INSTALLER } from '../common/constants';
 import { registerDataProviders } from './agent_builder/register_data_provider';
-import { getSloClientWithRequest } from './client';
+import { createScopedSloClient } from './client/create_scoped_slo_client';
 import { registerSloUsageCollector } from './lib/collectors/register';
 import { registerAlertsEmbeddable } from './lib/embeddables/register_alerts_embeddable';
 import { registerBurnRateEmbeddable } from './lib/embeddables/register_burn_rate_embeddable';
@@ -91,6 +90,10 @@ export class SLOPlugin
     core: CoreSetup<SLOPluginStartDependencies, SLOServerStart>,
     plugins: SLOPluginSetupDependencies
   ): SLOServerSetup {
+    plugins.workflowsExtensions?.registerTaskProcessSettings('sloRuntime', async () => {
+      const [, startPlugins] = await core.getStartServices();
+      return { enabled: true, spacesEnabled: Boolean(startPlugins.spaces) };
+    });
     this.isCpsEnabled = plugins.cps?.getCpsEnabled() ?? false;
     const lockManager = new LockManagerService(core, this.logger);
     plugins.share.url.locators.create(new AlertsLocatorDefinition());
@@ -327,27 +330,19 @@ export class SLOPlugin
   }
 
   public start(core: CoreStart, plugins: SLOPluginStartDependencies): SLOServerStart {
-    const internalEsClient = core.elasticsearch.client.asInternalUser;
-
     this.orphanSummaryCleanupTask?.start(plugins).catch(() => {});
     this.tempSummaryCleanupTask?.start(plugins).catch(() => {});
     this.staleInstancesCleanupTask?.start(plugins).catch(() => {});
     this.compositeSloSummaryTask?.start(plugins).catch(() => {});
 
     return {
-      getSloClientWithRequest: async (request: KibanaRequest) => {
-        const spaceId =
-          (await plugins.spaces?.spacesService.getActiveSpace(request))?.id ?? 'default';
-
-        return getSloClientWithRequest({
-          request,
-          soClient: core.savedObjects.getScopedClient(request),
-          esClient: internalEsClient,
-          scopedClusterClient: core.elasticsearch.client.asScoped(request),
-          spaceId,
-          logger: this.logger,
-        });
-      },
+      getSloClientWithRequest: createScopedSloClient({
+        savedObjects: core.savedObjects,
+        elasticsearch: core.elasticsearch,
+        getSpaceId: async (request) =>
+          (await plugins.spaces?.spacesService.getActiveSpace(request))?.id ?? 'default',
+        logger: this.logger,
+      }),
     };
   }
 }

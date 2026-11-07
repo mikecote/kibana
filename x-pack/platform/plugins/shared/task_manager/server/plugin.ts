@@ -326,7 +326,7 @@ export class TaskManagerPlugin
             security: { ...coreStart.security, fips: core.security.fips },
             server: getServerInfo(coreStart.http.basePath.publicBaseUrl),
           };
-          if (module.encryptedSavedObjectTypes?.length) {
+          if (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) {
             host.encryptedSavedObjects = await extensions!.encryptedSavedObjects!();
           }
           if (module.eventLog) host.eventLog = extensions!.eventLog;

@@ -79,6 +79,7 @@ const dedupeUiSettings = <T extends Record<string, unknown>>(list: T[]): T[] => 
 export type AgentBuilderContributionDeclares = Pick<
   NonNullable<WorkflowStepsContribution['declares']>,
   | 'savedObjectTypes'
+  | 'createSavedObjectTypes'
   | 'dataStreams'
   | 'encryptedSavedObjectTypes'
   | 'settings'
@@ -137,6 +138,8 @@ export const defineWorkflowTaskType = (
       ...actionsEventTypes,
       ...declared.flatMap(({ analyticsEventTypes }) => analyticsEventTypes ?? []),
     ],
+    createSavedObjectTypes: (encryption) =>
+      declared.flatMap((declaration) => declaration.createSavedObjectTypes?.(encryption) ?? []),
     registerAnalyticsEventTypes: (analytics) => {
       for (const declaration of declared) declaration.registerAnalyticsEventTypes?.(analytics);
     },

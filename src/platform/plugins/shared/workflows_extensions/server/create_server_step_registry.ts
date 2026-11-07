@@ -15,7 +15,10 @@ import type {
 } from '@kbn/core/server';
 import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
-import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
+import type {
+  EncryptedSavedObjectsPluginSetup,
+  EncryptedSavedObjectTypeRegistration,
+} from '@kbn/encrypted-saved-objects-plugin/server';
 import type { Logger } from '@kbn/logging';
 import { ServerStepRegistry } from './step_registry/step_registry';
 import { registerInternalStepDefinitions } from './steps';
@@ -85,6 +88,10 @@ export interface WorkflowStepsContribution {
   declares?: {
     schedulableTypes?: RegExp[];
     savedObjectTypes?: SavedObjectsType[];
+    /** Builds native migrations with the worker's encryption setup. */
+    createSavedObjectTypes?: (
+      encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+    ) => SavedObjectsType[];
     dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
     settings?: string[];

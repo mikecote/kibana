@@ -86,6 +86,7 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  createSavedObjectTypes?: TaskTypeModule['createSavedObjectTypes'];
   /** A task process only: encrypted saved objects the executor reads, besides what every rule run reads. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** A task process only: event log providers the executor writes with, besides alerting's own. */
@@ -316,6 +317,7 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
+    createSavedObjectTypes: options.createSavedObjectTypes,
     // When a task process serves the run, Kibana still counts it for the `node_rules` usage collector.
     ...(kibanaRuleType && options.getRuntime
       ? {

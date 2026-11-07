@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { ObservabilityAgentBuilderDataRegistryTypes } from '@kbn/observability-agent-builder-plugin/server';
 import type { CoreSetup, KibanaRequest } from '@kbn/core/server';
 import type {
   SyntheticsPluginsSetupDependencies,
@@ -25,38 +26,37 @@ export function registerDataProviders({
     return;
   }
 
-  const registerDataProvider: typeof observabilityAgentBuilder.registerDataProvider = (
-    id,
-    provider
-  ) => observabilityAgentBuilder.registerDataProvider(id, provider, { owner: 'synthetics' });
-
-  registerDataProvider(
+  observabilityAgentBuilder.registerDataProvider(
     'syntheticsMonitorDetails',
-    async ({ request, configId }: { request: KibanaRequest; configId: string }) => {
+    createSyntheticsMonitorDetailsDataProvider(async (request) => {
       const [coreStart, pluginsStart] = await (
         core as CoreSetup<SyntheticsPluginsStartDependencies>
       ).getStartServices();
-
-      const savedObjectsClient = coreStart.savedObjects.getScopedClient(request);
-      const encryptedSavedObjectsClient = pluginsStart.encryptedSavedObjects.getClient();
-
-      const monitorConfigRepository = new MonitorConfigRepository(
-        savedObjectsClient,
-        encryptedSavedObjectsClient
+      return new MonitorConfigRepository(
+        coreStart.savedObjects.getScopedClient(request),
+        pluginsStart.encryptedSavedObjects.getClient()
       );
-
-      const monitor = await monitorConfigRepository.get(configId);
-      const { attributes } = monitor;
-
-      return {
-        id: monitor.id,
-        name: attributes[ConfigKey.NAME],
-        type: attributes[ConfigKey.MONITOR_TYPE],
-        enabled: attributes[ConfigKey.ENABLED],
-        schedule: attributes[ConfigKey.SCHEDULE],
-        locations: attributes[ConfigKey.LOCATIONS],
-        tags: attributes[ConfigKey.TAGS],
-      };
-    }
+    }),
+    { owner: 'synthetics' }
   );
 }
+
+/** Shares the native monitor lookup and public field selection between Kibana and workflow workers. */
+export const createSyntheticsMonitorDetailsDataProvider =
+  (
+    getRepository: (request: KibanaRequest) => Promise<Pick<MonitorConfigRepository, 'get'>>
+  ): ObservabilityAgentBuilderDataRegistryTypes['syntheticsMonitorDetails'] =>
+  async ({ request, configId }) => {
+    const repository = await getRepository(request);
+    const monitor = await repository.get(configId);
+    const { attributes } = monitor;
+    return {
+      id: monitor.id,
+      name: attributes[ConfigKey.NAME],
+      type: attributes[ConfigKey.MONITOR_TYPE],
+      enabled: attributes[ConfigKey.ENABLED],
+      schedule: attributes[ConfigKey.SCHEDULE],
+      locations: attributes[ConfigKey.LOCATIONS],
+      tags: attributes[ConfigKey.TAGS],
+    };
+  };
