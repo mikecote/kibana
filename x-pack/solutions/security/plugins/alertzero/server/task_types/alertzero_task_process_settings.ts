@@ -21,4 +21,9 @@ export interface AlertZeroTaskProcessSettings {
   telemetryOptedIn: boolean;
   /** Whether the dispatching plugin has the native inference feature endpoint service. */
   searchInferenceEndpointsAvailable: boolean;
+  /** Whether the plugin started the native action catalog and hunt collaborators. */
+  actionsServiceAvailable: boolean;
+  huntServicesReady: boolean;
+  /** Whether Fleet's agent service is available to the dispatching plugin. */
+  fleetAgentServiceAvailable: boolean;
 }

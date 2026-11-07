@@ -895,6 +895,13 @@ inference-settings type its model-policy client reads, independently of the opti
 workflow steps. Real summary tests cover private-conversation denial, persisted metadata and
 feature-specific connector selection in fresh and retained local and remote workers.
 
+`hunt.packageReport` uses the native conversation and attachment clients, action catalog, scoped
+Fleet enrollment and Proposals service. Kibana and workers construct Proposals through the same
+factory. Packaging checks Agent Builder registration parity before execution and resolves the
+current Context Engine setting through native scoped UI settings. Execution tests change the
+task's proposal-read privileges and agent enrollment between runs, including a same-named agent
+in another space, across fresh and retained local and remote workers.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services) and nightshift_investigations (investigations, sandbox and agent execution services).
 
@@ -909,8 +916,8 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **alertzero:** `hunt.packageReport` and native adapters for
-  the triage steps' workflow-execution reads and detection-alert search/tag operations, which still
+- **alertzero:** native adapters for the triage steps' workflow-execution reads and
+  detection-alert search/tag operations, which still
   call Kibana routes.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).

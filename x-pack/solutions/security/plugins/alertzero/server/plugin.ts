@@ -198,6 +198,9 @@ export class AlertZeroPlugin
         managedWorkflowsReady: this.managedWorkflowsReady,
         telemetryOptedIn: this.telemetryOptedIn,
         searchInferenceEndpointsAvailable: this.searchInferenceEndpoints !== undefined,
+        actionsServiceAvailable: this.actionsService !== undefined,
+        huntServicesReady: this.huntServices !== undefined,
+        fleetAgentServiceAvailable: this.fleetAgentService !== undefined,
       })
     );
 

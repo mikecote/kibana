@@ -24,7 +24,12 @@ import { CONTEXT_ENGINE_ENABLED_SETTING_ID } from '@kbn/management-settings-ids'
  * from a Context Engine that is off, and the caller distinguishes them.
  */
 export const makeIsContextEngineEnabled =
-  (getCoreStart: () => CoreStart) =>
+  (
+    getCoreStart: () => {
+      uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
+      savedObjects: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+    }
+  ) =>
   async (request: KibanaRequest): Promise<boolean> => {
     const coreStart = getCoreStart();
     return coreStart.uiSettings

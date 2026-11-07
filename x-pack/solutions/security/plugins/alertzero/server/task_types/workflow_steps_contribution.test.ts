@@ -7,7 +7,7 @@
 
 import { loggerMock } from '@kbn/logging-mocks';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepRunCheck, WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepRunCheck } from '@kbn/workflows-extensions/server';
 import { registerAlertZeroStepDefinitions, registerStepDefinitions } from '../step_types';
 import { contribution } from './workflow_steps_contribution';
 
@@ -15,10 +15,13 @@ const settings = {
   serviceAccountsEnabled: true,
   managedWorkflowsReady: true,
   searchInferenceEndpointsAvailable: false,
+  actionsServiceAvailable: true,
+  huntServicesReady: true,
+  fleetAgentServiceAvailable: false,
   telemetryOptedIn: true,
 };
 
-const registerContribution = async (alertzero: Record<string, unknown> | null = settings) => {
+const registerContribution = async (alertzero: typeof settings | null = settings) => {
   const registry = createServerStepRegistry(loggerMock.create());
   const internalSteps = registry.getAllStepDefinitions().length;
   const checks: WorkflowStepRunCheck[] = [];
@@ -58,11 +61,8 @@ const registerContribution = async (alertzero: Record<string, unknown> | null = 
 
 /** The ids Kibana registers: what `plugin.ts` registers through the same functions. */
 const registeredByKibana = (): string[] => {
-  const ids: string[] = [];
-  const registry = {
-    registerStepDefinition: (definition: { id: string }) => ids.push(definition.id),
-    registerTriggerDefinition: jest.fn(),
-  } as unknown as WorkflowStepsRegistry;
+  const registry = createServerStepRegistry(loggerMock.create());
+  const internal = new Set(registry.getAllStepDefinitions().map(({ id }) => id));
   registerStepDefinitions({
     workflowsExtensions: registry,
     getActionsService: jest.fn(),
@@ -81,25 +81,20 @@ const registeredByKibana = (): string[] => {
     isTelemetryOptedIn: async () => true,
     logger: loggerMock.create(),
   });
-  return ids;
+  return registry
+    .getAllStepDefinitions()
+    .map(({ id }) => id)
+    .filter((id) => !internal.has(id));
 };
 
-/** They read the investigation conversation with Agent Builder's conversations client and executions. */
-const KIBANA_ONLY_STEPS = ['hunt.packageReport'];
-
 describe('alertzero workflow-steps contribution', () => {
-  it('registers every step Kibana registers except hunt packaging', async () => {
+  it('registers every step Kibana registers', async () => {
     const { registry, internalSteps } = await registerContribution();
     const kibana = registeredByKibana();
 
     expect(kibana).toHaveLength(6);
-    KIBANA_ONLY_STEPS.forEach((id) => {
-      expect(kibana).toContain(id);
-      expect(registry.hasStepDefinition(id)).toBe(false);
-    });
-    const served = kibana.filter((id) => !KIBANA_ONLY_STEPS.includes(id));
-    served.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
-    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + served.length);
+    kibana.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
+    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + kibana.length);
   });
 
   it('registers nothing when Kibana sent no settings, as when the plugin is disabled', async () => {
@@ -112,14 +107,15 @@ describe('alertzero workflow-steps contribution', () => {
     expect(contribution.declares?.settings).toEqual(['alertzero']);
   });
 
-  it('checks native Agent Builder parity before a summary runs', async () => {
-    const { checks, getService } = await registerContribution();
-    getService.mockReturnValue(() => 'missing native tool registration');
-    expect(checks[0]?.({ type: 'console', config: {} })).toBeUndefined();
-    expect(getService).not.toHaveBeenCalled();
-    expect(checks[0]?.({ type: 'alertzero.investigation.summarize', config: {} })).toBe(
-      'missing native tool registration'
-    );
-    expect(getService).toHaveBeenCalledWith('agentBuilder.parity');
-  });
+  it.each(['alertzero.investigation.summarize', 'hunt.packageReport'])(
+    'checks native Agent Builder parity before %s runs',
+    async (type) => {
+      const { checks, getService } = await registerContribution();
+      getService.mockReturnValue(() => 'missing native tool registration');
+      expect(checks[0]?.({ type: 'console', config: {} })).toBeUndefined();
+      expect(getService).not.toHaveBeenCalled();
+      expect(checks[0]?.({ type, config: {} })).toBe('missing native tool registration');
+      expect(getService).toHaveBeenCalledWith('agentBuilder.parity');
+    }
+  );
 });

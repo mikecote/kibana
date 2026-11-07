@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import type { CoreStart } from '@kbn/core/server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
@@ -14,6 +13,7 @@ import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server
 import { createProposalPrivilegesChecker } from '../services/check_proposal_privileges';
 import { registerStepDefinitions } from '../step_types';
 import { createProposalsRunServices } from './create_proposals_run_services';
+import type { ProposalsPluginStart } from '../types';
 
 /**
  * The proposal steps in the task process of the workflow task types. Listed under
@@ -27,9 +27,7 @@ import { createProposalsRunServices } from './create_proposals_run_services';
 export const contribution: WorkflowStepsContribution = {
   register: (registry, { host, logger, services }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
-    const { elasticsearch, security, userProfile, plugins } = host as TaskHost & {
-      userProfile?: CoreStart['userProfile'];
-    };
+    const { elasticsearch, security, userProfile, plugins } = host as TaskHost;
     const authz = plugins?.security as Pick<SecurityPluginStart, 'authz'> | undefined;
     if (!userProfile)
       throw new Error('The task process host did not lend Core user profile service');
@@ -39,13 +37,13 @@ export const contribution: WorkflowStepsContribution = {
     const esClient = elasticsearch.asInternalUser;
 
     const privileges = createProposalPrivilegesChecker({
-      getSecurity: async () => authz as SecurityPluginStart,
+      getSecurity: async () => authz,
       logger: proposalsLogger,
     });
     const { resolveUser, getProposalsService } = createProposalsRunServices({
       logger: proposalsLogger,
       esClient,
-      security: security as CoreStart['security'],
+      security,
       userProfile,
       getWorkflowsApi: () =>
         services.getService<WorkflowsServerPluginSetup['management']>('workflows.management'),
@@ -54,6 +52,12 @@ export const contribution: WorkflowStepsContribution = {
           .getService<AgentBuilderPluginStart>('agentBuilder')
           .attachments.getScopedClient({ request }),
     });
+
+    const start: ProposalsPluginStart = {
+      getProposalsService,
+      getProposalPrivileges: () => privileges,
+    };
+    services.registerService('proposals', start);
 
     registerStepDefinitions({
       workflowsExtensions: registry,

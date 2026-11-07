@@ -7,23 +7,24 @@
 
 import { loggerMock } from '@kbn/logging-mocks';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepRunCheck, WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepRunCheck } from '@kbn/workflows-extensions/server';
 import { registerStepDefinitions } from '../step_types';
 import { contribution } from './workflow_steps_contribution';
 
 /** The ids Kibana registers: what `plugin.ts` registers through the same function. */
 const registeredByKibana = () => {
-  const steps: string[] = [];
-  const registry = {
-    registerStepDefinition: (definition: { id: string }) => steps.push(definition.id),
-  } as unknown as WorkflowStepsRegistry;
+  const registry = createServerStepRegistry(loggerMock.create());
+  const internal = new Set(registry.getAllStepDefinitions().map(({ id }) => id));
   registerStepDefinitions({
     workflowsExtensions: registry,
     getProposalsService: jest.fn(),
     resolveUser: jest.fn(),
-    privileges: {} as never,
+    privileges: { assertCanManage: jest.fn(), assertCanRead: jest.fn(), canManage: jest.fn() },
   });
-  return steps;
+  return registry
+    .getAllStepDefinitions()
+    .map(({ id }) => id)
+    .filter((id) => !internal.has(id));
 };
 
 describe('proposals workflow-steps contribution', () => {

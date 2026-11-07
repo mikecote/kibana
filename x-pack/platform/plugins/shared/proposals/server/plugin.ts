@@ -18,15 +18,14 @@ import { PROPOSALS_MANAGED_WORKFLOW_OWNER_ID } from './constants';
 import { registerFeatures } from './features';
 import { initializeManagedWorkflows } from './managed_workflows/initialize_managed_workflows';
 import { registerRoutes } from './routes/register_routes';
-import { ProposalsService } from './services/proposals_service';
+import type { ProposalsService } from './services/proposals_service';
 import { createProposalPrivilegesChecker } from './services/check_proposal_privileges';
 import type { ProposalPrivilegesChecker } from './services/check_proposal_privileges';
-import { createProposalUserResolver } from './services/resolve_proposal_user';
 import type { ResolveProposalUser } from './services/resolve_proposal_user';
 import { registerProposalsAgentBuilder } from './agent_builder/register_agent_builder';
 import { PROPOSALS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { registerStepDefinitions } from './step_types';
-import { createProposalsStorageClient } from './storage/proposals_storage';
+import { createProposalsRunServices } from './task_types/create_proposals_run_services';
 import type {
   ProposalsPluginSetup,
   ProposalsPluginStart,
@@ -104,26 +103,17 @@ export class ProposalsPlugin
 
   start(coreStart: CoreStart, plugins: ProposalsStartDependencies): ProposalsPluginStart {
     this.spaces = plugins.spaces;
-    this.resolveUser = createProposalUserResolver({
+    const { resolveUser, getProposalsService } = createProposalsRunServices({
       userProfile: coreStart.userProfile,
       security: coreStart.security,
       logger: this.logger,
-    });
-
-    // Reads and writes go through the internal user; authorization is enforced
-    // at the API layer.
-    const storage = createProposalsStorageClient({
       esClient: coreStart.elasticsearch.client.asInternalUser,
-      logger: this.logger,
-    });
-
-    this.proposalsService = new ProposalsService({
-      storage,
-      logger: this.logger,
       getWorkflowsApi: () => this.requireWorkflowsApi(),
       getAttachmentsClient: (request) =>
         plugins.agentBuilder.attachments.getScopedClient({ request }),
     });
+    this.resolveUser = resolveUser;
+    this.proposalsService = getProposalsService();
 
     void initializeManagedWorkflows({
       workflowsExtensions: plugins.workflowsExtensions,

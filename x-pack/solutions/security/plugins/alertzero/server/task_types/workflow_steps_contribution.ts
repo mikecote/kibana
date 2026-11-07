@@ -13,12 +13,22 @@ import type {
   WorkflowStepsContribution,
   WorkflowsExtensionsServerPluginStart,
 } from '@kbn/workflows-extensions/server';
+import type { ProposalsPluginStart } from '@kbn/proposals-plugin/server';
+import type { FleetWorkflowRunServices } from '@kbn/fleet-plugin/server/services/run_time/workflow_run_services';
 import type { WorkflowExecutionReader } from '../step_types/report_worker_outcome/report_worker_outcome_step';
 import { registerAlertZeroTelemetryEvents } from '../telemetry';
 import { registerUiSettings } from '../ui_settings';
 import { registerAlertZeroStepDefinitions, registerTriageStepDefinitions } from '../step_types';
 import { getSummarizeInvestigationStepDefinition } from '../step_types/summarize_investigation';
 import { createResolveSummaryConnectorId } from '../services/investigation_summary/resolve_summary_connector';
+import { getPackageReportStepDefinition } from '../step_types/package_report';
+import { makeIsContextEngineEnabled } from '../step_types/is_context_engine_enabled';
+import { makeScopedResolveHostEnrollment } from '../services/fleet/resolve_host_enrollment';
+import { ActionsService } from '../services/actions/actions_service';
+import {
+  WatchWorkflowsManagementClientImpl,
+  type WatchWorkflowsManagementApi,
+} from '../services/watches/watch_workflows_management_client';
 import {
   ALERTZERO_TASK_PROCESS_SETTINGS_ID,
   type AlertZeroTaskProcessSettings,
@@ -38,12 +48,8 @@ const ALERTZERO_PLUGIN_ID = 'alertzero';
  *
  * Served in a process: `alertzero.triage.headroom`, `alertzero.triage.planSweep`,
  * `alertzero.triage.loadAlerts`, `alertzero.reportWorkerOutcome` and
- * `alertzero.investigation.summarize` (native conversations, agent execution and connector policy).
- *
- * Not registered yet (a workflow that uses one fails for the missing capability):
- * - `hunt.packageReport`: reads the investigation conversation and its attachments with Agent
- *   Builder's conversations client, which needs registries that other plugins fill in `setup()`
- *   (agents, attachment types), and the hunt services (proposals, fleet agents).
+ * `alertzero.investigation.summarize` (native conversations, agent execution and connector policy),
+ * and `hunt.packageReport` (native conversations, proposals, action catalog and scoped Fleet enrollment).
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
@@ -63,11 +69,13 @@ export const contribution: WorkflowStepsContribution = {
     // workflow that uses one of its steps is declined for the missing step.
     if (!alertZero) return;
 
-    const { taskManager, analytics } = host as TaskHost;
+    const taskHost = host as TaskHost;
+    const { taskManager, analytics } = taskHost;
     if (!taskManager) throw new Error('The workflows task module did not get task scheduling');
 
     const alertZeroLogger = logger.get('alertzero');
     let managedWorkflowState: Promise<ManagedWorkflowStateApi> | undefined;
+    let actions: ActionsService | undefined;
     const getAgentBuilder = () => services.getService<AgentBuilderPluginStart>('agentBuilder');
     registry.registerStepDefinition(
       getSummarizeInvestigationStepDefinition({
@@ -83,8 +91,55 @@ export const contribution: WorkflowStepsContribution = {
         ),
       })
     );
+    registry.registerStepDefinition(
+      getPackageReportStepDefinition({
+        getActionsService: () => {
+          if (!alertZero.actionsServiceAvailable)
+            throw new Error(
+              'Actions service is not available until the AlertZero plugin has started'
+            );
+          actions ??= new ActionsService(
+            () =>
+              new WatchWorkflowsManagementClientImpl(
+                services.getService<WatchWorkflowsManagementApi>('workflows.management')
+              ),
+            alertZeroLogger
+          );
+          return actions;
+        },
+        getConversations: () => getAgentBuilder().conversations,
+        getHuntServices: () => {
+          if (!alertZero.huntServicesReady)
+            throw new Error(
+              'Hunt services is not available until the AlertZero plugin has started'
+            );
+          return services.getService<ProposalsPluginStart>('proposals');
+        },
+        isContextEngineEnabled: makeIsContextEngineEnabled(() => {
+          if (!taskHost.uiSettings)
+            throw new Error('Hunt packaging requires the native UI settings service');
+          return { uiSettings: taskHost.uiSettings, savedObjects: taskHost.savedObjects };
+        }),
+        getResolveHostEnrollment: (spaceId, esClient) => async (hostName) => {
+          const agentService = alertZero.fleetAgentServiceAvailable
+            ? (
+                await services
+                  .getService<FleetWorkflowRunServices>('fleet.runServices')
+                  .getServices()
+              ).agentService
+            : undefined;
+          return makeScopedResolveHostEnrollment(() => agentService, alertZeroLogger)(
+            spaceId,
+            esClient
+          )(hostName);
+        },
+        getInternalEsClient: () => taskHost.elasticsearch.asInternalUser,
+        logger: alertZeroLogger,
+      })
+    );
+    const agentBuilderSteps = new Set(['alertzero.investigation.summarize', 'hunt.packageReport']);
     registerRunCheck?.((step) =>
-      step.type === 'alertzero.investigation.summarize'
+      agentBuilderSteps.has(step.type)
         ? services.getService<() => string | undefined>('agentBuilder.parity')()
         : undefined
     );

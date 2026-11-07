@@ -82,6 +82,9 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           serviceAccountsEnabled: true,
           managedWorkflowsReady: true,
           searchInferenceEndpointsAvailable: false,
+          actionsServiceAvailable: true,
+          huntServicesReady: true,
+          fleetAgentServiceAvailable: false,
           telemetryOptedIn: false,
         },
         [AGENT_BUILDER_RUN_SETTINGS_ID]: getAgentBuilderRunSettings({

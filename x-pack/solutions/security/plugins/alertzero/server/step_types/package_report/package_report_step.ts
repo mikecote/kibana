@@ -32,7 +32,7 @@ export interface PackageReportStepDependencies {
   getActionsService: () => ActionsService;
   getConversations: () => AgentBuilderPluginStart['conversations'];
   /** For the Proposals look-ups: the settlement baseline, each finding's slot, and the converge revision. */
-  getHuntServices: () => HuntServices;
+  getHuntServices: () => Pick<HuntServices, 'getProposalsService' | 'getProposalPrivileges'>;
   /**
    * Context Engine gate. When false, every coverage subject is skipped with reason `disabled`
    * and proposals still mint. Required rather than defaulted: coverage KIs are written into the
