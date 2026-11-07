@@ -35,6 +35,7 @@ import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
 import { createHostFeatureFlags } from './run_context';
+import { registerTaskAnalyticsEventTypes } from './host_capabilities/analytics';
 import { createParityGuard } from './parity';
 import type { TaskProcessTaskManagerSetup } from './task_manager_task_plugin';
 
@@ -101,12 +102,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       );
 
       // The event types the runner reports; Core's analytics refuses an event it does not know.
-      const eventTypes = new Set<string>();
-      for (const eventType of module.analyticsEventTypes ?? []) {
-        if (eventTypes.has(eventType.eventType)) continue;
-        eventTypes.add(eventType.eventType);
-        core.analytics.registerEventType(eventType);
-      }
+      registerTaskAnalyticsEventTypes(module, core.analytics);
 
       // Where the feature usage of the cluster is kept; the licensing plugin registers it in Kibana.
       core.savedObjects.registerType(featureUsageSavedObjectType);

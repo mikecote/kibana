@@ -37,7 +37,6 @@ const NOT_YET_CONTRIBUTED: Record<string, string> = {
   'x-pack/platform/plugins/shared/agentic_investigations': 'the investigations services',
   'x-pack/solutions/observability/plugins/observability_agent_builder':
     'the data providers other observability plugins register (apm, infra, slo, synthetics)',
-  'x-pack/solutions/observability/plugins/significant_events': 'the significant events services',
   'x-pack/solutions/observability/plugins/nightshift_investigations':
     'the investigations client, the sandbox plugin and agent execution',
 };

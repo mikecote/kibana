@@ -185,7 +185,7 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
-| `dataStreams` | `dataStreams` | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped | Core |
+| `dataStreams`               | `dataStreams`                 | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped                                     | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
@@ -606,7 +606,10 @@ flags and event log providers it needs to the module. Rules to follow:
 - A service that queues events registers a drain with `services.registerRunCompletion`. These drains
   finish before execution-service cleanup and before telemetry and event-log flushing. Drains added by
   other drains are awaited too; a drain failure is reported after all pending work settles.
-- A step that reports analytics events lists their types in `declares.analyticsEventTypes`; a step that
+- A step that reports analytics events lists their types in `declares.analyticsEventTypes`. For
+  heterogeneous payloads with optional nested schemas, use `declares.registerAnalyticsEventTypes`
+  and call the same typed registration function as the native plugin. Task Core deduplicates event
+  names across arrays and callbacks. Agent Builder contributions support the same declaration. A step that
   counts usage reads `host.usageCounters.getUsageCounter(domain)`.
 
 Contributions can provide lazy execution services with `provides: { serviceId: (context) => service }`.
@@ -804,11 +807,16 @@ request identity and space are preserved across the task boundary; the source ke
 policies. Only metadata bound to an owned ephemeral execution can choose these policies; caller metadata and
 rendered context overrides cannot. Each pipeline phase and the optional report are scheduled by the native orchestration.
 
+**Significant Events.** The worker calls the native tool, attachment, agent type, skill and SML registration
+factories using the successful registration snapshot. Scoped clients use native Security, licensing, source
+catalog, field metadata, V2 alerting, workflow management and Core data-stream services. Agent installers rebuild
+runtime availability policies while persisted agent profiles remain owned by Kibana. Feature flags and caller
+privileges are evaluated for each execution, including executions in a retained worker. Interactive confirmation
+requests retain the native non-interactive refusal behavior.
+
 Not yet, with what each needs: security_solution, alertzero, agentic_investigations, observability_agent_builder (its 16 tools read the start contracts of
 ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
-registry that has to be fed through the same mechanism), significant_events (its scoped clients over the knowledge
-indicator, source catalog, run quota, detections and relay services, and the registrations after start above) and
-nightshift_investigations.
+registry that has to be fed through the same mechanism) and nightshift_investigations.
 
 ### Remaining workflow parity gaps
 

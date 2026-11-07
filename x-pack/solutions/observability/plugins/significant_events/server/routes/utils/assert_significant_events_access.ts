@@ -18,7 +18,7 @@ import { createSignificantEventsAccessChecker } from '../../run_services/create_
 
 interface SignificantEventsAccessContext {
   server: SignificantEventsServer;
-  licensing: LicensingPluginStart;
+  licensing: Pick<LicensingPluginStart, 'getLicense'>;
 }
 
 interface AssertSignificantEventsAccessParams extends SignificantEventsAccessContext {

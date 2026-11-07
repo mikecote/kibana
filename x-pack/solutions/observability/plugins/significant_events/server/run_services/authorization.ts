@@ -8,5 +8,7 @@
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 
 export interface SignificantEventsAuthorizationServices {
-  security: Pick<SecurityPluginStart, 'authz'>;
+  security: {
+    authz: Pick<SecurityPluginStart['authz'], 'actions' | 'checkPrivilegesDynamicallyWithRequest'>;
+  };
 }

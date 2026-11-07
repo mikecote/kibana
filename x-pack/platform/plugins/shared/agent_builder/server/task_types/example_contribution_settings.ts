@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 
 /**
@@ -13,6 +14,37 @@ import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
  * process). A contribution that is not listed gets `{}`.
  */
 const EXAMPLES: Record<string, unknown> = {
+  significantEvents: {
+    cpsEnabled: false,
+    availability: {
+      deploymentSupported: true,
+      pricingTierAvailable: true,
+      requiredPlugins: ['agentBuilder', 'workflowsExtensions', 'workflowsManagement'],
+    },
+    registrations: {
+      toolIds: Object.values(platformSignificantEventsTools),
+      attachmentTypeIds: [
+        'platform.sig_event',
+        'platform.ki_feature',
+        'platform.sig_event_detection',
+      ],
+      agentTypeIds: [
+        'platform.sig_events.discovery-type',
+        'platform.sig_events.feature-identification-type',
+        'platform.sig_events.ki-query-generation-type',
+      ],
+      skillIds: [
+        'knowledge-indicators-management',
+        'ki-query-generation',
+        'significant-events-ki-grounding',
+        'significant-events-management',
+        'feature-identification',
+        'ki-identification-management',
+        'streams-investigation-management',
+      ],
+      smlTypeIds: ['significant_event'],
+    },
+  },
   discoveries: {
     connectorTimeout: 60_000,
     agentBuilder: {

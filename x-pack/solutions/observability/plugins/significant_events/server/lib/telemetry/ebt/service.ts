@@ -23,6 +23,24 @@ import {
 } from './events';
 import { EbtTelemetryClient } from './client';
 
+export const registerSignificantEventsAnalyticsEventTypes = (
+  analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+): void => {
+  analytics.registerEventType(knowledgeIndicatorEventsGeneratedEventType);
+  analytics.registerEventType(knowledgeIndicatorFeaturesIdentifiedEventType);
+  analytics.registerEventType(agentBuilderKnowledgeIndicatorCreatedEventType);
+  analytics.registerEventType(agentToolKiIdentificationStartedEventType);
+  analytics.registerEventType(agentToolEventCreateEventType);
+  analytics.registerEventType(agentToolEventStatusUpdateEventType);
+  analytics.registerEventType(agentToolEventWriteEventType);
+  analytics.registerEventType(agentToolEventSearchEventType);
+  analytics.registerEventType(agentToolEventInvestigationAttachEventType);
+  analytics.registerEventType(codeAnalysisGroundingEventType);
+  analytics.registerEventType(discoveryTriggeredEventType);
+  analytics.registerEventType(detectionScanEventType);
+  analytics.registerEventType(onboardingScheduledEventType);
+};
+
 export class EbtTelemetryService {
   private analytics?: AnalyticsServiceSetup;
 
@@ -30,19 +48,7 @@ export class EbtTelemetryService {
 
   public setup(analytics: AnalyticsServiceSetup) {
     this.analytics = analytics;
-    this.analytics.registerEventType(knowledgeIndicatorEventsGeneratedEventType);
-    this.analytics.registerEventType(knowledgeIndicatorFeaturesIdentifiedEventType);
-    this.analytics.registerEventType(agentBuilderKnowledgeIndicatorCreatedEventType);
-    this.analytics.registerEventType(agentToolKiIdentificationStartedEventType);
-    this.analytics.registerEventType(agentToolEventCreateEventType);
-    this.analytics.registerEventType(agentToolEventStatusUpdateEventType);
-    this.analytics.registerEventType(agentToolEventWriteEventType);
-    this.analytics.registerEventType(agentToolEventSearchEventType);
-    this.analytics.registerEventType(agentToolEventInvestigationAttachEventType);
-    this.analytics.registerEventType(codeAnalysisGroundingEventType);
-    this.analytics.registerEventType(discoveryTriggeredEventType);
-    this.analytics.registerEventType(detectionScanEventType);
-    this.analytics.registerEventType(onboardingScheduledEventType);
+    registerSignificantEventsAnalyticsEventTypes(analytics);
   }
 
   public getClient() {

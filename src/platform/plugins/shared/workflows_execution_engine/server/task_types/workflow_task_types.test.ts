@@ -8,12 +8,15 @@
  */
 
 import { firstValueFrom } from 'rxjs';
+import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
+import { coreMock } from '@kbn/core/server/mocks';
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
 import {
   createHostFeatureFlags,
   runInRunContext,
 } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
+import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { createWorkflowRuntimeFromHost } from './process_runtime';
 import { taskType as resumeTaskType } from './workflow_resume.task';
 import { taskType as runTaskType } from './workflow_run.task';
@@ -169,6 +172,37 @@ describe('workflow task type modules with contributions', () => {
       expect(module.settings).not.toContain('contributedPlugin');
     }
   );
+});
+
+describe('workflow native analytics registrations', () => {
+  it('combines typed schemas declared by workflow steps and Agent Builder contributions', () => {
+    const steps: WorkflowStepsContribution = {
+      declares: {
+        registerAnalyticsEventTypes: (analytics) =>
+          analytics.registerEventType({ eventType: 'step.event', schema: {} }),
+      },
+      register: () => {},
+    };
+    const agents: AgentBuilderContribution = {
+      declares: {
+        registerAnalyticsEventTypes: (analytics) =>
+          analytics.registerEventType({ eventType: 'agent.event', schema: {} }),
+      },
+      register: () => {},
+    };
+    const applied = runTaskType.contributions?.apply?.({
+      'workflow-steps': [steps],
+      'agent-builder': [agents],
+    });
+    if (!applied?.registerAnalyticsEventTypes)
+      throw new Error('Native analytics registrations were lost');
+    const { analytics } = coreMock.createSetup();
+    applied.registerAnalyticsEventTypes(analytics);
+    expect(analytics.registerEventType.mock.calls.map(([event]) => event.eventType)).toEqual([
+      'step.event',
+      'agent.event',
+    ]);
+  });
 });
 
 describe('workflow process runtime lifecycle', () => {

@@ -11,7 +11,11 @@ import type { IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SavedObjectsServiceStart, SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { ExecutionContextStart } from '@kbn/core-execution-context-server';
 import type { SecurityServiceStart, SecurityServiceSetup } from '@kbn/core-security-server';
-import type { AnalyticsServiceStart, EventTypeOpts } from '@kbn/core-analytics-server';
+import type {
+  AnalyticsServiceSetup,
+  AnalyticsServiceStart,
+  EventTypeOpts,
+} from '@kbn/core-analytics-server';
 import type { DataStreamsSetup, DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
@@ -191,6 +195,10 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   analyticsEventTypes?: Array<EventTypeOpts<any>>;
+  /** Registers heterogeneous event schemas through Core's generic registration API. */
+  registerAnalyticsEventTypes?: (
+    analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+  ) => void;
   /** Gives the runner `host.licensing`. */
   licensing?: true;
   /** Gives the runner `host.usageCounters`. */
@@ -329,6 +337,7 @@ export const toTaskDefinition = (
     uiSettings,
     licensing,
     analyticsEventTypes,
+    registerAnalyticsEventTypes,
     usageCounters,
     settings,
     contributions,

@@ -10,7 +10,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-explicit-any, @kbn/eslint/require_kbn_fs */
 
 import type { Client } from '@elastic/elasticsearch';
-import { mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
 import { createServer } from 'http';
 import type { IncomingHttpHeaders, Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -80,14 +80,24 @@ const getWorkflowBundles = (
   if (existing) return existing;
   const build = async () => {
     const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+    const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
+    if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
     const entries = getTaskBundleEntries().filter(
       ({ name }: { name: string }) =>
         name === BUNDLE_NAME ||
         (includeRunTask && name === 'workflowsExecutionEngine__workflow_run')
     );
     const built: Array<{ name: string }> = [];
-    for (const entry of entries)
-      built.push(await buildTaskBundle({ entry, outDir: bundleDir, additionalContributions }));
+    for (const entry of entries) {
+      if (prebuiltDir) {
+        if (!existsSync(join(bundleDir, `${entry.name}.mjs`))) {
+          throw new Error(`Missing prebuilt workflow task bundle ${entry.name} in ${prebuiltDir}`);
+        }
+        built.push({ name: entry.name });
+      } else {
+        built.push(await buildTaskBundle({ entry, outDir: bundleDir, additionalContributions }));
+      }
+    }
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
@@ -127,6 +137,7 @@ export interface WorkflowProcessHarnessOptions {
   maxIdleProcesses?: number;
   includeRunTask?: boolean;
   additionalContributions?: Record<string, string[]>;
+  featureFlags?: Record<string, boolean | string | number>;
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
   workflows: Record<
     string,
@@ -486,7 +497,10 @@ const startHarness = async (
               snapshot: {
                 protocolVersion: 1 as const,
                 init: { ...initFor(), kibanaVersion: KIBANA_VERSION, elasticsearch: esConfig() },
-                featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
+                featureFlags: {
+                  [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true,
+                  ...options.featureFlags,
+                },
               },
             }
           : {}),
@@ -507,7 +521,7 @@ const startHarness = async (
         apiKey: credentials?.apiKey ?? apiKey,
         spaceId: 'default',
         userName: 'elastic',
-        featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
+        featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true, ...options.featureFlags },
         kibanaVersion: KIBANA_VERSION,
         cancelGracePeriodMs: 5000,
       },

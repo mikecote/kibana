@@ -7,7 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { EventTypeOpts, KibanaRequest, SavedObjectsType } from '@kbn/core/server';
+import type {
+  AnalyticsServiceSetup,
+  EventTypeOpts,
+  KibanaRequest,
+  SavedObjectsType,
+} from '@kbn/core/server';
 import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
@@ -95,6 +100,10 @@ export interface WorkflowStepsContribution {
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     analyticsEventTypes?: Array<EventTypeOpts<any>>;
+    /** Registers native event schemas without erasing their payload types. */
+    registerAnalyticsEventTypes?: (
+      analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+    ) => void;
   };
   /** Shared run services, created lazily so contributions may depend on each other. */
   provides?: Readonly<Record<string, (context: WorkflowStepsContributionContext) => object>>;

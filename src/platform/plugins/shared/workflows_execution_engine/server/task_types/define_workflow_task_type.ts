@@ -86,6 +86,7 @@ export type AgentBuilderContributionDeclares = Pick<
   | 'globalUiSettings'
   | 'featureFlags'
   | 'analyticsEventTypes'
+  | 'registerAnalyticsEventTypes'
 >;
 
 /**
@@ -136,6 +137,9 @@ export const defineWorkflowTaskType = (
       ...actionsEventTypes,
       ...declared.flatMap(({ analyticsEventTypes }) => analyticsEventTypes ?? []),
     ],
+    registerAnalyticsEventTypes: (analytics) => {
+      for (const declaration of declared) declaration.registerAnalyticsEventTypes?.(analytics);
+    },
     featureFlags: Object.assign(
       { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: false },
       ...declared.map(({ featureFlags }) => featureFlags ?? {})

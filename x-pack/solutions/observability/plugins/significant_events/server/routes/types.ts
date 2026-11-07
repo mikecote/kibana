@@ -69,7 +69,7 @@ export interface RouteHandlerScopedClients extends SignificantEventsClients {
   ) => Promise<boolean>;
   getAlertEventsClient: () => Promise<AlertEventsClientApi>;
   inferenceClient: InferenceClient;
-  licensing: LicensingPluginStart;
+  licensing: Pick<LicensingPluginStart, 'getLicense'>;
   uiSettingsClient: IUiSettingsClient;
   globalUiSettingsClient: IUiSettingsClient;
   fieldsMetadataClient: IFieldsMetadataClient;

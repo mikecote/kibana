@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { EventTypeOpts } from '@kbn/core-analytics-server';
+import type { AnalyticsServiceSetup, EventTypeOpts } from '@kbn/core-analytics-server';
 import type { CoreStart } from '@kbn/core-lifecycle-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
@@ -40,6 +40,10 @@ export interface AgentBuilderContributionDeclares {
   /** Analytics event types the registrations report, which Core requires to be registered. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   analyticsEventTypes?: Array<EventTypeOpts<any>>;
+  /** Registers native event schemas without erasing their payload types. */
+  registerAnalyticsEventTypes?: (
+    analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+  ) => void;
 }
 
 /**

@@ -39,7 +39,7 @@ interface ScopedClientsDeps {
     };
     pluginsStart: {
       inference: Pick<SignificantEventsPluginStartDependencies['inference'], 'getClient'>;
-      licensing: SignificantEventsPluginStartDependencies['licensing'];
+      licensing: Pick<SignificantEventsPluginStartDependencies['licensing'], 'getLicense'>;
       fieldsMetadata: Pick<SignificantEventsPluginStartDependencies['fieldsMetadata'], 'getClient'>;
       nightshiftSources: Pick<
         SignificantEventsPluginStartDependencies['nightshiftSources'],
