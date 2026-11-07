@@ -78,19 +78,22 @@
     "platform.workflows.get_workflow",
     "platform.workflows.validate_workflow",
     "platform.workflows.workflow_execute_step",
-    "proposals.create"
+    "proposals.create",
+    "security.alertzero.actions.list"
   ],
   "agents": ["platform.context_engine.setup"],
   "agentTypes": [
     "platform.sig_events.discovery-type",
     "platform.sig_events.feature-identification-type",
-    "platform.sig_events.ki-query-generation-type"
+    "platform.sig_events.ki-query-generation-type",
+    "security.alertzero-type"
   ],
   "skills": [
     "action-policy-authoring",
     "agent-builder-traces",
     "ai-index-automations",
     "ai-index-sources",
+    "alertzero-action-discovery",
     "analyze-and-improve",
     "attack-discovery-alert-retrieval-builder",
     "attack-discovery-generator",
@@ -173,6 +176,9 @@
     "screen_context",
     "security.attack_discovery",
     "security.attack_discovery.verdict",
+    "security.hunt_coordinator_result",
+    "security.significant_security_event",
+    "security.threat",
     "skill",
     "text",
     "visualization",

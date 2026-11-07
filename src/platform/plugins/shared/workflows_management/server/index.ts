@@ -30,3 +30,4 @@ export { createWorkflowsReadApi, scheduleWorkflowWithEngine } from './api/workfl
 export { createWorkflowsProcessManagementApi } from './api/workflows_process_management_api';
 export type { WorkflowsReadApi, WorkflowsReadApiDeps } from './api/workflows_read_api';
 export type { WorkflowAccessCore } from './services/workflow_access_control';
+export { workflowStorageSettings } from './storage/workflow_storage';

@@ -6,7 +6,7 @@
  */
 
 module.exports = {
-  preset: '@kbn/jest/jest_integration',
+  preset: '@kbn/jest/jest_integration_node',
   rootDir: '../../../../..',
   roots: ['<rootDir>/x-pack/solutions/security/plugins/alertzero/server/task_types'],
 };

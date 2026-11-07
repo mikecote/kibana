@@ -14,6 +14,7 @@
     "optionalPlugins": ["security", "agentBuilder", "agenticInvestigations", "proposals", "cloud", "inference", "searchInferenceEndpoints", "spaces", "share", "fleet", "mitreAttack", "contextEngine", "telemetry"],
     "requiredBundles": ["kibanaReact"],
     "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
       "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
     }
   }

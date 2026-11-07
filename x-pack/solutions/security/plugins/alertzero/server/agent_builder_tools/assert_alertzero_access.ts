@@ -20,7 +20,9 @@ export type AssertAlertZeroAccess = (
 
 interface AlertZeroAccessServices {
   core: Pick<CoreStart, 'savedObjects' | 'uiSettings'>;
-  security?: SecurityPluginStart;
+  security?: {
+    authz: Pick<SecurityPluginStart['authz'], 'actions' | 'checkPrivilegesDynamicallyWithRequest'>;
+  };
 }
 
 /** Checks the caller's space setting and AlertZero privilege before tool execution. */

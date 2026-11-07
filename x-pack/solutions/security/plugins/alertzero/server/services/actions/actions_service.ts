@@ -35,7 +35,9 @@ const PAGE_SIZE = 100;
  */
 export class ActionsService {
   constructor(
-    private readonly getManagement: () => WatchWorkflowsManagementClient | undefined,
+    private readonly getManagement: () =>
+      | Pick<WatchWorkflowsManagementClient, 'getWorkflows'>
+      | undefined,
     private readonly logger: Logger
   ) {}
 

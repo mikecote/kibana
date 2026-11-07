@@ -19,11 +19,7 @@ import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { PluginScopedManagedWorkflowsApi } from '@kbn/workflows/server/types';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { AgentService } from '@kbn/fleet-plugin/server';
-import {
-  ALERTZERO_ENABLED_SETTING_ID,
-  TEMPLATE_ID_ESCALATION,
-  TEMPLATE_ID_INVESTIGATION,
-} from '@kbn/alertzero-common';
+import { ALERTZERO_ENABLED_SETTING_ID } from '@kbn/alertzero-common';
 import type { Subscription } from 'rxjs';
 import { getSubscriptionAvailability } from '../common/availability';
 import {
@@ -64,11 +60,13 @@ import { WatchWorkflowsManagementClientImpl } from './services/watches/watch_wor
 import { ScanFailuresService } from './services/scan_failures/scan_failures_service';
 import { ActionsService } from './services/actions/actions_service';
 import type { HuntServices } from './services/watches/hunt';
-import { listActionsTool } from './agent_builder_tools/list_actions_tool';
 import { createAssertAlertZeroAccess } from './agent_builder_tools/assert_alertzero_access';
-import { agentType, ensureAgent, ensureAgentSafe, registerAgentType } from './agent';
-import { createActionDiscoverySkill } from './agent_builder/skills/action_discovery';
-import { registerAttachments } from './agent_builder/attachments/register_attachments';
+import { agentType, ensureAgent, ensureAgentSafe } from './agent';
+import { registerAlertZeroAgentBuilder } from './agent_builder/register_agent_builder';
+import {
+  ALERTZERO_AGENT_BUILDER_SETTINGS_ID,
+  type AlertZeroAgentBuilderTaskProcessSettings,
+} from './task_types/alertzero_agent_builder_task_process_settings';
 import { makeIsContextEngineEnabled } from './step_types/is_context_engine_enabled';
 import { makeScopedResolveHostEnrollment } from './services/fleet/resolve_host_enrollment';
 import { enumerateSpaceIds } from './lib/enumerate_space_ids';
@@ -230,25 +228,24 @@ export class AlertZeroPlugin
         const [core, { security }] = await coreSetup.getStartServices();
         return { core, security };
       });
-      registerAgentType(agentBuilder);
-      registerAttachments(agentBuilder);
-      // Registered in setup so the builtin tool is available to Agent Builder before
-      // the first agent run; the handler resolves the service lazily like the routes do.
-      agentBuilder.tools.register({
-        ...listActionsTool(() => this.requireActionsService(), assertAlertZeroAccess),
-      });
-      agentBuilder.skills.register(createActionDiscoverySkill(assertAlertZeroAccess));
-      // `ai.conversation.updated` is opt-in, so Agent Builder only emits it where a consumer
-      // subscribes. Scoped per space, like the routes, so spaces without AlertZero stay quiet.
-      agentBuilder.conversations.enableUpdatedTrigger({
-        templateIds: [TEMPLATE_ID_INVESTIGATION, TEMPLATE_ID_ESCALATION],
-        isEnabled: async (request) => {
+      registerAlertZeroAgentBuilder({
+        agentBuilder,
+        getActionsService: () => this.requireActionsService(),
+        assertAlertZeroAccess,
+        isEnabledForRequest: async (request) => {
           const [{ savedObjects, uiSettings }] = await coreSetup.getStartServices();
           return uiSettings
             .asScopedToClient(savedObjects.getScopedClient(request))
             .get<boolean>(ALERTZERO_ENABLED_SETTING_ID);
         },
       });
+      agentBuilder.taskProcess?.registerSettings(
+        ALERTZERO_AGENT_BUILDER_SETTINGS_ID,
+        (): AlertZeroAgentBuilderTaskProcessSettings => ({
+          actionsAvailable: this.actionsService !== undefined,
+          managementAvailable: this.workflowsManagementApi !== undefined,
+        })
+      );
     }
 
     registerAlertZeroInferenceFeatures(searchInferenceEndpoints, this.logger.get('inference'));

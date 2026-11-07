@@ -791,6 +791,11 @@ snapshot and genuine task Security license and audit services. Rule modules decl
 `optionalSettings`, matching Fleet's optional plugin dependency; executing a response action requires
 the snapshot.
 
+The nine archives pinned in `fleet_packages.json` have registry content lengths totaling 26,063,815
+bytes, or 34,751,764 bytes after base64 encoding (33.1 MiB, measured November 7, 2026). Full dispatch
+size validation must also include build-time version rewrites, the signing key, configuration and
+other plugins' settings against the remote host's 64 MiB request limit.
+
 Native observability data services are available through the workflow service registry:
 
 - `apmSourcesAccess.setup` and `apmDataAccess.setup` use the validated APM source configuration and
@@ -862,9 +867,18 @@ workflow steps use the run's Agent Builder conversation and attachment clients, 
 and Core user attribution. Reopening preserves native rename authorization and template checks; appending workflow
 execution ids preserves ordering and avoids duplicates.
 
-Not yet, with what each needs: security_solution, alertzero, observability_agent_builder (its 16 tools read the start contracts of
-ml, the rule registry, data views and APM, and infra, slo, synthetics and apm register data providers with a nested
-registry that has to be fed through the same mechanism) and nightshift_investigations.
+**AlertZero agent contribution.** Kibana and workers use the same registration function for the
+action-discovery tool and skill, three attachments, agent type and conversation-update trigger. The
+catalog uses the native action service and request-scoped workflows client. Reads retain the caller's
+privileges, workflow ACLs, category filters and space setting. Kibana captures whether the action and
+management services started; workers do not substitute another service when either is unavailable.
+The owning workflow contribution registers the same native UI setting when AlertZero is enabled.
+Outcome reporting uses the native owner-bound managed-workflows client and the request-scoped
+execution reader to verify persisted lineage. Its event schemas use the same registration helper
+as Kibana. Worker tests change and restore the workflow owner before accepting another report.
+
+Agent contributions still needed: security_solution (endpoint, detections and entity analytics
+services) and nightshift_investigations (investigations, sandbox and agent execution services).
 
 ### Remaining workflow parity gaps
 
@@ -877,7 +891,9 @@ These remaining capability gaps currently fail process execution; they must be c
   `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
   files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
   a close reason validator or an email service the process lacks.
-- **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`.
+- **alertzero:** `hunt.packageReport`, `alertzero.investigation.summarize`, and native adapters for
+  the triage steps' workflow-execution reads and detection-alert search/tag operations, which still
+  call Kibana routes.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
 

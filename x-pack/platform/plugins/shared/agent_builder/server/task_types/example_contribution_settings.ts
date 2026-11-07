@@ -14,6 +14,7 @@ import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
  * process). A contribution that is not listed gets `{}`.
  */
 const EXAMPLES: Record<string, unknown> = {
+  alertzeroAgentBuilderRuntime: { actionsAvailable: true, managementAvailable: true },
   observabilityAgentBuilderRuntime: {
     registrations: {
       toolIds: [

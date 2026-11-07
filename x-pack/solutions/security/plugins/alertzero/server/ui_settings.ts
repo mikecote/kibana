@@ -17,7 +17,7 @@ const SECURITY_SOLUTION_CATEGORY = 'securitySolution';
  * Registers the per-space setting that gates the AlertZero app, its Security navigation nodes, and
  * its internal API. Registration is namespace-scoped so AlertZero can be turned on space by space.
  */
-export const registerUiSettings = (uiSettings: UiSettingsServiceSetup): void => {
+export const registerUiSettings = (uiSettings: Pick<UiSettingsServiceSetup, 'register'>): void => {
   uiSettings.register({
     [ALERTZERO_ENABLED_SETTING_ID]: {
       name: i18n.translate('xpack.alertzero.uiSettings.enableAlertZero.name', {

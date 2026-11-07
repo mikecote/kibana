@@ -41,9 +41,13 @@ export const contribution: AgentBuilderContribution = {
         return [
           { elasticsearch: { client: host.elasticsearch }, savedObjects: host.savedObjects },
           {
-            logsDataAccess: services.getService<LogsDataAccessPluginStart>('logsDataAccess'),
+            get logsDataAccess() {
+              return services.getService<LogsDataAccessPluginStart>('logsDataAccess');
+            },
             licensing,
-            ruleRegistry: services.getService<WorkflowRuleRegistryServices>('ruleRegistry'),
+            get ruleRegistry() {
+              return services.getService<WorkflowRuleRegistryServices>('ruleRegistry');
+            },
             ...(snapshot.spacesEnabled
               ? { spaces: services.getService<SpacesPluginStart>('spaces') }
               : {}),
