@@ -164,6 +164,13 @@ dependsOn:
   - '@kbn/core-rendering-browser'
   - '@kbn/app-header'
   - '@kbn/ui-callout'
+  - '@kbn/workflows-extensions'
+  - '@kbn/repo-info'
+  - '@kbn/core-logging-server-mocks'
+  - '@kbn/core-test-helpers-kbn-server'
+  - '@kbn/event-log-plugin'
+  - '@kbn/workflows'
+  - '@kbn/workflows-execution-engine'
 tags:
   - plugin
   - prod

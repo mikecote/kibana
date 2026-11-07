@@ -5,6 +5,8 @@
  * 2.0.
  */
 
+import { contribution as workerContribution } from './agent_builder_contribution';
+import { OBSERVABILITY_AGENT_BUILDER_TASK_PROCESS_SETTINGS_ID } from './observability_agent_builder_task_process_settings';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { collectRegisteredIds } from '@kbn/agent-builder-plugin/server/run_services/collect_registered_ids';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
@@ -83,6 +85,13 @@ describe('observability registration dispatch snapshots', () => {
     );
     expect(ids.skills).toEqual(expect.arrayContaining(snapshot.registrations.skillIds));
     expect(core.getStartServices).not.toHaveBeenCalled();
+    expect(
+      await collectRegisteredIds({
+        contributions: [workerContribution],
+        settings: { [OBSERVABILITY_AGENT_BUILDER_TASK_PROCESS_SETTINGS_ID]: snapshot },
+        logger,
+      })
+    ).toEqual(ids);
     registrations.toolIds.add('later-tool');
     expect(snapshot.registrations.toolIds).toEqual([OBSERVABILITY_TOOL_IDS[0]]);
     expect(

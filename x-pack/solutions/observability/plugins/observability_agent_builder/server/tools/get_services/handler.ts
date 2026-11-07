@@ -10,7 +10,7 @@ import type { IScopedClusterClient } from '@kbn/core-elasticsearch-server';
 import { ML_ANOMALY_SEVERITY } from '@kbn/ml-anomaly-utils/anomaly_severity';
 import { getSeverityType } from '@kbn/ml-anomaly-utils/get_severity_type';
 import { kqlQuery } from '@kbn/observability-utils-server/es/queries/kql_query';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type { ServicesItemsItem } from '../../data_registry/data_registry_types';
 import type {
   ObservabilityAgentBuilderRunCore,
@@ -137,7 +137,7 @@ export async function getToolHandler({
   plugins: ObservabilityAgentBuilderRunSetupDependencies;
   request: KibanaRequest;
   esClient: IScopedClusterClient;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   logger: Logger;
   start: string;
   end: string;

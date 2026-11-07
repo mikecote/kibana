@@ -15,7 +15,7 @@ import type {
   ObservabilityAgentBuilderRunCore,
   ObservabilityAgentBuilderRunSetupDependencies,
 } from '../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import { createServiceAttachmentType } from './service';
 import { createSloAttachmentType } from './slo';
 import { createHostAttachmentType } from './host';
@@ -35,7 +35,7 @@ export async function registerAttachments({
   logger: Logger;
   attachmentTypeIds?: readonly string[];
   onRegistered?: (id: string) => void;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }) {
   const attachmentTypes: AttachmentTypeDefinition<any, any>[] = [
     createAiInsightAttachmentType(),

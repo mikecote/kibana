@@ -19,7 +19,7 @@ import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_build
 import { timeRangeSchemaOptional } from '../../utils/tool_schemas';
 import { MAX_KQL_FILTER_LENGTH } from '../../utils/schema_limits';
 import type { ObservabilityAgentBuilderRunCore } from '../../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import { getToolHandler } from './handler';
 
 export const OBSERVABILITY_GET_HOSTS_TOOL_ID = 'observability.get_hosts';
@@ -57,7 +57,7 @@ export function createGetHostsTool({
 }: {
   core: ObservabilityAgentBuilderRunCore;
   logger: Logger;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }): StaticToolRegistration<typeof getHostsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof getHostsSchema> = {
     id: OBSERVABILITY_GET_HOSTS_TOOL_ID,

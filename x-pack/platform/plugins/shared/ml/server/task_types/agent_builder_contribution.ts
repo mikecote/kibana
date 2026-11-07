@@ -11,12 +11,15 @@ import type { CoreAuditService } from '@kbn/core-security-server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
-import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
 import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
+import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
 import { MlLicense } from '../../common/license';
 import { registerAnomalyDetectionAgentBuilder } from '../agent_builder/register_anomaly_detection';
 import { createInProcessMlCapabilitiesResolver } from '../lib/capabilities/resolve_ml_capabilities_in_process';
-import { getMlTaskProcessSavedObjectTypes } from './ml_task_process_services';
+import { createSnapshotModuleFiles } from '../models/data_recognizer/module_files';
+import type { DataRecognizerModuleSnapshot } from '../models/data_recognizer/module_files';
+import type { MlDataViews } from '../shared_services/shared_services';
+import { getMlSavedObjectTypes } from '../saved_objects';
 
 /** The id of the settings the plugin sends a task process to register its agent builder skill. */
 export const ML_AGENT_BUILDER_SETTINGS_ID = 'mlAgentBuilder';
@@ -30,6 +33,7 @@ export interface MlAgentBuilderSettings {
   /** Whether the spaces plugin is enabled. */
   spacesEnabled: boolean;
   cpsEnabled: boolean;
+  moduleFiles: DataRecognizerModuleSnapshot;
 }
 
 /**
@@ -41,16 +45,13 @@ export interface MlAgentBuilderSettings {
  * resolved from its privileges (there is no Core capabilities service in a process). Without the
  * setting the plugin or its anomaly detection feature is not enabled in this Kibana, and nothing is
  * registered.
- *
- * Differences from Kibana: the data views service is not available, so the operations that recognize
- * modules fail with "only available in Kibana".
  */
 export const contribution: AgentBuilderContribution = {
   declares: {
-    savedObjectTypes: getMlTaskProcessSavedObjectTypes(),
+    savedObjectTypes: getMlSavedObjectTypes(),
     settings: [ML_AGENT_BUILDER_SETTINGS_ID],
   },
-  register: (agentBuilder, { host, settings, isServerless }) => {
+  register: (agentBuilder, { host, settings, isServerless, services }) => {
     const sent = settings[ML_AGENT_BUILDER_SETTINGS_ID] as MlAgentBuilderSettings | undefined;
     if (!sent?.enabledFeatures) return;
     // What the registrations read of the host is read when a tool runs, not while registering (the
@@ -58,16 +59,25 @@ export const contribution: AgentBuilderContribution = {
     const taskHost = host as TaskHost;
     const { licensing } = taskHost;
     const getAuthorization = () => {
-      const authz = (taskHost.plugins?.security as SecurityTaskPluginStart | undefined)?.authz;
-      if (!authz) throw new Error('The task process did not get the security plugin');
-      return authz as unknown as MlAuthorizationService;
+      const security = taskHost.plugins?.security as SecurityTaskPluginStart | undefined;
+      if (!security) throw new Error('ML execution requires the native Security service');
+      return security.authz;
     };
-    const authorization = new Proxy({} as MlAuthorizationService, {
-      get: (_target, property) =>
-        (getAuthorization() as unknown as Record<string | symbol, unknown>)[property],
-    });
+    const authorization: MlAuthorizationService = {
+      get actions() {
+        return getAuthorization().actions;
+      },
+      get mode() {
+        return getAuthorization().mode;
+      },
+      checkPrivilegesWithRequest: (request) =>
+        getAuthorization().checkPrivilegesWithRequest(request),
+      checkPrivilegesDynamicallyWithRequest: (request) =>
+        getAuthorization().checkPrivilegesDynamicallyWithRequest(request),
+    };
     const mlLicense = new MlLicense();
     if (licensing) mlLicense.setup(licensing.license$);
+    taskHost.onRunEnd?.(async () => mlLicense.unsubscribe());
     registerAnomalyDetectionAgentBuilder({
       agentBuilder,
       resolveMlCapabilities: createInProcessMlCapabilitiesResolver({
@@ -93,12 +103,9 @@ export const contribution: AgentBuilderContribution = {
         serverless: { isServerless, cpsEnabled: sent.cpsEnabled },
         // A task process has no startup to wait for: the job saved objects are Kibana's to initialize.
         isMlReady: () => Promise.resolve(),
-        getDataViews: () => {
-          throw new Error(
-            'The data views service is only available in Kibana, not in a task process'
-          );
-        },
+        getDataViews: () => services.getService<MlDataViews>('dataViews'),
         compatibleModuleType: sent.compatibleModuleType,
+        moduleFiles: createSnapshotModuleFiles(sent.moduleFiles),
       },
     });
   },

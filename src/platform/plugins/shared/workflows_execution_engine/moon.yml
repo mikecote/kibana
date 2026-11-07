@@ -69,6 +69,7 @@ dependsOn:
   - '@kbn/security-authorization-core'
   - '@kbn/field-formats-plugin'
   - '@kbn/agent-builder-server'
+  - '@kbn/data-plugin'
 tags:
   - plugin
   - prod

@@ -51,6 +51,7 @@
       "fieldsMetadata"
     ],
     "optionalPlugins": [
+      "workflowsExtensions",
       "spaces",
       "cases",
       "ml",

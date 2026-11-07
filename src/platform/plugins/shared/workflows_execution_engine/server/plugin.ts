@@ -36,6 +36,7 @@ import { resolveWorkflowWorkloads } from './service_account_workload_resolver';
 import { WORKFLOW_WORKLOAD_TYPE_NAME } from './task_plugin';
 import { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 import { WORKFLOWS_USAGE_API_SETTINGS_ID } from './task_types/constants';
+import { DATA_SEARCH_TASK_PROCESS_SETTINGS_ID } from './task_types/data_search_task_process_settings';
 import { taskType as resumeTaskType } from './task_types/workflow_resume.task';
 import { taskType as runTaskType } from './task_types/workflow_run.task';
 import { taskType as scheduledTaskType } from './task_types/workflow_scheduled.task';
@@ -217,6 +218,11 @@ export class WorkflowsExecutionEnginePlugin
     });
     // How a process ships analytics events and counts usage, as this Kibana does: the process does
     // its side effects itself, so it is told what Kibana would apply.
+    if (plugins.data) {
+      this.taskTypeSettings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] = () => ({
+        multiSearchDocLink: core.docLinks.links.apis.multiSearch,
+      });
+    }
     const { dataViews } = plugins;
     if (dataViews) {
       this.taskTypeSettings[DATA_VIEWS_TASK_PROCESS_SETTINGS_ID] = () =>

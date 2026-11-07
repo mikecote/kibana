@@ -6,7 +6,7 @@
  */
 import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { uniq } from 'lodash';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type {
   ObservabilityAgentBuilderRunCore,
   ObservabilityAgentBuilderRunSetupDependencies,
@@ -23,7 +23,7 @@ import { findMessagingDependencies } from './find_messaging_dependencies';
 import { expandMessagingConnections } from './expand_messaging_connections';
 
 interface TopologyResources {
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   core: ObservabilityAgentBuilderRunCore;
   plugins: ObservabilityAgentBuilderRunSetupDependencies;
   request: KibanaRequest;
@@ -348,7 +348,7 @@ export async function getServiceTopology({
 }: {
   core: ObservabilityAgentBuilderRunCore;
   plugins: ObservabilityAgentBuilderRunSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   logger: Logger;
   serviceName: string;

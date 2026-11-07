@@ -6,9 +6,8 @@
  */
 
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import { isCoreKibanaRequest } from '@kbn/core-http-server-utils';
 import type { KibanaRequest } from '@kbn/core-http-server';
@@ -18,6 +17,9 @@ import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { CoreAuditService } from '@kbn/core-security-server';
 import type { ResolveMlCapabilities, MlCapabilitiesKey } from '@kbn/ml-common-types/capabilities';
 import type { FieldFormatsRegistryProvider } from '@kbn/ml-common-types/kibana';
+import type { MlCloud } from '../ml_cloud';
+import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
+import type { DataRecognizerModuleFiles } from '../models/data_recognizer/module_files';
 import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
 import type { MlLicense } from '../../common/license';
 
@@ -110,8 +112,8 @@ type OkCallback = (okParams: OkParams) => any;
 export function createSharedServices(
   mlLicense: MlLicense,
   getSpaces: (() => Promise<SpacesPluginStart>) | undefined,
-  cloud: CloudSetup,
-  authorization: SecurityPluginSetup['authz'] | undefined,
+  cloud: MlCloud,
+  authorization: MlAuthorizationService | undefined,
   resolveMlCapabilities: ResolveMlCapabilities,
   getClusterClient: () => MlClusterClient | null,
   getInternalSavedObjectsClient: () => SavedObjectsClientContract | null,
@@ -122,7 +124,8 @@ export function createSharedServices(
   isMlReady: () => Promise<void>,
   compatibleModuleType: CompatibleModule | null,
   enabledFeatures: MlFeatures,
-  serverless: ServerlessInfo
+  serverless: ServerlessInfo,
+  moduleFiles?: DataRecognizerModuleFiles
 ): {
   sharedServicesProviders: SharedServices;
   internalServicesProviders: MlServicesProviders;
@@ -151,7 +154,8 @@ export function createSharedServices(
       getDataViews,
       getAuditService,
       mlLicense,
-      serverless
+      serverless,
+      enabledFeatures
     );
 
     const {
@@ -198,7 +202,7 @@ export function createSharedServices(
     sharedServicesProviders: {
       ...getJobServiceProvider(getGuards, serverless),
       ...getAnomalyDetectorsProvider(getGuards),
-      ...getModulesProvider(getGuards, getDataViews, compatibleModuleType, serverless),
+      ...getModulesProvider(getGuards, getDataViews, compatibleModuleType, serverless, moduleFiles),
       ...getResultsServiceProvider(getGuards),
       ...getMlSystemProvider(
         getGuards,
@@ -225,7 +229,7 @@ function getRequestItemsProvider(
   getClusterClient: () => MlClusterClient | null,
   savedObjectsClient: SavedObjectsClientContract,
   internalSavedObjectsClient: SavedObjectsClientContract,
-  authorization: SecurityPluginSetup['authz'] | undefined,
+  authorization: MlAuthorizationService | undefined,
   spaceEnabled: boolean,
   isMlReady: () => Promise<void>,
   getUiSettings: () => MlUiSettings | null,
@@ -233,12 +237,16 @@ function getRequestItemsProvider(
   getDataViews: () => MlDataViews,
   getAuditService: () => CoreAuditService | null,
   mlLicense: MlLicense,
-  serverless: ServerlessInfo
+  serverless: ServerlessInfo,
+  enabledFeatures: MlFeatures
 ) {
   return (request: KibanaRequest) => {
     let hasMlCapabilities: HasMlCapabilities = hasMlCapabilitiesProvider(
       resolveMlCapabilities,
-      request
+      request,
+      authorization,
+      mlLicense,
+      enabledFeatures
     );
     let scopedClient: IScopedClusterClient;
     let mlClient: MlClient;

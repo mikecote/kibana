@@ -6,8 +6,10 @@
  */
 
 import type { MlAnomalyDetectors, MlMlSystem, MlModules } from '@kbn/ml-plugin/server';
+import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
+import type { ILicense } from '@kbn/licensing-types';
+import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import { isActivePlatinumLicense } from '../../../common/license_check';
-import type { MinimalAPMRouteHandlerResources } from '../../routes/apm_routes/register_apm_server_routes';
 
 export interface MlClient {
   mlSystem: MlMlSystem;
@@ -19,7 +21,21 @@ export async function getMlClient({
   plugins,
   context,
   request,
-}: Pick<MinimalAPMRouteHandlerResources, 'plugins' | 'context' | 'request'>) {
+}: {
+  plugins: {
+    ml?: {
+      setup: Pick<
+        MlPluginSetup,
+        'mlSystemProvider' | 'anomalyDetectorsProvider' | 'modulesProvider'
+      >;
+    };
+  };
+  context: {
+    core: Promise<{ savedObjects: { client: SavedObjectsClientContract } }>;
+    licensing: Promise<{ license: ILicense }>;
+  };
+  request: KibanaRequest;
+}) {
   const [coreContext, licensingContext] = await Promise.all([context.core, context.licensing]);
 
   const mlplugin = plugins.ml;

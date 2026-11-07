@@ -6,8 +6,8 @@
  */
 
 import type { IScopedClusterClient } from '@kbn/core/server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { MlInfoResponse } from '@kbn/ml-common-types/ml_server_info';
+import type { MlCloud } from '../../ml_cloud';
 import type { MlClient } from '../../lib/ml_client';
 import { getLazyMlNodeCount } from '../../lib/node_utils';
 import { getIsMlCpsEnabled } from '../../lib/cps_utils';
@@ -21,7 +21,7 @@ export async function getMlInfo({
 }: {
   mlClient: MlClient;
   client: IScopedClusterClient;
-  cloud?: CloudSetup;
+  cloud?: MlCloud;
   serverless: ServerlessInfo;
 }): Promise<MlInfoResponse> {
   const body = await mlClient.info();

@@ -6,7 +6,7 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type { ApmConnectionStatsEntry } from '../../data_registry/data_registry_types';
 import { getImmediateDownstreamDependencies } from './get_immediate_downstream_dependencies';
 
@@ -15,7 +15,7 @@ const request = {} as KibanaRequest;
 function createDataRegistry(entries: ApmConnectionStatsEntry[] | undefined) {
   return {
     getData: jest.fn().mockResolvedValue(entries),
-  } as unknown as ObservabilityAgentBuilderDataRegistry;
+  } as unknown as ObservabilityDataRegistryClient;
 }
 
 describe('getImmediateDownstreamDependencies', () => {

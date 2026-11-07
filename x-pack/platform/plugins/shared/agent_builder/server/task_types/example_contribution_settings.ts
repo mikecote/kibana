@@ -14,6 +14,43 @@ import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
  * process). A contribution that is not listed gets `{}`.
  */
 const EXAMPLES: Record<string, unknown> = {
+  observabilityAgentBuilderRuntime: {
+    registrations: {
+      toolIds: [
+        'observability.get_alerts',
+        'observability.get_anomaly_detection_jobs',
+        'observability.get_apm_correlations',
+        'observability.get_hosts',
+        'observability.get_index_info',
+        'observability.get_log_change_points',
+        'observability.get_log_groups',
+        'observability.get_logs',
+        'observability.get_metric_change_points',
+        'observability.get_runtime_metrics',
+        'observability.get_service_topology',
+        'observability.get_services',
+        'observability.get_trace_change_points',
+        'observability.get_trace_metrics',
+        'observability.get_traces',
+        'observability.run_log_rate_analysis',
+      ],
+      attachmentTypeIds: [
+        'observability.ai_insight',
+        'observability.alert',
+        'observability.error',
+        'observability.host',
+        'observability.log',
+        'observability.service',
+        'observability.slo',
+        'observability.synthetics_monitor',
+        'observability.transaction',
+      ],
+      skillIds: ['observability.investigation'],
+    },
+    dataProviders: [],
+    mlEnabled: true,
+    spacesEnabled: true,
+  },
   agenticInvestigationsRuntime: {
     escalationsEnabled: true,
     securityEnabled: true,
@@ -91,6 +128,7 @@ const EXAMPLES: Record<string, unknown> = {
   },
   evalsSkillsAgentBuilder: { serverBasePath: '', isServerless: false },
   mlAgentBuilder: {
+    moduleFiles: {},
     enabledFeatures: { ad: true, dfa: true, nlp: true },
     compatibleModuleType: null,
     spacesEnabled: true,

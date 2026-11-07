@@ -8,7 +8,7 @@
 import dedent from 'dedent';
 import type { Logger } from '@kbn/logging';
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../../data_registry/data_registry';
 import type {
   ObservabilityAgentBuilderCoreSetup,
   ObservabilityAgentBuilderPluginSetupDependencies,
@@ -21,7 +21,7 @@ import { getTraceDocuments } from '../../../tools/get_traces/get_trace_documents
 export interface FetchApmErrorContextParams {
   core: ObservabilityAgentBuilderCoreSetup;
   plugins: ObservabilityAgentBuilderPluginSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   errorId: string;
   start: string;

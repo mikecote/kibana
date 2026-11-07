@@ -16,6 +16,8 @@ import {
   MetricsExplorerLocatorDefinition,
 } from '@kbn/observability-shared-plugin/common';
 import { mapValues } from 'lodash';
+import type { InfraWorkflowSettings } from './task_types/workflow_services_contribution';
+import { INFRA_WORKFLOW_SETTINGS_ID } from './task_types/workflow_services_contribution';
 import { LOGS_FEATURE_ID, METRICS_FEATURE_ID } from '../common/constants';
 import { getMetricsFeature } from './features';
 import { registerRoutes } from './infra_server';
@@ -230,6 +232,15 @@ export class InfraServerPlugin
     // Telemetry
     UsageCollector.registerUsageCollector(plugins.usageCollection);
 
+    if (plugins.observabilityAgentBuilder) {
+      plugins.workflowsExtensions?.registerTaskProcessSettings(
+        INFRA_WORKFLOW_SETTINGS_ID,
+        (): InfraWorkflowSettings => ({
+          mlEnabled: plugins.ml !== undefined,
+          spacesEnabled: plugins.spaces !== undefined,
+        })
+      );
+    }
     registerDataProviders({ core, plugins, libs: this.libs, logger: this.logger });
 
     return {

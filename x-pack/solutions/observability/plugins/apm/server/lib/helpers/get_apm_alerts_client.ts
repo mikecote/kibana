@@ -13,8 +13,9 @@ import type { DataTier } from '@kbn/observability-shared-plugin/common';
 import { searchExcludedDataTiers } from '@kbn/observability-plugin/common/ui_settings_keys';
 import type { estypes } from '@elastic/elasticsearch';
 import { getDataTierFilterCombined } from '@kbn/apm-data-access-plugin/server/utils';
+import type { KibanaRequest, IUiSettingsClient } from '@kbn/core/server';
+import type { RuleRegistryPluginStartContract } from '@kbn/rule-registry-plugin/server';
 import { APM_ALERTING_RULE_TYPE_IDS } from '../../../common/alerting/config/apm_alerting_feature_ids';
-import type { MinimalAPMRouteHandlerResources } from '../../routes/apm_routes/register_apm_server_routes';
 
 export type ApmAlertsClient = Awaited<ReturnType<typeof getApmAlertsClient>>;
 
@@ -31,7 +32,15 @@ export async function getApmAlertsClient({
   context,
   plugins,
   request,
-}: Pick<MinimalAPMRouteHandlerResources, 'context' | 'plugins' | 'request'>) {
+}: {
+  context: { core: Promise<{ uiSettings: { client: Pick<IUiSettingsClient, 'get'> } }> };
+  plugins: {
+    ruleRegistry: {
+      start: () => Promise<Pick<RuleRegistryPluginStartContract, 'getRacClientWithRequest'>>;
+    };
+  };
+  request: KibanaRequest;
+}) {
   const coreContext = await context.core;
 
   const ruleRegistryPluginStart = await plugins.ruleRegistry.start();

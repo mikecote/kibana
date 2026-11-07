@@ -11,7 +11,7 @@ import type {
   ObservabilityAgentBuilderCoreSetup,
   ObservabilityAgentBuilderPluginSetupDependencies,
 } from '../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import { getGlobalObservabilityAgentBuilderServerRouteRepository } from './get_global_observability_agent_builder_route_repository';
 
 export function registerServerRoutes({
@@ -23,7 +23,7 @@ export function registerServerRoutes({
   core: ObservabilityAgentBuilderCoreSetup;
   plugins: ObservabilityAgentBuilderPluginSetupDependencies;
   logger: Logger;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }) {
   registerRoutes({
     core,

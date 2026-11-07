@@ -14,7 +14,7 @@ import type {
   SavedObjectsFindResult,
   IScopedClusterClient,
 } from '@kbn/core/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+
 import type {
   JobType,
   TrainedModelType,
@@ -25,6 +25,7 @@ import {
   ML_JOB_SAVED_OBJECT_TYPE,
   ML_TRAINED_MODEL_SAVED_OBJECT_TYPE,
 } from '@kbn/ml-common-types/saved_objects';
+import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
 import { MLJobNotFound, MLModelNotFound } from '../lib/ml_client';
 import { getSavedObjectClientError } from './util';
 import { authorizationProvider } from './authorization';
@@ -54,7 +55,7 @@ export function mlSavedObjectServiceFactory(
   savedObjectsClient: SavedObjectsClientContract,
   internalSavedObjectsClient: SavedObjectsClientContract,
   spacesEnabled: boolean,
-  authorization: SecurityPluginSetup['authz'] | undefined,
+  authorization: MlAuthorizationService | undefined,
   client: IScopedClusterClient,
   isMlReady: () => Promise<void>
 ) {

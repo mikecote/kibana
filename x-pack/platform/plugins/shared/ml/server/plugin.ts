@@ -62,6 +62,9 @@ import {
   type MlTaskProcessSettings,
 } from './task_types/ml_task_process_services';
 import { ML_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
+import { ML_WORKFLOW_SETTINGS_ID } from './task_types/workflow_services_contribution';
+import type { MlWorkflowSettings } from './task_types/workflow_services_contribution';
+import { captureModuleFiles } from './models/data_recognizer/module_files';
 import type { MlAgentBuilderSettings } from './task_types/agent_builder_contribution';
 import { setupCapabilitiesSwitcher } from './lib/capabilities';
 import { registerKibanaSettings } from './lib/register_settings';
@@ -330,15 +333,34 @@ export class MlServerPlugin
       registerCollector(plugins.usageCollection, getIndexForType);
     }
 
+    let moduleFiles: ReturnType<typeof captureModuleFiles> | undefined;
+    const getMlWorkflowSettings = async (): Promise<MlWorkflowSettings> => ({
+      enabledFeatures: this.enabledFeatures,
+      compatibleModuleType: this.compatibleModuleType,
+      spacesEnabled: this.spacesPlugin !== undefined,
+      cpsEnabled: this.serverless.cpsEnabled,
+      moduleFiles: await (moduleFiles ??= captureModuleFiles()),
+      cloud: {
+        cloudId: plugins.cloud.cloudId,
+        baseUrl: plugins.cloud.baseUrl,
+        isInTrial: plugins.cloud.isInTrial(),
+      },
+    });
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      ML_WORKFLOW_SETTINGS_ID,
+      getMlWorkflowSettings
+    );
+
     if (plugins.agentBuilder && this.enabledFeatures.ad) {
-      // What a task process needs to register what this Kibana registers.
+      // Installed assets are immutable for this Kibana; runtime switches are captured per dispatch.
       plugins.agentBuilder.taskProcess?.registerSettings(
         ML_AGENT_BUILDER_SETTINGS_ID,
-        (): MlAgentBuilderSettings => ({
+        async (): Promise<MlAgentBuilderSettings> => ({
           enabledFeatures: this.enabledFeatures,
           compatibleModuleType: this.compatibleModuleType,
           spacesEnabled: this.spacesPlugin !== undefined,
           cpsEnabled: this.serverless.cpsEnabled,
+          moduleFiles: await (moduleFiles ??= captureModuleFiles()),
         })
       );
       registerAnomalyDetectionAgentBuilder({

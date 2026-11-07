@@ -9,6 +9,10 @@
 
 import { createStandaloneFieldFormats } from '@kbn/alerting-plugin/server/task_types/standalone/field_formats';
 import {
+  getSearchMaxConcurrentShardUiSettings,
+  searchIncludeFrozenUiSettings,
+} from '@kbn/data-plugin/server/ui_settings';
+import {
   DATA_VIEWS_TASK_PROCESS_SETTINGS_ID,
   dataViewSavedObjectType,
   dataViewServiceUiSettings,
@@ -27,12 +31,25 @@ import type { SpacesTaskProcessSettings } from '@kbn/spaces-plugin/server/task_p
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { createDataViewsCapabilities } from './create_data_views_capabilities';
+import type { DataSearchTaskProcessSettings } from './data_search_task_process_settings';
+import { DATA_SEARCH_TASK_PROCESS_SETTINGS_ID } from './data_search_task_process_settings';
 
 export const contribution: WorkflowStepsContribution = {
   declares: {
     savedObjectTypes: [dataViewSavedObjectType],
-    settings: [DATA_VIEWS_TASK_PROCESS_SETTINGS_ID, SPACES_TASK_PROCESS_SETTINGS_ID],
+    settings: [
+      DATA_VIEWS_TASK_PROCESS_SETTINGS_ID,
+      SPACES_TASK_PROCESS_SETTINGS_ID,
+      DATA_SEARCH_TASK_PROCESS_SETTINGS_ID,
+    ],
     registerUiSettings: (registry, settings) => {
+      const search = settings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] as
+        | DataSearchTaskProcessSettings
+        | undefined;
+      if (search) {
+        registry.register(searchIncludeFrozenUiSettings);
+        registry.register(getSearchMaxConcurrentShardUiSettings(search.multiSearchDocLink));
+      }
       const snapshot = settings[DATA_VIEWS_TASK_PROCESS_SETTINGS_ID] as
         | DataViewsTaskProcessSettings
         | undefined;

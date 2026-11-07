@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import fs from 'fs';
 import Boom from '@hapi/boom';
 import numeral from '@elastic/numeral';
 import type {
@@ -43,6 +42,8 @@ import type {
 import { isGeneralJobOverride } from '@kbn/ml-common-types/modules';
 import type { JobExistResult, JobStat } from '@kbn/ml-common-types/data_recognizer';
 import type { Datafeed } from '@kbn/ml-common-types/anomaly_detection_jobs/datafeed';
+import type { DataRecognizerModuleFiles } from './module_files';
+import { createNativeModuleFiles } from './module_files';
 import type { CompatibleModule } from '../../../common/constants/app';
 import type { MlClient } from '../../lib/ml_client';
 import {
@@ -111,7 +112,6 @@ export class DataRecognizer {
   private _request: KibanaRequest;
   private _serverless: ServerlessInfo;
 
-  private _modulesDir = `${__dirname}/modules`;
   private _indexPatternName: string = '';
   private _indexPatternId: string | undefined = undefined;
 
@@ -144,7 +144,8 @@ export class DataRecognizer {
     mlSavedObjectService: MLSavedObjectService,
     request: KibanaRequest,
     compatibleModuleType: CompatibleModule | null,
-    serverless: ServerlessInfo
+    serverless: ServerlessInfo,
+    private readonly moduleFiles: DataRecognizerModuleFiles = createNativeModuleFiles()
   ) {
     this._client = mlClusterClient;
     this._mlClient = mlClient;
@@ -159,49 +160,18 @@ export class DataRecognizer {
     this._compatibleModuleType = compatibleModuleType;
   }
 
-  // list all directories under the given directory
-  private async _listDirs(dirName: string): Promise<string[]> {
-    const dirs: string[] = [];
-    return new Promise((resolve, reject) => {
-      fs.readdir(dirName, (err, fileNames) => {
-        if (err) {
-          reject(err);
-        }
-        fileNames.forEach((fileName) => {
-          const path = `${dirName}/${fileName}`;
-          if (fs.lstatSync(path).isDirectory()) {
-            dirs.push(fileName);
-          }
-        });
-        resolve(dirs);
-      });
-    });
-  }
-
-  private async _readFile(fileName: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      fs.readFile(fileName, 'utf-8', (err, content) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(content);
-        }
-      });
-    });
-  }
-
   private async _loadConfigs(moduleTagFilters?: string[]): Promise<Config[]> {
     if (this._configCache !== null) {
       return this._configCache;
     }
 
     const localConfigs: Config[] = [];
-    const dirs = await this._listDirs(this._modulesDir);
+    const dirs = await this.moduleFiles.listDirectories();
     await Promise.all(
       dirs.map(async (dir) => {
         let file: string | undefined;
         try {
-          file = await this._readFile(`${this._modulesDir}/${dir}/manifest.json`);
+          file = await this.moduleFiles.read(`${dir}/manifest.json`);
         } catch (error) {
           mlLog.warn(`Data recognizer skipping folder ${dir} as manifest.json cannot be read`);
         }
@@ -362,9 +332,7 @@ export class DataRecognizer {
       logo = moduleConfig.logo;
     } else if (moduleConfig.logoFile) {
       try {
-        const logoFileString = await this._readFile(
-          `${this._modulesDir}/${dirName}/${moduleConfig.logoFile}`
-        );
+        const logoFileString = await this.moduleFiles.read(`${dirName}/${moduleConfig.logoFile}`);
         logo = JSON.parse(logoFileString);
       } catch (error) {
         mlLog.warn(
@@ -457,9 +425,7 @@ export class DataRecognizer {
     } else if (isFileBasedModule(module)) {
       const tempJobs = module.jobs.map(async (job) => {
         try {
-          const jobConfig = await this._readFile(
-            `${this._modulesDir}/${dirName}/${ML_DIR}/${job.file}`
-          );
+          const jobConfig = await this.moduleFiles.read(`${dirName}/${ML_DIR}/${job.file}`);
           // use the file name for the id
           return {
             id: `${prefix}${job.id}`,
@@ -476,8 +442,8 @@ export class DataRecognizer {
       // load all of the datafeed configs
       const tempDatafeed = module.datafeeds.map(async (datafeed) => {
         try {
-          const datafeedConfigString = await this._readFile(
-            `${this._modulesDir}/${dirName}/${ML_DIR}/${datafeed.file}`
+          const datafeedConfigString = await this.moduleFiles.read(
+            `${dirName}/${ML_DIR}/${datafeed.file}`
           );
           const datafeedConfig = JSON.parse(datafeedConfigString) as Datafeed;
           // use the job id from the module
@@ -510,8 +476,8 @@ export class DataRecognizer {
             await Promise.all(
               module.kibana[key].map(async (obj) => {
                 try {
-                  const kConfigString = await this._readFile(
-                    `${this._modulesDir}/${dirName}/${KIBANA_DIR}/${key}/${obj.file}`
+                  const kConfigString = await this.moduleFiles.read(
+                    `${dirName}/${KIBANA_DIR}/${key}/${obj.file}`
                   );
                   // use the file name for the id
                   const kId = obj.file.replace('.json', '');
@@ -1517,7 +1483,8 @@ export function dataRecognizerFactory(
   mlSavedObjectService: MLSavedObjectService,
   request: KibanaRequest,
   compatibleModuleType: CompatibleModule | null,
-  serverless: ServerlessInfo
+  serverless: ServerlessInfo,
+  moduleFiles?: DataRecognizerModuleFiles
 ) {
   return new DataRecognizer(
     client,
@@ -1527,7 +1494,8 @@ export function dataRecognizerFactory(
     mlSavedObjectService,
     request,
     compatibleModuleType,
-    serverless
+    serverless,
+    moduleFiles
   );
 }
 

@@ -12,7 +12,7 @@ import type {
   ObservabilityAgentBuilderRunCore,
   ObservabilityAgentBuilderRunSetupDependencies,
 } from '../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import {
   OBSERVABILITY_RUN_LOG_RATE_ANALYSIS_TOOL_ID,
   createRunLogRateAnalysisTool,
@@ -97,7 +97,7 @@ export async function registerTools({
 }: {
   core: ObservabilityAgentBuilderRunCore;
   plugins: ObservabilityAgentBuilderRunSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   logger: Logger;
   toolIds?: readonly string[];
   onRegistered?: (id: string) => void;

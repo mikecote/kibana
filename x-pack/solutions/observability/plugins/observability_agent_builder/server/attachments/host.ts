@@ -11,7 +11,7 @@ import type { Logger } from '@kbn/core/server';
 import { ToolResultType, ToolType } from '@kbn/agent-builder-common';
 import type { AttachmentTypeDefinition } from '@kbn/agent-builder-server/attachments';
 import { OBSERVABILITY_HOST_ATTACHMENT_TYPE_ID } from '../../common';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import { MAX_SHORT_STRING_LENGTH } from '../utils/schema_limits';
 import { observabilityAttachmentDataSchema } from './observability_attachment_data_schema';
 
@@ -30,7 +30,7 @@ export function createHostAttachmentType({
   dataRegistry,
 }: {
   logger: Logger;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }): AttachmentTypeDefinition<typeof OBSERVABILITY_HOST_ATTACHMENT_TYPE_ID, HostAttachmentData> {
   return {
     id: OBSERVABILITY_HOST_ATTACHMENT_TYPE_ID,

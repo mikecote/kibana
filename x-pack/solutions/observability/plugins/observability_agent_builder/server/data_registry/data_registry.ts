@@ -60,3 +60,8 @@ export class ObservabilityAgentBuilderDataRegistry {
     return provider(params) as Promise<ReturnType<ObservabilityAgentBuilderDataRegistryTypes[K]>>;
   }
 }
+
+export type ObservabilityDataRegistryClient = Pick<
+  ObservabilityAgentBuilderDataRegistry,
+  'getData'
+>;

@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CoreSetup, CoreStart } from '@kbn/core/server';
+import type { CoreStart } from '@kbn/core/server';
 import type { ClusterClientMock } from '@kbn/core/server/mocks';
 import { coreMock, httpServerMock } from '@kbn/core/server/mocks';
 import type { APMIndices } from '@kbn/apm-sources-access-plugin/server';
@@ -39,7 +39,7 @@ describe('getApmEventClient', () => {
       context: coreMock.createCustomRequestHandlerContext(
         {}
       ) as unknown as MinimalAPMRouteHandlerResources['context'],
-      core: { setup: {} as CoreSetup, start: async () => coreStart as unknown as CoreStart },
+      core: { start: async () => coreStart as unknown as CoreStart },
       params: { query: { _inspect: false } },
       getApmIndices: jest.fn().mockResolvedValue(apmIndices),
     });

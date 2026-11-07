@@ -201,6 +201,9 @@ task type hands over its own service for the same capability.
 
 `host.analytics`, `host.security`, `host.elasticsearch` and `host.onRunEnd` (in a process) are always there.
 
+Task-mode Core reads user-provided UI settings through fresh clients. This lets retained workers
+observe namespace and global preferences changed by Kibana between executions.
+
 **A process does every side effect itself.** Kibana does nothing with a run but reschedule it, so
 nothing a run produces comes back in the response, and the process finishes it before it answers (bounded
 by a few seconds, so a slow endpoint cannot hold the run; a warning is logged on timeout):
@@ -754,7 +757,7 @@ with the events of the tools bridged to the workflow triggers) and ml (the anoma
 capabilities of a request are resolved from its `ui:ml/*` privileges and the license, there being no Core
 capabilities service in a process). Differences from Kibana are in the comment of each contribution (the AI
 indices other plugins register as managed, the attachment types and the alerts client of solutions, files, and the
-data views of ML recognizers).
+data-view capabilities in rule runtimes).
 Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
 the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
 are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
@@ -797,8 +800,19 @@ Native observability data services are available through the workflow service re
   plugin's actual scripted-field and rollup settings. Conditional defaults use the same UI
   registration helper as Kibana; meta-field and default-view settings share their native definitions
   with the Data plugin.
+- `ml.setup` uses the shared ML service factory with native authorization, licensing, audit,
+  data views and Spaces. The module recognizer reads a dispatch snapshot of its installed manifests,
+  job and datafeed definitions, logos and saved-object assets. It does not need source-tree paths
+  on the worker. Shared capability checks receive the actual authorization, license and feature
+  settings for credential-bearing workflow requests.
 - `logsDataAccess` uses the native logs service factory and Core UI settings clients, including
   request-scoped reads and writes of the configured log sources.
+- `observabilityAgentBuilder.dataProviders.apm` and `.infra` register the same providers as Kibana
+  over native APM, Infrastructure, ML, SLO and alert clients. The Observability agent contribution
+  restores the captured successful tool, attachment and skill registrations and binds each data
+  provider to its captured owner. Missing owners or providers fail explicitly. Real worker tests
+  cover APM error updates, host CPU changes, log-source changes and credential denial in fresh and
+  retained local and remote workers.
 - `metricsDataAccess.setup` uses the native metrics client. Its dispatch snapshot identifies any
   installed default resolver; `metricsDataAccess.defaultIndices.<owner>` restores that resolver
   through its owning plugin's factory. Infra contributes its native source resolver. Missing or

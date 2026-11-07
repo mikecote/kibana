@@ -67,7 +67,10 @@ function disableAdminPrivileges(capabilities: MlCapabilities) {
 
 export type HasMlCapabilities = (capabilities: MlCapabilitiesKey[]) => Promise<void>;
 
-export type MlAuthorizationService = SecurityPluginSetup['authz'];
+export type MlAuthorizationService = Pick<
+  SecurityPluginSetup['authz'],
+  'mode' | 'actions' | 'checkPrivilegesWithRequest' | 'checkPrivilegesDynamicallyWithRequest'
+>;
 
 /**
  * Checks ML UI privileges for the user bound to the request (cookie or API key).

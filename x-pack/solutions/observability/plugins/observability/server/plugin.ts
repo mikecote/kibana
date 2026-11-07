@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { AlertingServerSetup, AlertingServerStart } from '@kbn/alerting-plugin/server';
 import type { ContentManagementServerSetup } from '@kbn/content-management-plugin/server';
 import type { DashboardPluginStart } from '@kbn/dashboard-plugin/server';
@@ -33,6 +34,7 @@ import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
 import type { DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
 import type { PluginStart as DataPluginStart } from '@kbn/data-plugin/server';
 import type { PluginSetup as ESQLSetup } from '@kbn/esql/server';
+import { OBSERVABILITY_UI_SETTINGS_ID } from './task_types/workflow_ui_settings_contribution';
 import { getLogsFeature } from './features/logs_feature';
 import { getObservabilityAlertsFeature } from './features/alerts_feature';
 import type { ObservabilityConfig } from '.';
@@ -58,6 +60,7 @@ import { setEsqlRecommendedQueries } from './lib/esql_extensions/set_esql_recomm
 export type ObservabilityPluginSetup = ReturnType<ObservabilityPlugin['setup']>;
 
 interface PluginSetup {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   alerting: AlertingServerSetup;
   cases?: CasesServerSetup;
   features: FeaturesPluginSetup;
@@ -114,6 +117,9 @@ export class ObservabilityPlugin
     let annotationsApiPromise: Promise<AnnotationsAPI> | undefined;
 
     core.uiSettings.register(uiSettings);
+    plugins.workflowsExtensions?.registerTaskProcessSettings(OBSERVABILITY_UI_SETTINGS_ID, () => ({
+      enabled: true,
+    }));
 
     core.pricing.registerProductFeatures(OBSERVABILITY_TIERED_FEATURES);
 

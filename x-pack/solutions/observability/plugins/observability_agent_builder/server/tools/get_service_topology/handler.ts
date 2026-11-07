@@ -6,7 +6,7 @@
  */
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type {
   ObservabilityAgentBuilderRunCore,
   ObservabilityAgentBuilderRunSetupDependencies,
@@ -29,7 +29,7 @@ export function getToolHandler({
   core: ObservabilityAgentBuilderRunCore;
   plugins: ObservabilityAgentBuilderRunSetupDependencies;
   request: KibanaRequest;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   logger: Logger;
   serviceName: string;
   direction: TopologyDirection;

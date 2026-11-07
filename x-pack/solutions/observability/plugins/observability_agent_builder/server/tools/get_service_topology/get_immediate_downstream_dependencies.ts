@@ -13,7 +13,7 @@ import {
   SPAN_TYPE,
   SPAN_SUBTYPE,
 } from '@kbn/apm-types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type { ApmConnectionStatsEntry } from '../../data_registry/data_registry_types';
 import type { ServiceTopologyResponse, ServiceTopologyConnection } from './types';
 import { computeConnectionMetrics } from './get_connection_metrics';
@@ -34,7 +34,7 @@ export async function getImmediateDownstreamDependencies({
   startMs,
   endMs,
 }: {
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   serviceName: string;
   startMs: number;

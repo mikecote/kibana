@@ -184,7 +184,11 @@
     "@kbn/lens-common",
     "@kbn/core-http-browser-mocks",
     "@kbn/genai-common",
-    "@kbn/core-logging-server-mocks"
+    "@kbn/core-logging-server-mocks",
+    "@kbn/workflows-extensions",
+    "@kbn/workflows",
+    "@kbn/infra-plugin",
+    "@kbn/workflows-execution-engine"
   ],
   "exclude": ["target/**/*"]
 }

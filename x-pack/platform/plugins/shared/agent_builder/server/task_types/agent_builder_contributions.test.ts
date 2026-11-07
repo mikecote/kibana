@@ -34,8 +34,6 @@ const NOT_YET_CONTRIBUTED: Record<string, string> = {
   'x-pack/solutions/security/plugins/security_solution':
     'endpoint, detections and entity analytics services',
   'x-pack/solutions/security/plugins/alertzero': 'the investigations services',
-  'x-pack/solutions/observability/plugins/observability_agent_builder':
-    'the data providers other observability plugins register (apm, infra, slo, synthetics)',
   'x-pack/solutions/observability/plugins/nightshift_investigations':
     'the investigations client, the sandbox plugin and agent execution',
 };
