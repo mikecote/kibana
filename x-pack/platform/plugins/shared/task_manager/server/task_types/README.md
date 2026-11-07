@@ -761,10 +761,16 @@ Also contributing since: streams (the scoped clients of `createStreamsRunService
 storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata
 service started with the streams extractor; the rules client of alerting that the attachment client uses and the
 encrypted saved objects client exist only in Kibana and throw when used, integration fields from Fleet are not
-served, and the space solution that gates the tools in Kibana is not known to a process, so the tools are available in
-every space of a project type that registers them, which Kibana decides) and evals_skills (the dataset service and the
+served; tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
 evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
 service and the privileges of the security task plugin; saving and running an experiment use the shared workflow management runtime).
+
+The engine also exposes the native field metadata service as `fieldsMetadata` in the workflow service
+registry. It uses the active extractor provider IDs captured from Kibana at dispatch, and resolves each
+provider through `fieldsMetadata.extractors.<id>`. Missing registered providers fail explicitly. Fleet
+capabilities are evaluated with the task's credentials by the shared Security switcher, then restricted
+by the current authorized space and native solution gate. The Streams extractor is available through
+this registry; migrating its existing local metadata setup also requires Fleet's package runtime.
 
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a

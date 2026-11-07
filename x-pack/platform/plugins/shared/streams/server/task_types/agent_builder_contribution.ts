@@ -8,11 +8,12 @@
 import { firstValueFrom } from 'rxjs';
 import type { KibanaRequest } from '@kbn/core/server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { FieldsMetadataService } from '@kbn/fields-metadata-plugin/server/services/fields_metadata/fields_metadata_service';
 import { registerStreamsAgentBuilder } from '../agent_builder/register';
-import { getStreamsToolAvailability } from '../agent_builder/utils/get_streams_tool_availability';
+import { getStreamsToolAvailabilityFromServices } from '../agent_builder/utils/get_streams_tool_availability';
 import { createStreamsRunServices } from '../create_streams_run_services';
 import { registerFieldsMetadataExtractors } from '../register_fields_metadata_extractors';
 import type { StreamsStartServicesAccess } from '../start_services_access';
@@ -51,8 +52,7 @@ const onlyInKibana = (what: string): never =>
  * Differences from Kibana: the rules client of alerting (which the attachment client uses to read and
  * link rules to streams) and the encrypted saved objects client (canvas configuration, which no tool
  * reads) exist only in Kibana, and throw when used; integration fields (from Fleet) are not served;
- * and the space solution that gates the tools in Kibana is not known to a process, so the tools are
- * available in every space of a project type that registers them (decided in Kibana).
+ * tool availability uses the shared authorized Spaces service and native solution gate.
  */
 export const contribution: AgentBuilderContribution = {
   declares: { settings: [STREAMS_AGENT_BUILDER_SETTINGS_ID] },
@@ -123,14 +123,11 @@ export const contribution: AgentBuilderContribution = {
       getScopedClients,
       server: { isServerless: streamsSettings.isServerless },
       logger: streamsLogger,
-      // Without the spaces plugin the tools are available, as in Kibana without it.
       availability: {
         cacheMode: 'space',
         handler: ({ request }) =>
-          getStreamsToolAvailability({
-            core: {
-              getStartServices: async () => [{}, { spaces: undefined }],
-            } as never,
+          getStreamsToolAvailabilityFromServices({
+            spaces: services.getService<SpacesPluginStart>('spaces'),
             logger: streamsLogger,
             request,
           }),

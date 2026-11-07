@@ -474,7 +474,8 @@ const startHarness = async (
   const runTask = (
     taskType: string,
     task: { id: string; params: Record<string, string> },
-    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']
+    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
+    credentials?: { apiKey: string }
   ) =>
     new RemoteTaskRunner({
       route: getRoute(taskType),
@@ -503,7 +504,7 @@ const startHarness = async (
           ownerId: null,
         },
         executionUuid: `${task.id}-${Date.now()}`,
-        apiKey,
+        apiKey: credentials?.apiKey ?? apiKey,
         spaceId: 'default',
         userName: 'elastic',
         featureFlags: { [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true },
@@ -516,14 +517,19 @@ const startHarness = async (
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 
-  const run = (workflowId: string, onDispatchFailure?: TaskProcessDispatch['onDispatchFailure']) =>
+  const run = (
+    workflowId: string,
+    onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'],
+    credentials?: { apiKey: string }
+  ) =>
     runTask(
       TASK_TYPE,
       {
         id: `workflow:${workflowId}:scheduled`,
         params: { workflowId, spaceId: 'default', triggerType: 'scheduled' },
       },
-      onDispatchFailure
+      onDispatchFailure,
+      credentials
     );
 
   const waitForRunTask = async (workflowId: string | RegExp, signal?: AbortSignal) => {

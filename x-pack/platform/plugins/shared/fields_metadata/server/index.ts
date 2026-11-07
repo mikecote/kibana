@@ -10,6 +10,7 @@ import type { PluginInitializerContext } from '@kbn/core/server';
 export type { FieldsMetadataServerSetup, FieldsMetadataServerStart } from './types';
 export { FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 export type { FieldsMetadataTaskProcessSettings } from './task_process_settings';
+export type { FieldsMetadataCapabilities } from './services/fields_metadata/fields_metadata_client';
 export type {
   IntegrationName,
   DatasetName,

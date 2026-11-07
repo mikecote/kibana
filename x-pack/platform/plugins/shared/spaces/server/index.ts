@@ -21,6 +21,7 @@ export type {
   SpacesPluginStartApi as SpacesPluginStart,
 } from './plugin';
 export type { SpacesServiceSetup, SpacesServiceStart } from './spaces_service';
+export { createSpacesCapabilitiesSwitcher } from './capabilities/capabilities_switcher';
 export type {
   ISpacesClient,
   SpacesClientRepositoryFactory,

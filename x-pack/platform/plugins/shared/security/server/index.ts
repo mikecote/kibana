@@ -23,6 +23,7 @@ import type { PluginSetupDependencies, SecurityPluginSetup } from './plugin';
 export type { CasesSupportedOperations } from './authorization';
 export type { SecurityPluginSetup, SecurityPluginStart };
 export type { AuthenticatedUser } from '../common';
+export { createSecurityCapabilitiesSwitcher } from './authorization/create_ui_capabilities_switcher';
 export { ROUTE_TAG_CAN_REDIRECT, ROUTE_TAG_AUTH_FLOW } from './routes/tags';
 
 // Re-export types from the plugin directly to enhance the developer experience for consumers of the Security plugin.
