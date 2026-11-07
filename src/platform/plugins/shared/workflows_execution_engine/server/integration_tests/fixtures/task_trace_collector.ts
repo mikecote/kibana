@@ -8,6 +8,9 @@
  */
 
 import { createServer } from 'node:http';
+import type { RequestListener } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
+import { TLSSocket } from 'node:tls';
 import { gunzipSync, inflateSync } from 'node:zlib';
 import { lazySchema, z } from '@kbn/zod/v4';
 
@@ -54,6 +57,7 @@ const otlpSchema = lazySchema(() =>
 );
 
 interface TaskTraceCollector {
+  readonly authenticatedExports: number;
   url: string;
   apmTransactions: Array<z.output<typeof apmTransactionSchema>>;
   apmSpans: Array<z.output<typeof apmTransactionSchema>>;
@@ -65,11 +69,17 @@ interface TaskTraceCollector {
 }
 
 /** Receives actual native APM and OTLP HTTP exports on a local test listener. */
-export const createTaskTraceCollector = async (): Promise<TaskTraceCollector> => {
+export const createTaskTraceCollector = async (tls?: {
+  key: string;
+  cert: string;
+  ca: string;
+  requestCert: boolean;
+}): Promise<TaskTraceCollector> => {
   const apmTransactions: TaskTraceCollector['apmTransactions'] = [];
   const apmSpans: TaskTraceCollector['apmSpans'] = [];
   const otelSpans: TaskTraceCollector['otelSpans'] = [];
-  const server = createServer((request, response) => {
+  let authenticatedExports = 0;
+  const listener: RequestListener = (request, response) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
     request.on('data', (chunk: Buffer) => {
@@ -83,6 +93,12 @@ export const createTaskTraceCollector = async (): Promise<TaskTraceCollector> =>
     });
     request.on('end', () => {
       try {
+        if (
+          request.method === 'POST' &&
+          request.socket instanceof TLSSocket &&
+          request.socket.authorized
+        )
+          authenticatedExports++;
         const raw = Buffer.concat(chunks);
         const decoded =
           request.headers['content-encoding'] === 'gzip'
@@ -119,16 +135,22 @@ export const createTaskTraceCollector = async (): Promise<TaskTraceCollector> =>
         response.writeHead(500).end(error instanceof Error ? error.message : String(error));
       }
     });
-  });
+  };
+  const server = tls
+    ? createSecureServer({ ...tls, rejectUnauthorized: tls.requestCert }, listener)
+    : createServer(listener);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
+    server.listen(0, tls ? 'localhost' : '127.0.0.1', resolve);
   });
   const address = server.address();
   if (!address || typeof address === 'string')
     throw new Error('Trace collector has no listening address');
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: `${tls ? 'https://localhost' : 'http://127.0.0.1'}:${address.port}`,
+    get authenticatedExports() {
+      return authenticatedExports;
+    },
     apmTransactions,
     apmSpans,
     otelSpans,

@@ -435,6 +435,7 @@ export class TaskManagerPlugin
       const instrumentation = getTelemetryConfiguration('kibana');
       if (instrumentation) {
         init.instrumentation = {
+          files: instrumentation.files,
           environment: instrumentation.environment,
           apm: serializeSettings(instrumentation.apm),
           redactUsers: instrumentation.redactUsers,

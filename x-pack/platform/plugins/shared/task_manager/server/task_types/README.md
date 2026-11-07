@@ -490,8 +490,14 @@ reschedule, the task state, the retries). What differs, and why:
   providers. Startup settings, including Core's current `execution_context.enabled`, participate in reuse
   compatibility. `native_task_tracing_process` verifies actual APM and OTLP HTTP exports, scheduling span
   lineage and enabled/disabled Core labels across fresh and reused child and remote workers.
-- **Instrumentation work remaining.** Portable exporter certificate files, real rule and connector counter
-  export proofs, and aggregation for Main's Prometheus endpoint still need completion.
+- **Exporter certificates.** Main captures the contents of native APM CA files and the global or
+  signal-specific OTLP CA, client certificate and private-key files. Workers materialize them with private
+  permissions before loading the SDKs and remove them after native shutdown. Native environment precedence
+  is retained. Unavailable source files remain unavailable in the worker. `native_task_tracing_tls_process`
+  verifies actual APM HTTPS and OTel mutual-TLS exports after Main's file paths have been deleted, including
+  precedence changes and retained-worker replacement in both process modes.
+- **Instrumentation work remaining.** Real rule and connector counter export proofs and aggregation for
+  Main's Prometheus endpoint still need completion.
 - **Execution limits.** A rule that uses a connector type or adapter the process does not know, or a workflow
   rule whose executions are stored where the process cannot store them, fails explicitly. Fresh workers
   pay for the encryption service, license and alerts resource checks at startup. Reused workers retain

@@ -72,6 +72,8 @@ dependsOn:
   - '@kbn/data-plugin'
   - '@kbn/telemetry-config'
   - '@kbn/metrics-config'
+  - '@kbn/apm-config-loader'
+  - '@kbn/fs'
 tags:
   - plugin
   - prod

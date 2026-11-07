@@ -25,6 +25,7 @@ export const initializeTaskProcessInstrumentation = async (
   serialized: NonNullable<TaskProcessInit['instrumentation']>
 ): Promise<TaskProcessInstrumentation> => {
   const configuration: TelemetryConfiguration = {
+    files: serialized.files,
     environment: serialized.environment,
     apm: reviveSettings(serialized.apm) as AgentConfigOptions,
     redactUsers: serialized.redactUsers,

@@ -74,6 +74,11 @@ export const runTaskProcess = async (
       flush: core.flush,
     });
   } catch (error) {
+    await instrumentation?.shutdown().catch((shutdownError: Error) => {
+      process.stderr.write(
+        `Task process instrumentation shutdown failed: ${shutdownError.message}\n`
+      );
+    });
     process.stderr.write(`Task process failed to start: ${(error as Error).stack ?? error}\n`);
     process.exit(1);
   }

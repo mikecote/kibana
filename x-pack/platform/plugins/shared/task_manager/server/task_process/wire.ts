@@ -10,6 +10,7 @@
  * the task process can bundle it without pulling in the rest of Task Manager.
  */
 
+import type { TelemetryFileMaterial } from '@kbn/apm-config-loader';
 import type { TaskRunTrace } from '../task_running/task_tracing';
 import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
@@ -33,6 +34,7 @@ export interface TaskProcessInit {
   kind: 'init';
   executionContext?: { enabled: boolean };
   instrumentation?: {
+    files: readonly TelemetryFileMaterial[];
     environment: Record<string, string>;
     apm: SerializedValue;
     redactUsers: boolean;

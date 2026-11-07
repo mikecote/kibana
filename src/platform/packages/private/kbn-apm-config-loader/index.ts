@@ -19,3 +19,12 @@ export { apmConfigSchema } from './src/apm_config';
 
 export { captureTelemetryConfiguration } from './src/telemetry_configuration';
 export type { TelemetryConfiguration } from './src/telemetry_configuration';
+
+export {
+  captureTelemetryFileMaterial,
+  isTelemetryEnvironmentFileKey,
+} from './src/telemetry_file_material';
+export type {
+  TelemetryFileMaterial,
+  TelemetryEnvironmentFileKey,
+} from './src/telemetry_file_material';

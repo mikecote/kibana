@@ -11,8 +11,11 @@ import type { AgentConfigOptions } from 'elastic-apm-node';
 import type { TelemetryConfig } from '@kbn/telemetry-config';
 import type { MonitoringCollectionConfig } from '@kbn/metrics-config';
 import type { ApmConfiguration } from './config';
+import { captureTelemetryFileMaterial } from './telemetry_file_material';
+import type { TelemetryFileMaterial } from './telemetry_file_material';
 
 export interface TelemetryConfiguration {
+  files: readonly TelemetryFileMaterial[];
   environment: Record<string, string>;
   apm: AgentConfigOptions;
   redactUsers: boolean;
@@ -24,14 +27,17 @@ export interface TelemetryConfiguration {
 export const captureTelemetryConfiguration = (
   configuration: ApmConfiguration,
   serviceName: string
-): TelemetryConfiguration => ({
-  environment: Object.fromEntries(
-    Object.entries(process.env).flatMap(([key, value]) =>
-      /^(ELASTIC_APM_|OTEL_)/.test(key) && value !== undefined ? [[key, value]] : []
-    )
-  ),
-  apm: configuration.getConfig(serviceName),
-  redactUsers: configuration.isUsersRedactionEnabled(),
-  telemetry: configuration.getTelemetryConfig(),
-  monitoringCollection: configuration.getMonitoringCollectionConfig(),
-});
+): TelemetryConfiguration => {
+  const snapshot = {
+    environment: Object.fromEntries(
+      Object.entries(process.env).flatMap(([key, value]) =>
+        /^(ELASTIC_APM_|OTEL_)/.test(key) && value !== undefined ? [[key, value]] : []
+      )
+    ),
+    apm: configuration.getConfig(serviceName),
+    redactUsers: configuration.isUsersRedactionEnabled(),
+    telemetry: configuration.getTelemetryConfig(),
+    monitoringCollection: configuration.getMonitoringCollectionConfig(),
+  };
+  return { ...snapshot, files: captureTelemetryFileMaterial(snapshot) };
+};

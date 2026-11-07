@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { materializeTaskProcessInstrumentationFiles } from './instrumentation_files';
 import { readTaskProcessInit } from './main_init';
 import { applyTaskProcessInstrumentationEnvironment } from './instrumentation_environment';
 import type { TaskProcessInstrumentation } from './instrumentation';
@@ -21,9 +22,30 @@ export const bootstrapTaskProcess = async (): Promise<{
   const init = await readTaskProcessInit();
   let instrumentation: TaskProcessInstrumentation | undefined;
   if (init.instrumentation) {
-    applyTaskProcessInstrumentationEnvironment(init.instrumentation.environment);
-    const { initializeTaskProcessInstrumentation } = await import('./instrumentation');
-    instrumentation = await initializeTaskProcessInstrumentation(init.instrumentation);
+    const material = materializeTaskProcessInstrumentationFiles(init.instrumentation);
+    try {
+      applyTaskProcessInstrumentationEnvironment(material.instrumentation.environment);
+      const { initializeTaskProcessInstrumentation } = await import('./instrumentation');
+      const native = await initializeTaskProcessInstrumentation({
+        ...init.instrumentation,
+        ...material.instrumentation,
+      });
+      let shutdownPromise: Promise<void> | undefined;
+      instrumentation = {
+        forceFlush: native.forceFlush,
+        shutdown: () =>
+          (shutdownPromise ??= (async () => {
+            try {
+              await native.shutdown();
+            } finally {
+              material.cleanup();
+            }
+          })()),
+      };
+    } catch (error) {
+      material.cleanup();
+      throw error;
+    }
   }
   if (instrumentation) registerStop(instrumentation.shutdown);
   return { init, instrumentation, registerStop };

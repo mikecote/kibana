@@ -68,7 +68,9 @@
     "@kbn/agent-builder-server",
     "@kbn/data-plugin",
     "@kbn/telemetry-config",
-    "@kbn/metrics-config"
+    "@kbn/metrics-config",
+    "@kbn/apm-config-loader",
+    "@kbn/fs"
   ],
   "exclude": ["target/**/*"]
 }
