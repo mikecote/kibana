@@ -39,7 +39,10 @@ describe('synthetics task type modules', () => {
   });
 
   it('reads the monitors and the private locations, and no service API key of the plugin', () => {
-    const types = monitorStatus.createSavedObjectTypes?.(encryptedSavedObjectsMock.createSetup());
+    const types = monitorStatus.createSavedObjectTypes?.(
+      encryptedSavedObjectsMock.createSetup(),
+      {}
+    );
     expect(types?.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         'synthetics-monitor-multi-space',

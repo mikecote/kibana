@@ -9,7 +9,7 @@
     "browser": true,
     "server": true,
     "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/fields_metadata_runtime_contribution.ts"]
+      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
     },
     "configPath": ["xpack", "fleet"],
     "requiredPlugins": [

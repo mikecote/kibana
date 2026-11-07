@@ -18,7 +18,10 @@ import {
   runInRunContext,
 } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
-import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
+import type {
+  WorkflowStepsContribution,
+  WorkflowStepsContributionContext,
+} from '@kbn/workflows-extensions/server';
 import { createWorkflowRuntimeFromHost } from './process_runtime';
 import { taskType as resumeTaskType } from './workflow_resume.task';
 import { taskType as runTaskType } from './workflow_run.task';
@@ -271,10 +274,14 @@ describe('workflow process runtime lifecycle', () => {
 });
 
 describe('workflow native encrypted migration factories', () => {
-  it('passes the same native encryption setup to every contributing saved object factory', () => {
+  it('passes native encryption setup and dispatch settings to each saved object factory', () => {
     const createSavedObjectTypes = jest.fn(
-      (encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>) => {
+      (
+        encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
+        settings: WorkflowStepsContributionContext['settings']
+      ) => {
         expect(encryption).toBe(nativeEncryption);
+        expect(settings).toBe(nativeSettings);
         return [
           {
             name: 'native-migrated-type',
@@ -286,14 +293,15 @@ describe('workflow native encrypted migration factories', () => {
       }
     );
     const nativeEncryption = encryptedSavedObjectsMock.createSetup();
+    const nativeSettings = { nativeMigration: { enabled: true } };
     const steps: WorkflowStepsContribution = {
       declares: { createSavedObjectTypes },
       register: () => {},
     };
     const applied = runTaskType.contributions?.apply?.({ 'workflow-steps': [steps] });
-    expect(applied?.createSavedObjectTypes?.(nativeEncryption).map(({ name }) => name)).toEqual([
-      'native-migrated-type',
-    ]);
+    expect(
+      applied?.createSavedObjectTypes?.(nativeEncryption, nativeSettings).map(({ name }) => name)
+    ).toEqual(['native-migrated-type']);
     expect(createSavedObjectTypes).toHaveBeenCalledTimes(1);
   });
 });

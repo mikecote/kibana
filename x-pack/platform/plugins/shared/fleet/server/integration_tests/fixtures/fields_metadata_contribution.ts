@@ -13,6 +13,7 @@ import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { z } from '@kbn/zod/v4';
 
+import type { FleetWorkflowRunServices } from '../../services/run_time/workflow_run_services';
 import { getBundledPackages } from '../../services/epm/packages/bundled_packages';
 import {
   getGpgKeyOrUndefined,
@@ -44,6 +45,8 @@ export const contribution: WorkflowStepsContribution = {
             integration: 'fixture',
             dataset: 'fixture.logs',
           });
+          // Raw archive checks also run when authorization skips the metadata extractor.
+          await services.getService<FleetWorkflowRunServices>('fleet.runServices').getServices();
           const [archive] = await getBundledPackages();
           const key = await getGpgKeyOrUndefined();
           if (!archive || !key) throw new Error('The native package material was not restored');

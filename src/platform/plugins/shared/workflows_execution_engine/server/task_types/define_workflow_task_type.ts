@@ -139,8 +139,10 @@ export const defineWorkflowTaskType = (
       ...actionsEventTypes,
       ...declared.flatMap(({ analyticsEventTypes }) => analyticsEventTypes ?? []),
     ],
-    createSavedObjectTypes: (encryption) =>
-      declared.flatMap((declaration) => declaration.createSavedObjectTypes?.(encryption) ?? []),
+    createSavedObjectTypes: (encryption, settings) =>
+      declared.flatMap(
+        (declaration) => declaration.createSavedObjectTypes?.(encryption, settings) ?? []
+      ),
     registerUiSettings: declared.some((declaration) => declaration.registerUiSettings)
       ? (registry, settings) => {
           for (const declaration of declared) declaration.registerUiSettings?.(registry, settings);

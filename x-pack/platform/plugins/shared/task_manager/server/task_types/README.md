@@ -185,7 +185,7 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
-| `createSavedObjectTypes`    | native saved object migrations | Builds definitions with the genuine encryption setup during worker setup; static and created definitions are deduplicated by name                          | Already registered by the owning plugin |
+| `createSavedObjectTypes`    | native saved object migrations | Builds definitions with genuine encryption setup and revived dispatch settings; static and created definitions are deduplicated by name                     | Already registered by the owning plugin |
 | `dataStreams`               | `dataStreams`                 | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped                                     | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
@@ -790,6 +790,12 @@ run cleanup releases Fleet configuration and license subscriptions. Response act
 snapshot and genuine task Security license and audit services. Rule modules declare the snapshot in
 `optionalSettings`, matching Fleet's optional plugin dependency; executing a response action requires
 the snapshot.
+
+Workflows resolve native Fleet services through `fleet.runServices`. The shared initializer runs
+once per task run and releases its subscriptions at run end. Fleet contributes its complete native
+saved-object definitions using the dispatch configuration, including the space-awareness namespace
+setting. Enrollment queries use the native scoped agent service and current Elasticsearch documents;
+retained workers do not cache agent availability between runs.
 
 The nine archives pinned in `fleet_packages.json` have registry content lengths totaling 26,063,815
 bytes, or 34,751,764 bytes after base64 encoding (33.1 MiB, measured November 7, 2026). Full dispatch

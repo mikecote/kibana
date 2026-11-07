@@ -89,9 +89,10 @@ export interface WorkflowStepsContribution {
   declares?: {
     schedulableTypes?: RegExp[];
     savedObjectTypes?: SavedObjectsType[];
-    /** Builds native migrations with the worker's encryption setup. */
+    /** Builds native saved objects with encryption setup and the dispatching plugin's configuration. */
     createSavedObjectTypes?: (
-      encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+      encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
+      settings: WorkflowStepsContributionContext['settings']
     ) => SavedObjectsType[];
     dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
@@ -135,7 +136,7 @@ export interface WorkflowStepsContributionServices {
   registerRunCompletion: (complete: () => Promise<void>) => void;
   stepRegistry: WorkflowStepsRegistryView;
   registerService: (id: string, service: object) => void;
-  /** Resolves one run's contributed service; providers must return the same public contract as Kibana. */
+  /** Resolves native owning-plugin contracts or explicit ports for constructing them for this run. */
   getService: <T extends object>(id: string) => T;
   /** Resolves after registration finishes and the engine runtime has been composed. */
   getExecutionEngine: <T extends object>() => Promise<T>;

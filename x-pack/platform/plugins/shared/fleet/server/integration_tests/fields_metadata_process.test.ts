@@ -32,7 +32,8 @@ import { parseExperimentalConfigValue } from '../../common/experimental_features
 import { appContextService } from '../services/app_context';
 import { getFleetPackageMetadataTaskProcessSettings } from '../services/run_time/package_metadata_settings';
 import { _purgeBundledPackagesCache } from '../services/epm/packages/bundled_packages';
-import { contribution } from '../task_types/fields_metadata_runtime_contribution';
+import { contribution } from '../task_types/workflow_services_contribution';
+import { getSavedObjectTypes } from '../saved_objects';
 
 const features: KibanaFeatureConfig[] = ['fleet', 'fleetv2'].map((id) => ({
   id,
@@ -184,7 +185,15 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         additionalContributions: {
           'workflow-steps': [join(__dirname, 'fixtures/fields_metadata_contribution.ts')],
         },
-        savedObjectTypes: contribution.declares?.savedObjectTypes,
+        savedObjectTypes: Object.values(
+          getSavedObjectTypes({
+            useSpaceAwareness: parseExperimentalConfigValue(
+              metadata.config.enableExperimental ?? [],
+              metadata.config.experimentalFeatures ?? {}
+            ).useSpaceAwareness,
+          })
+        ),
+        seedContributions: { 'workflow-steps': [contribution] },
         settings: {
           fieldsMetadataRuntime: {
             integrationFieldsExtractor: 'fleet',

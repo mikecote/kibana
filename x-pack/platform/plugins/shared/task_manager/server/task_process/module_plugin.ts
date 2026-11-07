@@ -81,7 +81,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       }
       const createdTypes =
         module.createSavedObjectTypes && deps.encryptedSavedObjects
-          ? module.createSavedObjectTypes(deps.encryptedSavedObjects)
+          ? module.createSavedObjectTypes(
+              deps.encryptedSavedObjects,
+              reviveSettingsByPlugin(init.settings)
+            )
           : [];
       for (const type of [...(module.savedObjectTypes ?? []), ...createdTypes]) {
         if (seen.has(type.name)) continue;
