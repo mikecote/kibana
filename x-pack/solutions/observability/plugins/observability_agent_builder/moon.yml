@@ -69,6 +69,8 @@ dependsOn:
   - '@kbn/react-query'
   - '@kbn/sse-utils'
   - '@kbn/cloud-plugin'
+  - '@kbn/core-http-server-mocks'
+  - '@kbn/core-logging-server-mocks'
 tags:
   - plugin
   - prod

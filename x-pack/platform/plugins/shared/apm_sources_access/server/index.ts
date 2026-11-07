@@ -38,3 +38,5 @@ export type {
   ApmSourcesAccessPluginStart,
 };
 export { configSchema, config, plugin };
+export { createGetApmIndices } from './create_get_apm_indices';
+export { apmIndicesSavedObjectDefinition } from './saved_objects/apm_indices';

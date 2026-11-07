@@ -11,8 +11,8 @@ import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-b
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../../types';
 import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
 import type { ServiceNodeMetadataMap } from '../../data_registry/data_registry_types';
@@ -77,8 +77,8 @@ export function createGetServiceTopologyTool({
   dataRegistry,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   dataRegistry: ObservabilityAgentBuilderDataRegistry;
   logger: Logger;
 }): StaticToolRegistration<typeof getServiceTopologyToolSchema> {

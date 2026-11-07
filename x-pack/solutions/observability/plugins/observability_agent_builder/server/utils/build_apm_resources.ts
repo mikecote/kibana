@@ -5,13 +5,12 @@
  * 2.0.
  */
 
-import type { CoreSetup, KibanaRequest, Logger } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import { APMEventClient, type ApmDataAccessServices } from '@kbn/apm-data-access-plugin/server';
 import type {
-  ObservabilityAgentBuilderPluginSetupDependencies,
-  ObservabilityAgentBuilderPluginStart,
-  ObservabilityAgentBuilderPluginStartDependencies,
+  ObservabilityAgentBuilderRunSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
 } from '../types';
 
 export interface ApmResources {
@@ -25,11 +24,8 @@ export async function buildApmResources({
   request,
   logger,
 }: {
-  core: CoreSetup<
-    ObservabilityAgentBuilderPluginStartDependencies,
-    ObservabilityAgentBuilderPluginStart
-  >;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   request: KibanaRequest;
   logger: Logger;
 }): Promise<ApmResources> {

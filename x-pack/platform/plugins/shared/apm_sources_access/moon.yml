@@ -21,6 +21,8 @@ dependsOn:
   - '@kbn/core'
   - '@kbn/i18n'
   - '@kbn/server-route-repository'
+  - '@kbn/core-saved-objects-api-server-mocks'
+  - '@kbn/workflows-extensions'
 tags:
   - plugin
   - prod

@@ -43,41 +43,43 @@ export function registerDataProviders({
     return;
   }
 
-  observabilityAgentBuilder.registerDataProvider(
-    'infraHosts',
-    async ({ request, from, to, limit, query }) => {
-      const infraToolResources = await buildInfraToolResources({ core, plugins, libs, request });
+  const registerDataProvider: typeof observabilityAgentBuilder.registerDataProvider = (
+    id,
+    provider
+  ) => observabilityAgentBuilder.registerDataProvider(id, provider, { owner: 'infra' });
 
-      const fromMs = new Date(from).getTime();
-      const toMs = new Date(to).getTime();
+  registerDataProvider('infraHosts', async ({ request, from, to, limit, query }) => {
+    const infraToolResources = await buildInfraToolResources({ core, plugins, libs, request });
 
-      const { preferredSchema } = await getPreferredSchema({
-        infraMetricsClient: infraToolResources.infraMetricsClient,
-        dataSource: 'host',
-        from: fromMs,
-        to: toMs,
-      });
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime();
 
-      if (!preferredSchema) {
-        logger.info('Could not determine preferred schema ');
-        return { nodes: [] };
-      }
+    const { preferredSchema } = await getPreferredSchema({
+      infraMetricsClient: infraToolResources.infraMetricsClient,
+      dataSource: 'host',
+      from: fromMs,
+      to: toMs,
+    });
 
-      const result = await getHosts({
-        from: fromMs,
-        to: toMs,
-        metrics: [...DEFAULT_HOST_METRICS],
-        limit,
-        query,
-        alertsClient: infraToolResources.alertsClient,
-        infraMetricsClient: infraToolResources.infraMetricsClient,
-        apmDataAccessServices: infraToolResources.apmDataAccessServices,
-        schema: preferredSchema,
-      });
-
-      return result;
+    if (!preferredSchema) {
+      logger.info('Could not determine preferred schema ');
+      return { nodes: [] };
     }
-  );
+
+    const result = await getHosts({
+      from: fromMs,
+      to: toMs,
+      metrics: [...DEFAULT_HOST_METRICS],
+      limit,
+      query,
+      alertsClient: infraToolResources.alertsClient,
+      infraMetricsClient: infraToolResources.infraMetricsClient,
+      apmDataAccessServices: infraToolResources.apmDataAccessServices,
+      schema: preferredSchema,
+    });
+
+    return result;
+  });
 }
 
 async function buildInfraToolResources({

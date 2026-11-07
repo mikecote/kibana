@@ -24,7 +24,12 @@ export function registerDataProviders({
     return;
   }
 
-  observabilityAgentBuilder.registerDataProvider(
+  const registerDataProvider: typeof observabilityAgentBuilder.registerDataProvider = (
+    id,
+    provider
+  ) => observabilityAgentBuilder.registerDataProvider(id, provider, { owner: 'slo' });
+
+  registerDataProvider(
     'sloDetails',
     async ({
       request,

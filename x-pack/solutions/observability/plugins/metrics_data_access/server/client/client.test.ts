@@ -6,12 +6,36 @@
  */
 
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
+import { savedObjectsClientMock } from '@kbn/core/server/mocks';
 import type { SavedObjectsClientContract } from '@kbn/core-saved-objects-api-server';
 import { MetricsDataClient, DEFAULT_METRIC_INDICES } from './client';
 import { metricsDataSourceSavedObjectName } from '../saved_objects/metrics_data_source';
 
 describe('MetricsDataClient', () => {
   describe('metric indices', () => {
+    it('clears overwritten resolver ownership while preserving native default resolution', async () => {
+      const client = new MetricsDataClient();
+      const savedObjectsClient = savedObjectsClientMock.create();
+      savedObjectsClient.get.mockRejectedValue(
+        SavedObjectsErrorHelpers.createGenericNotFoundError()
+      );
+      expect(client.getDefaultMetricIndicesHandlerRegistration()).toEqual({ installed: false });
+      client.setDefaultMetricIndicesHandler(async () => 'infra-*', { owner: 'infra' });
+      const snapshot = client.getDefaultMetricIndicesHandlerRegistration();
+      snapshot.owner = 'changed';
+      expect(client.getDefaultMetricIndicesHandlerRegistration()).toEqual({
+        installed: true,
+        owner: 'infra',
+      });
+      expect(await client.getMetricIndices({ savedObjectsClient })).toBe('infra-*');
+      client.setDefaultMetricIndicesHandler(async () => 'replacement-*');
+      expect(client.getDefaultMetricIndicesHandlerRegistration()).toEqual({ installed: true });
+      expect(await client.getMetricIndices({ savedObjectsClient })).toBe('replacement-*');
+      client.setDefaultMetricIndicesHandler(null, { owner: 'infra' });
+      expect(client.getDefaultMetricIndicesHandlerRegistration()).toEqual({ installed: false });
+      expect(await client.getMetricIndices({ savedObjectsClient })).toBe(DEFAULT_METRIC_INDICES);
+    });
+
     it('retrieves metrics saved object', async () => {
       const client = new MetricsDataClient();
       const savedObjectsClient = {

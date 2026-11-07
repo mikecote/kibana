@@ -786,6 +786,17 @@ snapshot and genuine task Security license and audit services. Rule modules decl
 `optionalSettings`, matching Fleet's optional plugin dependency; executing a response action requires
 the snapshot.
 
+Native observability data services are available through the workflow service registry:
+
+- `apmSourcesAccess.setup` and `apmDataAccess.setup` use the validated APM source configuration and
+  current saved-object overrides. Kibana and APM rule workers share the same index resolver.
+- `logsDataAccess` uses the native logs service factory and Core UI settings clients, including
+  request-scoped reads and writes of the configured log sources.
+- `metricsDataAccess.setup` uses the native metrics client. Its dispatch snapshot identifies any
+  installed default resolver; `metricsDataAccess.defaultIndices.<owner>` restores that resolver
+  through its owning plugin's factory. Infra contributes its native source resolver. Missing or
+  unowned resolvers fail explicitly. Explicit metric-index saved objects retain their native priority.
+
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a
 feature flag flips on). A contribution adds `registerAtStart(start, context)`, which calls the function the plugin

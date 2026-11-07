@@ -16,12 +16,19 @@ import { createLogSourcesServiceFactory } from './log_sources_service';
 export interface RegisterServicesParams {
   logger: Logger;
   deps: {
-    savedObjects: SavedObjectsServiceStart;
-    uiSettings: UiSettingsServiceStart;
+    savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
+    uiSettings: Pick<UiSettingsServiceStart, 'asScopedToClient'>;
   };
 }
 
-export function registerServices(params: RegisterServicesParams) {
+export interface LogsDataAccessServices {
+  getLogsRatesService: ReturnType<typeof createGetLogsRatesService>;
+  getLogsRateTimeseries: ReturnType<typeof createGetLogsRateTimeseries>;
+  getLogsErrorRateTimeseries: ReturnType<typeof createGetLogErrorRateTimeseries>;
+  logSourcesServiceFactory: ReturnType<typeof createLogSourcesServiceFactory>;
+}
+
+export function registerServices(params: RegisterServicesParams): LogsDataAccessServices {
   return {
     getLogsRatesService: createGetLogsRatesService(),
     getLogsRateTimeseries: createGetLogsRateTimeseries(),

@@ -11,8 +11,8 @@ import { getLogsIndices } from './get_logs_indices';
 import { getMetricsIndices } from './get_metrics_indices';
 import { getApmIndices } from './get_apm_indices';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../types';
 
 export interface ObservabilityDataSources {
@@ -27,8 +27,8 @@ export async function getObservabilityDataSources({
   plugins,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   logger: Logger;
 }): Promise<ObservabilityDataSources> {
   const apmIndexPatterns = await getApmIndices({ core, plugins, logger });

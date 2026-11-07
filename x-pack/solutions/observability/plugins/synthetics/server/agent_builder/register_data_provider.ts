@@ -25,7 +25,12 @@ export function registerDataProviders({
     return;
   }
 
-  observabilityAgentBuilder.registerDataProvider(
+  const registerDataProvider: typeof observabilityAgentBuilder.registerDataProvider = (
+    id,
+    provider
+  ) => observabilityAgentBuilder.registerDataProvider(id, provider, { owner: 'synthetics' });
+
+  registerDataProvider(
     'syntheticsMonitorDetails',
     async ({ request, configId }: { request: KibanaRequest; configId: string }) => {
       const [coreStart, pluginsStart] = await (

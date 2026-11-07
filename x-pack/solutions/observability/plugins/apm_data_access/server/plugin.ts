@@ -18,7 +18,8 @@ import type {
   ApmDataAccessPluginStart,
   ApmDataAccessServerSetupDependencies,
 } from './types';
-import { getServices } from './services/get_services';
+import { createApmDataAccessServices } from './create_apm_data_access_services';
+import { APM_DATA_TASK_PROCESS_SETTINGS_ID } from './task_types/apm_data_task_process_settings';
 
 export class ApmDataAccessPlugin
   implements Plugin<ApmDataAccessPluginSetup, ApmDataAccessPluginStart>
@@ -35,15 +36,12 @@ export class ApmDataAccessPlugin
     plugins: ApmDataAccessServerSetupDependencies
   ): ApmDataAccessPluginSetup {
     this.config = plugins.apmSourcesAccess.apmIndicesFromConfigFile;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      APM_DATA_TASK_PROCESS_SETTINGS_ID,
+      () => ({ enabled: true })
+    );
 
-    // expose
-    return {
-      // TODO: Deprecate and replace with apmSourcesAccess
-      apmIndicesFromConfigFile: this.config,
-      // TODO: Deprecate and replace with apmSourcesAccess
-      getApmIndices: plugins.apmSourcesAccess.getApmIndices,
-      getServices,
-    };
+    return createApmDataAccessServices(plugins.apmSourcesAccess);
   }
 
   public start(_core: CoreStart): ApmDataAccessPluginStart {

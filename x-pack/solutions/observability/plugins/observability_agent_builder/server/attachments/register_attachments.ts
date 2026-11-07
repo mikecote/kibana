@@ -12,8 +12,8 @@ import { createErrorAttachmentType } from './error';
 import { createAlertAttachmentType } from './alert';
 import { createLogAttachmentType } from './log';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../types';
 import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
 import { createServiceAttachmentType } from './service';
@@ -27,10 +27,14 @@ export async function registerAttachments({
   plugins,
   logger,
   dataRegistry,
+  attachmentTypeIds,
+  onRegistered,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   logger: Logger;
+  attachmentTypeIds?: readonly string[];
+  onRegistered?: (id: string) => void;
   dataRegistry: ObservabilityAgentBuilderDataRegistry;
 }) {
   const attachmentTypes: AttachmentTypeDefinition<any, any>[] = [
@@ -46,6 +50,8 @@ export async function registerAttachments({
   ];
 
   for (const attachment of attachmentTypes) {
+    if (attachmentTypeIds && !attachmentTypeIds.includes(attachment.id)) continue;
     plugins.agentBuilder.attachments.registerType(attachment);
+    onRegistered?.(attachment.id);
   }
 }
