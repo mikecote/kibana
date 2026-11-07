@@ -24,6 +24,7 @@ describe('toTaskDefinition', () => {
         cancelGracePeriodMs: 5000,
         savedObjectTypes: [],
         createSavedObjectTypes: () => [],
+        registerUiSettings: () => {},
         dataStreams: [],
         createTaskRunner: () => ({ run: async () => undefined }),
       }),

@@ -15,6 +15,7 @@ import type {
 } from '@kbn/core/server';
 import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
+import type { UiSettingsServiceSetup } from '@kbn/core-ui-settings-server';
 import type {
   EncryptedSavedObjectsPluginSetup,
   EncryptedSavedObjectTypeRegistration,
@@ -96,6 +97,11 @@ export interface WorkflowStepsContribution {
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
     settings?: string[];
     uiSettings?: Array<Record<string, UiSettingsParams>>;
+    /** Registers the UI defaults enabled by the dispatching plugin's captured configuration. */
+    registerUiSettings?: (
+      uiSettings: Pick<UiSettingsServiceSetup, 'register' | 'registerGlobal'>,
+      settings: WorkflowStepsContributionContext['settings']
+    ) => void;
     /** Global ui settings the steps read, as `registerGlobal` takes them (read with `host.uiSettings.globalAsScopedToClient`). */
     globalUiSettings?: Array<Record<string, UiSettingsParams>>;
     featureFlags?: Record<string, boolean | string | number>;

@@ -34,7 +34,8 @@
     "@kbn/encrypted-saved-objects-plugin",
     "@kbn/task-manager-plugin",
     "@kbn/security-plugin",
-    "@kbn/core-spaces-common"
+    "@kbn/core-spaces-common",
+    "@kbn/core-ui-settings-server"
   ],
   "exclude": ["target/**/*"]
 }

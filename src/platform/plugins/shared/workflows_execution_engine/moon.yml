@@ -61,6 +61,14 @@ dependsOn:
   - '@kbn/core-plugins-server-internal'
   - '@kbn/core-logging-server-mocks'
   - '@kbn/core-test-helpers-kbn-server'
+  - '@kbn/core-elasticsearch-server-mocks'
+  - '@kbn/core-http-server-mocks'
+  - '@kbn/core-saved-objects-server'
+  - '@kbn/core-http-server-utils'
+  - '@kbn/data-views-plugin'
+  - '@kbn/security-authorization-core'
+  - '@kbn/field-formats-plugin'
+  - '@kbn/agent-builder-server'
 tags:
   - plugin
   - prod

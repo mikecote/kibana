@@ -191,6 +191,7 @@ task type hands over its own service for the same capability.
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
 | `taskManager`               | `taskManager`                 | writes `task` saved objects, only for `schedulableTypes`                                                                                                  | Task Manager's start contract           |
 | `uiSettings`                | `uiSettings`                  | Core's, with the module's `defaults` and `globalDefaults` (`registerGlobal`) registered and Kibana's `uiSettings.overrides` and `globalOverrides` applied | Core                                    |
+| `registerUiSettings`        | `uiSettings`                  | Registers configuration-dependent native defaults during Core setup, using the revived dispatch settings                                                  | Already registered by the owning plugins |
 | `licensing`                 | `licensing`                   | the license read from Elasticsearch once; feature usage written to the saved object every node and process shares                                         | the licensing plugin                    |
 | `usageCounters`             | `usageCounters`               | the usage collection plugin's own counters service, stored when the run ends                                                                              | the usage collection plugin             |
 | `settings: ['pluginId']`    | `settings.pluginId`           | the validated config Kibana sends                                                                                                                         | the getter passed to `registerTaskType` |
@@ -791,6 +792,11 @@ Native observability data services are available through the workflow service re
 
 - `apmSourcesAccess.setup` and `apmDataAccess.setup` use the validated APM source configuration and
   current saved-object overrides. Kibana and APM rule workers share the same index resolver.
+- `dataViews` uses the native data-view factory, saved-object definition, field formats and
+  request-scoped Security and Spaces capability switchers. Its dispatch snapshot carries the
+  plugin's actual scripted-field and rollup settings. Conditional defaults use the same UI
+  registration helper as Kibana; meta-field and default-view settings share their native definitions
+  with the Data plugin.
 - `logsDataAccess` uses the native logs service factory and Core UI settings clients, including
   request-scoped reads and writes of the configured log sources.
 - `metricsDataAccess.setup` uses the native metrics client. Its dispatch snapshot identifies any

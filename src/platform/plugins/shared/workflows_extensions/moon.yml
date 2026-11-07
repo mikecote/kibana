@@ -40,6 +40,7 @@ dependsOn:
   - '@kbn/task-manager-plugin'
   - '@kbn/security-plugin'
   - '@kbn/core-spaces-common'
+  - '@kbn/core-ui-settings-server'
 tags:
   - plugin
   - prod

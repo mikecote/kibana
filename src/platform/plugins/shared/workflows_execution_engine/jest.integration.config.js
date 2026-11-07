@@ -8,7 +8,7 @@
  */
 
 module.exports = {
-  preset: '@kbn/jest/jest_integration',
+  preset: '@kbn/jest/jest_integration_node',
   // The integration tests start Elasticsearch and fork task processes: no DOM.
   testEnvironment: 'node',
   rootDir: '../../../../..',

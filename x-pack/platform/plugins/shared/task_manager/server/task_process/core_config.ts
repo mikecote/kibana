@@ -85,7 +85,7 @@ export const buildCoreConfig = (
   init: TaskProcessInit,
   module: Pick<
     TaskTypeModule,
-    'uiSettings' | 'encryptedSavedObjectTypes' | 'createSavedObjectTypes'
+    'uiSettings' | 'registerUiSettings' | 'encryptedSavedObjectTypes' | 'createSavedObjectTypes'
   >
 ): CoreConfig => {
   const dir = mkdtempSync(join(tmpdir(), 'kbn-task-process-'));
@@ -134,7 +134,10 @@ export const buildCoreConfig = (
       // error), which Kibana already logs for itself; a process that lives for one run says it every run.
       loggers: [{ name: 'status', level: 'off' }],
     },
-    ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings
+    ...(init.uiSettingsOverrides ||
+    init.uiSettingsGlobalOverrides ||
+    module.uiSettings ||
+    module.registerUiSettings
       ? {
           uiSettings: {
             overrides: init.uiSettingsOverrides ?? {},

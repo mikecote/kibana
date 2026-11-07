@@ -44,6 +44,8 @@
     "@kbn/cps",
     "@kbn/cps-utils",
     "@kbn/as-code-data-views-schema",
+    "@kbn/core-ui-settings-server",
+    "@kbn/core-ui-settings-server-mocks",
   ],
   "exclude": [
     "target/**/*",

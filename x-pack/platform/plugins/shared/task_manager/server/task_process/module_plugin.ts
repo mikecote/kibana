@@ -108,6 +108,8 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         core.uiSettings.registerGlobal(defaults)
       );
 
+      module.registerUiSettings?.(core.uiSettings, reviveSettingsByPlugin(init.settings));
+
       // The event types the runner reports; Core's analytics refuses an event it does not know.
       registerTaskAnalyticsEventTypes(module, core.analytics);
 
@@ -243,7 +245,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           usageCounters!.stop();
         });
       }
-      if (module.uiSettings) host.uiSettings = core.uiSettings;
+      if (module.uiSettings || module.registerUiSettings) host.uiSettings = core.uiSettings;
       if (module.dataStreams) host.dataStreams = core.dataStreams;
       if (module.featureFlags) host.featureFlags = createHostFeatureFlags();
       if (module.licensing) {

@@ -22,7 +22,7 @@ import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { HttpServiceStart } from '@kbn/core-http-server';
 import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
-import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
+import type { UiSettingsServiceSetup, UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type {
@@ -194,6 +194,11 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
     defaults?: Array<Record<string, UiSettingsParams>>;
     globalDefaults?: Array<Record<string, UiSettingsParams>>;
   };
+  /** Registers config-dependent native UI settings with the dispatch's captured settings. */
+  registerUiSettings?: (
+    uiSettings: Pick<UiSettingsServiceSetup, 'register' | 'registerGlobal'>,
+    settings: NonNullable<TaskHost['settings']>
+  ) => void;
   /**
    * The analytics event types the runner reports, which Core's analytics requires to be registered
    * before an event is reported. A task process registers them; Kibana's plugins already have.
@@ -341,6 +346,7 @@ export const toTaskDefinition = (
     eventLog,
     taskManager,
     uiSettings,
+    registerUiSettings,
     licensing,
     analyticsEventTypes,
     registerAnalyticsEventTypes,

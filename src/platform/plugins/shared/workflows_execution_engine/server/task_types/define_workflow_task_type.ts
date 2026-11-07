@@ -84,6 +84,7 @@ export type AgentBuilderContributionDeclares = Pick<
   | 'encryptedSavedObjectTypes'
   | 'settings'
   | 'uiSettings'
+  | 'registerUiSettings'
   | 'globalUiSettings'
   | 'featureFlags'
   | 'analyticsEventTypes'
@@ -140,6 +141,11 @@ export const defineWorkflowTaskType = (
     ],
     createSavedObjectTypes: (encryption) =>
       declared.flatMap((declaration) => declaration.createSavedObjectTypes?.(encryption) ?? []),
+    registerUiSettings: declared.some((declaration) => declaration.registerUiSettings)
+      ? (registry, settings) => {
+          for (const declaration of declared) declaration.registerUiSettings?.(registry, settings);
+        }
+      : undefined,
     registerAnalyticsEventTypes: (analytics) => {
       for (const declaration of declared) declaration.registerAnalyticsEventTypes?.(analytics);
     },

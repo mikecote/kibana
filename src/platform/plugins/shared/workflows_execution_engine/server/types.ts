@@ -14,6 +14,7 @@ import type {
 import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { CoreStart, KibanaRequest } from '@kbn/core/server';
+import type { DataViewsServerPluginSetup } from '@kbn/data-views-plugin/server';
 import type {
   EncryptedSavedObjectsPluginSetup,
   EncryptedSavedObjectsPluginStart,
@@ -103,6 +104,7 @@ export interface WorkflowsExecutionEnginePluginStart {
 }
 
 export interface WorkflowsExecutionEnginePluginSetupDeps {
+  dataViews?: Pick<DataViewsServerPluginSetup, 'getTaskProcessSettings'>;
   /**
    * Optional: the config a task process reads when it schedules workflows is registered with it,
    * so rule types that schedule workflows can run in a task process.

@@ -17,6 +17,7 @@ import type { ExpressionsServerSetup } from '@kbn/expressions-plugin/server';
 import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
 import type { FieldFormatsSetup, FieldFormatsStart } from '@kbn/field-formats-plugin/server';
 import type { ContentManagementServerSetup } from '@kbn/content-management-plugin/server';
+import type { DataViewsTaskProcessSettings } from './task_types/data_views_task_process_settings';
 import type { DataViewsService } from '../common';
 
 /**
@@ -60,6 +61,8 @@ export interface DataViewsServerPluginStart {
  */
 export interface DataViewsServerPluginSetup {
   enableRollups: () => void;
+  /** Returns the configuration used to construct the native service at startup. */
+  getTaskProcessSettings: () => DataViewsTaskProcessSettings;
 }
 
 /**

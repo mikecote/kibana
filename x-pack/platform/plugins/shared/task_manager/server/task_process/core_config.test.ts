@@ -35,6 +35,12 @@ interface Logging {
 }
 
 describe('buildCoreConfig', () => {
+  it('enables native UI settings for config-dependent registration hooks', () => {
+    const { settings, cleanup } = buildCoreConfig(init(), { registerUiSettings: () => {} });
+    expect(settings.uiSettings).toEqual({ overrides: {}, globalOverrides: {} });
+    cleanup();
+  });
+
   it('configures native encryption for saved object migration factories without encrypted declarations', () => {
     const encryptionKey = 'k'.repeat(32);
     const { settings, cleanup } = buildCoreConfig(

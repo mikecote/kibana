@@ -297,3 +297,21 @@ describe('workflow native encrypted migration factories', () => {
     expect(createSavedObjectTypes).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('workflow native UI registration hooks', () => {
+  it('passes the actual UI registry and dispatch configuration to every contributing hook', () => {
+    const first = jest.fn();
+    const second = jest.fn();
+    const steps: WorkflowStepsContribution[] = [
+      { declares: { registerUiSettings: first }, register: () => {} },
+      { declares: { registerUiSettings: second }, register: () => {} },
+    ];
+    const applied = runTaskType.contributions?.apply?.({ 'workflow-steps': steps });
+    const { uiSettings } = coreMock.createSetup();
+    const settings = { nativeUi: { enabled: false } };
+    if (!applied?.registerUiSettings) throw new Error('The native UI hooks were lost');
+    applied.registerUiSettings(uiSettings, settings);
+    expect(first).toHaveBeenCalledWith(uiSettings, settings);
+    expect(second).toHaveBeenCalledWith(uiSettings, settings);
+  });
+});

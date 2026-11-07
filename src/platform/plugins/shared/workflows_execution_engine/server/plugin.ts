@@ -18,6 +18,7 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
+import { DATA_VIEWS_TASK_PROCESS_SETTINGS_ID } from '@kbn/data-views-plugin/server';
 import { FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID } from '@kbn/fields-metadata-plugin/server';
 import type { TaskTypeRegistrationOptions } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { TelemetryTaskProcessSettings } from '@kbn/telemetry-plugin/server/task_process_settings';
@@ -216,6 +217,11 @@ export class WorkflowsExecutionEnginePlugin
     });
     // How a process ships analytics events and counts usage, as this Kibana does: the process does
     // its side effects itself, so it is told what Kibana would apply.
+    const { dataViews } = plugins;
+    if (dataViews) {
+      this.taskTypeSettings[DATA_VIEWS_TASK_PROCESS_SETTINGS_ID] = () =>
+        dataViews.getTaskProcessSettings();
+    }
     if (plugins.telemetry?.getTaskProcessSettings) {
       const { telemetry } = plugins;
       let license: TelemetryTaskProcessSettings['license'];
