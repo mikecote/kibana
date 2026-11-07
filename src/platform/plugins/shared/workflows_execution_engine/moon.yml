@@ -17,6 +17,7 @@ project:
   owner: '@elastic/workflows-eng'
   sourceRoot: src/platform/plugins/shared/workflows_execution_engine
 dependsOn:
+  - '@kbn/fields-metadata-plugin'
   - '@kbn/alerting-plugin'
   - '@kbn/rule-registry-plugin'
   - '@kbn/apm-utils'

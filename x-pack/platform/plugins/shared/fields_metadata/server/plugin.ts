@@ -51,6 +51,7 @@ export class FieldsMetadataPlugin
     initFieldsMetadataServer(this.libs);
 
     return {
+      getTaskProcessSettings: () => this.fieldsMetadataService.getTaskProcessSettings(),
       registerIntegrationFieldsExtractor: fieldsMetadata.registerIntegrationFieldsExtractor,
       registerIntegrationListExtractor: fieldsMetadata.registerIntegrationListExtractor,
       registerStreamsFieldsExtractor: fieldsMetadata.registerStreamsFieldsExtractor,

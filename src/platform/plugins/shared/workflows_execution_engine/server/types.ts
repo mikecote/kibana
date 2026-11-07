@@ -19,6 +19,7 @@ import type {
   EncryptedSavedObjectsPluginStart,
 } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { IEventLogService } from '@kbn/event-log-plugin/server';
+import type { FieldsMetadataServerSetup } from '@kbn/fields-metadata-plugin/server';
 import type { LicensingPluginSetup, LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
@@ -107,6 +108,7 @@ export interface WorkflowsExecutionEnginePluginSetupDeps {
    * so rule types that schedule workflows can run in a task process.
    */
   alerting?: AlertingServerSetup;
+  fieldsMetadata?: Pick<FieldsMetadataServerSetup, 'getTaskProcessSettings'>;
   taskManager: TaskManagerSetupContract;
   licensing?: LicensingPluginSetup;
   cloud: CloudSetup;

@@ -18,6 +18,7 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
+import { FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID } from '@kbn/fields-metadata-plugin/server';
 import type { TaskTypeRegistrationOptions } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { TelemetryTaskProcessSettings } from '@kbn/telemetry-plugin/server/task_process_settings';
 import { WorkflowRepository } from '@kbn/workflows';
@@ -202,6 +203,12 @@ export class WorkflowsExecutionEnginePlugin
             }
           : null,
       actions: () => plugins.actions?.getConfig(),
+      ...(plugins.fieldsMetadata
+        ? {
+            [FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID]: () =>
+              plugins.fieldsMetadata?.getTaskProcessSettings(),
+          }
+        : {}),
       // Kibana's final connectors as it has them now, not rebuilt from the config.
       [ACTIONS_CONNECTORS_SETTINGS_ID]: (): ActionsTaskProcessSettings => ({
         inMemoryConnectors: plugins.actions?.getTaskProcessSettings().inMemoryConnectors ?? [],

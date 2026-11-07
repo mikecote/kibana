@@ -22,6 +22,7 @@
       "licensing"
     ],
     "optionalPlugins": [
+      "fieldsMetadata",
       "alerting",
       "encryptedSavedObjects",
       "eventLog",

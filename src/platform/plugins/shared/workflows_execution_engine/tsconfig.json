@@ -14,6 +14,7 @@
     "integration_tests/**/*"
   ],
   "kbn_references": [
+    "@kbn/fields-metadata-plugin",
     "@kbn/alerting-plugin",
     "@kbn/rule-registry-plugin",
     "@kbn/apm-utils",

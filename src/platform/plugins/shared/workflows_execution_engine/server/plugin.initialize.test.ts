@@ -7,9 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { cloudMock } from '@kbn/cloud-plugin/server/mocks';
 import { coreMock } from '@kbn/core/server/mocks';
+import { FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID } from '@kbn/fields-metadata-plugin/server';
+import { fieldsMetadataPluginServerMock } from '@kbn/fields-metadata-plugin/server/mocks';
 import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { taskManagerMock } from '@kbn/task-manager-plugin/server/mocks';
+import { workflowsExtensionsMock } from '@kbn/workflows-extensions/server/mocks';
 
 import { WorkflowsExecutionEnginePlugin } from './plugin';
 import {
@@ -54,6 +58,27 @@ describe('WorkflowsExecutionEnginePlugin — executions DAL lifecycle', () => {
 
     expect(mockDataClientBundleInitSetup).toHaveBeenCalledTimes(1);
     expect(mockDataClientBundleInitStart).not.toHaveBeenCalled();
+  });
+
+  it('snapshots the current field metadata registry for every workflow task dispatch', () => {
+    const taskManager = taskManagerMock.createSetup();
+    const fieldsMetadata = fieldsMetadataPluginServerMock.createSetupContract();
+    fieldsMetadata.getTaskProcessSettings.mockReturnValue({ integrationFieldsExtractor: 'fleet' });
+    createPlugin().setup(coreMock.createSetup(), {
+      taskManager,
+      cloud: cloudMock.createSetup(),
+      workflowsExtensions: workflowsExtensionsMock.createSetup(),
+      fieldsMetadata,
+    });
+    expect(taskManager.registerTaskType).toHaveBeenCalledTimes(3);
+    for (const [, options] of taskManager.registerTaskType.mock.calls) {
+      const getSnapshot = options?.settings?.[FIELDS_METADATA_TASK_PROCESS_SETTINGS_ID];
+      expect(getSnapshot?.()).toEqual({ integrationFieldsExtractor: 'fleet' });
+      fieldsMetadata.getTaskProcessSettings.mockReturnValueOnce({
+        integrationFieldsExtractor: 'replacement',
+      });
+      expect(getSnapshot?.()).toEqual({ integrationFieldsExtractor: 'replacement' });
+    }
   });
 
   it('calls initStart and exposes the execution data access during start', () => {
