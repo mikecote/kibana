@@ -9,7 +9,6 @@ import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { SignificantEventsServer } from '../../../types';
 import { createMockToolContext, invokeHandler } from '../../utils/test_helpers';
 import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
 import { updateEventStatusToolHandler } from './handler';
 import {
@@ -18,9 +17,7 @@ import {
   SIGNIFICANT_EVENTS_EVENT_STATUS_UPDATE_TOOL_ID,
 } from './tool';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 jest.mock('../../../routes/utils/assert_can_manage_significant_events', () => ({
   assertCanManageSignificantEvents: jest.fn(),
@@ -35,6 +32,7 @@ describe('event_status_update tool', () => {
 
   it('uses expected tool id', () => {
     const tool = createEventStatusUpdateTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: jest.fn() as unknown as GetScopedClients,
       server: {} as SignificantEventsServer,
       logger: loggingSystemMock.createLogger(),
@@ -67,6 +65,7 @@ describe('event_status_update tool', () => {
     });
 
     const tool = createEventStatusUpdateTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: getScopedClients as unknown as GetScopedClients,
       server: {} as SignificantEventsServer,
       logger: loggingSystemMock.createLogger(),

@@ -11,10 +11,10 @@ import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-b
 import type { Logger } from '@kbn/core/server';
 import { nightshiftSourceSlugField } from '@kbn/nightshift-shared';
 import { z, lazySchema } from '@kbn/zod/v4';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanReadSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import {
   FEATURE_SIMILARITY_TOOL_DESCRIPTION,
   MAX_SEARCH_CANDIDATES,
@@ -44,10 +44,12 @@ const featureSimilaritySearchSchema = lazySchema(() =>
 export const createFeatureSimilaritySearchTool = ({
   getScopedClients,
   server,
+  assertAccess,
   logger,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
 }): StaticToolRegistration<typeof featureSimilaritySearchSchema> => {
   const toolDefinition: BuiltinToolDefinition<typeof featureSimilaritySearchSchema> = {
@@ -63,14 +65,11 @@ export const createFeatureSimilaritySearchTool = ({
     },
     schema: featureSimilaritySearchSchema,
     tags: ['streams', 'significant-events'],
-    availability: createSignificantEventsAvailability({ server, logger }),
+    availability: createSignificantEventsAvailability({ assertAccess, logger }),
     handler: async ({ slug, candidates }, context) => {
       try {
         const scopedClients = await getScopedClients({ request: context.request });
-        await assertSignificantEventsAccess({
-          server,
-          licensing: scopedClients.licensing,
-        });
+        await assertAccess(scopedClients.licensing);
         await assertCanReadSignificantEvents({ request: context.request, server });
         const catalog = await loadSourceCatalog(scopedClients.sourcesClient);
         const [source] = resolveSourcesBySlug(catalog, [slug]);

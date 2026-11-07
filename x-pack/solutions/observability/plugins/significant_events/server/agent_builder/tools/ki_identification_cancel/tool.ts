@@ -11,9 +11,9 @@ import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
 import dedent from 'dedent';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { SignificantEventsKIsOnboardingClient } from '../../../lib/workflows/onboarding_workflow_client';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../../types';
 import { classifyError } from '../../utils/error_utils';
 import {
   loadSourceCatalog,
@@ -37,7 +37,7 @@ export const createKiIdentificationCancelTool = ({
   streamsKIsOnboardingClient,
   getScopedClients,
 }: {
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   streamsKIsOnboardingClient: SignificantEventsKIsOnboardingClient;
   getScopedClients: GetScopedClients;
 }): BuiltinSkillBoundedTool<typeof cancelSchema> => ({

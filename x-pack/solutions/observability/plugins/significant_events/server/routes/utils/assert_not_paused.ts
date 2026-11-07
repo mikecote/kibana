@@ -19,7 +19,7 @@ export async function assertNotPaused({
   maintenanceService,
   request,
 }: {
-  maintenanceService: SignificantEventsMaintenanceService;
+  maintenanceService: Pick<SignificantEventsMaintenanceService, 'getState'>;
   request: KibanaRequest;
 }): Promise<void> {
   // Only the persisted state is needed here (no feature-settings reads), so use

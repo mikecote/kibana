@@ -679,7 +679,10 @@ const generateQueriesRoute = createServerRoute({
     await installKIQueryGenerationAgent({
       agentBuilder: server.agentBuilder,
       spaceId: request.spaceId,
-      availability: createSignificantEventsAvailability({ server, logger }),
+      availability: createSignificantEventsAvailability({
+        assertAccess: () => assertSignificantEventsAccess({ server, licensing: server.licensing }),
+        logger,
+      }),
     });
 
     const [{ source }, kiClient] = await Promise.all([

@@ -18,11 +18,11 @@ import {
   severitySchema,
 } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { createEventToolHandler } from './handler';
 import { classifyError } from '../../utils/error_utils';
@@ -51,11 +51,13 @@ export const createEventSchema = lazySchema(() =>
 export function createEventTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
   telemetry,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof createEventSchema> {
@@ -109,7 +111,7 @@ export function createEventTool({
         ),
       }),
     },
-    availability: createSignificantEventsAvailability({ server, logger }),
+    availability: createSignificantEventsAvailability({ assertAccess, logger }),
     handler: async (toolParams, context) => {
       const { request } = context;
       let sourceIds: string[] = [];
@@ -117,7 +119,7 @@ export function createEventTool({
         const { getEventSearchClient, licensing, sourcesClient } = await getScopedClients({
           request,
         });
-        await assertSignificantEventsAccess({ server, licensing });
+        await assertAccess(licensing);
         await assertCanManageSignificantEvents({ request, server });
         const catalog = await loadSourceCatalog(sourcesClient);
         const eventInput = assignStoredSourceIds(catalog, toolParams);

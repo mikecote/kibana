@@ -16,11 +16,11 @@ import {
   significantEventSchema,
 } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
 import { updateEventStatusToolHandler } from './handler';
 
@@ -47,11 +47,13 @@ export const eventStatusUpdateSchema = lazySchema(() =>
 export function createEventStatusUpdateTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
   telemetry,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof eventStatusUpdateSchema> {
@@ -73,12 +75,12 @@ export function createEventStatusUpdateTool({
     },
     schema: eventStatusUpdateSchema,
     tags: ['streams', 'significant-events'],
-    availability: createSignificantEventsAvailability({ server, logger }),
+    availability: createSignificantEventsAvailability({ assertAccess, logger }),
     handler: async (toolParams, context) => {
       const { request } = context;
       try {
         const { getEventSearchClient, licensing } = await getScopedClients({ request });
-        await assertSignificantEventsAccess({ server, licensing });
+        await assertAccess(licensing);
         await assertCanManageSignificantEvents({ request, server });
 
         const data = await updateEventStatusToolHandler({

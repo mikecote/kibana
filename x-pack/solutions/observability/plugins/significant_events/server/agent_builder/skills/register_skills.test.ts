@@ -84,6 +84,20 @@ describe('registerSignificantEventsSkills', () => {
     expect(agentBuilder.skills.register).not.toHaveBeenCalled();
   });
 
+  it('reports only successful registrations and records a retried skill once', async () => {
+    const onRegistered = jest.fn();
+    const { agentBuilder, options } = createOptions({ onRegistered });
+    agentBuilder.skills.register.mockRejectedValueOnce(new Error('Registration failed'));
+    const registrar = await registerSignificantEventsSkills(options);
+    expect(onRegistered.mock.calls.flat()).not.toContain(knowledgeIndicatorsManagementSkill.id);
+    expect(onRegistered).toHaveBeenCalledTimes(CORE_SKILL_IDS.length - 1);
+    await registrar.ensureRegistered();
+    expect(onRegistered.mock.calls.flat()).toEqual(expect.arrayContaining(CORE_SKILL_IDS));
+    expect(onRegistered).toHaveBeenCalledTimes(CORE_SKILL_IDS.length);
+    await registrar.ensureRegistered();
+    expect(onRegistered).toHaveBeenCalledTimes(CORE_SKILL_IDS.length);
+  });
+
   it('registers the core skills (without KI onboarding) when available', async () => {
     const { agentBuilder, options } = createOptions();
 

@@ -24,10 +24,10 @@ import type {
 import type { Logger } from '@kbn/core/server';
 import dedent from 'dedent';
 import { DEFAULT_SEARCH_KNOWLEDGE_INDICATORS_PER_PAGE } from '@kbn/nightshift-ai';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanReadSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import {
   KNOWLEDGE_INDICATOR_FEATURE_TYPES,
   MAX_COMPACT_META_ARRAY_SAMPLE,
@@ -128,10 +128,12 @@ const searchKnowledgeIndicatorsSchema = lazySchema(() =>
 export function createSearchKnowledgeIndicatorsTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
 }): StaticToolRegistration<typeof searchKnowledgeIndicatorsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof searchKnowledgeIndicatorsSchema> = {
@@ -168,10 +170,7 @@ export function createSearchKnowledgeIndicatorsTool({
       cacheMode: 'space',
       handler: async (): Promise<ToolAvailabilityResult> => {
         try {
-          await assertSignificantEventsAccess({
-            server,
-            licensing: server.licensing,
-          });
+          await assertAccess();
           return { status: 'available' };
         } catch (error) {
           if (error instanceof Error) {
@@ -195,10 +194,7 @@ export function createSearchKnowledgeIndicatorsTool({
       try {
         const scopedClients = await getScopedClients({ request });
 
-        await assertSignificantEventsAccess({
-          server,
-          licensing: scopedClients.licensing,
-        });
+        await assertAccess(scopedClients.licensing);
         await assertCanReadSignificantEvents({ request, server });
 
         const { view, slugs, ...restParams } = toolParams;

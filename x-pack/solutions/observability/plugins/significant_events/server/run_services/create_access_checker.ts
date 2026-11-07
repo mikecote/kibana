@@ -23,6 +23,8 @@ export interface SignificantEventsAccessServices {
   hasPlugin: (plugin: SignificantEventsRequiredPlugin) => boolean;
 }
 
+export type AssertSignificantEventsAccess = (licensing?: LicensingPluginStart) => Promise<void>;
+
 export interface SignificantEventsAccessChecker {
   assertAccess: (ignore?: readonly SignificantEventsUnavailableReason[]) => Promise<void>;
   isAvailable: () => Promise<boolean>;

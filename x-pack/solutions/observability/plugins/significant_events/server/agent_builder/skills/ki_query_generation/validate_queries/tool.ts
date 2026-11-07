@@ -23,10 +23,10 @@ import {
   type ValidatedKIQuery,
 } from '@kbn/nightshift-ai';
 import { z, lazySchema } from '@kbn/zod/v4';
+import type { SignificantEventsAuthorizationServices } from '../../../../run_services/authorization';
 import { SIGNIFICANT_EVENTS_VALIDATE_QUERIES_TOOL_ID } from '../../../../../common/constants';
 import type { GetScopedClients } from '../../../../routes/types';
 import { assertCanReadSignificantEvents } from '../../../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../../../types';
 import { getRequestAbortSignal } from '../../../../routes/utils/get_request_abort_signal';
 import { sourceToAnalysisTarget } from '../../../../lib/significant_events/source_to_analysis_target';
 import {
@@ -119,7 +119,7 @@ export const createValidateQueriesTool = ({
   logger,
 }: {
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   logger: Logger;
 }): BuiltinSkillBoundedTool<typeof validateQueriesSchema> => {
   return {

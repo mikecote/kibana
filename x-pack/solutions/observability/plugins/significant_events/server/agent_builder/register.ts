@@ -10,6 +10,7 @@ import type { Logger } from '@kbn/core/server';
 import type { SignificantEventsServer } from '../types';
 import type { GetScopedClients } from '../routes/types';
 import type { EbtTelemetryClient } from '../lib/telemetry/ebt';
+import { assertSignificantEventsAccess } from '../routes/utils/assert_significant_events_access';
 import { registerAgentBuilderTools } from './tools/register_tools';
 import { registerAgentBuilderAttachments } from './attachments/register_attachments';
 
@@ -40,6 +41,8 @@ export const registerStreamsAgentBuilder = async ({
 }): Promise<void> => {
   registerAgentBuilderAttachments({ agentBuilder, getScopedClients, server, logger });
   registerAgentBuilderTools({
+    assertAccess: (licensing = server.licensing) =>
+      assertSignificantEventsAccess({ server, licensing }),
     agentBuilder,
     getScopedClients,
     server,

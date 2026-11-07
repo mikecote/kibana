@@ -6,7 +6,7 @@
  */
 
 import type {
-  CoreSetup,
+  CoreStart,
   ElasticsearchClient,
   Logger,
   SavedObjectsClientContract,
@@ -15,7 +15,6 @@ import {
   DEFAULT_SIGNIFICANT_EVENTS_TUNING_CONFIG,
   type SignificantEventsTuningConfig,
 } from '@kbn/significant-events-schema';
-import type { SignificantEventsPluginStartDependencies } from '../../types';
 import { isSignificantEventsFeatureFlagEnabled } from '../feature_flags/is_significant_events_feature_flag_enabled';
 import {
   knowledgeIndicatorsDataStream,
@@ -34,7 +33,10 @@ import type { SignificantEventsAlertingContext } from '../significant_events/ale
 
 export class KnowledgeIndicatorService {
   constructor(
-    private readonly coreSetup: CoreSetup<SignificantEventsPluginStartDependencies>,
+    private readonly getCoreStart: () => Promise<{
+      dataStreams: CoreStart['dataStreams'];
+      featureFlags: Pick<CoreStart['featureFlags'], 'getBooleanValue$'>;
+    }>,
     private readonly logger: Logger
   ) {}
 
@@ -56,7 +58,7 @@ export class KnowledgeIndicatorService {
       'semantic_min_score' | 'rrf_rank_constant' | 'feature_ttl_days'
     >;
   }): Promise<KnowledgeIndicatorClient> {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = await this.getCoreStart();
     const significantEventsAvailable = await isSignificantEventsFeatureFlagEnabled(
       coreStart.featureFlags
     );

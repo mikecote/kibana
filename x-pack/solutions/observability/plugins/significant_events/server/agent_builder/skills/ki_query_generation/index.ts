@@ -9,8 +9,8 @@ import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
 import { platformSignificantEventsTools } from '@kbn/agent-builder-common/tools';
 import type { Logger } from '@kbn/core/server';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
-import type { SignificantEventsServer } from '../../../types';
 import { createGetFeaturesTool } from './get_features/tool';
 import { createValidateQueriesTool } from './validate_queries/tool';
 import description from './description.text';
@@ -25,7 +25,7 @@ export {
 
 export interface KIQueryGenerationSkillOptions {
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   logger: Logger;
 }
 

@@ -46,6 +46,7 @@ import {
   EXECUTIONS_CANCELLED_NOT_COUNTED,
   buildPausedIntent,
   createMaintenanceStateStore,
+  createMaintenanceStateReader,
   emptySummary,
   normalizeState,
   normalizeSummary,
@@ -156,7 +157,7 @@ export const createSignificantEventsMaintenanceService = ({
   const log = logger.get('significant-events-maintenance');
   const featureSettings = createFeatureSettingsController({ server, getScopedClients });
   const { readVersionedState, readState, claimPausedIntent, writeState, deleteState } =
-    createMaintenanceStateStore(server);
+    createMaintenanceStateStore(() => server.core.savedObjects);
 
   // Serialize pause/resume/reassert on this Kibana node so concurrent callers
   // cannot interleave sweeps and overwrites. Cross-node races on one space still rely on
@@ -524,9 +525,7 @@ export const createSignificantEventsMaintenanceService = ({
   });
 
   return {
-    async getState({ request }) {
-      return normalizeState((await readState(request.spaceId))?.state);
-    },
+    ...createMaintenanceStateReader({ readState }),
 
     async pause({ request, updatedBy }) {
       return withTransitionLock(async () => {

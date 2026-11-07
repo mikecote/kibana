@@ -7,11 +7,11 @@
 
 import type { AgentBuilderPluginStart, AvailabilityConfig } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/core/server';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
 import type { SignificantEventsMaintenanceService } from '../../lib/maintenance/maintenance_service';
 import type { SignificantEventsKIsOnboardingClient } from '../../lib/workflows/onboarding_workflow_client';
 import type { GetScopedClients } from '../../routes/types';
-import type { SignificantEventsServer } from '../../types';
 import { createKIQueryGenerationSkill } from './ki_query_generation';
 import { knowledgeIndicatorsManagementSkill } from './knowledge_indicators_management';
 import { createKiIdentificationManagementSkill } from './ki_identification_management';
@@ -26,11 +26,12 @@ interface RegisterSignificantEventsSkillsOptions {
   agentBuilder: AgentBuilderPluginStart;
   telemetry: EbtTelemetryClient;
   streamsKIsOnboardingClient?: SignificantEventsKIsOnboardingClient;
-  maintenanceService?: SignificantEventsMaintenanceService;
+  maintenanceService?: Pick<SignificantEventsMaintenanceService, 'getState'>;
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
   logger: Logger;
   isAvailable: () => Promise<boolean>;
+  onRegistered?: (id: string) => void;
   /**
    * Request-time gate, shared with the significant events agents and tools. Skills cannot be
    * unregistered, so this is what drops an already-registered skill from the catalog — and from
@@ -40,6 +41,42 @@ interface RegisterSignificantEventsSkillsOptions {
    */
   availability: AvailabilityConfig;
 }
+
+/** Creates the shared significant events skills from their execution dependencies. */
+export const createSignificantEventsSkillDefinitions = ({
+  telemetry,
+  streamsKIsOnboardingClient,
+  maintenanceService,
+  getScopedClients,
+  server,
+  logger,
+}: Pick<
+  RegisterSignificantEventsSkillsOptions,
+  | 'telemetry'
+  | 'streamsKIsOnboardingClient'
+  | 'maintenanceService'
+  | 'getScopedClients'
+  | 'server'
+  | 'logger'
+>): SignificantEventsSkill[] => [
+  knowledgeIndicatorsManagementSkill,
+  createKIQueryGenerationSkill({ getScopedClients, server, logger }),
+  significantEventsKIGroundingSkill,
+  significantEventsManagementSkill,
+  featureIdentificationSkill,
+  ...(streamsKIsOnboardingClient && maintenanceService
+    ? [
+        createKiIdentificationManagementSkill({
+          server,
+          telemetry,
+          streamsKIsOnboardingClient,
+          maintenanceService,
+          getScopedClients,
+        }),
+      ]
+    : []),
+  streamsInvestigationManagementSkill,
+];
 
 /**
  * Registers the significant events agent-builder skills at start, gated by the
@@ -66,29 +103,20 @@ export const registerSignificantEventsSkills = async ({
   server,
   logger,
   isAvailable,
+  onRegistered,
   availability,
 }: RegisterSignificantEventsSkillsOptions): Promise<{ ensureRegistered: () => Promise<void> }> => {
   const registeredSkillIds = new Set<string>();
 
-  const getCoreSkills = (): SignificantEventsSkill[] => [
-    knowledgeIndicatorsManagementSkill,
-    createKIQueryGenerationSkill({ getScopedClients, server, logger }),
-    significantEventsKIGroundingSkill,
-    significantEventsManagementSkill,
-    featureIdentificationSkill,
-    ...(streamsKIsOnboardingClient && maintenanceService
-      ? [
-          createKiIdentificationManagementSkill({
-            server,
-            telemetry,
-            streamsKIsOnboardingClient,
-            maintenanceService,
-            getScopedClients,
-          }),
-        ]
-      : []),
-    streamsInvestigationManagementSkill,
-  ];
+  const getCoreSkills = () =>
+    createSignificantEventsSkillDefinitions({
+      telemetry,
+      streamsKIsOnboardingClient,
+      maintenanceService,
+      getScopedClients,
+      server,
+      logger,
+    });
 
   // Registers only the skills not registered yet. Already-registered skills are skipped (a second
   // register() call throws), so this is safe to call repeatedly and after a partial failure.
@@ -111,6 +139,7 @@ export const registerSignificantEventsSkills = async ({
       const { id } = pending[index];
       if (result.status === 'fulfilled') {
         registeredSkillIds.add(id);
+        onRegistered?.(id);
       } else {
         failed.push(id);
         logger.error(

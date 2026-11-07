@@ -11,7 +11,6 @@ import { MAX_TEXT_LENGTH } from '@kbn/significant-events-schema';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { SignificantEventsServer } from '../../../types';
 import type { GetScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
 import { SIGNIFICANT_EVENTS_DISCOVERY_AGENT_ID } from '../../agents/discovery/discovery';
 import { createMockToolContext, invokeHandler, mockSourcesClient } from '../../utils/test_helpers';
@@ -19,9 +18,7 @@ import { BulkWriteError, MAX_BULK_WRITE_ITEMS } from '../bulk_write';
 import { eventsWriteBulkHandler } from './handler';
 import { createEventsWriteTool, eventsWriteItemSchema, eventsWriteSchema } from './tool';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 jest.mock('../../../routes/utils/assert_can_manage_significant_events', () => ({
   assertCanManageSignificantEvents: jest.fn(),
@@ -70,6 +67,7 @@ const createTool = (
     licensing: {},
   });
   return createEventsWriteTool({
+    assertAccess: assertSignificantEventsAccess,
     getScopedClients: getScopedClients as unknown as GetScopedClients,
     server: {} as SignificantEventsServer,
     logger,

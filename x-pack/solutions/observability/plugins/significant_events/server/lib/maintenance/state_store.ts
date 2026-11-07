@@ -5,7 +5,11 @@
  * 2.0.
  */
 
-import type { SavedObjectsClientContract } from '@kbn/core/server';
+import type {
+  KibanaRequest,
+  SavedObjectsServiceStart,
+  SavedObjectsClientContract,
+} from '@kbn/core/server';
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
 import type { SpaceId } from '@kbn/core-spaces-common';
 import { brandSpaceId, DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
@@ -18,7 +22,7 @@ import {
   isMaintenanceState,
   type SignificantEventsMaintenanceState,
 } from '../../../common/maintenance/state_machine';
-import type { SignificantEventsServer } from '../../types';
+import type { SignificantEventsMaintenanceService } from './maintenance_service';
 import type { PausedFeatureSettings } from './feature_settings';
 import {
   LEGACY_DEFAULT_SPACE_WORKFLOW_IDS,
@@ -240,7 +244,7 @@ export interface IMaintenanceStateStore {
 
 /** Creates the store; every operation addresses one space's document. */
 export const createMaintenanceStateStore = (
-  server: SignificantEventsServer
+  getSavedObjects: () => Pick<SavedObjectsServiceStart, 'getUnsafeInternalClient'>
 ): IMaintenanceStateStore => {
   // Lazy: this factory runs in plugin setup, before `server.core` is assigned in start().
   let internalClient: SavedObjectsClientContract | undefined;
@@ -252,7 +256,7 @@ export const createMaintenanceStateStore = (
   // `saved_object:significant-events-maintenance-state/get` and 403 every Nightshift-only user
   // once the document exists. Same pattern as run quotas.
   const getSoClient = (spaceId: SpaceId): SavedObjectsClientContract => {
-    internalClient ??= server.core.savedObjects.getUnsafeInternalClient({
+    internalClient ??= getSavedObjects().getUnsafeInternalClient({
       includedHiddenTypes: [SIGNIFICANT_EVENTS_MAINTENANCE_STATE_SO_TYPE],
     });
     return internalClient.asScopedToNamespace(spaceId);
@@ -355,3 +359,11 @@ export const createMaintenanceStateStore = (
 
   return { readVersionedState, readState, claimPausedIntent, writeState, deleteState };
 };
+
+/** Creates the space-scoped activity gate from the shared maintenance store. */
+export const createMaintenanceStateReader = (
+  store: Pick<IMaintenanceStateStore, 'readState'>
+): Pick<SignificantEventsMaintenanceService, 'getState'> => ({
+  getState: async ({ request }: { request: KibanaRequest }) =>
+    normalizeState((await store.readState(request.spaceId))?.state),
+});

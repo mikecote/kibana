@@ -106,7 +106,10 @@ import {
 } from './agent_builder/agents/ki_query_generation';
 import { createSignificantEventsAvailability } from './agent_builder/tools/significant_events_availability';
 import { SIGNIFICANT_EVENT_TIERED_FEATURES } from '../common/constants';
-import { isSignificantEventsAvailable } from './routes/utils/assert_significant_events_access';
+import {
+  assertSignificantEventsAccess,
+  isSignificantEventsAvailable,
+} from './routes/utils/assert_significant_events_access';
 import type { SignificantEventsKIsOnboardingClient } from './lib/workflows/onboarding_workflow_client';
 import { WorkflowExecutionService } from './lib/workflows/workflow_execution_service';
 import { createSourceChangeListener } from './routes/internal/knowledge_indicators/reconcile_source_catalog';
@@ -176,7 +179,10 @@ export class SignificantEventsPlugin
     this.ebtTelemetryService.setup(core.analytics);
 
     const significantEventsServices = createSignificantEventsServices();
-    const knowledgeIndicatorService = new KnowledgeIndicatorService(core, this.logger);
+    const knowledgeIndicatorService = new KnowledgeIndicatorService(async () => {
+      const [coreStart] = await core.getStartServices();
+      return coreStart;
+    }, this.logger);
     this.getScopedClients = createSignificantEventsScopedClients({
       getStartServices: async () => {
         const [coreStart, pluginsStart] = await core.getStartServices();
@@ -529,9 +535,10 @@ export class SignificantEventsPlugin
     // generation agents from the routes that run them.
     // Pause re-assert runs inside ensureSignificantEventsInstalled after every install.
     if (plugins.agentBuilder && this.server) {
+      const server = this.server;
       const agentBuilder = plugins.agentBuilder;
       const availability = createSignificantEventsAvailability({
-        server: this.server,
+        assertAccess: () => assertSignificantEventsAccess({ server, licensing: plugins.licensing }),
         logger: this.logger,
       });
       void installDiscoveryAgents({ agentBuilder, spaceId: DEFAULT_SPACE_ID, availability }).catch(
@@ -556,6 +563,7 @@ export class SignificantEventsPlugin
     }
 
     if (plugins.agentBuilder && this.server && this.getScopedClients) {
+      const server = this.server;
       const agentBuilder = plugins.agentBuilder;
       const telemetry = this.ebtTelemetryService.getClient();
 
@@ -579,7 +587,8 @@ export class SignificantEventsPlugin
         logger: this.logger,
         isAvailable,
         availability: createSignificantEventsAvailability({
-          server: this.server,
+          assertAccess: () =>
+            assertSignificantEventsAccess({ server, licensing: plugins.licensing }),
           logger: this.logger,
         }),
       })

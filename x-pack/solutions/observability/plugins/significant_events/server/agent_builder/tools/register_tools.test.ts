@@ -16,16 +16,10 @@ import {
   SIGNIFICANT_EVENTS_FEATURE_SIMILARITY_SEARCH_TOOL_ID,
 } from './register_tools';
 import { createMockGetScopedClients } from '../utils/test_helpers';
-import type { SignificantEventsServer } from '../../types';
+import { securityMock } from '@kbn/security-plugin/server/mocks';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
 
-const createMockServer = (): Pick<SignificantEventsServer, 'isServerless' | 'core'> => ({
-  isServerless: false,
-  core: {
-    elasticsearch: { client: { asInternalUser: {} } },
-    security: {},
-  } as SignificantEventsServer['core'],
-});
+const createMockServer = () => ({ security: securityMock.createStart() });
 
 describe('registerAgentBuilderTools', () => {
   const telemetry = {
@@ -37,9 +31,10 @@ describe('registerAgentBuilderTools', () => {
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });
@@ -58,9 +53,10 @@ describe('registerAgentBuilderTools', () => {
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });
@@ -77,9 +73,10 @@ describe('registerAgentBuilderTools', () => {
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder: undefined!,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });

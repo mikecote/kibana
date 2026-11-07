@@ -18,11 +18,11 @@ import { significantEventSchema } from '@kbn/significant-events-schema';
 import { nightshiftSourceSlugsField } from '@kbn/nightshift-shared';
 import { z, lazySchema } from '@kbn/zod/v4';
 import dedent from 'dedent';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import type { KnowledgeIndicatorClient } from '../../../lib/knowledge_indicators';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
 import { isBreachMemberSignal } from '../../../lib/significant_events/events/event_members';
 import { createSignificantEventsAvailability } from '../significant_events_availability';
@@ -272,11 +272,13 @@ const enrichCausalFeatures = async (
 export function createEventsWriteTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
   telemetry,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof eventsWriteSchema> {
@@ -323,7 +325,7 @@ export function createEventsWriteTool({
     },
     schema: eventsWriteSchema,
     tags: ['streams', 'significant-events'],
-    availability: createSignificantEventsAvailability({ server, logger }),
+    availability: createSignificantEventsAvailability({ assertAccess, logger }),
     handler: async (toolParams, context) => {
       const { request } = context;
       let storedItems: EventsWriteInput[] | undefined;
@@ -332,7 +334,7 @@ export function createEventsWriteTool({
           await getScopedClients({
             request,
           });
-        await assertSignificantEventsAccess({ server, licensing });
+        await assertAccess(licensing);
         await assertCanManageSignificantEvents({ request, server });
         const catalog = await loadSourceCatalog(sourcesClient);
         const resolvedItems = toolParams.items.map((item) => assignStoredSourceIds(catalog, item));

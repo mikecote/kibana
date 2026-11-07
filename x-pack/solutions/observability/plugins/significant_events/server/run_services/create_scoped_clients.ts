@@ -31,7 +31,12 @@ import { createTriggerEmitter } from '../workflows/triggers/emit';
 
 interface ScopedClientsDeps {
   getStartServices: () => Promise<{
-    coreStart: Pick<CoreStart, 'elasticsearch' | 'savedObjects' | 'uiSettings' | 'dataStreams'>;
+    coreStart: {
+      elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asScoped'> };
+      savedObjects: Pick<CoreStart['savedObjects'], 'getScopedClient' | 'createInternalRepository'>;
+      uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient' | 'globalAsScopedToClient'>;
+      dataStreams: CoreStart['dataStreams'];
+    };
     pluginsStart: {
       inference: Pick<SignificantEventsPluginStartDependencies['inference'], 'getClient'>;
       licensing: SignificantEventsPluginStartDependencies['licensing'];
