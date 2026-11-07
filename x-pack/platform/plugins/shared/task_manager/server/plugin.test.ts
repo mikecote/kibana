@@ -18,7 +18,7 @@ import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from './constants';
 import { defineTaskType } from './task_type_module';
-import type { TaskTypeRegistrationOptions } from './task_type_module';
+import type { TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { TaskProcessSupervisor } from './task_process/supervisor';
 import { of } from 'rxjs';
 import moment from 'moment';
@@ -436,7 +436,8 @@ describe('TaskManagerPlugin', () => {
       startServices: Record<string, unknown>,
       settings: TaskTypeRegistrationOptions['settings'] = {
         connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }),
-      }
+      },
+      moduleOptions: Pick<TaskTypeModule, 'taskManager'> = {}
     ) => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
@@ -466,6 +467,7 @@ describe('TaskManagerPlugin', () => {
       setup.registerTaskType(
         defineTaskType({
           type: 'test:module',
+          ...moduleOptions,
           createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
         }),
         {
@@ -479,7 +481,7 @@ describe('TaskManagerPlugin', () => {
       });
       const { getInitFor } = (TaskProcessSupervisor as unknown as jest.Mock).mock.calls.at(-1)[0]
         .settings;
-      return { getInitFor, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
+      return { getInitFor, setup, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
     };
 
     const uiSettingsStart = (
@@ -505,6 +507,24 @@ describe('TaskManagerPlugin', () => {
         },
       };
     };
+
+    test('requires the owning encryption provider and captures rotated keys on every dispatch', async () => {
+      const { setup, getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true }
+      );
+      await expect(getInitFor('test:module')).rejects.toThrow(
+        'encryption settings have not been registered'
+      );
+      const keys = jest
+        .fn()
+        .mockReturnValue({ encryptionKey: 'a'.repeat(32), decryptionOnlyKeys: [] });
+      setup.registerTaskProcessEncryptionKeys(keys);
+      expect((await getInitFor('test:module')).encryptedSavedObjects).toEqual(keys());
+      keys.mockReturnValue({ encryptionKey: 'b'.repeat(32), decryptionOnlyKeys: ['a'.repeat(32)] });
+      expect((await getInitFor('test:module')).encryptedSavedObjects).toEqual(keys());
+    });
 
     test("sends Kibana's ui settings overrides and what it registered, read for each run", async () => {
       const { getInitFor, setConnectorTypes } = setupWithModule(

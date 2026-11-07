@@ -40,9 +40,13 @@ import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_proce
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { registerUsageCountersSavedObjectTypes } from '@kbn/usage-collection-plugin/server/usage_counters/saved_objects';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
@@ -56,7 +60,9 @@ import {
   WORKFLOWS_STEP_EXECUTIONS_INDEX,
   WORKFLOWS_STEP_EXECUTIONS_INDEX_MAPPINGS,
 } from '../repositories/data_access_layer';
+import { contribution as workflowTaskSchedulingContribution } from '../task_types/task_scheduling_contribution';
 import { taskType as scheduledTaskType } from '../task_types/workflow_scheduled.task';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { getTaskBundleEntries, buildTaskBundle } = require(join(
@@ -73,9 +79,10 @@ const BUNDLE_NAME = 'workflowsExecutionEngine__workflow_scheduled';
 const bundleBuilds = new Map<string, Promise<string>>();
 const getWorkflowBundles = (
   includeRunTask: boolean,
-  additionalContributions: Record<string, string[]> = {}
+  additionalContributions: Record<string, string[]> = {},
+  includeResumeTask: boolean = false
 ): Promise<string> => {
-  const key = JSON.stringify({ includeRunTask, additionalContributions });
+  const key = JSON.stringify({ includeRunTask, includeResumeTask, additionalContributions });
   const existing = bundleBuilds.get(key);
   if (existing) return existing;
   const build = async () => {
@@ -85,7 +92,8 @@ const getWorkflowBundles = (
     const entries = getTaskBundleEntries().filter(
       ({ name }: { name: string }) =>
         name === BUNDLE_NAME ||
-        (includeRunTask && name === 'workflowsExecutionEngine__workflow_run')
+        (includeRunTask && name === 'workflowsExecutionEngine__workflow_run') ||
+        (includeResumeTask && name === 'workflowsExecutionEngine__workflow_resume')
     );
     const built: Array<{ name: string }> = [];
     for (const entry of entries) {
@@ -104,7 +112,15 @@ const getWorkflowBundles = (
         bundles: Object.fromEntries(
           built.map(({ name }) => [
             name,
-            { file: `${name}.mjs`, taskType: name === BUNDLE_NAME ? TASK_TYPE : 'workflow:run' },
+            {
+              file: `${name}.mjs`,
+              taskType:
+                name === BUNDLE_NAME
+                  ? TASK_TYPE
+                  : name.endsWith('__workflow_resume')
+                  ? 'workflow:resume'
+                  : 'workflow:run',
+            },
           ])
         ),
       })
@@ -136,6 +152,7 @@ export interface WorkflowProcessHarnessOptions {
   reuse?: boolean;
   maxIdleProcesses?: number;
   includeRunTask?: boolean;
+  includeResumeTask?: boolean;
   additionalContributions?: Record<string, string[]>;
   featureFlags?: Record<string, boolean | string | number>;
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
@@ -199,6 +216,8 @@ const startHarness = async (
   cleanups.push(() => new Promise((resolve) => kibanaStub.close(resolve)));
   const kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
 
+  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
+  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   const licenseExpiryDate = Date.now() + 86400000;
   const settings = () => ({
     evalsTaskProviders: { names: ['inference', 'agentBuilder.converse'] },
@@ -214,7 +233,16 @@ const startHarness = async (
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     alerting: alertingConfigSchema.validate({}),
     ruleRegistry: ruleRegistryConfig.schema.validate({}),
-    taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
+    taskManager: {
+      api_key_type: 'es',
+      grant_uiam_api_keys: false,
+      scheduling: {
+        taskManagerId: `kibana:${KIBANA_UUID}`,
+        securityEnabled: true,
+        allowReadingInvalidState: false,
+        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
+      },
+    },
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     security: getSecurityTaskProcessSettings({
@@ -411,7 +439,8 @@ const startHarness = async (
 
   ({ encoded: apiKey } = await es.security.createApiKey({ name: 'workflow-key' }));
 
-  if (options.seed) {
+  const seed = options.seed;
+  if (seed) {
     // A process of the module, to seed what Kibana would have saved, such as connectors.
     const seeder = await startTaskProcessCore({
       init: {
@@ -422,14 +451,17 @@ const startHarness = async (
         ...initFor(),
       },
       module: scheduledTaskType,
-      contributions: options.seedContributions,
+      contributions: {
+        ...options.seedContributions,
+        [TASK_SCHEDULING_CONTRIBUTIONS_KEY]: [
+          workflowTaskSchedulingContribution,
+          ...(options.seedContributions?.[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ?? []),
+        ],
+      },
     });
     try {
-      await options.seed({
-        es,
-        host: seeder.host as TaskHost,
-        kibanaUrl,
-      });
+      const { error } = await runInRunContext(() => seed({ es, host: seeder.host, kibanaUrl }));
+      if (error !== undefined) throw error;
     } finally {
       await seeder.stop();
     }
@@ -437,7 +469,8 @@ const startHarness = async (
 
   const bundleDir = await getWorkflowBundles(
     options.includeRunTask ?? false,
-    options.additionalContributions
+    options.additionalContributions,
+    options.includeResumeTask ?? false
   );
   const workerSettings = {
     bundle_dir: bundleDir,
@@ -481,6 +514,7 @@ const startHarness = async (
     getWorkerStats = () => supervisor.getStats();
   }
 
+  const createdTaskCounts: number[] = [];
   /** Runs the scheduled task of a workflow in the process; `onDispatchFailure` observes dispatch failures. */
   const runTask = (
     taskType: string,
@@ -528,6 +562,7 @@ const startHarness = async (
       timeoutMs: 120000,
       setCustomTaskRunEventFields: jest.fn(),
       onDispatchFailure,
+      onTasksCreated: (count) => createdTaskCounts.push(count),
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 
@@ -606,6 +641,7 @@ const startHarness = async (
     runTask,
     waitForRunTask,
     getWorkerStats,
+    createdTaskCounts,
     executionsOf,
     stepsOf,
     stop: async () => {

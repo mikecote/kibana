@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import {
   isDeclinedRunError,
   serializeTaskRunError,
@@ -35,6 +36,7 @@ interface InFlight {
   readonly abortController: AbortController;
   readonly task: { cancel?(): Promise<unknown> };
   readonly finished: Promise<void>;
+  readonly adHocTaskCounter: AdHocTaskCounter;
 }
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -68,7 +70,11 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) => {
 
 /** Thrown for runs the process refuses before starting them; the HTTP status tells Kibana to retry. */
 class RefusedRun extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly createdTaskCount?: number
+  ) {
     super(message);
   }
 }
@@ -168,7 +174,9 @@ export const startTaskProcessServer = ({
     let task: CancellableTask | undefined;
     let finish: () => void = () => {};
     const finished = new Promise<void>((resolve) => (finish = resolve));
+    const adHocTaskCounter = new AdHocTaskCounter();
     inFlight.set(body.executionUuid, {
+      adHocTaskCounter,
       abortController,
       task: { cancel: async () => task?.cancel?.() },
       finished,
@@ -228,20 +236,30 @@ export const startTaskProcessServer = ({
             await flushEffects();
           }
         },
-        { featureFlags: body.featureFlags, flushers }
+        {
+          featureFlags: body.featureFlags,
+          flushers,
+          executionId:
+            typeof body.taskInstance.id === 'string'
+              ? `${body.taskInstance.id}::${body.executionUuid}`
+              : undefined,
+          adHocTaskCounter,
+        }
       );
       if (error !== undefined) {
         if (isDeclinedRunError(error)) {
-          throw new RefusedRun(DECLINED_STATUS, (error as Error).message);
+          throw new RefusedRun(DECLINED_STATUS, (error as Error).message, adHocTaskCounter.count);
         }
         return {
           kind: 'thrown',
+          createdTaskCount: adHocTaskCounter.count,
           error: serializeTaskRunError(error),
           customTaskRunEventFields: customFields.at(-1),
         } as TaskProcessRunResponse;
       }
       const response = {
         kind: 'result',
+        createdTaskCount: adHocTaskCounter.count,
         result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
         reusable: cleanupSucceeded && flushed && !abortController.signal.aborted,
@@ -267,11 +285,26 @@ export const startTaskProcessServer = ({
 
       const isAuthorized =
         !authToken || isSameSecret(req.headers.authorization, `Bearer ${authToken}`);
-      if (req.method === 'POST' && (req.url === '/run' || req.url?.startsWith('/cancel/'))) {
+      if (
+        (req.method === 'POST' && (req.url === '/run' || req.url?.startsWith('/cancel/'))) ||
+        (req.method === 'GET' && req.url?.startsWith('/metrics/'))
+      ) {
         if (!isAuthorized) {
           sendJson(res, 401, { error: 'unauthorized' });
           return;
         }
+      }
+
+      if (req.method === 'GET' && req.url?.startsWith('/metrics/')) {
+        const entry = inFlight.get(req.url.slice('/metrics/'.length));
+        sendJson(
+          res,
+          entry ? 200 : 404,
+          entry
+            ? { createdTaskCount: entry.adHocTaskCounter.count }
+            : { error: 'no such in-flight run' }
+        );
+        return;
       }
 
       if (req.method === 'POST' && req.url === '/run') {
@@ -298,7 +331,10 @@ export const startTaskProcessServer = ({
         entry.abortController.abort();
         await entry.task.cancel?.();
         await entry.finished;
-        sendJson(res, 200, { outcome: 'cancelled' });
+        sendJson(res, 200, {
+          outcome: 'cancelled',
+          createdTaskCount: entry.adHocTaskCounter.count,
+        });
         return;
       }
 
@@ -309,7 +345,7 @@ export const startTaskProcessServer = ({
           res,
           error.status,
           error.status === DECLINED_STATUS
-            ? { kind: 'declined', reason: error.message }
+            ? { kind: 'declined', reason: error.message, createdTaskCount: error.createdTaskCount }
             : { error: error.message }
         );
         return;

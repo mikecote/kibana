@@ -74,7 +74,7 @@ export interface TaskSchedulingOpts {
   middleware: Middleware;
   taskManagerId: string;
   definitions: TaskSchedulingDefinitionRegistry;
-  taskPollingLifecycle?: TaskPollingLifecycle; // subscribe to task lifecycle events
+  taskPollingLifecycle?: Pick<TaskPollingLifecycle, 'getCurrentTasksInPool'>; // subscribe to task lifecycle events
   claimNudgeService?: TaskManagerClaimNudgeService;
 }
 
@@ -130,11 +130,12 @@ export interface RunNowResult {
 }
 
 export class TaskScheduling {
+  private readonly pendingClaimNudges = new Set<Promise<void>>();
   private store: TaskStore;
   private logger: Logger;
   private middleware: Middleware;
   private readonly definitions: TaskSchedulingDefinitionRegistry;
-  private readonly taskPolling: TaskPollingLifecycle | undefined;
+  private readonly taskPolling: Pick<TaskPollingLifecycle, 'getCurrentTasksInPool'> | undefined;
   private readonly claimNudgeService: TaskManagerClaimNudgeService | undefined;
 
   /**
@@ -418,10 +419,17 @@ export class TaskScheduling {
     }
 
     if (!conflict && nudge) {
-      void this.notifyClaimNudge(taskId, 'run_soon');
+      const pending = this.notifyClaimNudge(taskId, 'run_soon');
+      this.pendingClaimNudges.add(pending);
+      void pending.finally(() => this.pendingClaimNudges.delete(pending));
     }
 
     return conflict ? { id: task.id, forced, conflict: true } : { id: task.id, forced };
+  }
+
+  /** Waits for native claim notifications started by completed scheduling operations. */
+  public async flushClaimNudges(): Promise<void> {
+    await Promise.all([...this.pendingClaimNudges]);
   }
 
   /**

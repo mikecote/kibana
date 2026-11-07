@@ -1910,7 +1910,13 @@ describe('TaskScheduling', () => {
       });
       expect(onResult).toHaveBeenCalledWith({ id, forced: false });
       expect(recordClaimNudgeSpy).toHaveBeenCalledTimes(1);
+      const onFlushed = jest.fn();
+      const flushing = taskScheduling.flushClaimNudges().then(onFlushed);
+      await Promise.resolve();
+      expect(onFlushed).not.toHaveBeenCalled();
       failNotification(new Error('late notification failure'));
+      await flushing;
+      expect(onFlushed).toHaveBeenCalledTimes(1);
       await Promise.resolve();
       await Promise.resolve();
       expect(taskSchedulingOpts.logger.warn).toHaveBeenCalledWith(

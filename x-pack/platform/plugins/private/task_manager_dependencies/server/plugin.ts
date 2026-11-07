@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '@kbn/task-manager-plugin/server/task_encryption';
 import type { CoreSetup, CoreStart } from '@kbn/core/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type {
@@ -32,18 +33,12 @@ export interface TaskManagerDependenciesPluginStart {
 
 export class TaskManagerDependenciesPlugin {
   public setup(_: CoreSetup, plugin: TaskManagerDependenciesPluginSetup) {
-    plugin.encryptedSavedObjects.registerType({
-      type: 'task',
-      attributesToEncrypt: new Set(['apiKey', 'uiamApiKey', 'encryptedCredential']),
-      attributesToIncludeInAAD: new Set(['id', 'taskType', 'credential']),
-      enforceRandomId: false,
-    });
-
-    plugin.encryptedSavedObjects.registerType({
-      type: 'api_key_to_invalidate',
-      attributesToEncrypt: new Set(['uiamApiKey']),
-      attributesToIncludeInAAD: new Set(['apiKeyId', 'createdAt']),
-    });
+    for (const registration of TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS) {
+      plugin.encryptedSavedObjects.registerType(registration);
+    }
+    plugin.taskManager.registerTaskProcessEncryptionKeys(
+      plugin.encryptedSavedObjects.getKeysForTaskProcesses
+    );
 
     plugin.taskManager.registerCanEncryptedSavedObjects(plugin.encryptedSavedObjects.canEncrypt);
 

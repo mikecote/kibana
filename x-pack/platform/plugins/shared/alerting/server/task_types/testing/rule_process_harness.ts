@@ -33,6 +33,11 @@ import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
 import { createSystemConnectors } from '@kbn/actions-plugin/server/create_system_actions';
+import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
+import type { ActionsTaskProcessSettings } from '@kbn/actions-plugin/server/task_types/task_process_settings';
+import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
@@ -40,7 +45,13 @@ import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/r
 import { reviveTaskInstance } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
-import type { RemoteRunObserver, RunResult } from '@kbn/task-manager-plugin/server/task';
+import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
+import type {
+  CancellableTask,
+  RemoteRunObserver,
+  RunContext,
+  RunResult,
+} from '@kbn/task-manager-plugin/server/task';
 import type { TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import {
   ConfigSchema as SecurityConfigSchema,
@@ -50,6 +61,9 @@ import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/s
 import { getLicenseFetcher } from '@kbn/licensing-plugin/server/license_fetcher';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import type { RuleRunContribution } from '../rule_run_contribution';
+import type { AlertStatusChangedOptIn } from '../../lib/workflow_extensions/alert_status_changed_opt_in';
+import { ConnectorAdapterRegistry } from '../../connector_adapters/connector_adapter_registry';
 import { configSchema as alertingConfigSchema } from '../../config';
 import registeredConnectorIds from '../rule_run_connector_type_ids.json';
 
@@ -185,6 +199,7 @@ export class RuleProcessHarness {
   /** Connector types Kibana registered that the bundles lack: set by a test to see the run declined. */
   public unregisteredConnectorTypes: string[] = [];
 
+  private readonly schedulingDefinitions = new TaskSchedulingDefinitions();
   private options!: RuleProcessHarnessOptions;
   private seederClient!: ReturnType<
     TaskProcessCore['host']['savedObjects']['getUnsafeInternalClient']
@@ -196,6 +211,17 @@ export class RuleProcessHarness {
   /** Everything Kibana sends a rule process, composed as Kibana does it. */
   public getSettings(): Record<string, unknown> {
     return {
+      taskManager: {
+        api_key_type: 'es',
+        grant_uiam_api_keys: false,
+        scheduling: {
+          taskManagerId: `kibana:${KIBANA_UUID}`,
+          securityEnabled:
+            this.license?.isAvailable === true && this.license.getFeature('security').isEnabled,
+          allowReadingInvalidState: false,
+          definitions: createTaskSchedulingSnapshot(this.schedulingDefinitions),
+        },
+      },
       alerting: alertingConfigSchema.validate({}),
       actions: actionsConfigSchema.validate({}),
       // What Kibana decided while it started from the plugins around alerting.
@@ -264,6 +290,9 @@ export class RuleProcessHarness {
 
   public async start(options: RuleProcessHarnessOptions) {
     this.options = options;
+    for (const { taskType } of options.rules) {
+      this.schedulingDefinitions.registerTaskDefinitions({ [taskType.type]: taskType });
+    }
     const { startES } = createTestServers({
       adjustTimeout: (t) => jest.setTimeout(t),
       settings: { es: { license: 'trial' } },
@@ -321,17 +350,69 @@ export class RuleProcessHarness {
     // Seeds through a host of the same kind the process gets, which writes documents the way Kibana
     // does: migrated, encrypted and in the default space. It also runs rules in this process, with
     // what plugins contribute, for the tests that compare a forked run with one that is not.
-    this.seeder = await startTaskProcessCore({
-      init: {
-        kind: 'init',
-        elasticsearch: this.esConfig(),
-        kibanaVersion: KIBANA_VERSION,
-        authToken: '',
-        ...this.getInit(),
+    const startSeeder = () =>
+      startTaskProcessCore({
+        init: {
+          kind: 'init',
+          elasticsearch: this.esConfig(),
+          kibanaVersion: KIBANA_VERSION,
+          authToken: '',
+          ...this.getInit(),
+        },
+        module: this.getSeederModule(),
+        contributions: this.loadContributions(),
+      });
+    this.seeder = await startSeeder();
+    const { host } = this.seeder;
+    const settings = this.getSettings();
+    const { licensing, encryptedSavedObjects, taskManager } = host;
+    if (!licensing || !encryptedSavedObjects || !taskManager)
+      throw new Error('Native scheduling metadata capture requires the genuine rule host');
+    const connectorAdapters = new ConnectorAdapterRegistry();
+    const optIns: AlertStatusChangedOptIn[] = [];
+    const contributions: RuleRunContribution[] = this.loadContributions()['alerting-rule-run'];
+    const actions = createRuleRunActions({
+      logger: host.logger.get('actions'),
+      config: settings.actions as ActionsConfig,
+      inMemoryConnectors: (settings.actionsConnectors as ActionsTaskProcessSettings)
+        .inMemoryConnectors,
+      license$: licensing.license$,
+      elasticsearch: host.elasticsearch,
+      savedObjects: host.savedObjects,
+      getEncryptedSavedObjectsClient: encryptedSavedObjects.getClient,
+      taskManager,
+      registerConnectorTypes: (registry) => {
+        for (const contribution of contributions) {
+          contribution.register?.(
+            {
+              actions: registry,
+              alerting: {
+                registerConnectorAdapter: (adapter) => connectorAdapters.register(adapter),
+                enableAlertStatusChanged: (optIn) => {
+                  optIns.push(optIn);
+                },
+              },
+            },
+            {
+              host,
+              settings,
+              logger: host.logger,
+              isServerless: false,
+              kibanaVersion: KIBANA_VERSION,
+            }
+          );
+        }
       },
-      module: this.getSeederModule(),
-      contributions: this.loadContributions(),
     });
+    try {
+      for (const definition of actions.taskDefinitions.getAllDefinitions()) {
+        this.schedulingDefinitions.registerTaskDefinitions({ [definition.type]: definition });
+      }
+    } finally {
+      await actions.stop();
+      await this.seeder.stop();
+    }
+    this.seeder = await startSeeder();
     this.seederClient = this.seeder.host.savedObjects.getUnsafeInternalClient({
       includedHiddenTypes: ['alert', 'action'],
     });
@@ -636,6 +717,8 @@ export class RuleProcessHarness {
   public createRunner(ruleId: string, ruleTypeId: string, options: RunOptions = {}) {
     const taskType = `alerting:${ruleTypeId}`;
     const onDispatchFailure = options.onDispatchFailure ?? jest.fn();
+    const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
+    if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
     const route = this.supervisor.getRoute(taskType)! as Extract<
       ReturnType<TaskProcessSupervisor['getRoute']>,
       { acquire: unknown }
@@ -653,6 +736,7 @@ export class RuleProcessHarness {
         taskInstance: this.taskInstanceOf(ruleId, ruleTypeId, options.state) as never,
         executionUuid: `${ruleId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kibanaVersion: KIBANA_VERSION,
+        cancelGracePeriodMs: module.cancelGracePeriodMs,
       },
       timeoutMs: options.timeoutMs ?? 120000,
       setCustomTaskRunEventFields: jest.fn(),
@@ -732,14 +816,14 @@ export class RuleProcessHarness {
     state: Record<string, unknown> = {}
   ) {
     const taskType = `alerting:${ruleTypeId}`;
-    const context = {
+    const context: RunContext = {
       taskInstance: reviveTaskInstance(this.taskInstanceOf(ruleId, ruleTypeId, state)),
       fakeRequest: undefined,
       signal: new AbortController().signal,
       executionUuid: `${ruleId}-in-process-${Date.now()}`,
       setCustomTaskRunEventFields: jest.fn(),
-    } as never;
-    let task: { run: () => Promise<unknown> };
+    };
+    let task: CancellableTask;
     const definition = this.seeder.definitions.get(taskType);
     if (definition) {
       task = definition.createTaskRunner(context);
@@ -751,11 +835,18 @@ export class RuleProcessHarness {
       const applied = module.contributions?.apply?.(this.loadContributions()) ?? module;
       task = applied.createTaskRunner(context, this.seeder.host);
     }
-    try {
-      return await task.run();
-    } finally {
-      await this.seeder.flush();
-    }
+    const { value, error } = await runInRunContext(
+      async () => {
+        try {
+          return await task.run();
+        } finally {
+          await this.seeder.flush();
+        }
+      },
+      { executionId: `${context.taskInstance.id}::${context.executionUuid}` }
+    );
+    if (error !== undefined) throw error;
+    return value;
   }
 
   /**

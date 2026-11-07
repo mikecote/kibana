@@ -124,6 +124,10 @@ export interface TaskManagerSetupContract {
    */
   registerTaskType: (module: TaskTypeModule, options?: TaskTypeRegistrationOptions) => void;
   registerCanEncryptedSavedObjects: (canEncrypt: boolean) => void;
+  /** Supplies the owning encrypted saved objects service's current task encryption keys. */
+  registerTaskProcessEncryptionKeys: (
+    getKeys: () => NonNullable<TaskProcessInit['encryptedSavedObjects']>
+  ) => void;
   registerTaskEventLogger: (logger: TaskEventLogger) => void;
 }
 
@@ -226,6 +230,9 @@ export class TaskManagerPlugin
   private elasticsearchConfig?: IElasticsearchConfig;
   private numOfKibanaInstances$: Subject<number> = new BehaviorSubject(1);
   private canEncryptSavedObjects: boolean;
+  private getTaskProcessEncryptionKeys?: () => NonNullable<
+    TaskProcessInit['encryptedSavedObjects']
+  >;
   private licenseSubscriber?: PublicMethodsOf<LicenseSubscriber>;
   private invalidateApiKeyFn?: ApiKeyInvalidationFn;
   private taskEventLogger?: TaskEventLogger;
@@ -397,7 +404,7 @@ export class TaskManagerPlugin
     this.getTaskProcessInit = async (taskType) => {
       const registration = this.moduleRegistrations.get(taskType);
       if (!registration) return undefined;
-      const { options } = registration;
+      const { options, module } = registration;
       const taskStore = this.taskStore;
       if (!taskStore)
         throw new Error(
@@ -430,7 +437,11 @@ export class TaskManagerPlugin
           ids: getIds(),
         }));
       }
-      if (options?.hostExtensions?.getEncryptionKeys) {
+      if (module.taskManager) {
+        if (!this.getTaskProcessEncryptionKeys)
+          throw new Error('Native Task Manager encryption settings have not been registered');
+        init.encryptedSavedObjects = this.getTaskProcessEncryptionKeys();
+      } else if (options?.hostExtensions?.getEncryptionKeys) {
         init.encryptedSavedObjects = options.hostExtensions.getEncryptionKeys();
       }
       init.settings = {
@@ -448,6 +459,7 @@ export class TaskManagerPlugin
           grant_uiam_api_keys: this.config.grant_uiam_api_keys,
           scheduling: {
             taskManagerId: taskStore.taskManagerId,
+            securityEnabled: this.licenseSubscriber?.getIsSecurityEnabled() === true,
             allowReadingInvalidState: this.config.allow_reading_invalid_state,
             definitions: createTaskSchedulingSnapshot(this.definitions),
             claimNudge: this.claimNudgeService
@@ -462,6 +474,7 @@ export class TaskManagerPlugin
     const { mode = 'in_process', remote } = this.config.task_execution ?? {};
     if (mode !== 'in_process') {
       this.taskProcessDispatch = {
+        onTasksCreated: (count) => this.adHocTaskCounter.increment(count),
         kibanaVersion: this.kibanaVersion,
         onDispatchFailure: (taskType, reason, detail) => {
           this.taskProcessDispatchFailures.increment(taskType, reason, detail);
@@ -647,6 +660,10 @@ export class TaskManagerPlugin
         this.definitions.registerTaskDefinitions(taskDefinition);
       },
       registerTaskType,
+      /** Supplies the owning encrypted saved objects service's current task encryption keys. */
+      registerTaskProcessEncryptionKeys: (getKeys) => {
+        this.getTaskProcessEncryptionKeys = getKeys;
+      },
       registerCanEncryptedSavedObjects: (canEncrypt: boolean) => {
         this.canEncryptSavedObjects = canEncrypt;
       },

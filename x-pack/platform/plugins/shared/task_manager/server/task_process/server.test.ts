@@ -22,7 +22,11 @@ import { elasticsearchConfigFromEnv } from './es_config';
 import { TaskProcessSupervisor } from './supervisor';
 import { startTaskProcessWorker } from './worker';
 import type { TaskProcessDispatchSnapshot } from './wire';
-import { createHostFeatureFlags, registerRunFlusher } from './run_context';
+import {
+  createHostFeatureFlags,
+  incrementCreatedTaskCount,
+  registerRunFlusher,
+} from './run_context';
 import { firstValueFrom } from 'rxjs';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
 
@@ -113,6 +117,36 @@ describe('task process server', () => {
     expect(((await response.json()) as { taskTypes: string[] }).taskTypes).toEqual([TYPE]);
   });
 
+  it('authenticates progress reads and returns the native count before completion', async () => {
+    const started = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    createTask = () => ({
+      run: async () => {
+        incrementCreatedTaskCount(3);
+        started.resolve();
+        await completed.promise;
+        incrementCreatedTaskCount(2);
+        return { state: {} };
+      },
+    });
+    const running = runner().run();
+    await started.promise;
+    try {
+      expect((await undiciFetch(`${url}/metrics/run-1`)).status).toBe(401);
+      const progress = await undiciFetch(`${url}/metrics/run-1`, {
+        headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      expect(await progress.json()).toEqual({ createdTaskCount: 3 });
+    } finally {
+      completed.resolve();
+      await running;
+    }
+    expect(
+      (await undiciFetch(`${url}/metrics/run-1`, { headers: { authorization: `Bearer ${TOKEN}` } }))
+        .status
+    ).toBe(404);
+  });
+
   it('enriches the primary and child requests with this execution identity', async () => {
     createTask = ({ fakeRequest, enrichRequest }) => ({
       run: async () => {
@@ -201,6 +235,7 @@ describe('task process server', () => {
     expect(order).toEqual(['run', 'flush']);
     expect(await response.json()).toEqual({
       kind: 'result',
+      createdTaskCount: 0,
       result: { state: { ran: true } },
       reusable: true,
     });
@@ -237,6 +272,7 @@ describe('task process server', () => {
     });
     expect(await response.json()).toEqual({
       kind: 'result',
+      createdTaskCount: 0,
       result: { state: { ran: true } },
       reusable: false,
     });
@@ -543,5 +579,60 @@ describe('remote task worker', () => {
     expect(response.status).toBe(401);
     await response.body?.cancel();
     expect(acquire).not.toHaveBeenCalled();
+  });
+});
+
+describe('native task creation metrics', () => {
+  const create = (
+    fetchFn: typeof fetch,
+    extra: Partial<ConstructorParameters<typeof RemoteTaskRunner>[0]> = {}
+  ) => ({
+    runner: new RemoteTaskRunner({
+      route: { url: 'http://process' },
+      request: { taskType: 'test', taskInstance: {}, executionUuid: 'u' },
+      timeoutMs: 1000,
+      setCustomTaskRunEventFields: jest.fn(),
+      fetchFn,
+      ...extra,
+    }),
+  });
+  it('counts monotonic progress and the final total once, then stops polling', async () => {
+    jest.useFakeTimers();
+    try {
+      const result = Promise.withResolvers<Response>();
+      const onTasksCreated = jest.fn();
+      const samples = [2, 2, 1, 4];
+      const fetchFn: typeof fetch = jest.fn(async (input) => {
+        if (String(input).endsWith('/run')) return result.promise;
+        return Response.json({ createdTaskCount: samples.shift() });
+      });
+      const { runner } = create(fetchFn, { onTasksCreated, timeoutMs: 10000 });
+      const running = runner.run();
+      await jest.advanceTimersByTimeAsync(4000);
+      expect(onTasksCreated.mock.calls).toEqual([[2], [2]]);
+      result.resolve(Response.json({ kind: 'result', createdTaskCount: 5 }));
+      await running;
+      expect(onTasksCreated.mock.calls).toEqual([[2], [2], [1]]);
+      const calls = jest.mocked(fetchFn).mock.calls.length;
+      await jest.advanceTimersByTimeAsync(4000);
+      expect(jest.mocked(fetchFn).mock.calls).toHaveLength(calls);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('counts tasks created before a run error', async () => {
+    const onTasksCreated = jest.fn();
+    const { runner } = create(
+      async () =>
+        Response.json({
+          kind: 'thrown',
+          createdTaskCount: 3,
+          error: { message: 'run failed' },
+        }),
+      { onTasksCreated }
+    );
+    await expect(runner.run()).rejects.toThrow('run failed');
+    expect(onTasksCreated).toHaveBeenCalledWith(3);
   });
 });

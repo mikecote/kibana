@@ -29,7 +29,11 @@ import type { TaskRegisterDefinition } from '../task_type_dictionary';
  */
 const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): TaskStaticPlugin[] => {
   const plugins: TaskStaticPlugin[] = [createTaskManagerStaticPlugin(kibanaVersion)];
-  if (module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes) {
+  if (
+    module.encryptedSavedObjectTypes?.length ||
+    module.createSavedObjectTypes ||
+    module.taskManager
+  ) {
     plugins.push({
       manifest: {
         id: 'encryptedSavedObjects',

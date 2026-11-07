@@ -89,7 +89,7 @@ export interface StoreOpts {
   savedObjectsRepository: ISavedObjectsRepository;
   savedObjectsService: SavedObjectsServiceStart;
   serializer: ISavedObjectsSerializer;
-  adHocTaskCounter: AdHocTaskCounter;
+  adHocTaskCounter: Pick<AdHocTaskCounter, 'increment'>;
   allowReadingInvalidState: boolean;
   logger: Logger;
   security: SecurityServiceStart;
@@ -208,7 +208,7 @@ export class TaskStore {
   private _invalidationSoClient?: SavedObjectsClientContract;
   private _serviceAccountSoClient?: SavedObjectsClientContract;
   private serializer: ISavedObjectsSerializer;
-  private adHocTaskCounter: AdHocTaskCounter;
+  private adHocTaskCounter: Pick<AdHocTaskCounter, 'increment'>;
   private security: SecurityServiceStart;
   private canEncryptSavedObjects?: boolean;
   private getIsSecurityEnabled: () => boolean;

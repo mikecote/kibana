@@ -30,6 +30,9 @@ import {
   ConfigSchema as securityConfigSchema,
 } from '@kbn/security-plugin/server/config';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '@kbn/workflows-execution-engine/server/workflow_task_manager/task_scheduling_definitions';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
@@ -83,9 +86,20 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
 
   const engineConfig = engineConfigDescriptor.schema.validate({});
 
+  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
+  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   const settings = () => ({
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
-    taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
+    taskManager: {
+      api_key_type: 'es',
+      grant_uiam_api_keys: false,
+      scheduling: {
+        taskManagerId: `kibana:${KIBANA_UUID}`,
+        securityEnabled: true,
+        allowReadingInvalidState: false,
+        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
+      },
+    },
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     security: getSecurityTaskProcessSettings({

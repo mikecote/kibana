@@ -7,14 +7,28 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { defer, of } from 'rxjs';
+import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import type { TaskHost } from '../task_type_module';
 
 interface RunStore {
   featureFlags: Record<string, boolean | string | number>;
+  executionId?: string;
+  adHocTaskCounter: AdHocTaskCounter;
   flushers: Array<() => Promise<void>>;
 }
 
 const storage = new AsyncLocalStorage<RunStore>();
+const activeExecutions = new Set<string>();
+
+/** Lists the execution identities actually served by this worker process. */
+export const getActiveTaskExecutions = (): string[] => [...activeExecutions];
+
+/** Counts created tasks in the actual active run's native counter. */
+export const incrementCreatedTaskCount = (by: number = 1): void => {
+  const run = storage.getStore();
+  if (!run) throw new Error('Task creation metrics require an active task execution');
+  run.adHocTaskCounter.increment(by);
+};
 
 /**
  * Runs `fn` with what is particular to one run. A process may serve several runs at once, so each
@@ -22,12 +36,22 @@ const storage = new AsyncLocalStorage<RunStore>();
  */
 export const runInRunContext = async <T>(
   fn: () => Promise<T>,
-  { featureFlags = {}, flushers = [] }: Partial<RunStore> = {}
+  {
+    featureFlags = {},
+    flushers = [],
+    executionId,
+    adHocTaskCounter = new AdHocTaskCounter(),
+  }: Partial<RunStore> = {}
 ): Promise<{ value?: T; error?: unknown }> => {
+  if (executionId) activeExecutions.add(executionId);
   try {
-    return { value: await storage.run({ featureFlags, flushers }, fn) };
+    return {
+      value: await storage.run({ featureFlags, flushers, executionId, adHocTaskCounter }, fn),
+    };
   } catch (error) {
     return { error };
+  } finally {
+    if (executionId) activeExecutions.delete(executionId);
   }
 };
 

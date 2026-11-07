@@ -24,6 +24,9 @@ import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '@kbn/workflows-execution-engine/server/workflow_task_manager/task_scheduling_definitions';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -85,6 +88,8 @@ describe('the attack discovery rule type served from a bundle', () => {
   let llmUrl: string;
   const llmRequests: string[] = [];
 
+  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
+  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
     alertingRun: {
@@ -97,7 +102,16 @@ describe('the attack discovery rule type served from a bundle', () => {
       enableFooterInEmail: false,
     }),
     cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
-    taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
+    taskManager: {
+      api_key_type: 'es',
+      grant_uiam_api_keys: false,
+      scheduling: {
+        taskManagerId: `kibana:${KIBANA_UUID}`,
+        securityEnabled: true,
+        allowReadingInvalidState: false,
+        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
+      },
+    },
     workflowsExecutionEngine: {
       storage: { source: 'plain_index', dataRetention: '90d' },
       eventDriven: { enabled: true, logEvents: true, maxChainDepth: 10 },

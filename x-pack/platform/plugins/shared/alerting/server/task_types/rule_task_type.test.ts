@@ -214,6 +214,7 @@ describe('createRuleTaskType', () => {
         { ruleTypeId: 'test.rule', getRuleType },
         { optionalSettings: ['fleetPackageMetadata'] }
       );
+      expect(taskType.cancelGracePeriodMs).toBe(5000);
       expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
       expect(taskType.optionalSettings).toEqual([
         'ruleDataViewsCapabilities',

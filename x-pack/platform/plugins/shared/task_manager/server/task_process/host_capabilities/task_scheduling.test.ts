@@ -9,28 +9,61 @@ import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { savedObjectsRepositoryMock } from '@kbn/core-saved-objects-api-server-mocks';
 import { SavedObjectsErrorHelpers } from '@kbn/core-saved-objects-server';
+import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/server/mocks';
+import { coreMock, savedObjectsServiceMock, httpServerMock } from '@kbn/core/server/mocks';
+import { executionContextServiceMock } from '@kbn/core-execution-context-server-mocks';
+import { createInitialMiddleware } from '../../lib/middleware';
+import { AdHocTaskCounter } from '../../lib/adhoc_task_counter';
+import { EsApiKeyStrategy } from '../../api_key_strategy';
+import { TaskSchedulingDefinitions } from '../../task_scheduling_definition_registry';
+import { TaskPriority } from '../../task';
+import type { StoreOpts } from '../../task_store';
 import { createHostTaskScheduling } from './task_scheduling';
 
 describe('createHostTaskScheduling', () => {
   const repository = savedObjectsRepositoryMock.create();
   const esClient = elasticsearchServiceMock.createElasticsearchClient();
-  const scheduling = createHostTaskScheduling({
-    repository,
+  const core = coreMock.createStart();
+  const executionContext = executionContextServiceMock.createSetupContract();
+  executionContext.withContext.mockImplementation((_context, fn) => fn());
+  const definitions = new TaskSchedulingDefinitions();
+  definitions.registerTaskDefinitions({
+    'actions:.server-log': {},
+    'workflow:run': {},
+    'workflow:resume': { allowPriorityOverride: true },
+    'alerting:x': {},
+  });
+  const baseStore: StoreOpts = {
     esClient,
+    index: '.kibana_task_manager',
+    taskManagerId: 'kibana:test',
+    definitions,
+    savedObjectsRepository: repository,
+    savedObjectsService: core.savedObjects,
+    serializer: savedObjectsServiceMock.createSerializer(),
+    adHocTaskCounter: new AdHocTaskCounter(),
+    allowReadingInvalidState: false,
     logger: loggingSystemMock.createLogger(),
+    security: core.security,
+    canEncryptSavedObjects: false,
+    getIsSecurityEnabled: () => true,
+    executionContext,
+    apiKeyStrategy: new EsApiKeyStrategy(),
+  };
+  const scheduling = createHostTaskScheduling({
+    store: baseStore,
+    scheduling: { middleware: createInitialMiddleware() },
     allowedTypes: /^actions:/,
   });
 
   beforeEach(() => {
     jest.clearAllMocks();
-    repository.bulkCreate.mockImplementation((async (objects: Array<Record<string, unknown>>) => ({
-      saved_objects: objects.map((o) => ({
-        id: o.id,
-        type: o.type,
-        attributes: o.attributes,
-        references: [],
-      })),
-    })) as never);
+    repository.bulkCreate.mockImplementation(async (objects) => ({
+      saved_objects: objects.map(({ id, type, attributes }) => {
+        if (!id) throw new Error('Expected the native scheduler to supply an id');
+        return { id, type, attributes, references: [] };
+      }),
+    }));
   });
 
   const instance = (overrides = {}) => ({
@@ -72,13 +105,10 @@ describe('createHostTaskScheduling', () => {
     expect(repository.bulkCreate).not.toHaveBeenCalled();
   });
 
-  it('rejects a legacy apiKey option and a request without credentials', async () => {
-    await expect(scheduling.bulkSchedule([instance()], { apiKey: 'k' } as never)).rejects.toThrow(
-      /apiKey/
-    );
-    await expect(scheduling.bulkSchedule([instance()], { request: {} } as never)).rejects.toThrow(
-      /credentials/
-    );
+  it('does not accept a request when task encryption is unavailable', async () => {
+    await expect(
+      scheduling.bulkSchedule([instance()], { request: httpServerMock.createKibanaRequest() })
+    ).rejects.toThrow(/Encrypted Saved Objects/);
   });
 
   it('throws the error of a task that could not be written', async () => {
@@ -112,26 +142,15 @@ describe('createHostTaskScheduling', () => {
   });
 
   describe('with credentials', () => {
-    const scopedClient = { create: jest.fn(), bulkCreate: jest.fn() };
-    const internalClient = {};
-    const grantAsInternalUser = jest.fn();
-    const cloneAsInternalUser = jest.fn();
-    const savedObjects = {
-      getScopedClient: jest.fn(() => scopedClient),
-      getUnsafeInternalClient: jest.fn(() => internalClient),
-    };
-    const security = {
-      authc: {
-        getCurrentUser: jest.fn(() => ({ username: 'elastic', authentication_type: 'api_key' })),
-        apiKeys: {
-          areAPIKeysEnabled: jest.fn(async () => true),
-          grantAsInternalUser,
-          cloneAsInternalUser,
-          invalidateAsInternalUser: jest.fn(),
-        },
-      },
-    };
-    const request = { headers: { authorization: 'ApiKey abc' } } as never;
+    const credentialCore = coreMock.createStart();
+    const scopedClient = savedObjectsRepositoryMock.create();
+    const internalClient = savedObjectsRepositoryMock.create();
+    const savedObjects = credentialCore.savedObjects;
+    const security = credentialCore.security;
+    const cloneAsInternalUser = jest.spyOn(security.authc.apiKeys, 'cloneAsInternalUser');
+    const request = httpServerMock.createKibanaRequest({
+      headers: { authorization: 'ApiKey abc' },
+    });
     const workflowTask = (overrides = {}) => ({
       id: 'workflow:exec-1:alert',
       taskType: 'workflow:run',
@@ -141,35 +160,58 @@ describe('createHostTaskScheduling', () => {
       ...overrides,
     });
 
-    const create = (overrides: Record<string, unknown> = {}) =>
+    const create = (overrides: Partial<StoreOpts> = {}) =>
       createHostTaskScheduling({
-        repository,
-        esClient,
-        logger: loggingSystemMock.createLogger(),
-        allowedTypes: /^(?:actions:)|(?:workflow:run)$/,
-        credentials: {
-          savedObjects: savedObjects as never,
-          security: security as never,
-          apiKeyType: 'es' as never,
-          grantUiamApiKeys: false,
-          canEncrypt: true,
+        store: {
+          ...baseStore,
+          savedObjectsService: savedObjects,
+          security,
+          apiKeyStrategy: new EsApiKeyStrategy(),
+          canEncryptSavedObjects: true,
           ...overrides,
         },
+        scheduling: {
+          middleware: createInitialMiddleware(),
+          taskPollingLifecycle: { getCurrentTasksInPool: () => ['t1::execution'] },
+        },
+        encryption: {
+          client: encryptedSavedObjectsMock.createClient(),
+          isEncryptionError: () => false,
+        },
+        allowedTypes: /^(?:actions:)|(?:workflow:run)$/,
       });
 
     beforeEach(() => {
-      cloneAsInternalUser.mockResolvedValue({ id: 'key-id', api_key: 'key-secret', name: 'n' });
-      scopedClient.create.mockImplementation(async (type, attributes, options) => ({
-        id: options.id,
-        type,
-        attributes,
-        references: [],
+      savedObjects.getScopedClient.mockReturnValue(scopedClient);
+      savedObjects.getUnsafeInternalClient.mockReturnValue(internalClient);
+      jest.spyOn(security.authc, 'getCurrentUser').mockReturnValue({
+        username: 'elastic',
+        roles: [],
+        enabled: true,
+        authentication_realm: { name: 'file', type: 'file' },
+        lookup_realm: { name: 'file', type: 'file' },
+        authentication_provider: { name: 'http', type: 'http' },
+        authentication_type: 'api_key',
+        elastic_cloud_user: false,
+        http_authentication_scheme: 'apikey',
+      });
+      jest.spyOn(security.authc.apiKeys, 'areAPIKeysEnabled').mockResolvedValue(true);
+      cloneAsInternalUser.mockResolvedValue({
+        id: 'key-id',
+        api_key: 'key-secret',
+        name: 'n',
+        encoded: Buffer.from('key-id:key-secret').toString('base64'),
+      });
+      scopedClient.create.mockImplementation(async (type, attributes, options) => {
+        if (!options?.id) throw new Error('Expected the native scheduler to supply an id');
+        return { id: options.id, type, attributes, references: [] };
+      });
+      scopedClient.bulkCreate.mockImplementation(async (objects) => ({
+        saved_objects: objects.map(({ id, type, attributes }) => {
+          if (!id) throw new Error('Expected the native scheduler to supply an id');
+          return { id, type, attributes, references: [] };
+        }),
       }));
-      scopedClient.bulkCreate.mockImplementation(
-        async (objects: Array<Record<string, unknown>>) => ({
-          saved_objects: objects.map((o) => ({ ...o, references: [] })),
-        })
-      );
       repository.bulkGet.mockResolvedValue({ saved_objects: [] } as never);
     });
 
@@ -230,7 +272,7 @@ describe('createHostTaskScheduling', () => {
 
     it('refuses to schedule with a request when it cannot encrypt', async () => {
       await expect(
-        create({ canEncrypt: false }).schedule(workflowTask(), { request })
+        create({ canEncryptSavedObjects: false }).schedule(workflowTask(), { request })
       ).rejects.toThrow(/Encrypted Saved Objects/);
     });
 
@@ -244,7 +286,8 @@ describe('createHostTaskScheduling', () => {
   describe('reads, removal and rescheduling', () => {
     const notFound = (id: string) =>
       SavedObjectsErrorHelpers.createGenericNotFoundError('task', id);
-    const conflict = () => SavedObjectsErrorHelpers.createConflictError('task', 'x');
+    const conflict = () =>
+      Object.assign(SavedObjectsErrorHelpers.createConflictError('task', 'x'), { statusCode: 409 });
     const attributes = (overrides = {}) => ({
       taskType: 'workflow:run',
       params: '{}',
@@ -270,38 +313,55 @@ describe('createHostTaskScheduling', () => {
       userScope: { apiKeyId: 'key-id', spaceId: 'default', apiKeyCreatedByUser: false },
     };
 
-    const getDecryptedAsInternalUser = jest.fn();
-    const invalidationClient = { bulkCreate: jest.fn(), create: jest.fn() };
-    const savedObjects = {
-      getScopedClient: jest.fn(),
-      getUnsafeInternalClient: jest.fn(() => invalidationClient),
-    };
+    const encryptedClient = encryptedSavedObjectsMock.createClient();
+    const invalidationClient = savedObjectsRepositoryMock.create();
+    const savedObjects = coreMock.createStart().savedObjects;
     const workflows = (overrides = {}) =>
       createHostTaskScheduling({
-        repository,
-        esClient,
-        logger: loggingSystemMock.createLogger(),
-        allowedTypes: /^workflow:/,
-        credentials: {
-          savedObjects: savedObjects as never,
-          security: {} as never,
-          apiKeyType: 'es' as never,
-          grantUiamApiKeys: false,
-          canEncrypt: true,
-          encryptedSavedObjects: { getClient: () => ({ getDecryptedAsInternalUser } as never) },
+        store: {
+          ...baseStore,
+          savedObjectsService: savedObjects,
+          canEncryptSavedObjects: true,
           ...overrides,
         },
+        scheduling: {
+          middleware: createInitialMiddleware(),
+          taskPollingLifecycle: { getCurrentTasksInPool: () => ['t1::execution'] },
+        },
+        encryption: {
+          client: encryptedClient,
+          isEncryptionError: () => false,
+        },
+        allowedTypes: /^workflow:/,
       });
 
     beforeEach(() => {
-      getDecryptedAsInternalUser.mockImplementation(async (type, id) => ({
-        id,
-        type,
-        attributes: { apiKey: Buffer.from('key-id:key-secret').toString('base64') },
-        references: [],
-      }));
+      savedObjects.getUnsafeInternalClient.mockReturnValue(invalidationClient);
+      encryptedClient.createPointInTimeFinderDecryptedAsInternalUser.mockResolvedValue({
+        close: jest.fn(),
+        async *find() {
+          yield {
+            saved_objects: ['t1', 'a'].map((id) => ({
+              ...so(id),
+              score: 1,
+              attributes: {
+                ...attributes(),
+                apiKey: Buffer.from('key-id:key-secret').toString('base64'),
+              },
+            })),
+            total: 2,
+            per_page: 100,
+            page: 1,
+          };
+        },
+      });
       invalidationClient.bulkCreate.mockResolvedValue({ saved_objects: [] });
-      invalidationClient.create.mockResolvedValue({});
+      invalidationClient.create.mockResolvedValue({
+        id: 'invalidated',
+        type: 'api_key_to_invalidate',
+        attributes: {},
+        references: [],
+      });
       repository.update.mockReset();
       repository.update.mockResolvedValue({} as never);
     });
@@ -321,7 +381,9 @@ describe('createHostTaskScheduling', () => {
       it('gets a task without keys without decrypting', async () => {
         repository.get.mockResolvedValue(so('t1') as never);
         expect((await workflows().get('t1')).id).toBe('t1');
-        expect(getDecryptedAsInternalUser).not.toHaveBeenCalled();
+        expect(
+          encryptedClient.createPointInTimeFinderDecryptedAsInternalUser
+        ).not.toHaveBeenCalled();
       });
 
       it('throws not found when the task does not exist', async () => {
@@ -366,6 +428,14 @@ describe('createHostTaskScheduling', () => {
             ],
           },
         } as never);
+        baseStore.serializer.isRawSavedObject = (doc) => doc._source.type === 'task';
+        jest.spyOn(baseStore.serializer, 'rawToSavedObject').mockReturnValue({
+          id: 't1',
+          type: 'task',
+          references: [],
+          attributes: attributes(),
+          version: 'v1',
+        });
         const result = await workflows().fetch({ query: { term: { 'task.scope': 'x' } } });
         expect(esClient.search).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -512,6 +582,9 @@ describe('createHostTaskScheduling', () => {
       });
 
       it('retries version conflicts against the latest task version', async () => {
+        repository.bulkGet.mockResolvedValueOnce({
+          saved_objects: [so('idle', { schedule: { interval: '1d' } })],
+        });
         repository.bulkGet
           .mockResolvedValueOnce({
             saved_objects: [so('idle', { schedule: { interval: '1d' } })],
@@ -553,25 +626,27 @@ describe('createHostTaskScheduling', () => {
         repository.get.mockResolvedValue(so('t1', { runAt: '2999-01-01T00:00:00.000Z' }) as never);
         const result = await workflows().runSoon('t1');
         expect(result).toEqual({ id: 't1', forced: false });
-        const [, , attrs, options] = repository.update.mock.calls[0] as unknown[];
-        expect(attrs).toEqual({
-          status: 'idle',
-          scheduledAt: expect.any(String),
-          runAt: expect.any(String),
-        });
+        const [, , attrs, options] = repository.update.mock.calls[0];
+        expect(attrs).toEqual(
+          expect.objectContaining({
+            status: 'idle',
+            scheduledAt: expect.any(String),
+            runAt: expect.any(String),
+          })
+        );
         expect(new Date((attrs as { runAt: string }).runAt).getTime()).toBeLessThanOrEqual(
           Date.now()
         );
-        expect(options).toEqual({ version: 'v1', refresh: false });
+        expect(options).toEqual(expect.objectContaining({ version: 'v1', refresh: false }));
       });
 
       it('sets the priority when given', async () => {
-        repository.get.mockResolvedValue(so('t1') as never);
-        await workflows().runSoon('t1', { priority: 1 as never });
+        repository.get.mockResolvedValue(so('t1', { taskType: 'workflow:resume' }));
+        await workflows().runSoon('t1', { priority: TaskPriority.Normal });
         expect(repository.update).toHaveBeenCalledWith(
           'task',
           't1',
-          expect.objectContaining({ priority: 1 }),
+          expect.objectContaining({ priority: TaskPriority.Normal }),
           expect.anything()
         );
       });
@@ -621,7 +696,18 @@ describe('createHostTaskScheduling', () => {
         schedule: { interval: '5m' },
         ...overrides,
       });
+      const replyWithExistingSchedule = () =>
+        repository.bulkUpdate.mockImplementation(async (objects) => ({
+          saved_objects: objects.map((object) => ({
+            ...so(object.id),
+            attributes: { ...attributes(), ...object.attributes },
+          })),
+        }));
       beforeEach(() => {
+        repository.bulkGet.mockImplementation(async () => ({
+          saved_objects: [await repository.get('task', 'workflow:1')],
+        }));
+        replyWithExistingSchedule();
         repository.create.mockImplementation((async (type: string, attrs: unknown, o: never) => ({
           id: (o as { id: string }).id,
           type,
@@ -645,11 +731,14 @@ describe('createHostTaskScheduling', () => {
           so('workflow:1', { schedule: { interval: '1m' }, taskType: 'workflow:run' }) as never
         );
         await workflows().ensureScheduled(task());
-        expect(repository.update).toHaveBeenCalledWith(
-          'task',
-          'workflow:1',
-          expect.objectContaining({ schedule: { interval: '5m' }, runAt: expect.any(String) }),
-          { version: 'v1', refresh: false }
+        expect(repository.bulkUpdate).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              id: 'workflow:1',
+              attributes: expect.objectContaining({ schedule: { interval: '5m' } }),
+            }),
+          ],
+          { refresh: false }
         );
       });
 
@@ -672,23 +761,26 @@ describe('createHostTaskScheduling', () => {
       });
 
       it('does not grant API keys for an id that already exists', async () => {
-        const cloneAsInternalUser = jest.fn();
-        const security = { authc: { apiKeys: { cloneAsInternalUser } } };
+        const security = coreMock.createStart().security;
+        const cloneAsInternalUser = jest.spyOn(security.authc.apiKeys, 'cloneAsInternalUser');
         repository.get.mockResolvedValue(
           so('workflow:1', { schedule: { interval: '1m' } }) as never
         );
-        const withKeys = workflows({ security: security as never });
+        const withKeys = workflows({ security });
         await withKeys.ensureScheduled(task(), {
-          request: {} as never,
+          request: httpServerMock.createKibanaRequest(),
           cloneApiKey: true,
-        } as never);
+        });
         expect(cloneAsInternalUser).not.toHaveBeenCalled();
         expect(repository.create).not.toHaveBeenCalled();
-        expect(repository.update).toHaveBeenCalledWith(
-          'task',
-          'workflow:1',
-          expect.objectContaining({ schedule: { interval: '5m' } }),
-          expect.anything()
+        expect(repository.bulkUpdate).toHaveBeenCalledWith(
+          [
+            expect.objectContaining({
+              id: 'workflow:1',
+              attributes: expect.objectContaining({ schedule: { interval: '5m' } }),
+            }),
+          ],
+          { refresh: false }
         );
       });
     });

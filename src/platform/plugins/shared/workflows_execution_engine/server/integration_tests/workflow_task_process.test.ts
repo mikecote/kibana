@@ -47,6 +47,9 @@ import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import type { TaskProcessDispatchSnapshot } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
 import { config as engineConfigDescriptor } from '../config';
@@ -58,7 +61,9 @@ import {
   WORKFLOWS_STEP_EXECUTIONS_INDEX,
   WORKFLOWS_STEP_EXECUTIONS_INDEX_MAPPINGS,
 } from '../repositories/data_access_layer';
+import { contribution as workflowTaskSchedulingContribution } from '../task_types/task_scheduling_contribution';
 import { taskType as scheduledTaskType } from '../task_types/workflow_scheduled.task';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
 import {
   getWorkflowGlobalTimeoutResumeTaskId,
   getWorkflowImmediateResumeTaskId,
@@ -131,11 +136,22 @@ describe('the workflow:scheduled task type served from a bundle', () => {
     return response;
   }) as unknown as typeof fetch;
 
+  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
+  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   const settings = () => ({
     inferenceFeatures: { features: [] },
     contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
-    taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
+    taskManager: {
+      api_key_type: 'es',
+      grant_uiam_api_keys: false,
+      scheduling: {
+        taskManagerId: `kibana:${KIBANA_UUID}`,
+        securityEnabled: true,
+        allowReadingInvalidState: false,
+        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
+      },
+    },
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     // The process meters itself, against this stand-in for the usage API.
@@ -546,6 +562,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         ...initFor(),
       },
       module: scheduledTaskType,
+      contributions: { [TASK_SCHEDULING_CONTRIBUTIONS_KEY]: [workflowTaskSchedulingContribution] },
     });
     await seeder.host.savedObjects
       .getUnsafeInternalClient({ includedHiddenTypes: ['action'] })

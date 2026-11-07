@@ -129,6 +129,8 @@ export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }
 ) & {
+  /** Native tasks created during this execution, including before a run error. */
+  createdTaskCount?: number;
   customTaskRunEventFields?: Record<string, unknown>;
   /** True only when this process supports reuse and the run's cleanup and flush succeeded. */
   reusable?: boolean;

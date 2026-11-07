@@ -53,17 +53,20 @@ describe('RemoteTaskRunner dispatch', () => {
     const acknowledgement = new Promise<object>((resolve) => (acknowledge = resolve));
     const fetchFn = jest.fn((url: string) => (url.endsWith('/run') ? running : acknowledgement));
     const release = jest.fn();
+    const onTasksCreated = jest.fn();
     const { runner } = create(fetchFn, {
       route: { acquire: async () => ({ url: 'http://child', release }) },
       request: { ...request, cancelGracePeriodMs: 1000 },
+      onTasksCreated,
     });
     const run = runner.run();
     await new Promise((resolve) => setImmediate(resolve));
     const cancellation = runner.cancel();
     expect(release).not.toHaveBeenCalled();
-    acknowledge({ ok: true });
+    acknowledge({ ok: true, json: async () => ({ outcome: 'cancelled', createdTaskCount: 4 }) });
     await cancellation;
     expect(release).toHaveBeenCalledWith({ force: true });
+    expect(onTasksCreated).toHaveBeenCalledWith(4);
     finish({ ok: true, json: async () => ({ kind: 'result', result: { state: {} } }) });
     await run;
   });
@@ -100,15 +103,17 @@ describe('RemoteTaskRunner dispatch', () => {
   );
 
   it('fails without retrying when the process lacks a capability', async () => {
+    const onTasksCreated = jest.fn();
     const fetchFn = jest.fn().mockResolvedValue({
       ok: false,
       status: 422,
       json: async () => ({
         kind: 'declined',
+        createdTaskCount: 2,
         reason: 'The task process lacks connectorTypes [.x]',
       }),
     });
-    const { runner, onDispatchFailure } = create(fetchFn);
+    const { runner, onDispatchFailure } = create(fetchFn, { onTasksCreated });
     const error = await runner.run().catch((failure: Error) => failure);
     expect(error).toBeInstanceOf(Error);
     expect(isUnrecoverableError(error as Error)).toBe(true);
@@ -118,6 +123,7 @@ describe('RemoteTaskRunner dispatch', () => {
       'declined',
       'The task process lacks connectorTypes [.x]'
     );
+    expect(onTasksCreated).toHaveBeenCalledWith(2);
   });
 
   it('reports a process that does not serve the task type', async () => {

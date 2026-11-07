@@ -557,9 +557,20 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   template variable, execution and approval links, rule URLs) are built from Kibana's own
   `server.publicBaseUrl`, which a process gets raw, so they are what Kibana builds.
 - **Task Manager.** `host.taskManager` has `schedule`, `bulkSchedule`, `get`, `bulkGet`, `fetch`, `remove`,
-  `removeIfExists`, `bulkRemove`, `runSoon` and `ensureScheduled`, written over the same `task` saved
-  objects as `TaskStore`, including the invalidation of the API keys of removed tasks. `runSoon` sets
-  `runAt` to now and Kibana's claim cycle picks it up: there is no nudge from a process.
+  `removeIfExists`, `bulkRemove`, `bulkUpdateSchedules`, `runSoon` and `ensureScheduled`, supplied by
+  native `TaskStore` and `TaskScheduling` within the module's declared write scope. Dispatch captures
+  Main's task metadata, security license state and API-key strategy. Owning plugins contribute the
+  native parameter schemas and state migrations through `task-scheduling`; a required schema missing
+  from the worker fails startup before execution. Task credentials use the same encryption registration
+  and current encryption keys as Main, including service-account credentials and removal invalidation.
+  Native force, priority and schedule-update policies are shared. When Main enables claim nudges,
+  `runSoon({ requestImmediateClaim: true })` refreshes and notifies through the native nudge service;
+  run completion waits for pending notifications within the worker's flush deadline.
+  Native task-creation counts are sampled over the authenticated control channel and reconciled with
+  the final run total, including failed runs. Repeated or older samples are ignored. Counts remain
+  best effort when a worker crashes before its next sample. Force checks currently see executions
+  in the worker; coordination with the dispatching node's complete active pool and native middleware
+  contributions remain required for complete scheduling parity.
 - **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** The engine registers its shared definitions with native Core using the current

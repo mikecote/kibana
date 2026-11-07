@@ -53,6 +53,21 @@ describe('buildCoreConfig', () => {
     cleanup();
   });
 
+  it('configures native encryption for scheduling without extra encrypted declarations', () => {
+    const encryptionKey = 'k'.repeat(32);
+    const { settings, cleanup } = buildCoreConfig(
+      init({ encryptedSavedObjects: { encryptionKey, decryptionOnlyKeys: ['r'.repeat(32)] } }),
+      { taskManager: true }
+    );
+    expect(settings.xpack).toEqual({
+      encryptedSavedObjects: {
+        encryptionKey,
+        keyRotation: { decryptionOnlyKeys: ['r'.repeat(32)] },
+      },
+    });
+    cleanup();
+  });
+
   it('disables eager data stream installation and migrations in task workers', () => {
     const { settings, cleanup } = buildCoreConfig(init(), {});
     expect(settings.dataStreams).toEqual({ migrations: { skip: true } });

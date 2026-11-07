@@ -29,6 +29,7 @@ export interface TaskManagerTaskProcessSettings {
   grant_uiam_api_keys: boolean;
   scheduling: {
     taskManagerId: string;
+    securityEnabled: boolean;
     allowReadingInvalidState: boolean;
     definitions: TaskSchedulingDefinitionSnapshot[];
     claimNudge?: { index: string };

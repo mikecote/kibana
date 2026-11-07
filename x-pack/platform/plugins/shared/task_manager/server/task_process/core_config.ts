@@ -85,13 +85,17 @@ export const buildCoreConfig = (
   init: TaskProcessInit,
   module: Pick<
     TaskTypeModule,
-    'uiSettings' | 'registerUiSettings' | 'encryptedSavedObjectTypes' | 'createSavedObjectTypes'
+    | 'uiSettings'
+    | 'registerUiSettings'
+    | 'encryptedSavedObjectTypes'
+    | 'createSavedObjectTypes'
+    | 'taskManager'
   >
 ): CoreConfig => {
   const dir = mkdtempSync(join(tmpdir(), 'kbn-task-process-'));
   // Core rejects encryption config unless the module needs encrypted types or native migrations.
   const keys =
-    module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes
+    module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes || module.taskManager
       ? init.encryptedSavedObjects
       : undefined;
   // Core reads the UIAM client authentication of Elasticsearch requests from `xpack.security.uiam`,

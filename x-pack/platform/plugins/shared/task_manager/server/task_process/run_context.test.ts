@@ -6,7 +6,14 @@
  */
 
 import { firstValueFrom } from 'rxjs';
-import { createHostFeatureFlags, runFlushers, runInRunContext } from './run_context';
+import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
+import {
+  createHostFeatureFlags,
+  getActiveTaskExecutions,
+  incrementCreatedTaskCount,
+  runFlushers,
+  runInRunContext,
+} from './run_context';
 
 describe('task process run context', () => {
   it('returns the value of the run, or the error it threw', async () => {
@@ -20,6 +27,39 @@ describe('task process run context', () => {
         })
       ).error
     ).toBe(failure);
+  });
+
+  it('isolates task counts and tracks concurrent executions through success and failure', async () => {
+    const firstCounter = new AdHocTaskCounter();
+    const secondCounter = new AdHocTaskCounter();
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = runInRunContext(
+      async () => {
+        incrementCreatedTaskCount(2);
+        await gate;
+        incrementCreatedTaskCount();
+      },
+      { executionId: 'first::execution', adHocTaskCounter: firstCounter }
+    );
+    const failure = new Error('second failed');
+    const second = await runInRunContext(
+      async () => {
+        expect(getActiveTaskExecutions().sort()).toEqual(['first::execution', 'second::execution']);
+        incrementCreatedTaskCount(5);
+        throw failure;
+      },
+      { executionId: 'second::execution', adHocTaskCounter: secondCounter }
+    );
+    expect(second.error).toBe(failure);
+    expect(getActiveTaskExecutions()).toEqual(['first::execution']);
+    releaseFirst();
+    await first;
+    expect(getActiveTaskExecutions()).toEqual([]);
+    expect([firstCounter.count, secondCounter.count]).toEqual([3, 5]);
+    expect(() => incrementCreatedTaskCount()).toThrow('require an active task execution');
   });
 
   describe('feature flags', () => {

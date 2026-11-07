@@ -15,6 +15,13 @@ import { kibanaPackageJson } from '@kbn/repo-info';
 import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
+import { coreMock, savedObjectsServiceMock } from '@kbn/core/server/mocks';
+import { executionContextServiceMock } from '@kbn/core-execution-context-server-mocks';
+import { setupSavedObjects } from '../saved_objects';
+import { TaskSchedulingDefinitions } from '../task_scheduling_definition_registry';
+import { EsApiKeyStrategy } from '../api_key_strategy';
+import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
+import { createInitialMiddleware } from '../lib/middleware';
 import { elasticsearchConfigFromEnv } from '../task_process/es_config';
 import { startTaskProcessCore } from '../task_process/core_process';
 import type { TaskProcessCore } from '../task_process/core_process';
@@ -94,6 +101,8 @@ describe('task scheduling of a task process', () => {
       } as never,
     });
 
+    const savedObjectsSetup = savedObjectsServiceMock.createSetupContract();
+    setupSavedObjects(savedObjectsSetup);
     core = await startTaskProcessCore({
       init: {
         kind: 'init',
@@ -110,7 +119,7 @@ describe('task scheduling of a task process', () => {
       module: defineTaskType({
         type: 'workflow:test',
         title: 'Task scheduling',
-        taskManager: { schedulableTypes: [/^workflow:/] },
+        savedObjectTypes: savedObjectsSetup.registerType.mock.calls.map(([type]) => type),
         encryptedSavedObjectTypes: TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS,
         createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
       }),
@@ -119,31 +128,58 @@ describe('task scheduling of a task process', () => {
     apiKeysCreated = [];
     const { host } = core;
     // The part of the security plugin that grants the key of a task: a real key, owned by Task Manager.
-    const security = {
-      authc: {
-        getCurrentUser: () => ({ username: 'elastic', authentication_type: 'api_key' }),
-        apiKeys: {
-          areAPIKeysEnabled: async () => true,
-          cloneAsInternalUser: async (_request: unknown, { name }: { name: string }) => {
-            const key = await es.security.createApiKey({ name, role_descriptors: {} });
-            apiKeysCreated.push(key.id);
-            return key;
-          },
-        },
-      },
-    };
+    const security = coreMock.createStart().security;
+    jest.spyOn(security.authc, 'getCurrentUser').mockReturnValue({
+      username: 'elastic',
+      roles: [],
+      enabled: true,
+      authentication_realm: { name: 'file', type: 'file' },
+      lookup_realm: { name: 'file', type: 'file' },
+      authentication_provider: { type: 'http', name: 'http' },
+      authentication_type: 'api_key',
+      elastic_cloud_user: false,
+      http_authentication_scheme: 'apikey',
+    });
+    jest.spyOn(security.authc.apiKeys, 'areAPIKeysEnabled').mockResolvedValue(true);
+    jest
+      .spyOn(security.authc.apiKeys, 'cloneAsInternalUser')
+      .mockImplementation(async (_request, { name }) => {
+        const key = await es.security.createApiKey({ name, role_descriptors: {} });
+        apiKeysCreated.push(key.id);
+        return key;
+      });
+    const definitions = new TaskSchedulingDefinitions();
+    definitions.registerTaskDefinitions({ 'workflow:run': {}, 'alerting:other': {} });
+    const executionContext = executionContextServiceMock.createStartContract();
+    executionContext.withContext.mockImplementation((_context, fn) => fn());
+    const encryptedSavedObjects = host.encryptedSavedObjects;
+    if (!encryptedSavedObjects)
+      throw new Error('The integration fixture requires native encryption');
     taskManager = createHostTaskScheduling({
-      repository: host.savedObjects.createInternalRepository(['task']),
-      esClient: host.elasticsearch.asInternalUser,
-      logger: core.logger,
+      store: {
+        savedObjectsRepository: host.savedObjects.createInternalRepository(['task']),
+        esClient: host.elasticsearch.asInternalUser,
+        logger: core.logger,
+        index: TASK_INDEX,
+        taskManagerId: 'kibana:test',
+        savedObjectsService: host.savedObjects,
+        serializer: host.savedObjects.createSerializer(),
+        definitions,
+        security,
+        getIsSecurityEnabled: () => true,
+        canEncryptSavedObjects: encryptedSavedObjects.canEncrypt,
+        apiKeyStrategy: new EsApiKeyStrategy(),
+        adHocTaskCounter: new AdHocTaskCounter(),
+        allowReadingInvalidState: false,
+        executionContext,
+      },
+      scheduling: { middleware: createInitialMiddleware() },
       allowedTypes: /^workflow:/,
-      credentials: {
-        savedObjects: host.savedObjects,
-        security: security as never,
-        apiKeyType: 'es' as never,
-        grantUiamApiKeys: false,
-        canEncrypt: host.encryptedSavedObjects!.canEncrypt,
-        encryptedSavedObjects: { getClient: host.encryptedSavedObjects!.getClient },
+      encryption: {
+        client: encryptedSavedObjects.getClient({
+          includedHiddenTypes: ['task', 'api_key_to_invalidate'],
+        }),
+        isEncryptionError: encryptedSavedObjects.isEncryptionError,
       },
     });
 

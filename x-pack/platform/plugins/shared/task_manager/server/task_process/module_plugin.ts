@@ -22,8 +22,23 @@ import {
   featureUsageSavedObjectType,
 } from '@kbn/licensing-plugin/server/services/feature_usage_store';
 import { setupSavedObjects as registerTaskManagerSavedObjects } from '../saved_objects';
+import { createApiKeyStrategy } from '../api_key_strategy';
+import { TASK_MANAGER_INDEX } from '../constants';
+import { createInitialMiddleware } from '../lib/middleware';
+import { TaskManagerClaimNudgeService } from '../claim_nudge/claim_nudge_service';
+import { TaskSchedulingDefinitions } from '../task_scheduling_definition_registry';
+import type {
+  TaskManagerTaskProcessSettings,
+  NativeTaskSchedulingSchemas,
+} from '../task_scheduling_snapshot';
+import {
+  TASK_SCHEDULING_CONTRIBUTIONS_KEY,
+  type TaskSchedulingContribution,
+} from '../task_scheduling_contribution';
+import { getActiveTaskExecutions, incrementCreatedTaskCount } from './run_context';
 import { toTaskDefinition } from '../task_type_module';
 import type { TaskHost } from '../task_type_module';
+import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '../task_encryption';
 import { createHostTaskScheduling } from './host_capabilities/task_scheduling';
 import {
   createStandaloneFeatureUsage,
@@ -102,13 +117,22 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       // The `task` type and its neighbours, which `host.taskManager` writes.
       if (module.taskManager) registerTaskManagerSavedObjects(core.savedObjects);
 
-      if (module.encryptedSavedObjectTypes?.length) {
-        if (!deps.encryptedSavedObjects) {
+      const encryptedTypes = new Map(
+        (module.encryptedSavedObjectTypes ?? []).map((registration) => [
+          registration.type,
+          registration,
+        ])
+      );
+      if (module.taskManager) {
+        for (const registration of TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS)
+          encryptedTypes.set(registration.type, registration);
+      }
+      if (encryptedTypes.size > 0) {
+        const encryptedSavedObjects = deps.encryptedSavedObjects;
+        if (!encryptedSavedObjects)
           throw new Error('The module declares encrypted saved objects but the process has no ESO');
-        }
-        module.encryptedSavedObjectTypes.forEach((registration) =>
-          deps.encryptedSavedObjects!.registerType(registration)
-        );
+        for (const registration of encryptedTypes.values())
+          encryptedSavedObjects.registerType(registration);
       }
       (module.uiSettings?.defaults ?? []).forEach((defaults) => core.uiSettings.register(defaults));
       (module.uiSettings?.globalDefaults ?? []).forEach((defaults) =>
@@ -210,37 +234,6 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         // Flushes what the adapter still buffers before the process exits.
         stops.push(stop);
       }
-      const taskManagerSettings = reviveSettingsByPlugin(init.settings).taskManager as
-        | { api_key_type?: string; grant_uiam_api_keys?: boolean }
-        | undefined;
-      if (module.taskManager) {
-        host.taskManager = createHostTaskScheduling({
-          repository: core.savedObjects.createInternalRepository(['task']),
-          esClient: core.elasticsearch.client.asInternalUser,
-          logger: initializerContext.logger.get('taskManager'),
-          // Tasks that carry the credentials of a request are written as Task Manager writes them.
-          credentials: taskManagerSettings
-            ? {
-                savedObjects: core.savedObjects,
-                security: core.security,
-                apiKeyType: taskManagerSettings.api_key_type as never,
-                grantUiamApiKeys: taskManagerSettings.grant_uiam_api_keys === true,
-                canEncrypt: encryption?.canEncrypt ?? false,
-                encryptedSavedObjects: deps.encryptedSavedObjects
-                  ? { getClient: deps.encryptedSavedObjects.getClient }
-                  : undefined,
-              }
-            : undefined,
-          allowedTypes: new RegExp(
-            (typeof module.taskManager === 'object' && module.taskManager.schedulableTypes
-              ? module.taskManager.schedulableTypes
-              : [/^actions:/]
-            )
-              .map(({ source }) => `(?:${source})`)
-              .join('|')
-          ),
-        });
-      }
       if (usageCounters) {
         host.usageCounters = usageCounters.start(core.savedObjects);
         // What the run counted is stored before the run answers, and once more on the way out.
@@ -285,6 +278,95 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         host.plugins = Object.fromEntries(
           module.taskPlugins.map(({ manifest }) => [manifest.id, deps[manifest.id]])
         );
+      }
+      if (module.taskManager) {
+        const settings = host.settings ?? {};
+        const taskManagerSettings = settings.taskManager as
+          | TaskManagerTaskProcessSettings
+          | undefined;
+        if (!taskManagerSettings?.scheduling)
+          throw new Error('Native task scheduling requires the dispatching Task Manager metadata');
+        const nativeSchemas: Record<string, NativeTaskSchedulingSchemas> = {};
+        for (const contribution of (context.contributions[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ??
+          []) as TaskSchedulingContribution[]) {
+          for (const [type, schemas] of Object.entries(contribution.createSchemas(settings))) {
+            if (nativeSchemas[type])
+              throw new Error(`Duplicate native scheduling schema provider for ${type}`);
+            nativeSchemas[type] = schemas;
+          }
+        }
+        for (const [type, definition] of context.definitions) {
+          nativeSchemas[type] = {
+            paramsSchema: definition.paramsSchema,
+            stateSchemaByVersion: definition.stateSchemaByVersion,
+          };
+        }
+        const definitions = new TaskSchedulingDefinitions(
+          taskManagerSettings.scheduling.definitions,
+          nativeSchemas
+        );
+        const allowedTypes = new RegExp(
+          (typeof module.taskManager === 'object' && module.taskManager.schedulableTypes
+            ? module.taskManager.schedulableTypes
+            : [/^actions:/]
+          )
+            .map(({ source }) => `(?:${source})`)
+            .join('|')
+        );
+        for (const type of definitions.getAllTypes()) {
+          if (allowedTypes.test(type)) definitions.ensureHas(type);
+        }
+        if (typeof taskManagerSettings.scheduling.securityEnabled !== 'boolean')
+          throw new Error('Native task scheduling requires the dispatching security license state');
+        const nudge = taskManagerSettings.scheduling.claimNudge
+          ? new TaskManagerClaimNudgeService({
+              logger,
+              esClient: core.elasticsearch.client.asInternalUser,
+              index: taskManagerSettings.scheduling.claimNudge.index,
+              isServerless: host.server.isServerless,
+            })
+          : undefined;
+        if (nudge) stops.push(async () => nudge.stop());
+        const encryptedSavedObjects = deps.encryptedSavedObjects;
+        host.taskManager = createHostTaskScheduling({
+          onRunEnd: (flusher) => context.flushers.push(flusher),
+          store: {
+            esClient: core.elasticsearch.client.asInternalUser,
+            index: TASK_MANAGER_INDEX,
+            taskManagerId: taskManagerSettings.scheduling.taskManagerId,
+            definitions,
+            savedObjectsRepository: core.savedObjects.createInternalRepository(['task']),
+            savedObjectsService: core.savedObjects,
+            serializer: core.savedObjects.createSerializer(),
+            adHocTaskCounter: { increment: incrementCreatedTaskCount },
+            allowReadingInvalidState: taskManagerSettings.scheduling.allowReadingInvalidState,
+            logger,
+            security: core.security,
+            canEncryptSavedObjects: encryption?.canEncrypt === true,
+            getIsSecurityEnabled: () => taskManagerSettings.scheduling.securityEnabled,
+            executionContext: core.executionContext,
+            apiKeyStrategy: createApiKeyStrategy(
+              taskManagerSettings.api_key_type,
+              taskManagerSettings.grant_uiam_api_keys,
+              core.security,
+              logger
+            ),
+          },
+          scheduling: {
+            middleware: createInitialMiddleware(),
+            taskPollingLifecycle: { getCurrentTasksInPool: getActiveTaskExecutions },
+            claimNudgeService: nudge,
+          },
+          encryption: encryptedSavedObjects
+            ? {
+                client: encryptedSavedObjects.getClient({
+                  includedHiddenTypes: ['task', 'api_key_to_invalidate'],
+                }),
+                isEncryptionError: encryptedSavedObjects.isEncryptionError,
+              }
+            : undefined,
+          allowedTypes,
+        });
       }
       resolveHost(host);
     },

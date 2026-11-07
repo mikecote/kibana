@@ -311,6 +311,7 @@ export function createRuleTaskType(
 
   const taskType = defineTaskType({
     type: `alerting:${id}`,
+    cancelGracePeriodMs: 5000,
     ...(kibanaRuleType
       ? {
           title: kibanaRuleType.name,
