@@ -42,6 +42,10 @@ import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import type { TaskProcessAddress } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import type { TaskProcessInit } from '@kbn/task-manager-plugin/server/task_process/wire';
+import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
+import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { reviveTaskInstance } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
@@ -106,6 +110,9 @@ export interface RuleModuleUnderTest {
 }
 
 export interface RuleProcessHarnessOptions {
+  mode?: 'child_process' | 'remote';
+  reuse?: boolean;
+  instrumentation?: TaskProcessInit['instrumentation'];
   /** The rule types to serve. Their bundles are built in parallel, once. */
   rules: RuleModuleUnderTest[];
   /**
@@ -199,6 +206,8 @@ export class RuleProcessHarness {
   /** Connector types Kibana registered that the bundles lack: set by a test to see the run declined. */
   public unregisteredConnectorTypes: string[] = [];
 
+  private worker?: ReturnType<typeof startTaskProcessWorker>;
+  private remoteAddress?: TaskProcessAddress;
   private readonly schedulingDefinitions = new TaskSchedulingDefinitions();
   private options!: RuleProcessHarnessOptions;
   private seederClient!: ReturnType<
@@ -264,6 +273,7 @@ export class RuleProcessHarness {
   /** The `init` message of a process: what Kibana sends it. */
   public getInit() {
     return {
+      instrumentation: this.options.instrumentation,
       server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false },
       encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
       settings: Object.fromEntries(
@@ -431,20 +441,55 @@ export class RuleProcessHarness {
         ),
       })
     );
-    this.supervisor = new TaskProcessSupervisor({
-      settings: {
-        bundle_dir: bundleDir,
-        kibanaVersion: KIBANA_VERSION,
-        getElasticsearchConfig: () => this.esConfig(),
-        getInitFor: () => this.getInit(),
-      },
-      logger: loggingSystemMock.createLogger(),
-    });
-    this.supervisor.start();
+    const processSettings = {
+      bundle_dir: bundleDir,
+      kibanaVersion: KIBANA_VERSION,
+      ...(options.reuse
+        ? {
+            reuse: {
+              maxRuns: 100,
+              maxAgeMs: 300000,
+              idleTimeoutMs: 30000,
+              maxIdleProcesses: 4,
+            },
+          }
+        : {}),
+    };
+    const logger = loggingSystemMock.createLogger();
+    if (options.mode === 'remote') {
+      const token = 'rule-process-harness';
+      const worker = startTaskProcessWorker({
+        settings: processSettings,
+        logger,
+        authToken: token,
+        port: 0,
+        host: '127.0.0.1',
+      });
+      this.worker = worker;
+      await new Promise<void>((resolve, reject) => {
+        worker.server.once('error', reject);
+        worker.server.once('listening', resolve);
+      });
+      const address = worker.server.address();
+      if (!address || typeof address === 'string') throw new Error('Rule worker has no address');
+      this.remoteAddress = { url: `http://127.0.0.1:${address.port}`, token };
+      this.supervisor = worker.supervisor;
+    } else {
+      this.supervisor = new TaskProcessSupervisor({
+        settings: {
+          ...processSettings,
+          getElasticsearchConfig: () => this.esConfig(),
+          getInitFor: () => this.getInit(),
+        },
+        logger,
+      });
+      this.supervisor.start();
+    }
   }
 
   public async stop() {
-    await this.supervisor?.stop();
+    if (this.worker) await this.worker.stop();
+    else await this.supervisor?.stop();
     await this.seeder?.stop();
     await this.esServer?.stop();
   }
@@ -720,19 +765,33 @@ export class RuleProcessHarness {
     const onDispatchFailure = options.onDispatchFailure ?? jest.fn();
     const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
     if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
-    const route = this.supervisor.getRoute(taskType)! as Extract<
-      ReturnType<TaskProcessSupervisor['getRoute']>,
-      { acquire: unknown }
-    >;
-    let lease: { url: string } | undefined;
+    const route = this.remoteAddress ?? this.supervisor.getRoute(taskType);
+    if (!route) throw new Error(`${NOT_ROUTED}: ${taskType}`);
+    let lease: TaskProcessAddress | undefined = this.remoteAddress;
     const runner = new RemoteTaskRunner({
-      route: {
-        acquire: async (context) => {
-          lease = await route.acquire(context);
-          return lease as never;
-        },
-      },
+      route:
+        'acquire' in route
+          ? {
+              acquire: async (context) => {
+                const acquired = await route.acquire(context);
+                lease = acquired;
+                return acquired;
+              },
+            }
+          : route,
       request: {
+        ...(this.remoteAddress
+          ? {
+              snapshot: {
+                protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+                init: {
+                  ...this.getInit(),
+                  kibanaVersion: KIBANA_VERSION,
+                  elasticsearch: this.esConfig(),
+                },
+              },
+            }
+          : {}),
         taskType,
         taskInstance: this.taskInstanceOf(ruleId, ruleTypeId, options.state) as never,
         executionUuid: `${ruleId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

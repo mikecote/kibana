@@ -94,8 +94,8 @@ xpack.task_manager.task_execution:
   secret (the Elasticsearch credentials, the encryption keys, the security settings) goes over the
   fork channel (IPC), which no other process can read. Over HTTP go only the run request (the task,
   and the fake request credentials of this run) and the bearer token the supervisor generated at
-  startup and sent over IPC; `/run` and `/cancel` refuse any other caller, and `/health` is the only
-  open route. A remote process, which has to be reachable, listens on `HOST` (default: all addresses).
+  startup and sent over IPC. Versioned business routes require that token; health probes stay open.
+  A remote supervisor listens on `HOST` (default: `127.0.0.1`).
 - **It ends with Kibana.** A process exits when the fork channel disconnects (Kibana was killed) and,
   as a backstop, when its parent pid changes, closing Core first (bounded to 5 s). No orphans remain
   after a `SIGKILL` of Kibana.
@@ -505,8 +505,12 @@ reschedule, the task state, the retries). What differs, and why:
   is retained. Unavailable source files remain unavailable in the worker. `native_task_tracing_tls_process`
   verifies actual APM HTTPS and OTel mutual-TLS exports after Main's file paths have been deleted, including
   precedence changes and retained-worker replacement in both process modes.
-- **Instrumentation work remaining.** Real rule and connector counter export proofs and aggregation for
-  Main's Prometheus endpoint still need completion.
+- **Native counters.** The rule metrics cases in `es_query_task_process` and
+  `native_connector_metrics_process` verify real OTLP exports from native rule execution and webhook
+  connectors across fresh and reused child and remote workers. Each execution is counted once with delta
+  temporality and native credential or connector labels. Reused workers retain their metric identity;
+  fresh workers have distinct identities. Exports are flushed before the run answers.
+- **Instrumentation work remaining.** Aggregation for Main's Prometheus endpoint still needs completion.
 - **Execution limits.** A rule that uses a connector type or adapter the process does not know, or a workflow
   rule whose executions are stored where the process cannot store them, fails explicitly. Fresh workers
   pay for the encryption service, license and alerts resource checks at startup. Reused workers retain

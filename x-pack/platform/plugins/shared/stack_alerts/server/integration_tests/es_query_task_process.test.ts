@@ -10,6 +10,8 @@
  * 2.0.
  */
 
+import { createNativeMetricsCollector } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_collector';
+import { createNativeMetricsInstrumentation } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_instrumentation';
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import {
   DYNAMIC_CONNECTOR,
@@ -170,5 +172,72 @@ describe('the .es-query rule type served from a bundle', () => {
     );
     expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.getAlertDocs(ALERTS_INDEX, UNKNOWN_RULE_ID)).toHaveLength(0);
+  });
+});
+
+describe.each([
+  { mode: 'child_process', reuse: false },
+  { mode: 'child_process', reuse: true },
+  { mode: 'remote', reuse: false },
+  { mode: 'remote', reuse: true },
+] as const)('native rule metrics in $mode (reuse: $reuse)', ({ mode, reuse }) => {
+  let harness: RuleProcessHarness;
+  let collector: Awaited<ReturnType<typeof createNativeMetricsCollector>>;
+  beforeAll(async () => {
+    collector = await createNativeMetricsCollector();
+    harness = await startRuleProcessHarness({
+      mode,
+      reuse,
+      instrumentation: createNativeMetricsInstrumentation(collector.url),
+      rules: [{ taskType, bundle: 'stackAlerts__es_query' }],
+    });
+    await harness.createRule({
+      id: 'native-metrics-rule',
+      ruleTypeId: RULE_TYPE,
+      params: ruleParams,
+      actions: [],
+    });
+    await harness.es.index({
+      index: SOURCE_INDEX,
+      document: { '@timestamp': new Date().toISOString() },
+      refresh: 'wait_for',
+    });
+  });
+  afterAll(async () => {
+    try {
+      await harness?.stop();
+    } finally {
+      await collector?.stop();
+    }
+  });
+  it('flushes each native rule counter exactly once with delta temporality and worker identity', async () => {
+    for (const expected of [1, 2]) {
+      const { result, onDispatchFailure } = await harness.run('native-metrics-rule', RULE_TYPE);
+      expect(result).toEqual(
+        expect.objectContaining({ state: expect.any(Object), schedule: { interval: '1m' } })
+      );
+      expect(onDispatchFailure).not.toHaveBeenCalled();
+      const samples = collector.samples.filter(
+        ({ name }) => name === 'kibana.alerting.rule_run.count'
+      );
+      expect(samples.reduce((total, { value }) => total + value, 0)).toBe(expected);
+      expect(samples.every(({ temporality }) => temporality === 1)).toBe(true);
+      for (const sample of samples) {
+        expect(sample.attributes).toEqual(
+          expect.arrayContaining([
+            { key: 'credential.type', value: { stringValue: 'es_api_key' } },
+            { key: 'credential.reason', value: { stringValue: 'config' } },
+          ])
+        );
+      }
+      expect(collector.errors).toEqual([]);
+    }
+    const instances = new Set(
+      collector.samples
+        .filter(({ name, value }) => name === 'kibana.alerting.rule_run.count' && value > 0)
+        .map(({ instanceId }) => instanceId)
+    );
+    expect(instances.size).toBe(reuse ? 1 : 2);
+    expect(harness.supervisor.getStats().spawned).toBe(reuse ? 1 : 2);
   });
 });

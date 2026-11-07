@@ -33,6 +33,7 @@ export const startTaskProcessWorker = ({
   host,
 }: TaskProcessWorkerOptions): {
   server: Server;
+  supervisor: TaskProcessSupervisor;
   getStats: () => TaskProcessSupervisorStats;
   stop: () => Promise<void>;
 } => {
@@ -79,6 +80,7 @@ export const startTaskProcessWorker = ({
   });
   return {
     server,
+    supervisor,
     getStats: () => supervisor.getStats(),
     stop: async () => {
       server.close();
