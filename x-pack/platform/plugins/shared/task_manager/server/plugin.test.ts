@@ -6,6 +6,8 @@
  */
 
 import { TaskManagerPlugin } from './plugin';
+import type { TaskManagerSetupContract } from './plugin';
+import { createInitialMiddleware } from './lib/middleware';
 import { KibanaDiscoveryService } from './kibana_discovery_service';
 
 import { coreMock } from '@kbn/core/server/mocks';
@@ -446,7 +448,8 @@ describe('TaskManagerPlugin', () => {
       settings: TaskTypeRegistrationOptions['settings'] = {
         connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }),
       },
-      moduleOptions: Pick<TaskTypeModule, 'taskManager'> = {}
+      moduleOptions: Pick<TaskTypeModule, 'taskManager'> = {},
+      configure?: (setup: TaskManagerSetupContract) => void
     ) => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
@@ -484,6 +487,7 @@ describe('TaskManagerPlugin', () => {
           parity: { connectorTypes: () => connectorTypes },
         }
       );
+      configure?.(setup);
       plugin.start(coreStart, {
         cloud: cloudMock.createStart(),
         licensing: licensingMock.createStart(),
@@ -516,6 +520,51 @@ describe('TaskManagerPlugin', () => {
         },
       };
     };
+
+    test('captures native middleware ids in Main registration order', async () => {
+      const { getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true },
+        (setup) => {
+          setup.registerTaskProcessEncryptionKeys(() => ({ decryptionOnlyKeys: [] }));
+          setup.addMiddleware(createInitialMiddleware(), { id: 'first' });
+          setup.addMiddleware(createInitialMiddleware(), { id: 'second' });
+        }
+      );
+      expect(
+        (await getInitFor('test:module')).settings.taskManager.scheduling.middlewareIds
+      ).toEqual(['first', 'second']);
+    });
+
+    test('refuses process scheduling with middleware that has no native registration id', async () => {
+      const { getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true },
+        (setup) => {
+          setup.registerTaskProcessEncryptionKeys(() => ({ decryptionOnlyKeys: [] }));
+          setup.addMiddleware(createInitialMiddleware());
+        }
+      );
+      await expect(getInitFor('test:module')).rejects.toThrow(
+        'middleware must declare native contribution ids'
+      );
+    });
+
+    test('rejects duplicate and empty middleware ids during setup', () => {
+      expect(() =>
+        setupWithModule(uiSettingsStart({}, {}), {}, {}, (setup) => {
+          setup.addMiddleware(createInitialMiddleware(), { id: 'same' });
+          setup.addMiddleware(createInitialMiddleware(), { id: 'same' });
+        })
+      ).toThrow('already registered');
+      expect(() =>
+        setupWithModule(uiSettingsStart({}, {}), {}, {}, (setup) => {
+          setup.addMiddleware(createInitialMiddleware(), { id: ' ' });
+        })
+      ).toThrow('nonempty id');
+    });
 
     test('requires the owning encryption provider and captures rotated keys on every dispatch', async () => {
       const { setup, getInitFor } = setupWithModule(

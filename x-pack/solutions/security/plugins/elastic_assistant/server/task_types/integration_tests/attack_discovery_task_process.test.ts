@@ -108,6 +108,7 @@ describe('the attack discovery rule type served from a bundle', () => {
       scheduling: {
         taskManagerId: `kibana:${KIBANA_UUID}`,
         securityEnabled: true,
+        middlewareIds: [],
         allowReadingInvalidState: false,
         definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
       },

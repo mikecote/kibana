@@ -96,6 +96,7 @@ describe('security_solution workflow steps served from the workflow:scheduled bu
       scheduling: {
         taskManagerId: `kibana:${KIBANA_UUID}`,
         securityEnabled: true,
+        middlewareIds: [],
         allowReadingInvalidState: false,
         definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
       },

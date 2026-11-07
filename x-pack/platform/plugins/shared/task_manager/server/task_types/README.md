@@ -571,7 +571,11 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   best effort when a worker crashes before its next sample. Force checks read the dispatching node's
   actual current execution pool through the authenticated run-control channel, including through a
   remote supervisor. Completed reads are never reused; unavailable metadata fails the operation
-  before a write. Native middleware contributions remain required for complete scheduling parity.
+  before a write. Middleware registrations carry stable IDs in their original registration order.
+  Owning plugins contribute the same native factories under `task-scheduling`; missing, duplicate or
+  anonymous registrations fail before process execution. Workers instantiate only the active factories.
+  The performance fixture persists its scheduling timestamp so Main can measure elapsed time when a
+  worker created the task, without relying on another process's in-memory performance marks.
 - **Parking.** A wait over five seconds, a wait for input or approval and a sync child workflow park the
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** The engine registers its shared definitions with native Core using the current

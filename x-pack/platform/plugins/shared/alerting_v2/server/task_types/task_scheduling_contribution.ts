@@ -10,7 +10,7 @@ import type { TaskSchedulingContribution } from '@kbn/task-manager-plugin/server
 import { RULE_EXECUTOR_TASK_METADATA } from '../lib/rule_executor/task_metadata';
 import { ALERTING_V2_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 
-export const contribution: TaskSchedulingContribution = {
+export const contribution = {
   createSchemas: (settings): Readonly<Record<string, NativeTaskSchedulingSchemas>> => {
     if (!settings[ALERTING_V2_TASK_PROCESS_SETTINGS_ID]) return {};
     return {
@@ -19,4 +19,4 @@ export const contribution: TaskSchedulingContribution = {
       },
     };
   },
-};
+} satisfies TaskSchedulingContribution;

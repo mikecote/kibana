@@ -218,6 +218,7 @@ export class RuleProcessHarness {
           taskManagerId: `kibana:${KIBANA_UUID}`,
           securityEnabled:
             this.license?.isAvailable === true && this.license.getFeature('security').isEnabled,
+          middlewareIds: [],
           allowReadingInvalidState: false,
           definitions: createTaskSchedulingSnapshot(this.schedulingDefinitions),
         },

@@ -24,7 +24,7 @@ import {
 import { setupSavedObjects as registerTaskManagerSavedObjects } from '../saved_objects';
 import { createApiKeyStrategy } from '../api_key_strategy';
 import { TASK_MANAGER_INDEX } from '../constants';
-import { createInitialMiddleware } from '../lib/middleware';
+import { createTaskSchedulingMiddleware } from '../task_scheduling_middleware';
 import { TaskManagerClaimNudgeService } from '../claim_nudge/claim_nudge_service';
 import { TaskSchedulingDefinitions } from '../task_scheduling_definition_registry';
 import type {
@@ -287,9 +287,12 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         if (!taskManagerSettings?.scheduling)
           throw new Error('Native task scheduling requires the dispatching Task Manager metadata');
         const nativeSchemas: Record<string, NativeTaskSchedulingSchemas> = {};
-        for (const contribution of (context.contributions[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ??
-          []) as TaskSchedulingContribution[]) {
-          for (const [type, schemas] of Object.entries(contribution.createSchemas(settings))) {
+        const schedulingContributions = (context.contributions[TASK_SCHEDULING_CONTRIBUTIONS_KEY] ??
+          []) as TaskSchedulingContribution[];
+        for (const contribution of schedulingContributions) {
+          for (const [type, schemas] of Object.entries(
+            contribution.createSchemas?.(settings) ?? {}
+          )) {
             if (nativeSchemas[type])
               throw new Error(`Duplicate native scheduling schema provider for ${type}`);
             nativeSchemas[type] = schemas;
@@ -353,7 +356,11 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
             ),
           },
           scheduling: {
-            middleware: createInitialMiddleware(),
+            middleware: createTaskSchedulingMiddleware(
+              taskManagerSettings.scheduling.middlewareIds,
+              schedulingContributions,
+              settings
+            ),
             taskPollingLifecycle: { getCurrentTasksInPool: requestDispatchTaskPool },
             claimNudgeService: nudge,
           },

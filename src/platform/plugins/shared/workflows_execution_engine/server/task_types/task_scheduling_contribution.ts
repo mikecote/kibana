@@ -13,7 +13,7 @@ import { WORKFLOWS_ENGINE_SETTINGS_ID } from './constants';
 import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
 import { WORKFLOW_RESUME_TASK_TYPE } from '../workflow_task_manager/types';
 
-export const contribution: TaskSchedulingContribution = {
+export const contribution = {
   createSchemas: (settings): Readonly<Record<string, NativeTaskSchedulingSchemas>> => {
     if (!settings[WORKFLOWS_ENGINE_SETTINGS_ID]) return {};
     return {
@@ -22,4 +22,4 @@ export const contribution: TaskSchedulingContribution = {
       },
     };
   },
-};
+} satisfies TaskSchedulingContribution;

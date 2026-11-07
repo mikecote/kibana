@@ -108,7 +108,7 @@ export interface TaskManagerSetupContract {
    * @deprecated
    */
   index: string;
-  addMiddleware: (middleware: Middleware) => void;
+  addMiddleware: (middleware: Middleware, options?: { id: string }) => void;
   /**
    * Method for allowing consumers to register task definitions into the system.
    * @param taskDefinitions - The Kibana task definitions dictionary
@@ -202,6 +202,8 @@ export class TaskManagerPlugin
   private shouldRunBackgroundTasks: boolean;
   private readonly kibanaVersion: PluginInitializerContext['env']['packageInfo']['version'];
   private adHocTaskCounter: AdHocTaskCounter;
+  private readonly schedulingMiddlewareIds: string[] = [];
+  private anonymousSchedulingMiddlewareCount = 0;
   private taskManagerMetricsCollector?: TaskManagerMetricsCollector;
   private nodeRoles: PluginInitializerContext['node']['roles'];
   private kibanaDiscoveryService?: KibanaDiscoveryService;
@@ -438,6 +440,10 @@ export class TaskManagerPlugin
         }));
       }
       if (module.taskManager) {
+        if (this.anonymousSchedulingMiddlewareCount > 0)
+          throw new Error(
+            'Task scheduling middleware must declare native contribution ids before process execution'
+          );
         if (!this.getTaskProcessEncryptionKeys)
           throw new Error('Native Task Manager encryption settings have not been registered');
         init.encryptedSavedObjects = this.getTaskProcessEncryptionKeys();
@@ -460,6 +466,7 @@ export class TaskManagerPlugin
           scheduling: {
             taskManagerId: taskStore.taskManagerId,
             securityEnabled: this.licenseSubscriber?.getIsSecurityEnabled() === true,
+            middlewareIds: [...this.schedulingMiddlewareIds],
             allowReadingInvalidState: this.config.allow_reading_invalid_state,
             definitions: createTaskSchedulingSnapshot(this.definitions),
             claimNudge: this.claimNudgeService
@@ -658,7 +665,16 @@ export class TaskManagerPlugin
 
     return {
       index: TASK_MANAGER_INDEX,
-      addMiddleware: (middleware: Middleware) => {
+      addMiddleware: (middleware: Middleware, options?: { id: string }) => {
+        if (options) {
+          if (!options.id.trim())
+            throw new Error('Task scheduling middleware requires a nonempty id');
+          if (this.schedulingMiddlewareIds.includes(options.id))
+            throw new Error(`Task scheduling middleware ${options.id} is already registered`);
+          this.schedulingMiddlewareIds.push(options.id);
+        } else {
+          this.anonymousSchedulingMiddlewareCount++;
+        }
         this.middleware = addMiddlewareToChain(this.middleware, middleware);
       },
       registerTaskDefinitions: (taskDefinition: TaskDefinitionRegistry) => {

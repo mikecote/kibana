@@ -30,6 +30,7 @@ export interface TaskManagerTaskProcessSettings {
   scheduling: {
     taskManagerId: string;
     securityEnabled: boolean;
+    middlewareIds: string[];
     allowReadingInvalidState: boolean;
     definitions: TaskSchedulingDefinitionSnapshot[];
     claimNudge?: { index: string };

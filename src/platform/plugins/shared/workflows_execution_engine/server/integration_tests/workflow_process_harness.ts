@@ -51,7 +51,7 @@ import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/serv
 import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
 import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import type { TaskManagerTaskProcessSettings } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
-import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import { registerUsageCountersSavedObjectTypes } from '@kbn/usage-collection-plugin/server/usage_counters/saved_objects';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import { WORKFLOW_INDEX_NAME } from '@kbn/workflows/server/constants';
@@ -80,25 +80,49 @@ const ENCRYPTION_KEY = 'a'.repeat(32);
 const TASK_TYPE = 'workflow:scheduled';
 const BUNDLE_NAME = 'workflowsExecutionEngine__workflow_scheduled';
 
+interface ExecutionTaskFixture {
+  taskType: TaskTypeModule;
+  file: string;
+  name: string;
+}
+
 const bundleBuilds = new Map<string, Promise<string>>();
 const getWorkflowBundles = (
   includeRunTask: boolean,
   additionalContributions: Record<string, string[]> = {},
-  includeResumeTask: boolean = false
+  includeResumeTask: boolean = false,
+  executionTask?: ExecutionTaskFixture
 ): Promise<string> => {
-  const key = JSON.stringify({ includeRunTask, includeResumeTask, additionalContributions });
+  const key = JSON.stringify({
+    includeRunTask,
+    includeResumeTask,
+    additionalContributions,
+    executionTask: executionTask && {
+      file: executionTask.file,
+      name: executionTask.name,
+      type: executionTask.taskType.type,
+    },
+  });
   const existing = bundleBuilds.get(key);
   if (existing) return existing;
   const build = async () => {
     const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
     const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
     if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
-    const entries = getTaskBundleEntries().filter(
-      ({ name }: { name: string }) =>
-        name === BUNDLE_NAME ||
-        (includeRunTask && name === 'workflowsExecutionEngine__workflow_run') ||
-        (includeResumeTask && name === 'workflowsExecutionEngine__workflow_resume')
-    );
+    const entries = executionTask
+      ? [
+          {
+            file: executionTask.file,
+            name: executionTask.name,
+            pluginId: 'workflowsExecutionEngine',
+          },
+        ]
+      : getTaskBundleEntries().filter(
+          ({ name }: { name: string }) =>
+            name === BUNDLE_NAME ||
+            (includeRunTask && name === 'workflowsExecutionEngine__workflow_run') ||
+            (includeResumeTask && name === 'workflowsExecutionEngine__workflow_resume')
+        );
     const built: Array<{ name: string }> = [];
     for (const entry of entries) {
       if (prebuiltDir) {
@@ -119,7 +143,9 @@ const getWorkflowBundles = (
             {
               file: `${name}.mjs`,
               taskType:
-                name === BUNDLE_NAME
+                name === executionTask?.name
+                  ? executionTask.taskType.type
+                  : name === BUNDLE_NAME
                   ? TASK_TYPE
                   : name.endsWith('__workflow_resume')
                   ? 'workflow:resume'
@@ -158,6 +184,8 @@ export interface WorkflowProcessHarnessOptions {
   includeRunTask?: boolean;
   includeResumeTask?: boolean;
   claimNudge?: boolean;
+  executionTask?: ExecutionTaskFixture;
+  middlewareIds?: string[];
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   additionalContributions?: Record<string, string[]>;
   featureFlags?: Record<string, boolean | string | number>;
@@ -196,18 +224,30 @@ export interface WorkflowProcessHarnessOptions {
 
 const createTaskManagerSettings = (
   definitions: TaskSchedulingDefinitions,
-  claimNudge: boolean
+  claimNudge: boolean,
+  middlewareIds: string[] = []
 ): TaskManagerTaskProcessSettings => ({
   api_key_type: ApiKeyType.ES,
   grant_uiam_api_keys: false,
   scheduling: {
     taskManagerId: `kibana:${KIBANA_UUID}`,
     securityEnabled: true,
+    middlewareIds: [...middlewareIds],
     allowReadingInvalidState: false,
     definitions: createTaskSchedulingSnapshot(definitions),
     ...(claimNudge ? { claimNudge: { index: TASK_MANAGER_CLAIM_NUDGE_INDEX } } : {}),
   },
 });
+
+const createFixtureSchedulingDefinitions = (
+  executionTask?: ExecutionTaskFixture
+): TaskSchedulingDefinitions => {
+  const definitions = new TaskSchedulingDefinitions();
+  definitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
+  if (executionTask)
+    definitions.registerTaskDefinitions({ [executionTask.taskType.type]: executionTask.taskType });
+  return definitions;
+};
 
 const createSeedContributions = (
   contributions: WorkflowProcessHarnessOptions['seedContributions'] = {}
@@ -255,8 +295,7 @@ const startHarness = async (
   cleanups.push(() => new Promise((resolve) => kibanaStub.close(resolve)));
   const kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
 
-  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
-  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
+  const taskSchedulingDefinitions = createFixtureSchedulingDefinitions(options.executionTask);
   const licenseExpiryDate = Date.now() + 86400000;
   const settings = () => ({
     evalsTaskProviders: { names: ['inference', 'agentBuilder.converse'] },
@@ -272,7 +311,11 @@ const startHarness = async (
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
     alerting: alertingConfigSchema.validate({}),
     ruleRegistry: ruleRegistryConfig.schema.validate({}),
-    taskManager: createTaskManagerSettings(taskSchedulingDefinitions, options.claimNudge === true),
+    taskManager: createTaskManagerSettings(
+      taskSchedulingDefinitions,
+      options.claimNudge === true,
+      options.middlewareIds
+    ),
     workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     security: getSecurityTaskProcessSettings({
@@ -480,7 +523,7 @@ const startHarness = async (
         authToken: '',
         ...initFor(),
       },
-      module: scheduledTaskType,
+      module: options.executionTask?.taskType ?? scheduledTaskType,
       contributions: createSeedContributions(options.seedContributions),
     });
     try {
@@ -491,9 +534,10 @@ const startHarness = async (
   }
 
   const bundleDir = await getWorkflowBundles(
-    options.includeRunTask ?? false,
+    options.includeRunTask === true,
     options.additionalContributions,
-    options.includeResumeTask ?? false
+    options.includeResumeTask === true,
+    options.executionTask
   );
   const workerSettings = {
     bundle_dir: bundleDir,

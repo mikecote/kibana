@@ -148,6 +148,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       scheduling: {
         taskManagerId: `kibana:${KIBANA_UUID}`,
         securityEnabled: true,
+        middlewareIds: [],
         allowReadingInvalidState: false,
         definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
       },

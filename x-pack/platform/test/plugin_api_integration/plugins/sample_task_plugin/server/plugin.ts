@@ -24,6 +24,10 @@ import {
   TaskPriority,
 } from '@kbn/task-manager-plugin/server/task';
 import { kibanaRequestFactory } from '@kbn/core-http-server-utils';
+import {
+  createSampleTaskMiddleware,
+  SAMPLE_TASK_MIDDLEWARE_ID,
+} from './task_scheduling_middleware';
 import { initRoutes } from './init_routes';
 
 // this plugin's dependendencies
@@ -725,39 +729,7 @@ export class SampleTaskManagerFixturePlugin
       },
     });
 
-    taskManager.addMiddleware({
-      async beforeSave({ taskInstance, ...opts }) {
-        const modifiedInstance = {
-          ...taskInstance,
-          params: {
-            originalParams: taskInstance.params,
-            superFly: 'My middleware param!',
-          },
-        };
-
-        return {
-          ...opts,
-          taskInstance: modifiedInstance,
-        };
-      },
-
-      async beforeRun({ taskInstance, ...opts }) {
-        return {
-          ...opts,
-          taskInstance: {
-            ...taskInstance,
-            params: taskInstance.params.originalParams,
-          },
-        };
-      },
-
-      async beforeMarkRunning(context) {
-        if (context.taskInstance?.params?.originalParams?.throwOnMarkAsRunning) {
-          throw new Error(`Sample task ${context.taskInstance.id} threw on MarkAsRunning`);
-        }
-        return context;
-      },
-    });
+    taskManager.addMiddleware(createSampleTaskMiddleware(), { id: SAMPLE_TASK_MIDDLEWARE_ID });
     initRoutes(
       core.http.createRouter(),
       this.taskManagerStart,
