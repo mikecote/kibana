@@ -5,8 +5,6 @@
  * 2.0.
  */
 
-import { OBSERVABILITY_NIGHTSHIFT_CONTINUOUS_ONBOARDING_ENABLED } from '@kbn/management-settings-ids';
-import type { NightshiftSource } from '@kbn/nightshift-shared';
 import type {
   CoreSetup,
   CoreStart,
@@ -18,7 +16,6 @@ import type {
 import { SavedObjectsClient } from '@kbn/core/server';
 import { registerRoutes } from '@kbn/server-route-repository';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
-import type { AlertEventsClientApi } from '@kbn/alerting-v2-plugin/server';
 import {
   catchError,
   combineLatest,
@@ -32,15 +29,10 @@ import {
   timer,
 } from 'rxjs';
 import type { Subscription } from 'rxjs';
-import { PROJECT_ROUTING_ALL } from '@kbn/cps-server-utils';
 import { NIGHTSHIFT_ENABLED_FLAG } from '@kbn/nightshift-shared';
 import { SIGNIFICANT_EVENTS_SOURCE_RECONCILIATION_WORKFLOW_ID } from '@kbn/workflows/managed';
 import { GLOBAL_WORKFLOW_SPACE_ID } from '@kbn/workflows/server';
-import {
-  createSourceKnowledgeStateClient,
-  sourceKnowledgeStateSavedObjectType,
-  SOURCE_KNOWLEDGE_STATE_TYPE,
-} from './lib/knowledge_indicators/source_knowledge_state';
+import { sourceKnowledgeStateSavedObjectType } from './lib/knowledge_indicators/source_knowledge_state';
 import {
   getRelayAppConnectionSavedObjectType,
   RELAY_APP_CONNECTION_SO_TYPE,
@@ -63,18 +55,11 @@ import {
   type ManagedWorkflowsInstaller,
 } from './lib/workflows/setup/managed_workflows_installer';
 import { registerFeatureFlags } from './feature_flags';
-import { getSignificantEventsTuningConfig } from './lib/significant_events/helpers/get_significant_events_tuning_config';
-
-import { createSignificantEventsAlertingContextResolver } from './lib/significant_events/alerting/significant_events_alerting_context';
-import type { SignificantEventsAlertingContext } from './lib/significant_events/alerting/significant_events_alerting_context';
+import { createSignificantEventsScopedClients } from './run_services/create_scoped_clients';
 
 import { EbtTelemetryService } from './lib/telemetry/ebt';
 import { significantEventsRouteRepository } from './routes';
-import type {
-  GetScopedClients,
-  IScheduleSourceOnboardingOptions,
-  RouteHandlerScopedClients,
-} from './routes/types';
+import type { GetScopedClients } from './routes/types';
 import { createPriceService } from './lib/cost/price_service';
 import type {
   SignificantEventsPluginSetupDependencies,
@@ -82,14 +67,10 @@ import type {
   SignificantEventsServer,
 } from './types';
 import {
-  type KnowledgeIndicatorClient,
   KnowledgeIndicatorService,
   knowledgeIndicatorsDataStream,
 } from './lib/knowledge_indicators';
-import {
-  createSignificantEventsClients,
-  createSignificantEventsServices,
-} from './lib/significant_events/significant_events_clients';
+import { createSignificantEventsServices } from './lib/significant_events/significant_events_clients';
 import { detectionsDataStream } from './lib/significant_events/detections';
 import { deleteLegacyEventsDataStream } from './lib/significant_events/events';
 import { registerStreamsAgentBuilder } from './agent_builder/register';
@@ -111,7 +92,6 @@ import {
 import { createWorkflowClients } from './lib/workflows/create_workflow_clients';
 import { removeLegacyDefaultSpaceWorkflows } from './lib/workflows/setup/remove_legacy_default_space_workflows';
 import { registerSignificantEventsWorkflowSteps } from './workflows/register_significant_events_workflow_steps';
-import { createTriggerEmitter } from './workflows/triggers/emit';
 import {
   installDiscoveryAgents,
   registerSignificantEventsDiscoveryAgentTypes,
@@ -134,7 +114,6 @@ import { isSignificantEventsSemanticCodeSearchGroundingEnabled } from './lib/sem
 
 const SIGNIFICANT_EVENTS_MANAGED_WORKFLOW_OWNER = 'significantEvents';
 const SLACK_CONNECTOR_RECONCILE_INTERVAL_MS = 60_000;
-const RULE_CREATION_APP = 'nightshift';
 
 export class SignificantEventsPlugin
   implements
@@ -198,178 +177,18 @@ export class SignificantEventsPlugin
 
     const significantEventsServices = createSignificantEventsServices();
     const knowledgeIndicatorService = new KnowledgeIndicatorService(core, this.logger);
-    this.getScopedClients = async ({
-      request,
-    }: {
-      request: KibanaRequest;
-    }): Promise<RouteHandlerScopedClients> => {
-      const [coreStart, pluginsStart] = await core.getStartServices();
-      const cpsEnabled = plugins.cps?.getCpsEnabled() ?? false;
-
-      const scopedSoClient = coreStart.savedObjects.getScopedClient(request);
-      const uiSettingsClient = coreStart.uiSettings.asScopedToClient(scopedSoClient);
-      const globalUiSettingsClient = coreStart.uiSettings.globalAsScopedToClient(scopedSoClient);
-
-      // `scopedClusterClient`: origin-only. Used for everything the plugin owns (its hidden
-      // data streams), which only ever exists in the origin project.
-      // `streamDataEsClient`: always routed across every CPS-linked project, regardless of the
-      // active space's project routing expression. Knowledge indicators are stored per space,
-      // but they model all data available to a source, so extraction must always read across
-      // every linked project.
-      //
-      // Detection matches that all-projects scope when CPS is enabled via `withAllProjectsRouting`.
-      const scopedClusterClient = coreStart.elasticsearch.client.asScoped(request);
-      const streamDataEsClient = coreStart.elasticsearch.client.asScoped(request, {
-        projectRouting: 'expression',
-        value: PROJECT_ROUTING_ALL,
-      }).asCurrentUser;
-      const soClient = scopedSoClient;
-      const inferenceClient = pluginsStart.inference.getClient({ request });
-      const licensing = pluginsStart.licensing;
-      const fieldsMetadataClient = await pluginsStart.fieldsMetadata.getClient(request);
-
-      const [tuningConfig, sourcesClient] = await Promise.all([
-        getSignificantEventsTuningConfig(globalUiSettingsClient, this.logger),
-        pluginsStart.nightshiftSources.getSourcesClient({ request }),
-      ]);
-
-      // Core always populates `request.spaceId` (default space when the URL has no prefix), so
-      // no fallback is needed. Knowledge indicators and their rules are scoped to this space.
-      const space = request.spaceId;
-
-      let alertEventsClientPromise: Promise<AlertEventsClientApi> | undefined;
-      const getAlertEventsClient = (): Promise<AlertEventsClientApi> => {
-        alertEventsClientPromise ??=
-          pluginsStart.alertingVTwo.getAlertEventsClientWithRequest(request);
-        return alertEventsClientPromise;
-      };
-
-      const significantEventsClients = createSignificantEventsClients({
-        services: significantEventsServices,
-        dataStreams: coreStart.dataStreams,
-        esClient: scopedClusterClient.asCurrentUser,
-        space,
-        getAlertEventsClient,
-        triggerEmitter: createTriggerEmitter({
-          workflowsExtensions: pluginsStart.workflowsExtensions,
-          request,
-          logger: this.logger,
-        }),
-      });
-
-      const getAlertingV2RulesClient = async () =>
-        pluginsStart.alertingVTwo.getRulesClientWithRequestInSpace(request, space, {
-          app: RULE_CREATION_APP,
-        });
-
-      const resolveSignificantEventsAlertingContext =
-        createSignificantEventsAlertingContextResolver({
-          getAlertingV2RulesClient,
-          cpsEnabled,
-        });
-
-      const sourceKnowledgeState = createSourceKnowledgeStateClient({
-        repository: coreStart.savedObjects.createInternalRepository([SOURCE_KNOWLEDGE_STATE_TYPE]),
-        space,
-        sourcesClient,
-      });
-      const createKnowledgeIndicatorClient = (
-        context: SignificantEventsAlertingContext,
-        source?: NightshiftSource
-      ) =>
-        knowledgeIndicatorService.getClient({
-          esClient: scopedClusterClient.asInternalUser,
-          soClient,
-          space,
-          context,
-          config: tuningConfig,
-          withSourceWrite: (sourceId, run, options) =>
-            sourceKnowledgeState.write({
-              sourceId,
-              allowDisabled: options?.allowDisabled,
-              expectedRevision:
-                typeof request.headers['x-nightshift-source-revision'] === 'string' &&
-                request.headers['x-nightshift-source-revision']
-                  ? request.headers['x-nightshift-source-revision']
-                  : source?.esql_updated_at,
-              run,
-            }),
-        });
-
-      let kiClientPromise: ReturnType<typeof createKnowledgeIndicatorClient> | undefined;
-      const getKnowledgeIndicatorClient = async (
-        source?: NightshiftSource
-      ): Promise<KnowledgeIndicatorClient> => {
-        if (source) {
-          return createKnowledgeIndicatorClient(
-            await resolveSignificantEventsAlertingContext(),
-            source
-          );
-        }
-        kiClientPromise ??= (async () =>
-          createKnowledgeIndicatorClient(await resolveSignificantEventsAlertingContext()))();
-        return kiClientPromise;
-      };
-
-      const license = await licensing.getLicense();
-      const isSecurityEnabled = license.getFeature('security').isEnabled;
-
-      return {
-        scopedClusterClient,
-        streamDataEsClient,
-        soClient,
-        space,
-        getSignificantEventsAlertingContext: resolveSignificantEventsAlertingContext,
-        getKnowledgeIndicatorClient,
-        sourceKnowledgeState,
-        scheduleSourceOnboarding: async (
-          source: NightshiftSource,
-          { ignoreContinuousSetting = false }: IScheduleSourceOnboardingOptions = {}
-        ): Promise<boolean> => {
-          if (
-            !streamsKIsOnboardingClient ||
-            !source.enabled ||
-            // The toggle governs the periodic sweeps only. A created or edited source is
-            // onboarded once for its new revision whatever the toggle says.
-            (!ignoreContinuousSetting &&
-              !(await uiSettingsClient.get<boolean>(
-                OBSERVABILITY_NIGHTSHIFT_CONTINUOUS_ONBOARDING_ENABLED
-              ))) ||
-            (await this.maintenanceService?.getState({ request })) === 'paused'
-          ) {
-            return false;
-          }
-          const now = Date.now();
-          await streamsKIsOnboardingClient.run({
-            request,
-            inputs: {
-              sourceId: source.id,
-              sourceSlug: source.slug,
-              sourceRevision: source.esql_updated_at,
-              rootTriggeredBy: 'scheduled',
-              features: {
-                skip: false,
-                start: now - 24 * 60 * 60_000,
-                end: now,
-                recencyThresholdHours: 0,
-              },
-              queries: { skip: false },
-            },
-          });
-          return true;
-        },
-        getAlertEventsClient,
-        ...significantEventsClients,
-        inferenceClient,
-        fieldsMetadataClient,
-        sourcesClient,
-        licensing,
-        uiSettingsClient,
-        globalUiSettingsClient,
-        isSecurityEnabled,
-        tuningConfig,
-      };
-    };
+    this.getScopedClients = createSignificantEventsScopedClients({
+      getStartServices: async () => {
+        const [coreStart, pluginsStart] = await core.getStartServices();
+        return { coreStart, pluginsStart };
+      },
+      getCpsEnabled: () => plugins.cps?.getCpsEnabled() ?? false,
+      significantEventsServices,
+      knowledgeIndicatorService,
+      getOnboardingClient: () => this.streamsKIsOnboardingClient,
+      getMaintenanceService: () => this.maintenanceService,
+      logger: this.logger,
+    });
 
     const telemetryClient = this.ebtTelemetryService.getClient();
 
