@@ -51,10 +51,11 @@ describe('portable Fleet package metadata material', () => {
         packageVerification: { gpgKeyPath: keyPath },
       };
       const core = coreMock.createStart();
-      appContextService.startExecution({
+      const nativeContext = {
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         securitySetup: securityMock.createSetup(),
+        registry: { kind: 'native' } as const,
         configInitialValue: config,
         experimentalFeatures: parseExperimentalConfigValue([], {}),
         logger: loggingSystemMock.createLogger(),
@@ -63,7 +64,8 @@ describe('portable Fleet package metadata material', () => {
         kibanaInstanceId: 'owned-instance',
         isProductionMode: false,
         isFipsEnabled: false,
-      });
+      };
+      appContextService.startExecution(nativeContext);
       _purgeBundledPackagesCache();
       const snapshot = await getFleetPackageMetadataTaskProcessSettings();
       expect(snapshot).toEqual(
@@ -93,6 +95,23 @@ describe('portable Fleet package metadata material', () => {
       await rm(directory, { recursive: true });
       const [restored] = createBundledPackagesFromSnapshot(snapshot.assets);
       expect(await restored.getBuffer()).toEqual(archive);
+      await jest.isolateModulesAsync(async () => {
+        const { appContextService: worker } = await import('../app_context');
+        const { getBundledPackages } = await import('../epm/packages/bundled_packages');
+        const { getGpgKeyOrUndefined } = await import('../epm/packages/package_verification');
+        worker.startExecution({
+          ...nativeContext,
+          registry: { kind: 'snapshot', settings: snapshot },
+        });
+        try {
+          const [ownedArchive] = await getBundledPackages();
+          expect(await ownedArchive.getBuffer()).toEqual(archive);
+          const ownedKey = await getGpgKeyOrUndefined();
+          expect(ownedKey?.getFingerprint()).toBe(original.getFingerprint());
+        } finally {
+          worker.stop();
+        }
+      });
     } finally {
       appContextService.stop();
       _purgeBundledPackagesCache();

@@ -17,6 +17,9 @@ project:
   owner: '@elastic/streams-ui'
   sourceRoot: x-pack/platform/plugins/shared/fleet
 dependsOn:
+  - '@kbn/workflows-extensions'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/workflows'
   - '@kbn/core-saved-objects-server-mocks'
   - '@kbn/core'
   - '@kbn/tracing-utils'

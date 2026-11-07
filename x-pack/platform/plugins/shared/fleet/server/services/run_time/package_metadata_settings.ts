@@ -7,33 +7,22 @@
 
 import { createHash } from 'node:crypto';
 
-import type { FleetConfigType, BundledPackage } from '../../../common/types';
+import type { BundledPackage } from '../../../common/types';
+import type {
+  FleetPackageMetadataAssets,
+  FleetPackageMetadataTaskProcessSettings,
+} from '../../package_metadata_task_process_settings';
 
 import { appContextService } from '../app_context';
 import { getBundledPackages } from '../epm/packages/bundled_packages';
 import { getGpgKeyOrUndefined } from '../epm/packages/package_verification';
 import { getElasticConnectorsServerlessEnabled } from '../epm/filtered_packages';
 
-export const FLEET_PACKAGE_METADATA_SETTINGS_ID = 'fleetPackageMetadata';
-
-export interface FleetPackageMetadataAssets {
-  bundledPackages: Array<{
-    name: string;
-    version: string;
-    archive: string;
-    sha256: string;
-  }>;
-  gpgKey?: string;
-}
-
-export interface FleetPackageMetadataTaskProcessSettings {
-  config: FleetConfigType;
-  assets: FleetPackageMetadataAssets;
-  elasticConnectorsServerlessEnabled: boolean;
-  kibanaBranch: string;
-  isProductionMode: boolean;
-  isFipsEnabled: boolean;
-}
+export { FLEET_PACKAGE_METADATA_SETTINGS_ID } from '../../package_metadata_task_process_settings';
+export type {
+  FleetPackageMetadataAssets,
+  FleetPackageMetadataTaskProcessSettings,
+} from '../../package_metadata_task_process_settings';
 
 /** Captures the registry configuration and native file material a remote execution needs. */
 export const getFleetPackageMetadataTaskProcessSettings =

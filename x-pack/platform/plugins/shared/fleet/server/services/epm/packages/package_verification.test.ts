@@ -52,6 +52,7 @@ const mockGetConfig = jest.fn();
 jest.mock('../../app_context', () => ({
   appContextService: {
     getConfig: () => mockGetConfig(),
+    getPackageMetadata: () => undefined,
     getLogger: () => mockLogger,
   },
 }));

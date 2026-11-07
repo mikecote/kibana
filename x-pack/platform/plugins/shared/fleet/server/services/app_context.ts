@@ -50,6 +50,7 @@ import type {
 } from '../types';
 import { KibanaSavedObjectType } from '../types';
 import type { FleetAppContext } from '../plugin';
+import type { FleetPackageMetadataTaskProcessSettings } from '../package_metadata_task_process_settings';
 import type { TelemetryEventsSender } from '../telemetry/sender';
 import { UNINSTALL_TOKENS_SAVED_OBJECT_TYPE } from '../constants';
 import type { MessageSigningServiceInterface } from '..';
@@ -70,7 +71,7 @@ export interface FleetExecutionAppContext {
   savedObjects: SavedObjectsServiceStart;
   encryptedSavedObjectsStart?: Pick<EncryptedSavedObjectsPluginStart, 'getClient'>;
   encryptedSavedObjectsSetup?: Pick<EncryptedSavedObjectsPluginSetup, 'canEncrypt'>;
-  securitySetup: Pick<SecurityPluginSetup, 'audit'> & Partial<Pick<SecurityPluginSetup, 'license'>>;
+  securitySetup: Pick<SecurityPluginSetup, 'audit' | 'license'>;
   config$?: Observable<FleetConfigType>;
   configInitialValue: FleetConfigType;
   experimentalFeatures: ExperimentalFeatures;
@@ -81,6 +82,9 @@ export interface FleetExecutionAppContext {
   isProductionMode: boolean;
   isFipsEnabled: boolean;
   includedHiddenTypes?: string[];
+  registry:
+    | { kind: 'native' }
+    | { kind: 'snapshot'; settings: FleetPackageMetadataTaskProcessSettings };
 }
 
 class AppContextService {
@@ -95,6 +99,7 @@ class AppContextService {
   private securityStart: SecurityPluginStart | undefined;
   private config$?: Observable<FleetConfigType>;
   private configSubscription?: Subscription;
+  private registry?: FleetExecutionAppContext['registry'];
   private configSubject$?: BehaviorSubject<FleetConfigType>;
   private savedObjects: SavedObjectsServiceStart | undefined;
   private isProductionMode: FleetAppContext['isProductionMode'] = false;
@@ -120,7 +125,11 @@ class AppContextService {
   private isFipsEnabled: boolean = false;
 
   public start(appContext: FleetAppContext) {
-    this.startExecution({ ...appContext, elasticsearch: appContext.elasticsearch.client });
+    this.startExecution({
+      ...appContext,
+      elasticsearch: appContext.elasticsearch.client,
+      registry: { kind: 'native' },
+    });
     this.data = appContext.data;
     this.securityCoreStart = appContext.securityCoreStart;
     this.securityStart = appContext.securityStart;
@@ -141,6 +150,7 @@ class AppContextService {
 
   /** Initializes the actual execution services shared by native Fleet and task workers. */
   public startExecution(appContext: FleetExecutionAppContext): void {
+    this.registry = appContext.registry;
     this.esClient = appContext.elasticsearch.asInternalUser;
     this.encryptedSavedObjectsStart = appContext.encryptedSavedObjectsStart;
     this.encryptedSavedObjects = appContext.encryptedSavedObjectsStart?.getClient();
@@ -215,6 +225,12 @@ class AppContextService {
 
   public getConfig() {
     return this.configSubject$?.value;
+  }
+
+  /** Returns captured registry material only for an execution initialized from a dispatch snapshot. */
+  public getPackageMetadata(): FleetPackageMetadataTaskProcessSettings | undefined {
+    if (!this.registry) throw new Error('Fleet registry execution has not initialized');
+    return this.registry.kind === 'snapshot' ? this.registry.settings : undefined;
   }
 
   public getConfig$() {

@@ -8,6 +8,7 @@
 export {
   createFleetRunServices,
   startFleetRunAppContext,
+  stopFleetRunAppContext,
   type FleetRunServices,
   type FleetRunServicesDeps,
   type FleetRunAppContextDeps,
@@ -22,3 +23,4 @@ export type {
   FleetPackageMetadataAssets,
   FleetPackageMetadataTaskProcessSettings,
 } from './package_metadata_settings';
+export { createFleetPackageMetadataRunServices } from './package_metadata_run_services';

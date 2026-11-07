@@ -13,6 +13,7 @@ import { once } from 'lodash';
 import type { BundledPackage, Installation } from '../../../types';
 import { BundledPackageLocationNotFoundError } from '../../../errors';
 import { appContextService } from '../../app_context';
+import { createBundledPackagesFromSnapshot } from '../../run_time/package_metadata_settings';
 import { airGappedUtils } from '../airgapped';
 import { splitPkgKey, pkgToPkgKey } from '../registry';
 
@@ -35,6 +36,8 @@ function bundledPackagesFromCache() {
 }
 
 export async function getBundledPackages(): Promise<BundledPackage[]> {
+  const metadata = appContextService.getPackageMetadata();
+  if (metadata) return createBundledPackagesFromSnapshot(metadata.assets);
   const config = appContextService.getConfig();
   if (config?.developer?.disableBundledPackagesCache !== true && CACHE_BUNDLED_PACKAGES) {
     return bundledPackagesFromCache();

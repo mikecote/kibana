@@ -226,16 +226,18 @@ describe('the security task plugin', () => {
       expect(await delegate.authc.apiKeys.areAPIKeysEnabled()).toBe(false);
     });
 
-    it('returns the authc, authz and audit contracts for modules', async () => {
+    it('returns the native authentication, authorization, audit and license contracts', async () => {
       const { contract } = await boot(buildSettings());
 
       expect(Object.keys(contract).sort()).toEqual([
         'audit',
         'authc',
         'authz',
+        'license',
         'serviceAccounts',
         'userProfile',
       ]);
+      expect(contract.license.isEnabled()).toBe(false);
       expect(contract.serviceAccounts).toBeNull();
       expect(contract.authc.apiKeys.uiam).toBeNull();
       expect(contract.authz.checkPrivilegesWithRequest).toEqual(expect.any(Function));

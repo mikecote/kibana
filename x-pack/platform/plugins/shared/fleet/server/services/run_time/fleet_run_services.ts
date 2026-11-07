@@ -15,7 +15,7 @@ import type { ILicense } from '@kbn/licensing-types';
 import type { EncryptedSavedObjectsClient } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 
-import type { FleetConfigType } from '../../../common/types';
+import type { FleetPackageMetadataTaskProcessSettings } from '../../package_metadata_task_process_settings';
 import { parseExperimentalConfigValue } from '../../../common/experimental_features';
 import { MESSAGE_SIGNING_KEYS_SAVED_OBJECT_TYPE } from '../../constants';
 import { AgentServiceImpl } from '../agents/agent_service';
@@ -98,15 +98,14 @@ export interface FleetRunAppContextDeps extends FleetRunServicesDeps {
     canEncrypt: boolean;
     getClient: (options?: { includedHiddenTypes?: string[] }) => EncryptedSavedObjectsClient;
   };
-  /** Fleet's validated config (the `fleet` settings). */
-  config: FleetConfigType;
+  /** Fleet's actual dispatch-time registry configuration and file material. */
+  packageMetadata: FleetPackageMetadataTaskProcessSettings;
   license$: Observable<ILicense>;
   /** `host.security.audit`, which the services write their audit records to. */
   audit: SecurityPluginSetup['audit'];
+  securityLicense: SecurityPluginSetup['license'];
   kibanaVersion: string;
-  kibanaBranch: string;
   kibanaInstanceId: string;
-  isProductionMode: boolean;
   isFipsEnabled: boolean;
 }
 
@@ -117,6 +116,11 @@ export interface FleetRunAppContextDeps extends FleetRunServicesDeps {
  * the license is known.
  */
 export const startFleetRunAppContext = async (deps: FleetRunAppContextDeps): Promise<void> => {
+  const { packageMetadata } = deps;
+  if (packageMetadata.isFipsEnabled !== deps.isFipsEnabled) {
+    throw new Error('Fleet execution and worker Core must use the same FIPS mode');
+  }
+  const { config, kibanaBranch, isProductionMode } = packageMetadata;
   appContextService.startExecution({
     elasticsearch: deps.elasticsearch,
     savedObjects: deps.savedObjects,
@@ -126,19 +130,20 @@ export const startFleetRunAppContext = async (deps: FleetRunAppContextDeps): Pro
     encryptedSavedObjectsSetup: {
       canEncrypt: deps.encryptedSavedObjects.canEncrypt,
     },
-    securitySetup: { audit: deps.audit },
-    configInitialValue: deps.config,
-    config$: of(deps.config),
+    securitySetup: { audit: deps.audit, license: deps.securityLicense },
+    configInitialValue: config,
+    config$: of(config),
     experimentalFeatures: parseExperimentalConfigValue(
-      deps.config.enableExperimental ?? [],
-      deps.config.experimentalFeatures ?? {}
+      config.enableExperimental ?? [],
+      config.experimentalFeatures ?? {}
     ),
     logger: deps.loggerFactory.get(),
     kibanaVersion: deps.kibanaVersion,
-    kibanaBranch: deps.kibanaBranch,
+    kibanaBranch,
     kibanaInstanceId: deps.kibanaInstanceId,
-    isProductionMode: deps.isProductionMode,
+    isProductionMode,
     isFipsEnabled: deps.isFipsEnabled,
+    registry: { kind: 'snapshot', settings: packageMetadata },
     // The types the owners of the others (alerting rule templates, SLO templates) register are not in
     // the type registry of a process that does not run those plugins, and Fleet's installs, which
     // use them, are Kibana's.
@@ -146,7 +151,14 @@ export const startFleetRunAppContext = async (deps: FleetRunAppContextDeps): Pro
       deps.savedObjects.getTypeRegistry().getType(type)
     ),
   });
+  licenseService.stop();
   licenseService.start(deps.license$);
   // The license is fetched when first read, and the services check it when they are used.
   await firstValueFrom(deps.license$);
+};
+
+/** Releases Fleet's task-owned configuration and license subscriptions after execution cleanup. */
+export const stopFleetRunAppContext = (): void => {
+  appContextService.stop();
+  licenseService.stop();
 };

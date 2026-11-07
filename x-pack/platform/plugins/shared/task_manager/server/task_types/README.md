@@ -759,9 +759,8 @@ not looked at; Security Labs is not available).
 
 Also contributing since: streams (the scoped clients of `createStreamsRunServices`: the streams client over its
 storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata
-service started with the streams extractor; the rules client of alerting that the attachment client uses and the
-encrypted saved objects client exist only in Kibana and throw when used, integration fields from Fleet are not
-served; tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
+service resolved from the shared metadata registry; the rules client of alerting that the attachment client uses and the
+encrypted saved objects client still throw when used; tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
 evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
 service and the privileges of the security task plugin; saving and running an experiment use the shared workflow management runtime).
 
@@ -770,13 +769,19 @@ registry. It uses the active extractor provider IDs captured from Kibana at disp
 provider through `fieldsMetadata.extractors.<id>`. Missing registered providers fail explicitly. Fleet
 capabilities are evaluated with the task's credentials by the shared Security switcher, then restricted
 by the current authorized space and native solution gate. The Streams extractor is available through
-this registry; migrating its existing local metadata setup also requires Fleet's package runtime.
+this registry, and Streams consumes the shared service. Fleet contributes its native package client and
+extractors using the package registry configuration and portable file material captured at dispatch.
 
 Fleet's shared execution initializer now takes genuine Core saved objects services and explicit security
 and encryption capabilities. Core's FIPS setting is carried into worker boot and exposed through the task
 host. Its package-material capture helper snapshots the native bundled archives and cached signing key;
-the archive decoder reads captured bytes and checks their SHA-256 digest. The Fleet workflow service
-provider still needs to consume this material.
+the archive decoder reads captured bytes and checks their SHA-256 digest. The native bundled-package
+and signature loaders select this material explicitly in workers, so a remote host does not need the
+original file paths. The worker package client uses real Core saved objects and Elasticsearch services;
+run cleanup releases Fleet configuration and license subscriptions. Response actions use the same
+snapshot and genuine task Security license and audit services. Rule modules declare the snapshot in
+`optionalSettings`, matching Fleet's optional plugin dependency; executing a response action requires
+the snapshot.
 
 **Registrations after start.** What a plugin registers once Kibana has started (`agentBuilder.skills.register` and
 `agents.ensure` of the start contract) can change while Kibana runs (significant events registers its skills when a

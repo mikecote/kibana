@@ -15,6 +15,7 @@ import type { PackageVerificationResult } from '../../../types';
 import * as Registry from '../registry';
 
 import { appContextService } from '../../app_context';
+import type { FleetPackageMetadataAssets } from '../../../package_metadata_task_process_settings';
 import type { Installation } from '../../../types';
 
 interface VerificationResult {
@@ -23,6 +24,7 @@ interface VerificationResult {
 }
 
 let cachedKey: openpgp.Key | undefined | null = null;
+const capturedKeys = new WeakMap<FleetPackageMetadataAssets, Promise<openpgp.Key | undefined>>();
 
 export async function getGpgKeyIdOrUndefined(): Promise<string | undefined> {
   const key = await getGpgKeyOrUndefined();
@@ -33,6 +35,17 @@ export async function getGpgKeyIdOrUndefined(): Promise<string | undefined> {
 }
 
 export async function getGpgKeyOrUndefined(): Promise<openpgp.Key | undefined> {
+  const metadata = appContextService.getPackageMetadata();
+  if (metadata) {
+    const { assets } = metadata;
+    const existing = capturedKeys.get(assets);
+    if (existing) return existing;
+    const captured = assets.gpgKey
+      ? openpgp.readKey({ armoredKey: assets.gpgKey })
+      : Promise.resolve(undefined);
+    capturedKeys.set(assets, captured);
+    return captured;
+  }
   if (cachedKey !== null) return cachedKey;
 
   cachedKey = await _readGpgKey();

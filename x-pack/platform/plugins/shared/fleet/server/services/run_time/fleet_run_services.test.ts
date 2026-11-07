@@ -15,6 +15,7 @@ import { securityMock } from '@kbn/security-plugin/server/mocks';
 import type { ILicense } from '@kbn/licensing-types';
 
 import { parseExperimentalConfigValue } from '../../../common/experimental_features';
+import type { FleetPackageMetadataTaskProcessSettings } from '../../package_metadata_task_process_settings';
 import type { FleetConfigType } from '../../../common/types';
 import { FleetActionsClient } from '../actions';
 import { agentPolicyService } from '../agent_policy';
@@ -23,7 +24,11 @@ import { licenseService } from '../license';
 import { packagePolicyService } from '../package_policy';
 import { MessageSigningService } from '../security/message_signing_service';
 
-import { createFleetRunServices, startFleetRunAppContext } from './fleet_run_services';
+import {
+  createFleetRunServices,
+  startFleetRunAppContext,
+  stopFleetRunAppContext,
+} from './fleet_run_services';
 import { getFleetRunEncryptedSavedObjectTypes, getFleetRunSavedObjectTypes } from './saved_objects';
 
 describe('Fleet run services', () => {
@@ -86,6 +91,15 @@ describe('Fleet run services', () => {
       enableExperimental: [],
     };
 
+    const metadata: FleetPackageMetadataTaskProcessSettings = {
+      config,
+      assets: { bundledPackages: [] },
+      elasticConnectorsServerlessEnabled: false,
+      kibanaBranch: 'main',
+      isProductionMode: false,
+      isFipsEnabled: false,
+    };
+
     it('starts the app context with what the services read', async () => {
       const { elasticsearch, savedObjects, encryptedSavedObjects, loggerFactory } = setup();
       const security = securityMock.createSetup();
@@ -102,13 +116,12 @@ describe('Fleet run services', () => {
         savedObjects,
         encryptedSavedObjects: { ...encryptedSavedObjects, canEncrypt: true },
         loggerFactory,
-        config,
+        packageMetadata: { ...metadata, isFipsEnabled: true },
         license$,
         audit: security.audit,
+        securityLicense: security.license,
         kibanaVersion: '9.9.0',
-        kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
-        isProductionMode: false,
         isFipsEnabled: true,
       });
 
@@ -137,13 +150,14 @@ describe('Fleet run services', () => {
       const context = {
         elasticsearch: elasticsearch.client,
         savedObjects,
-        securitySetup: { audit: security.audit },
+        securitySetup: { audit: security.audit, license: security.license },
+        registry: { kind: 'native' } as const,
         configInitialValue: config,
         experimentalFeatures: parseExperimentalConfigValue([], {}),
         logger: loggerFactory.get(),
         kibanaVersion: '9.9.0',
-        kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
+        kibanaBranch: 'main',
         isProductionMode: false,
         isFipsEnabled: false,
       };
@@ -153,6 +167,32 @@ describe('Fleet run services', () => {
       expect(first.observed).toBe(false);
       expect(second.observed).toBe(true);
       appContextService.stop();
+      expect(second.observed).toBe(false);
+    });
+
+    it('releases old license subscriptions when a worker is reused and ends the current one on cleanup', async () => {
+      const { elasticsearch, savedObjects, encryptedSavedObjects, loggerFactory } = setup();
+      const security = securityMock.createSetup();
+      const first = new BehaviorSubject({} as ILicense);
+      const second = new BehaviorSubject({} as ILicense);
+      const deps = {
+        elasticsearch: elasticsearch.client,
+        savedObjects,
+        encryptedSavedObjects: { ...encryptedSavedObjects, canEncrypt: true },
+        loggerFactory,
+        packageMetadata: metadata,
+        audit: security.audit,
+        securityLicense: security.license,
+        kibanaVersion: '9.9.0',
+        kibanaInstanceId: 'uuid',
+        isFipsEnabled: false,
+      };
+      await startFleetRunAppContext({ ...deps, license$: first });
+      expect(first.observed).toBe(true);
+      await startFleetRunAppContext({ ...deps, license$: second });
+      expect(first.observed).toBe(false);
+      expect(second.observed).toBe(true);
+      stopFleetRunAppContext();
       expect(second.observed).toBe(false);
     });
 
@@ -167,13 +207,12 @@ describe('Fleet run services', () => {
       };
       await startFleetRunAppContext({
         ...deps,
-        config,
+        packageMetadata: metadata,
         license$: new BehaviorSubject({} as ILicense),
         audit: security.audit,
+        securityLicense: security.license,
         kibanaVersion: '9.9.0',
-        kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
-        isProductionMode: false,
         isFipsEnabled: false,
       });
 
@@ -203,18 +242,18 @@ describe('Fleet run services', () => {
         .fn()
         .mockImplementation((type: string) => (type === 'fleet-uninstall-tokens' ? {} : undefined));
 
+      const security = securityMock.createSetup();
       await startFleetRunAppContext({
         elasticsearch: elasticsearch.client,
         savedObjects,
         encryptedSavedObjects: { ...encryptedSavedObjects, canEncrypt: true },
         loggerFactory,
-        config,
+        packageMetadata: metadata,
         license$: new BehaviorSubject({} as ILicense),
-        audit: securityMock.createSetup().audit,
+        audit: security.audit,
+        securityLicense: security.license,
         kibanaVersion: '9.9.0',
-        kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
-        isProductionMode: false,
         isFipsEnabled: false,
       });
       appContextService.getInternalUserSOClient();
@@ -227,18 +266,18 @@ describe('Fleet run services', () => {
     it('leaves what only Kibana has unset, so reading it fails clearly', async () => {
       const { elasticsearch, savedObjects, encryptedSavedObjects, loggerFactory } = setup();
 
+      const security = securityMock.createSetup();
       await startFleetRunAppContext({
         elasticsearch: elasticsearch.client,
         savedObjects,
         encryptedSavedObjects: { ...encryptedSavedObjects, canEncrypt: true },
         loggerFactory,
-        config,
+        packageMetadata: metadata,
         license$: new BehaviorSubject({} as ILicense),
-        audit: securityMock.createSetup().audit,
+        audit: security.audit,
+        securityLicense: security.license,
         kibanaVersion: '9.9.0',
-        kibanaBranch: 'main',
         kibanaInstanceId: 'uuid',
-        isProductionMode: false,
         isFipsEnabled: false,
       });
 

@@ -112,6 +112,7 @@ export const getTaskProcessSettings = ({
 
 /** What the security task plugin returns from `start`, as `host.plugins.security`. */
 export type SecurityTaskPluginStart = Pick<RunTimeSecurity, 'authc' | 'authz'> & {
+  license: SecurityLicense;
   userProfile: UserProfileServiceStartInternal;
   audit: AuditServiceSetup;
   /** The service accounts of the plugin, when they are enabled and the process can serve them. */
@@ -263,10 +264,11 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
     },
 
     start(core, deps) {
+      if (!license || !auditSetup) throw new Error('Security task setup has not completed');
       runTime = createRunTimeSecurity({
         logger,
         clusterClient: core.elasticsearch.client,
-        license: license!,
+        license,
         config,
         applicationName: settings.applicationName,
         buildFlavor,
@@ -276,12 +278,12 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
           kibanaVersion,
           tls: settings.uiamTls,
         },
-        audit: auditSetup!,
+        audit: auditSetup,
         getCurrentUser,
       });
       const { authc, authz, audit } = runTime;
       const profiles = new UserProfileService(logger.get('user-profile'));
-      profiles.setup({ authz, license: license! });
+      profiles.setup({ authz, license });
       const profileClient = profiles.start({
         clusterClient: core.elasticsearch.client,
         getCurrentUser,
@@ -292,7 +294,7 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
         serviceAccounts = new ServiceAccountsService(logger.get('service-accounts')).start({
           config: { serviceAccounts: settings.serviceAccounts },
           isServerless: buildFlavor === 'serverless',
-          license: license!,
+          license,
           uiam: runTime.uiam,
           checkPrivilegesWithRequest: authz.checkPrivilegesWithRequest,
           audit,
@@ -312,7 +314,7 @@ const plugin: TaskPluginInitializer<void, SecurityTaskPluginStart, SetupDeps, St
           'Service accounts are not available: the process has no encrypted saved objects'
         );
       }
-      return { authc, authz, audit, serviceAccounts, userProfile };
+      return { authc, authz, audit, serviceAccounts, userProfile, license };
     },
   };
 };
