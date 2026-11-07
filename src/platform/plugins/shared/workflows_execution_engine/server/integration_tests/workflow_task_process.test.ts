@@ -38,6 +38,7 @@ import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_p
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
+import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type {
   TaskProcessDispatch,
@@ -1054,7 +1055,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         if (!address || typeof address === 'string') throw new Error('Task worker has no port');
         route = { url: `http://127.0.0.1:${address.port}`, token: 'worker-token' };
         snapshot = {
-          protocolVersion: 1,
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
           init: {
             ...init,
             kibanaVersion: KIBANA_VERSION,

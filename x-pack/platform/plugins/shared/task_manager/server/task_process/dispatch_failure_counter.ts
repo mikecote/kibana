@@ -9,6 +9,7 @@
  * Why a task could not be dispatched to its process:
  * - `declined`: the process answered 422.
  * - `not_served`: the process answered 404.
+ * - `incompatible`: the worker does not implement the required dispatch protocol.
  * - `capacity`: Kibana already has `max_concurrent_processes` live task processes.
  * - `spawn_failed`: the process exited before it was ready.
  * - `spawn_timeout`: the process was not ready in time.
@@ -17,6 +18,7 @@
 export type TaskProcessDispatchFailureReason =
   | 'declined'
   | 'not_served'
+  | 'incompatible'
   | 'unavailable'
   | 'capacity'
   | 'spawn_failed'
@@ -25,6 +27,7 @@ export type TaskProcessDispatchFailureReason =
 export const TASK_PROCESS_DISPATCH_FAILURE_REASONS: TaskProcessDispatchFailureReason[] = [
   'declined',
   'not_served',
+  'incompatible',
   'unavailable',
   'capacity',
   'spawn_failed',

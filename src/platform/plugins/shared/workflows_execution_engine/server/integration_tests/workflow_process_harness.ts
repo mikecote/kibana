@@ -40,6 +40,7 @@ import { ApiKeyType } from '@kbn/task-manager-plugin/server/config';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from '@kbn/task-manager-plugin/server/constants';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
+import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
@@ -606,7 +607,7 @@ const startHarness = async (
         ...(options.mode === 'remote'
           ? {
               snapshot: {
-                protocolVersion: 1 as const,
+                protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
                 init: { ...initFor(), kibanaVersion: KIBANA_VERSION, elasticsearch: esConfig() },
                 featureFlags: {
                   [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true,

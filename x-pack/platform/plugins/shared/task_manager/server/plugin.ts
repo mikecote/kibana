@@ -31,6 +31,7 @@ import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server'
 import { join } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
 import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
+import { TASK_PROCESS_PROTOCOL_VERSION } from './task_process/protocol';
 import type { TaskProcessDispatch } from './task_process/remote_task_runner';
 import { serializeElasticsearchConfig } from './task_process/es_config';
 import { TaskProcessSupervisor } from './task_process/supervisor';
@@ -533,7 +534,7 @@ export class TaskManagerPlugin
           return Object.fromEntries(values);
         },
         getSnapshot: async (taskType) => ({
-          protocolVersion: 1,
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
           init: {
             ...(await this.getTaskProcessInit?.(taskType)),
             elasticsearch: serializeElasticsearchConfig(this.elasticsearchConfig!),

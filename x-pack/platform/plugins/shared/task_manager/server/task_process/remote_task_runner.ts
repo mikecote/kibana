@@ -15,6 +15,11 @@ import {
   throwUnrecoverableError,
 } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
+import {
+  parseTaskProcessProtocol,
+  TASK_PROCESS_PATHS,
+  TASK_PROCESS_PROTOCOL_VERSION,
+} from './protocol';
 import type { TaskProcessDispatchFailureReason } from './dispatch_failure_counter';
 import { DECLINED_STATUS, deserializeRunResult, MAX_TIMER_MS } from './wire';
 import type {
@@ -110,7 +115,7 @@ export class RemoteTaskRunner implements CancellableTask {
   constructor(
     private readonly params: {
       route: TaskProcessRoute;
-      request: Omit<TaskProcessRunRequest, 'deadline'>;
+      request: Omit<TaskProcessRunRequest, 'deadline' | 'protocolVersion'>;
       /** The task's timeout; the process is told to stop, and Kibana stops waiting, shortly after. */
       timeoutMs: number;
       /** Aborted when Task Manager cancels the run. */
@@ -139,8 +144,9 @@ export class RemoteTaskRunner implements CancellableTask {
       signal,
       setCustomTaskRunEventFields,
     } = this.params;
-    const request = {
+    const request: Omit<TaskProcessRunRequest, 'deadline'> = {
       ...originalRequest,
+      protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
       tracing: originalRequest.tracing ?? captureTaskRunTrace(),
     };
     signal?.throwIfAborted();
@@ -163,7 +169,10 @@ export class RemoteTaskRunner implements CancellableTask {
           error instanceof TaskProcessAcquireError ? error.reason : 'unavailable',
           `the process could not be started: ${(error as Error).message}`
         );
-        if (error instanceof TaskProcessAcquireError && error.reason === 'not_served') {
+        if (
+          error instanceof TaskProcessAcquireError &&
+          (error.reason === 'not_served' || error.reason === 'incompatible')
+        ) {
           throwUnrecoverableError(error);
         }
         throw processUnavailable(`Task process could not be started: ${(error as Error).message}`);
@@ -186,11 +195,33 @@ export class RemoteTaskRunner implements CancellableTask {
       signal
     );
     let reusable = false;
-    const stopControl = this.startControlPolling(address);
+    let stopControl = (): void => {};
     try {
       let response: Response;
       try {
-        response = await fetchFn(`${address.url}/run`, {
+        const health = await fetchFn(`${address.url}${TASK_PROCESS_PATHS.health}`, {
+          headers: authHeaders(address),
+          signal: abort,
+        });
+        if (!health.ok) {
+          await health.body?.cancel();
+          if (health.status === 503) {
+            throw processUnavailable('Task worker is unavailable for protocol negotiation');
+          }
+          throw new TaskProcessAcquireError(
+            'incompatible',
+            `Task worker protocol negotiation returned HTTP ${health.status}`
+          );
+        }
+        parseTaskProcessProtocol(await health.text());
+        if (this.cancelled || abort.aborted) {
+          throw createRetryableError(
+            new Error('Task process run was cancelled before dispatch'),
+            false
+          );
+        }
+        stopControl = this.startControlPolling(address);
+        response = await fetchFn(`${address.url}${TASK_PROCESS_PATHS.run}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...authHeaders(address) },
           body: JSON.stringify({
@@ -204,7 +235,11 @@ export class RemoteTaskRunner implements CancellableTask {
         } as RequestInit);
       } catch (error) {
         // Timed out or cancelled: Task Manager's own timeout handling owns that outcome.
-        if (abort.aborted) throw error;
+        if (abort.aborted || this.cancelled) throw error;
+        if (error instanceof TaskProcessAcquireError && error.reason === 'incompatible') {
+          this.params.onDispatchFailure?.(request.taskType, 'incompatible', error.message);
+          throwUnrecoverableError(error);
+        }
         this.params.onDispatchFailure?.(
           request.taskType,
           'unavailable',
@@ -226,14 +261,14 @@ export class RemoteTaskRunner implements CancellableTask {
         } else {
           await response.body?.cancel().catch(() => undefined);
         }
-        const message = `Task process ${address.url} responded ${response.status} to /run${
-          reason ? `: ${reason}` : ''
-        }`;
+        const message = `Task process ${address.url} responded ${response.status} to ${
+          TASK_PROCESS_PATHS.run
+        }${reason ? `: ${reason}` : ''}`;
         if (response.status === 404 || response.status === DECLINED_STATUS) {
           this.params.onDispatchFailure?.(
             request.taskType,
             response.status === DECLINED_STATUS ? 'declined' : 'not_served',
-            reason
+            reason ?? message
           );
           throwUnrecoverableError(new Error(message));
         }
@@ -286,7 +321,7 @@ export class RemoteTaskRunner implements CancellableTask {
       pending = true;
       try {
         const response = await (this.params.fetchFn ?? fetch)(
-          `${address.url}/metrics/${this.params.request.executionUuid}`,
+          `${address.url}${TASK_PROCESS_PATHS.metrics}${this.params.request.executionUuid}`,
           {
             headers: authHeaders(address),
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
@@ -304,7 +339,7 @@ export class RemoteTaskRunner implements CancellableTask {
             const executionIds = await getPool();
             controller.signal.throwIfAborted();
             const reply = await (this.params.fetchFn ?? fetch)(
-              `${address.url}/active_pool/${this.params.request.executionUuid}`,
+              `${address.url}${TASK_PROCESS_PATHS.activePool}${this.params.request.executionUuid}`,
               {
                 method: 'POST',
                 headers: { ...authHeaders(address), 'content-type': 'application/json' },
@@ -360,11 +395,14 @@ export class RemoteTaskRunner implements CancellableTask {
     try {
       const { signal, dispose } = abortAfter(request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS);
       try {
-        const response = await fetchFn(`${address.url}/cancel/${request.executionUuid}`, {
-          method: 'POST',
-          headers: authHeaders(address),
-          signal,
-        });
+        const response = await fetchFn(
+          `${address.url}${TASK_PROCESS_PATHS.cancel}${request.executionUuid}`,
+          {
+            method: 'POST',
+            headers: authHeaders(address),
+            signal,
+          }
+        );
         if (response.ok)
           this.reportCreatedTasks(
             ((await response.json()) as { createdTaskCount?: number }).createdTaskCount

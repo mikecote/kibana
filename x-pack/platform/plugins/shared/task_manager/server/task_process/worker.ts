@@ -9,6 +9,7 @@ import type { Server } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import { incrementCreatedTaskCount, requestDispatchTaskPool } from './run_context';
 import { throwUnrecoverableError } from '../task_running/errors';
+import { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
 import { RemoteTaskRunner } from './remote_task_runner';
 import { startTaskProcessServer } from './server';
 import { TaskProcessSupervisor } from './supervisor';
@@ -57,7 +58,7 @@ export const startTaskProcessWorker = ({
     forwardRun: (request, { signal, setCustomTaskRunEventFields }) => {
       const { snapshot, deadline, ...run } = request;
       if (
-        snapshot?.protocolVersion !== 1 ||
+        snapshot?.protocolVersion !== TASK_PROCESS_PROTOCOL_VERSION ||
         snapshot.init.kibanaVersion !== settings.kibanaVersion ||
         !deadline ||
         !Number.isFinite(Date.parse(deadline))

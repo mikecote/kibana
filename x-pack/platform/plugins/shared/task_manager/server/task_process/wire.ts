@@ -18,6 +18,7 @@ import type { ConcreteTaskInstance, RunResult, TaskRunAs } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
 import type { TaskProcessParity } from './parity';
+import type { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -89,16 +90,19 @@ export interface TaskProcessServerInfo {
 export interface TaskProcessReady {
   kind: 'ready';
   port: number;
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
+  capabilities: readonly string[];
 }
 
 /** Configuration and registrations captured for one dispatch in either process mode. */
 export interface TaskProcessDispatchSnapshot {
-  protocolVersion: 1;
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
   init: Omit<TaskProcessInit, 'kind' | 'authToken'>;
   featureFlags?: Record<string, boolean | string | number>;
 }
 
 export interface TaskProcessRunRequest {
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
   tracing?: TaskRunTrace;
   taskType: string;
   /** `ConcreteTaskInstance` with credential fields stripped; dates are ISO strings. */

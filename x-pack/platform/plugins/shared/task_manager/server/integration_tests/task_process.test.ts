@@ -10,6 +10,7 @@
  * 2.0.
  */
 
+import { TASK_PROCESS_PATHS, TASK_PROCESS_PROTOCOL_VERSION } from '../task_process/protocol';
 import { execSync, spawn } from 'child_process';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -301,10 +302,11 @@ describe('task types served from bundles', () => {
       };
       const lease = await route.acquire();
       try {
-        const response = await undiciFetch(`${lease.url}/run`, {
+        const response = await undiciFetch(`${lease.url}${TASK_PROCESS_PATHS.run}`, {
           method: 'POST',
           headers: { authorization: `Bearer ${lease.token}` },
           body: JSON.stringify({
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
             taskType: PLUMBING_TASK_TYPE,
             taskInstance: { id: 'plumbing', taskType: PLUMBING_TASK_TYPE, params: {}, state: {} },
             executionUuid: `plumbing-${Date.now()}`,

@@ -5,10 +5,28 @@
  * 2.0.
  */
 
+import {
+  TASK_PROCESS_CAPABILITIES,
+  TASK_PROCESS_PROTOCOL_VERSION,
+  TASK_PROCESS_PATHS,
+} from './protocol';
 import { isRetryableError, isUnrecoverableError } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import { RemoteTaskRunner } from './remote_task_runner';
 import type { TaskProcessLease } from './remote_task_runner';
+
+const withProtocol =
+  (fetchFn: typeof fetch): typeof fetch =>
+  async (input, init) =>
+    String(input).endsWith(TASK_PROCESS_PATHS.health)
+      ? new Response(
+          JSON.stringify({
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+            capabilities: TASK_PROCESS_CAPABILITIES,
+          }),
+          { status: 200 }
+        )
+      : fetchFn(input, init);
 
 describe('RemoteTaskRunner dispatch', () => {
   const request = { taskType: 'alerting:test', taskInstance: {}, executionUuid: 'u' };
@@ -20,11 +38,35 @@ describe('RemoteTaskRunner dispatch', () => {
       timeoutMs: 1000,
       setCustomTaskRunEventFields: jest.fn(),
       onDispatchFailure,
-      fetchFn: fetchFn as typeof fetch,
+      fetchFn: withProtocol(fetchFn as typeof fetch),
       ...extra,
     });
     return { runner, onDispatchFailure };
   };
+
+  it('does not dispatch after cancellation while protocol negotiation is pending', async () => {
+    const health = Promise.withResolvers<Response>();
+    const fetchFn = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
+      if (String(input).endsWith(TASK_PROCESS_PATHS.health)) return health.promise;
+      return new Response(JSON.stringify({ outcome: 'cancelled' }), { status: 200 });
+    });
+    const { runner } = create(fetchFn, { fetchFn });
+    const running = runner.run();
+    await runner.cancel();
+    health.resolve(
+      new Response(
+        JSON.stringify({
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+          capabilities: TASK_PROCESS_CAPABILITIES,
+        }),
+        { status: 200 }
+      )
+    );
+    await expect(running).rejects.toThrow('cancelled before dispatch');
+    expect(
+      fetchFn.mock.calls.some(([input]) => String(input).endsWith(TASK_PROCESS_PATHS.run))
+    ).toBe(false);
+  });
 
   it('force-releases a child on cancellation without waiting for its HTTP response', async () => {
     let finish: (value: unknown) => void = () => undefined;
@@ -131,7 +173,11 @@ describe('RemoteTaskRunner dispatch', () => {
     const { runner, onDispatchFailure } = create(fetchFn);
     const error = await runner.run().catch((failure: Error) => failure);
     expect(isUnrecoverableError(error as Error)).toBe(true);
-    expect(onDispatchFailure).toHaveBeenCalledWith('alerting:test', 'not_served', undefined);
+    expect(onDispatchFailure).toHaveBeenCalledWith(
+      'alerting:test',
+      'not_served',
+      expect.stringContaining('404')
+    );
   });
 
   it('reports a process that could not be started', async () => {
@@ -175,7 +221,7 @@ describe('RemoteTaskRunner observer', () => {
       timeoutMs: 1000,
       setCustomTaskRunEventFields: jest.fn(),
       observer,
-      fetchFn: fetchFn as typeof fetch,
+      fetchFn: withProtocol(fetchFn as typeof fetch),
     }),
   });
 

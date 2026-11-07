@@ -126,7 +126,7 @@ xpack.task_manager.task_execution:
   is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
   copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
 - **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns `dispatchFailures` by task type
-  and reason (`declined` for a 422, `not_served` for a 404, `capacity`, `spawn_failed`, `spawn_timeout`,
+  and reason (`declined` for a 422, `not_served` for a 404, `incompatible`, `capacity`, `spawn_failed`, `spawn_timeout`,
   `unavailable`) and the supervisor's numbers (`live`, `active`, `max`, `spawned`, `spawnFailures`,
   `spawnTimeouts`, `capacityRejections`). Dispatch failures are also in the `taskManager` usage counter as
   `taskProcessDispatchFailure:<reason>:<taskType>` and logged at warn. They are not in the health API, whose
@@ -159,6 +159,15 @@ Kibana settings come from the dispatch; a static settings file is not needed.
 Missing task types and incompatible deployments fail explicitly. Capacity and startup failures remain
 on the process route. Existing standalone bundle endpoints are useful for development, but remote
 mode now targets the supervisor so every dispatch receives its current configuration.
+
+Dispatch protocol v2 uses `/v2/run` and versioned cancellation, progress and active-pool endpoints.
+Before each dispatch, Main checks `/v2/health` for the current protocol and required runtime capabilities;
+child readiness advertises the same contract before a lease is issued. There are no unversioned business
+aliases. A health check that reaches a new replica cannot cause a subsequent run to execute on an old
+replica: its versioned run endpoint does not exist. Incompatibility fails permanently without local
+execution. `/health` remains available for liveness probes. Rebuild task bundles and deploy matching
+workers when upgrading this protocol. Changes to required dispatch semantics must update the protocol
+and endpoint version together.
 
 ## What a process is
 

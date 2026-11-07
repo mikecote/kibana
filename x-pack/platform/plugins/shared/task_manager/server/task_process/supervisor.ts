@@ -16,6 +16,7 @@ import type {
   TaskProcessLease,
   TaskProcessRoute,
 } from './remote_task_runner';
+import { assertTaskProcessProtocol } from './protocol';
 import { TaskProcessAcquireError } from './acquire_error';
 import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
@@ -369,12 +370,15 @@ export class TaskProcessSupervisor {
         );
         child.kill('SIGKILL');
       }, READY_TIMEOUT_MS);
-      const failed = (message: string) => {
+      const failed = (
+        message: string,
+        reason: 'spawn_failed' | 'incompatible' = 'spawn_failed'
+      ) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
         this.stats.spawnFailures++;
-        reject(new TaskProcessAcquireError('spawn_failed', message));
+        reject(new TaskProcessAcquireError(reason, message));
       };
       child.once('exit', (code, signal) =>
         failed(`Task process ${bundle.name} exited (${signal ?? code}) before it was ready`)
@@ -384,7 +388,13 @@ export class TaskProcessSupervisor {
         failed(`Task process ${bundle.name} could not be started: ${error.message}`)
       );
       child.on('message', (message: TaskProcessReady) => {
-        if (message?.kind !== 'ready') return;
+        if (settled || message?.kind !== 'ready') return;
+        try {
+          assertTaskProcessProtocol(message);
+        } catch (error) {
+          failed(error instanceof Error ? error.message : String(error), 'incompatible');
+          return;
+        }
         settled = true;
         clearTimeout(timer);
         resolve(message.port);

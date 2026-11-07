@@ -7,6 +7,7 @@
 
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
+import { TASK_PROCESS_PROTOCOL_VERSION, TASK_PROCESS_CAPABILITIES } from './protocol';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 import { createTaskProcessParentWatcher } from './parent_watch';
 import { readTaskProcessInit } from './main_init';
@@ -65,7 +66,12 @@ export const runTaskProcess = async (
       authToken: init.authToken || undefined,
       onListening: (port) => {
         if (process.send) {
-          process.send({ kind: 'ready', port } satisfies TaskProcessReady);
+          process.send({
+            kind: 'ready',
+            port,
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+            capabilities: TASK_PROCESS_CAPABILITIES,
+          } satisfies TaskProcessReady);
         } else {
           process.stdout.write(`READY ${port}\n`);
         }

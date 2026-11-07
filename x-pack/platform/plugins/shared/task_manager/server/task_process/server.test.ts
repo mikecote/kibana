@@ -10,11 +10,21 @@
  * 2.0.
  */
 
+import {
+  TASK_PROCESS_PROTOCOL_VERSION,
+  TASK_PROCESS_CAPABILITIES,
+  TASK_PROCESS_PATHS,
+} from './protocol';
+import { createServer } from 'http';
 import type { Server } from 'http';
 import { executionContextServiceMock } from '@kbn/core-execution-context-server-mocks';
 import { fetch as undiciFetch } from 'undici';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
-import { createRetryableError, DeclinedRunError } from '../task_running/errors';
+import {
+  createRetryableError,
+  DeclinedRunError,
+  isUnrecoverableError,
+} from '../task_running/errors';
 import type { CancellableTask, RunContext, TaskRunAsDefinition } from '../task';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
 import { startTaskProcessServer } from './server';
@@ -130,6 +140,54 @@ describe('task process server', () => {
     expect(((await response.json()) as { taskTypes: string[] }).taskTypes).toEqual([TYPE]);
   });
 
+  it('advertises the current dispatch contract separately from liveness', async () => {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.health}`);
+    expect(await response.json()).toMatchObject({
+      protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+      capabilities: TASK_PROCESS_CAPABILITIES,
+      taskTypes: [TYPE],
+    });
+  });
+
+  it.each([undefined, 1])(
+    'rejects protocol %s before creating the task',
+    async (protocolVersion) => {
+      const create = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+      createTask = create;
+      const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}` },
+        body: JSON.stringify({
+          protocolVersion,
+          taskType: TYPE,
+          taskInstance: {},
+          executionUuid: 'old',
+        }),
+      });
+      expect(response.status).toBe(409);
+      await response.body?.cancel();
+      expect(create).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not expose an unversioned business route', async () => {
+    const create = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+    createTask = create;
+    const response = await undiciFetch(`${url}/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+        taskType: TYPE,
+        taskInstance: {},
+        executionUuid: 'old-route',
+      }),
+    });
+    expect(response.status).toBe(404);
+    await response.body?.cancel();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('authenticates progress reads and returns the native count before completion', async () => {
     const started = Promise.withResolvers<void>();
     const completed = Promise.withResolvers<void>();
@@ -145,8 +203,8 @@ describe('task process server', () => {
     const running = runner().run();
     await started.promise;
     try {
-      expect((await undiciFetch(`${url}/metrics/run-1`)).status).toBe(401);
-      const progress = await undiciFetch(`${url}/metrics/run-1`, {
+      expect((await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`)).status).toBe(401);
+      const progress = await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, {
         headers: { authorization: `Bearer ${TOKEN}` },
       });
       expect(await progress.json()).toEqual({ createdTaskCount: 3, activePoolRequestIds: [] });
@@ -155,8 +213,11 @@ describe('task process server', () => {
       await running;
     }
     expect(
-      (await undiciFetch(`${url}/metrics/run-1`, { headers: { authorization: `Bearer ${TOKEN}` } }))
-        .status
+      (
+        await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, {
+          headers: { authorization: `Bearer ${TOKEN}` },
+        })
+      ).status
     ).toBe(404);
   });
 
@@ -172,12 +233,12 @@ describe('task process server', () => {
     const running = runner().run();
     await requested.promise;
     const headers = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
-    const response = await undiciFetch(`${url}/metrics/run-1`, { headers });
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, { headers });
     const metrics = (await response.json()) as TaskProcessRunMetrics;
     const requestId = metrics.activePoolRequestIds?.[0];
     if (!requestId) throw new Error('The live pool read was not published');
     const reply = (body: object, authorized = true) =>
-      undiciFetch(`${url}/active_pool/run-1`, {
+      undiciFetch(`${url}${TASK_PROCESS_PATHS.activePool}run-1`, {
         method: 'POST',
         headers: authorized ? headers : { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -221,10 +282,11 @@ describe('task process server', () => {
         return { state: {} };
       },
     });
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'enriched-task',
@@ -263,10 +325,11 @@ describe('task process server', () => {
       entered.resolve();
       await pending.promise;
     });
-    const running = undiciFetch(`${url}/run`, {
+    const running = undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'complete-before-flush',
@@ -284,10 +347,11 @@ describe('task process server', () => {
   });
 
   it('finishes what the run left to do before it answers, and answers with the result alone', async () => {
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'run-flush',
@@ -323,10 +387,11 @@ describe('task process server', () => {
 
   it.each(['cleanup', 'flush'])('marks a child non-reusable when %s fails', async (operation) => {
     (operation === 'cleanup' ? cleanup : flush).mockRejectedValue(new Error('failed'));
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'run-cleanup',
@@ -374,10 +439,11 @@ describe('task process server', () => {
       return { run: async () => ({ state: { enabled: await enabled } }) };
     };
     const run = async (enabled: boolean) => {
-      const response = await undiciFetch(`${url}/run`, {
+      const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
         method: 'POST',
         headers: { authorization: `Bearer ${TOKEN}` },
         body: JSON.stringify({
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
           taskType: TYPE,
           taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
           executionUuid: `run-${enabled}`,
@@ -425,10 +491,11 @@ describe('task process server', () => {
       });
       return { run: async () => ({ state: {} }) };
     };
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'run-flusher-fails',
@@ -462,10 +529,11 @@ describe('task process server', () => {
         }));
       },
     });
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
       body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
         executionUuid: 'run-workload',
@@ -524,7 +592,7 @@ describe('remote task worker', () => {
   const getTaskTypes = () => [TYPE];
 
   const snapshot = (enabled: boolean): TaskProcessDispatchSnapshot => ({
-    protocolVersion: 1,
+    protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
     init: {
       kibanaVersion: VERSION,
       elasticsearch: elasticsearchConfigFromEnv({
@@ -625,20 +693,28 @@ describe('remote task worker', () => {
   });
 
   it('rejects requests without a snapshot before acquiring an execution process', async () => {
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ taskType: TYPE, taskInstance: {}, executionUuid: 'missing' }),
+      body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+        taskType: TYPE,
+        taskInstance: {},
+        executionUuid: 'missing',
+      }),
     });
     expect(await response.json()).toMatchObject({ kind: 'thrown' });
     expect(acquire).not.toHaveBeenCalled();
   });
 
   it('requires the worker token before reading the dispatch credentials', async () => {
-    const response = await undiciFetch(`${url}/run`, {
+    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
       headers: { authorization: 'Bearer wrong' },
-      body: JSON.stringify({ snapshot: snapshot(true) }),
+      body: JSON.stringify({
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+        snapshot: snapshot(true),
+      }),
     });
     expect(response.status).toBe(401);
     await response.body?.cancel();
@@ -656,7 +732,13 @@ describe('native task creation metrics', () => {
       request: { taskType: 'test', taskInstance: {}, executionUuid: 'u' },
       timeoutMs: 1000,
       setCustomTaskRunEventFields: jest.fn(),
-      fetchFn,
+      fetchFn: async (input, init) =>
+        String(input).endsWith(TASK_PROCESS_PATHS.health)
+          ? Response.json({
+              protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+              capabilities: TASK_PROCESS_CAPABILITIES,
+            })
+          : fetchFn(input, init),
       ...extra,
     }),
   });
@@ -700,3 +782,67 @@ describe('native task creation metrics', () => {
     expect(onTasksCreated).toHaveBeenCalledWith(3);
   });
 });
+
+it.each([false, true])(
+  'never dispatches to legacy business routes with a compatible health replica: %s',
+  async (compatibleHealth) => {
+    const business = jest.fn();
+    const paths: string[] = [];
+    const server = createServer((request, response) => {
+      paths.push(request.url ?? '');
+      response.setHeader('content-type', 'application/json');
+      if (
+        request.method === 'GET' &&
+        request.url === TASK_PROCESS_PATHS.health &&
+        compatibleHealth
+      ) {
+        response.end(
+          JSON.stringify({
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+            capabilities: TASK_PROCESS_CAPABILITIES,
+          })
+        );
+        return;
+      }
+      if (request.method === 'POST' && request.url === '/run') {
+        business();
+        response.end(JSON.stringify({ kind: 'result', result: { state: {} } }));
+        return;
+      }
+      response.writeHead(404).end(JSON.stringify({ error: 'not found' }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Missing test server address');
+      const onDispatchFailure = jest.fn();
+      const runner = new RemoteTaskRunner({
+        route: { url: `http://127.0.0.1:${address.port}` },
+        request: { taskType: 'test:legacy', taskInstance: {}, executionUuid: 'legacy-run' },
+        timeoutMs: 1000,
+        setCustomTaskRunEventFields: jest.fn(),
+        onDispatchFailure,
+      });
+      const failure = await runner.run().catch((error: Error) => error);
+      expect(failure).toBeInstanceOf(Error);
+      if (!(failure instanceof Error)) throw new Error('Legacy dispatch unexpectedly succeeded');
+      expect(isUnrecoverableError(failure)).toBe(true);
+      expect(business).not.toHaveBeenCalled();
+      expect(paths).toEqual(
+        compatibleHealth
+          ? [TASK_PROCESS_PATHS.health, TASK_PROCESS_PATHS.run]
+          : [TASK_PROCESS_PATHS.health]
+      );
+      expect(onDispatchFailure).toHaveBeenCalledWith(
+        'test:legacy',
+        compatibleHealth ? 'not_served' : 'incompatible',
+        expect.any(String)
+      );
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  }
+);

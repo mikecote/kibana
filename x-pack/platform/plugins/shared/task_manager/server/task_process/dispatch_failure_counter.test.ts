@@ -19,6 +19,7 @@ describe('TaskProcessDispatchFailureCounter', () => {
     const none = {
       declined: 0,
       not_served: 0,
+      incompatible: 0,
       unavailable: 0,
       capacity: 0,
       spawn_failed: 0,

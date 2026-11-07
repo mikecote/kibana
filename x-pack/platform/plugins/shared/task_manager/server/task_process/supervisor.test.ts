@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { TASK_PROCESS_PROTOCOL_VERSION, TASK_PROCESS_CAPABILITIES } from './protocol';
 import { EventEmitter } from 'events';
 import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -80,7 +81,12 @@ describe('TaskProcessSupervisor', () => {
     const acquire = (type: string) =>
       (supervisor.getRoute(type) as { acquire: () => Promise<TaskProcessLease> }).acquire();
     const ready = (index: number, port = 4567) =>
-      children[index].child.emit('message', { kind: 'ready', port });
+      children[index].child.emit('message', {
+        kind: 'ready',
+        port,
+        protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+        capabilities: TASK_PROCESS_CAPABILITIES,
+      });
     return { supervisor, children, forkFn, acquire, ready };
   };
 
@@ -170,7 +176,7 @@ describe('TaskProcessSupervisor', () => {
     const { supervisor, children, forkFn, ready } = setup({ reuse, getInitFor });
     supervisor.start();
     const snapshot: TaskProcessDispatchSnapshot = {
-      protocolVersion: 1,
+      protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
       init: {
         kibanaVersion: '9.9.9',
         elasticsearch: { hosts: ['http://dispatch-es:9200'] } as never,
@@ -320,7 +326,12 @@ describe('TaskProcessSupervisor', () => {
     expect(child.send).toHaveBeenCalledWith(
       expect.objectContaining({ parity: [{ kind: 'connectorTypes', ids: ['.email'] }] })
     );
-    child.emit('message', { kind: 'ready', port: 1 });
+    child.emit('message', {
+      kind: 'ready',
+      port: 1,
+      protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+      capabilities: TASK_PROCESS_CAPABILITIES,
+    });
     await first;
 
     await expect(route.acquire()).rejects.toThrow('cannot read the overrides');
@@ -363,6 +374,20 @@ describe('TaskProcessSupervisor', () => {
     const failed = acquire('alerting_v2:cleanup');
     children[0].child.emit('exit', 1, null);
     await expect(failed).rejects.toThrow(/before it was ready/);
+  });
+
+  it.each([
+    {},
+    { protocolVersion: 1, capabilities: TASK_PROCESS_CAPABILITIES },
+    { protocolVersion: TASK_PROCESS_PROTOCOL_VERSION, capabilities: [] },
+  ])('rejects incompatible readiness before leasing a child: %j', async (protocol) => {
+    const { supervisor, children, acquire } = setup();
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    children[0].child.emit('message', { kind: 'ready', port: 4567, ...protocol });
+    await expect(pending).rejects.toMatchObject({ reason: 'incompatible' });
+    expect(children[0].child.kill).toHaveBeenCalledWith('SIGTERM');
+    await supervisor.stop();
   });
 
   it('kills a process that does not become ready', async () => {

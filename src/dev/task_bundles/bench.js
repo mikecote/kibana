@@ -7,6 +7,11 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+const {
+  TASK_PROCESS_PROTOCOL_VERSION,
+  TASK_PROCESS_PATHS,
+  assertTaskProcessProtocol,
+} = require('@kbn/task-manager-plugin/server/task_process/protocol');
 const { fork, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -150,6 +155,12 @@ const measureOnce = (file, settingIds) =>
         return;
       }
       if (message?.kind !== 'ready') return;
+      try {
+        assertTaskProcessProtocol(message);
+      } catch (error) {
+        finish({ error: error.message });
+        return;
+      }
       startupMs = Number(process.hrtime.bigint() - started) / 1e6;
       readyRss = rssMb(child.pid);
       // Let startup work that continues after the ready signal finish before reading idle memory.
@@ -162,11 +173,17 @@ const measureOnce = (file, settingIds) =>
         child.send({ kind: 'task-bundle-memory', phase: 'idle' });
         if (runRequest) {
           try {
-            const response = await fetch(`http://127.0.0.1:${message.port}/run`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', authorization: 'Bearer bench' },
-              body: JSON.stringify(runRequest),
-            });
+            const response = await fetch(
+              `http://127.0.0.1:${message.port}${TASK_PROCESS_PATHS.run}`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: 'Bearer bench' },
+                body: JSON.stringify({
+                  ...runRequest,
+                  protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+                }),
+              }
+            );
             const body = await response.json();
             runStatus = response.status;
             if (!response.ok) {

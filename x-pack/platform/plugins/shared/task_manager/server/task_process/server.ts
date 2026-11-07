@@ -13,6 +13,11 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import {
+  TASK_PROCESS_PROTOCOL_VERSION,
+  TASK_PROCESS_CAPABILITIES,
+  TASK_PROCESS_PATHS,
+} from './protocol';
 import { withTaskProcessTrace } from './task_tracing';
 import { ActiveTaskPoolRequests } from './active_task_pool_requests';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
@@ -133,7 +138,7 @@ export const startTaskProcessServer = ({
   logger: Logger;
   /** The Kibana version this process was built for; runs from another version are refused. */
   kibanaVersion: string;
-  /** Bearer token required on `/run` and `/cancel`; `/health` stays open. */
+  /** Bearer token required on versioned business routes; health stays open. */
   authToken?: string;
   /** Called with the port once listening, which matters when the OS picked it. */
   onListening?: (port: number) => void;
@@ -158,6 +163,9 @@ export const startTaskProcessServer = ({
   const handleRun = async (
     body: TaskProcessRunRequest
   ): Promise<TaskProcessRunResponse | undefined> => {
+    if (body.protocolVersion !== TASK_PROCESS_PROTOCOL_VERSION) {
+      throw new RefusedRun(409, 'Task worker dispatch protocol is incompatible');
+    }
     const definition = taskDefinitions.get(body.taskType);
     if (!definition && !forwardRun) return undefined;
     if (body.snapshot && !forwardRun) {
@@ -314,8 +322,13 @@ export const startTaskProcessServer = ({
 
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === 'GET' && req.url === '/health') {
+      if (
+        req.method === 'GET' &&
+        (req.url === '/health' || req.url === TASK_PROCESS_PATHS.health)
+      ) {
         sendJson(res, 200, {
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+          capabilities: TASK_PROCESS_CAPABILITIES,
           inFlight: inFlight.size,
           rss: process.memoryUsage().rss,
           taskTypes: getTaskTypes?.() ?? [...taskDefinitions.keys()],
@@ -327,10 +340,10 @@ export const startTaskProcessServer = ({
         !authToken || isSameSecret(req.headers.authorization, `Bearer ${authToken}`);
       if (
         (req.method === 'POST' &&
-          (req.url === '/run' ||
-            req.url?.startsWith('/cancel/') ||
-            req.url?.startsWith('/active_pool/'))) ||
-        (req.method === 'GET' && req.url?.startsWith('/metrics/'))
+          (req.url === TASK_PROCESS_PATHS.run ||
+            req.url?.startsWith(TASK_PROCESS_PATHS.cancel) ||
+            req.url?.startsWith(TASK_PROCESS_PATHS.activePool))) ||
+        (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics))
       ) {
         if (!isAuthorized) {
           sendJson(res, 401, { error: 'unauthorized' });
@@ -338,8 +351,8 @@ export const startTaskProcessServer = ({
         }
       }
 
-      if (req.method === 'GET' && req.url?.startsWith('/metrics/')) {
-        const entry = inFlight.get(req.url.slice('/metrics/'.length));
+      if (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics)) {
+        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.metrics.length));
         sendJson(
           res,
           entry ? 200 : 404,
@@ -353,8 +366,8 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url?.startsWith('/active_pool/')) {
-        const entry = inFlight.get(req.url.slice('/active_pool/'.length));
+      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.activePool)) {
+        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.activePool.length));
         const reply = await readActivePoolReply(req);
         if (!entry?.activeTaskPool.completeRequest(reply.requestId, reply.executionIds)) {
           sendJson(res, 404, { error: 'no such active-pool request' });
@@ -364,7 +377,7 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url === '/run') {
+      if (req.method === 'POST' && req.url === TASK_PROCESS_PATHS.run) {
         const body = JSON.parse(await readBody(req)) as TaskProcessRunRequest;
         // Kibana hung up (it timed out or was cancelled): don't keep running for nobody.
         res.on('close', () => {
@@ -379,8 +392,8 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url?.startsWith('/cancel/')) {
-        const entry = inFlight.get(req.url.slice('/cancel/'.length));
+      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.cancel)) {
+        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.cancel.length));
         if (!entry) {
           sendJson(res, 404, { error: 'no such in-flight run' });
           return;
