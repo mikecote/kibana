@@ -11,6 +11,9 @@
     "id": "aiops",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"]
+    },
     "configPath": ["xpack", "aiops"],
     "requiredPlugins": [
       "charts",

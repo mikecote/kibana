@@ -18,7 +18,10 @@ import {
   PatternAnalysisAttachmentPayloadSchema,
 } from '../common/utils';
 
-export function registerCaseAttachments(cases: CasesServerSetup | undefined, logger: Logger) {
+export function registerCaseAttachments(
+  cases: Pick<CasesServerSetup, 'attachmentFramework'> | undefined,
+  logger: Logger
+) {
   if (cases) {
     try {
       cases.attachmentFramework.registerAttachment({

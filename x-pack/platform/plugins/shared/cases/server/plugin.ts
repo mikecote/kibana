@@ -337,7 +337,9 @@ export class CasePlugin
         this.caseConfig.attachments?.enabled === true
           ? {
               unifiedAttachmentTypeRegistry: this.unifiedAttachmentTypeRegistry,
-              waitForStartServices: () => core.getStartServices(),
+              waitForAttachmentTypes: async () => {
+                await core.getStartServices();
+              },
             }
           : undefined,
     });
@@ -521,6 +523,7 @@ export class CasePlugin
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         casesEventBus: this.casesEventBus!,
         closeReasonOwners: [...this.closeReasonValidators.keys()],
+        attachmentTypeIds: this.unifiedAttachmentTypeRegistry.list().map(({ id }) => id),
       });
 
     this.clientFactory.initialize({

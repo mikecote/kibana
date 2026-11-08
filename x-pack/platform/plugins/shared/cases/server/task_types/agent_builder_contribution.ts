@@ -5,22 +5,22 @@
  * 2.0.
  */
 
-import type { CoreSetup, KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowTriggerEmitterSource } from '@kbn/workflows-extensions/server';
+import type { CasesAlertsClient } from '../services/alerts';
 import { APP_ID } from '../../common/constants';
-import { registerCasesAgentBuilderTools } from '../agent_builder';
+import { registerCasesAgentBuilderToolsWithServices } from '../agent_builder';
 import { CasesEventBus } from '../events/event_bus';
 import { registerCasesWorkflowEventBridge } from '../workflows/triggers/event_bridge';
-import type { CasesServerStartDependencies } from '../types';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { getCasesTaskProcessSavedObjectTypes } from './cases_saved_object_types';
 import { createCasesRunServices } from './create_cases_run_services';
 import type { CasesRunServices } from './create_cases_run_services';
-import { registerInternalAttachments } from '../internal_attachments';
-import { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
+import type { CasesTaskProcessAttachmentTypes } from './create_attachment_type_registry';
 
 /** The id of the settings the plugin sends a task process to register its agent builder tools. */
 export const CASES_AGENT_BUILDER_SETTINGS_ID = 'casesAgentBuilder';
@@ -40,9 +40,8 @@ export interface CasesAgentBuilderSettings {
  * settings it sends. The events a tool emits (a case created) reach the engine through the bridge
  * of the plugin, and the run waits for them.
  *
- * Differences from Kibana: the attachment types that solutions register, the alerts client of the
- * rule registry and files are Kibana's, so a tool that adds alerts, events or other solution
- * attachments, or deletes attachments, fails with "only available in Kibana" in a process.
+ * Attachment, alert and file operations share native services with the workflow runtime.
+ * Notification and solution event capabilities are validated separately.
  */
 export const contribution: AgentBuilderContribution = {
   declares: {
@@ -58,8 +57,9 @@ export const contribution: AgentBuilderContribution = {
     const taskHost = host as TaskHost;
     const casesLogger = logger.get('cases');
     const casesEventBus = new CasesEventBus(casesLogger);
-    const unifiedAttachmentTypeRegistry = new UnifiedAttachmentTypeRegistry();
-    registerInternalAttachments(unifiedAttachmentTypeRegistry);
+    const attachmentTypes =
+      services.getService<CasesTaskProcessAttachmentTypes>('cases.attachmentTypes');
+    const unifiedAttachmentTypeRegistry = attachmentTypes.registry;
     let run: CasesRunServices | undefined;
     const getRun = () => {
       if (!run) {
@@ -79,10 +79,25 @@ export const contribution: AgentBuilderContribution = {
           savedObjects,
           security: securityPlugin,
           securityService: security,
+          isFipsMode: security.fips.isEnabled(),
+          getAttachmentParityError: attachmentTypes.getParityError,
+          getRacClientWithRequest: (request) =>
+            services
+              .getService<{
+                getRacClientWithRequest: (
+                  scopedRequest: KibanaRequest
+                ) => Promise<CasesAlertsClient>;
+              }>('ruleRegistry')
+              .getRacClientWithRequest(request),
           userProfile,
+          spaces: workflows.spacesEnabled
+            ? services.getService<SpacesPluginStart>('spaces').spacesService
+            : undefined,
           licensing,
           getActionsClientWithRequest: services.getActionsClientWithRequest,
           usageCounter: usageCounters.getUsageCounter(APP_ID),
+          filesUsageCounter: usageCounters.getUsageCounter('files'),
+          analytics: taskHost.analytics,
           publicBaseUrl: taskHost.server.publicBaseUrl,
           casesEventBus,
           clientSource: 'agent_builder',
@@ -112,26 +127,19 @@ export const contribution: AgentBuilderContribution = {
       await Promise.allSettled([...pendingEvents]);
     });
 
-    const coreSetup = {
-      getStartServices: async () => [
-        await services.getCoreStart(),
-        {
-          spaces: workflows.spacesEnabled
-            ? {
-                spacesService: {
-                  getActiveSpace: (request: KibanaRequest) =>
-                    getRun().getActiveSpace?.(request) as never,
-                },
-              }
-            : undefined,
-        },
-        {},
-      ],
-    } as unknown as CoreSetup<CasesServerStartDependencies>;
-    registerCasesAgentBuilderTools(
+    registerCasesAgentBuilderToolsWithServices(
       agentBuilder,
       (request: KibanaRequest) => getRun().getCasesClient(request),
-      coreSetup,
+      {
+        getBasePath: async () => ({
+          publicBaseUrl: taskHost.server.publicBaseUrl,
+          serverBasePath: taskHost.http.basePath.serverBasePath,
+        }),
+        getActiveSpace: async (request) =>
+          workflows.spacesEnabled
+            ? services.getService<SpacesPluginStart>('spaces').spacesService.getActiveSpace(request)
+            : undefined,
+      },
       unifiedAttachmentTypeRegistry,
       {
         analyticsV2Enabled: workflows.config.analyticsV2.enabled,

@@ -11,7 +11,7 @@ import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-plugin/server';
 import type { CasesClient } from '../client';
 import type { CasesServerStartDependencies } from '../types';
 import type { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
-import { searchCasesTool } from './tools/search_cases';
+import { searchCasesToolWithServices } from './tools/search_cases';
 import { manageCasesTool } from './tools/manage_cases';
 import { getAttachmentsTool } from './tools/get_attachments_tool';
 import { manageAttachmentsTool } from './tools/manage_attachments_tool';
@@ -21,7 +21,16 @@ import { buildCasesSkill } from './skills/cases_skill';
 import { casesAnalyticsSkill } from './skills/cases_analytics_skill';
 import { createCaseAttachmentType } from './attachments/case_attachment_type';
 import { createCasesAttachmentType } from './attachments/cases_attachment_type';
-import { createCasesToolAvailability } from './utils/get_cases_tool_availability';
+import { createCasesToolAvailabilityWithServices } from './utils/get_cases_tool_availability';
+
+import { createCasesToolServices } from './cases_tool_services';
+import type { CasesToolServices } from './cases_tool_services';
+
+interface CasesAgentBuilderOptions {
+  analyticsV2Enabled: boolean;
+  attachmentsEnabled: boolean;
+  templatesEnabled: boolean;
+}
 
 /**
  * Registers all Cases agent builder tools:
@@ -44,16 +53,31 @@ export function registerCasesAgentBuilderTools(
   getCasesClient: (request: KibanaRequest) => Promise<CasesClient>,
   coreSetup: CoreSetup<CasesServerStartDependencies>,
   unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry,
-  {
-    analyticsV2Enabled,
-    attachmentsEnabled,
-    templatesEnabled,
-  }: { analyticsV2Enabled: boolean; attachmentsEnabled: boolean; templatesEnabled: boolean },
+  options: CasesAgentBuilderOptions,
   logger: Logger
 ): void {
-  const availability = createCasesToolAvailability(coreSetup, logger);
+  registerCasesAgentBuilderToolsWithServices(
+    agentBuilder,
+    getCasesClient,
+    createCasesToolServices(coreSetup),
+    unifiedAttachmentTypeRegistry,
+    options,
+    logger
+  );
+}
+
+/** Registers native Cases tools over explicit request, link and attachment services. */
+export function registerCasesAgentBuilderToolsWithServices(
+  agentBuilder: AgentBuilderPluginSetup,
+  getCasesClient: (request: KibanaRequest) => Promise<CasesClient>,
+  services: CasesToolServices,
+  unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry,
+  { analyticsV2Enabled, attachmentsEnabled, templatesEnabled }: CasesAgentBuilderOptions,
+  logger: Logger
+): void {
+  const availability = createCasesToolAvailabilityWithServices(services, logger);
   agentBuilder.tools.register({
-    ...searchCasesTool(coreSetup, getCasesClient),
+    ...searchCasesToolWithServices(services, getCasesClient),
     availability,
   });
   agentBuilder.tools.register({

@@ -14,6 +14,7 @@
       "server/task_types/anomaly_detection_jobs_health.task.ts"
     ],
     "taskTypeContributions": {
+      "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"],
       "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
       "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
     },

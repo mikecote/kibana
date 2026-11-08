@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CoreSetup, Logger } from '@kbn/core/server';
+import type { ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
 import type { CasesServerSetup } from '@kbn/cases-plugin/server';
 
 import type { ExperimentalFeatures } from '../../../common/experimental_features';
@@ -18,8 +18,14 @@ import { getTimelineAttachmentType } from './timeline';
 
 export const registerCaseAttachments = (
   attachmentFramework: CasesServerSetup['attachmentFramework'],
-  experimentalFeatures: ExperimentalFeatures,
-  deps: { getStartServices: CoreSetup['getStartServices']; logger: Logger }
+  experimentalFeatures: Pick<
+    ExperimentalFeatures,
+    'entityAttachmentsEnabled' | 'attackAttachmentsEnabled'
+  >,
+  deps: {
+    getScopedElasticsearchClient: (request: KibanaRequest) => Promise<ElasticsearchClient>;
+    logger: Logger;
+  }
 ): void => {
   attachmentFramework.registerAttachment(getEndpointAttachmentType());
   attachmentFramework.registerAttachment(getEventAttachmentType());

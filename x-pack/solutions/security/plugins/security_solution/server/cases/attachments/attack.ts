@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CoreSetup, ElasticsearchClient, Logger } from '@kbn/core/server';
+import type { ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
 import type {
   AttachmentDeleteTarget,
   GetRelatedAttachments,
@@ -27,7 +27,7 @@ import { validateAttackWorkflowTargets } from './workflow_validation';
 import { getCaseAlertAttachments, resolveRemovableAlertIds } from './resolve_removable_alerts';
 
 interface AttackAttachmentTypeDeps {
-  getStartServices: CoreSetup['getStartServices'];
+  getScopedElasticsearchClient: (request: KibanaRequest) => Promise<ElasticsearchClient>;
   logger: Logger;
   isAttachEnabled: boolean;
 }
@@ -138,7 +138,7 @@ const getAlertIdsByAttackId = async ({
  */
 export const getAttackRelatedAttachments =
   ({
-    getStartServices,
+    getScopedElasticsearchClient,
     logger,
   }: Omit<AttackAttachmentTypeDeps, 'isAttachEnabled'>): GetRelatedAttachments =>
   async ({ request, attachments, remainingAttachments }) => {
@@ -152,9 +152,8 @@ export const getAttackRelatedAttachments =
     }
 
     const otherAttacks = toAttackReferences(remainingAttachments);
-    const [coreStart] = await getStartServices();
     const alertIdsByAttackId = await getAlertIdsByAttackId({
-      esClient: coreStart.elasticsearch.client.asScoped(request).asCurrentUser,
+      esClient: await getScopedElasticsearchClient(request),
       attacks: [...removedAttacks, ...otherAttacks],
       logger,
     });

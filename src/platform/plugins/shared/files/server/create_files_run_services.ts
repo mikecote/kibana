@@ -9,11 +9,15 @@
 
 import type { ElasticsearchClient, Logger, SavedObjectsServiceStart } from '@kbn/core/server';
 import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import { FileKindsRegistryImpl } from '../common/file_kinds_registry';
 import type { FileKindsRegistry } from '../common/file_kinds_registry';
 import type { FileKind } from '../common/types';
 import { BlobStorageService } from './blob_storage_service';
-import { FileServiceFactoryImpl } from './file_service/file_service_factory';
+import {
+  configureFilesUsageCounter,
+  FileServiceFactoryImpl,
+} from './file_service/file_service_factory';
 import { fileObjectType, fileShareObjectType } from './saved_objects';
 import type { FileAnalytics } from './performance/analytics';
 
@@ -32,15 +36,18 @@ export const createFileServiceFactory = ({
   fileKindsRegistry,
   logger,
   analytics,
+  usageCounter,
 }: {
-  savedObjects: SavedObjectsServiceStart;
+  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient' | 'createInternalRepository'>;
   esClient: ElasticsearchClient;
-  security?: SecurityPluginSetup;
+  security?: Pick<SecurityPluginSetup, 'audit'>;
   fileKindsRegistry: FileKindsRegistry;
   logger: Logger;
   analytics?: FileAnalytics;
-}): FileServiceFactoryImpl =>
-  new FileServiceFactoryImpl(
+  usageCounter?: Pick<UsageCounter, 'incrementCounter'>;
+}): FileServiceFactoryImpl => {
+  if (usageCounter) configureFilesUsageCounter(usageCounter);
+  return new FileServiceFactoryImpl(
     savedObjects,
     new BlobStorageService(esClient, logger.get('blob-storage-service'), analytics),
     security,
@@ -48,6 +55,7 @@ export const createFileServiceFactory = ({
     logger.get('files-service'),
     analytics
   );
+};
 
 /**
  * A task process's file services: a registry of the given file kinds (the ones plugins register with
@@ -57,11 +65,12 @@ export const createFilesRunServices = ({
   fileKinds,
   ...deps
 }: {
-  savedObjects: SavedObjectsServiceStart;
+  savedObjects: Pick<SavedObjectsServiceStart, 'getScopedClient' | 'createInternalRepository'>;
   esClient: ElasticsearchClient;
-  security?: SecurityPluginSetup;
+  security?: Pick<SecurityPluginSetup, 'audit'>;
   logger: Logger;
   analytics?: FileAnalytics;
+  usageCounter?: Pick<UsageCounter, 'incrementCounter'>;
   fileKinds: FileKind[];
 }): { fileServiceFactory: FileServiceFactoryImpl } => {
   const fileKindsRegistry = new FileKindsRegistryImpl();

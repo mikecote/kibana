@@ -6,6 +6,7 @@
  */
 
 import type { CoreSetup, Logger, SavedObjectsType } from '@kbn/core/server';
+import { filesRunSavedObjectTypes } from '@kbn/files-plugin/server';
 import type { LensServerPluginSetup } from '@kbn/lens-plugin/server';
 import { extract, inject } from '@kbn/lens-plugin/server/embeddable/references';
 import { SpacesSavedObjectMappings } from '@kbn/spaces-plugin/server/saved_objects/mappings';
@@ -35,7 +36,7 @@ const noopLogger: Logger = new Proxy({} as Logger, {
  * a space decide which cases owners a user can reach.
  */
 export const getCasesTaskProcessSavedObjectTypes = (): SavedObjectsType[] => {
-  const types: SavedObjectsType[] = [];
+  const types: SavedObjectsType[] = [...filesRunSavedObjectTypes];
   registerSavedObjects({
     core: {
       savedObjects: { registerType: (type: SavedObjectsType) => types.push(type) },

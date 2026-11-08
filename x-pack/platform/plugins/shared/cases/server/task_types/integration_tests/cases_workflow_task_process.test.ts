@@ -10,7 +10,20 @@
  * 2.0.
  */
 
-import { startWorkflowProcessHarness } from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
+import { join } from 'path';
+import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
+import { KibanaFeature } from '@kbn/features-plugin/common';
+import {
+  ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID,
+  getAlertingAuthorizationTaskProcessSettings,
+} from '@kbn/alerting-plugin/server/task_types/alerting_authorization_task_process_settings';
+import { UnifiedAttachmentTypeRegistry } from '../../attachment_framework/unified_attachment_registry';
+import { registerInternalAttachments } from '../../internal_attachments';
+import { ConfigSchema } from '../../config';
+import {
+  startWorkflowProcessHarness,
+  WORKFLOW_PROCESS_TEST_MODES,
+} from '@kbn/workflows-execution-engine/server/integration_tests/workflow_process_harness';
 import {
   CASE_ATTACHMENT_SAVED_OBJECT,
   CASE_SAVED_OBJECT,
@@ -27,6 +40,36 @@ const USAGE_COUNTERS_INDEX = '.kibana_usage_counters';
 // How the saved object stores `critical`.
 const SEVERITY_CRITICAL = 30;
 
+const attachmentRegistry = new UnifiedAttachmentTypeRegistry();
+registerInternalAttachments(attachmentRegistry);
+
+const feature = new KibanaFeature({
+  id: 'securitySolutionCasesV3',
+  name: 'Security cases',
+  app: [],
+  category: DEFAULT_APP_CATEGORIES.management,
+  cases: ['securitySolution'],
+  privileges: {
+    all: {
+      savedObject: { all: [], read: [] },
+      ui: [],
+      cases: {
+        create: ['securitySolution'],
+        read: ['securitySolution'],
+        update: ['securitySolution'],
+        push: ['securitySolution'],
+      },
+    },
+    read: { savedObject: { all: [], read: [] }, ui: [], cases: { read: ['securitySolution'] } },
+  },
+});
+const alertsSnapshot = getAlertingAuthorizationTaskProcessSettings({
+  ruleTypeRegistry: { list: () => new Map<string, never>() },
+  features: { getKibanaFeatures: () => [feature] },
+  spacesEnabled: true,
+  securityEnabled: true,
+});
+
 const casesSettings: CasesTaskProcessSettings = {
   isCasesAttachmentsEnabled: true,
   isTemplatesEnabled: true,
@@ -36,8 +79,11 @@ const casesSettings: CasesTaskProcessSettings = {
       assigneeIdentity: { enabled: true },
       attachments: { enabled: true },
       analyticsV2: { enabled: false },
+      files: ConfigSchema.validate({ files: { allowedMimeTypes: ['text/plain'], maxSize: 1024 } })
+        .files,
     },
     spacesEnabled: true,
+    attachmentTypeIds: attachmentRegistry.list().map(({ id }) => id),
     // What the features registry of Kibana has.
     featureCaseOwners: [{ id: 'securitySolutionCasesV3', cases: ['securitySolution'] }],
     isEmailServiceAvailable: false,
@@ -51,13 +97,18 @@ const casesSettings: CasesTaskProcessSettings = {
  * the steps come from the `workflow-steps` contribution of cases, build the cases client of Kibana
  * over the services of the process (privileges, space, saved objects) and write the case, its
  * attachment and its user actions. The events of the case reach the engine, which schedules the
- * workflow that listens to them. A workflow that deletes cases is declined.
+ * workflow that listens to them. Case deletion removes its attachments and native file contents.
  */
-describe('cases workflow steps served from the workflow:scheduled bundle', () => {
+describe.each(WORKFLOW_PROCESS_TEST_MODES)('Cases $mode/$reuse', ({ mode, reuse }) => {
   let harness: Awaited<ReturnType<typeof startWorkflowProcessHarness>>;
 
   beforeAll(async () => {
     harness = await startWorkflowProcessHarness({
+      mode,
+      reuse,
+      additionalContributions: {
+        'workflow-steps': [join(__dirname, 'fixtures/native_case_file_contribution.ts')],
+      },
       workflows: {
         [CREATE_WORKFLOW_ID]: {
           steps: [
@@ -93,7 +144,43 @@ describe('cases workflow steps served from the workflow:scheduled bundle', () =>
           ],
         },
         [DELETE_WORKFLOW_ID]: {
-          steps: [{ name: 'delete', type: 'cases.deleteCases', with: { case_ids: ['case-1'] } }],
+          steps: [
+            {
+              name: 'create',
+              type: 'cases.createCase',
+              with: {
+                title: 'Evidence to delete',
+                description: 'Native file cleanup',
+                owner: 'securitySolution',
+              },
+            },
+            {
+              name: 'attach',
+              type: 'cases.addAttachments',
+              with: {
+                case_id: '{{ steps.create.output.case.id }}',
+                attachments: [{ type: 'comment', data: { content: 'Evidence comment' } }],
+              },
+            },
+            {
+              name: 'removeAttachment',
+              type: 'cases.deleteAttachments',
+              with: {
+                case_id: '{{ steps.create.output.case.id }}',
+                ids: ['{{ steps.attach.output.case.comments[0].id }}'],
+              },
+            },
+            {
+              name: 'file',
+              type: 'test.cases.storeFile',
+              with: { case_id: '{{ steps.create.output.case.id }}' },
+            },
+            {
+              name: 'delete',
+              type: 'cases.deleteCases',
+              with: { case_ids: ['{{ steps.create.output.case.id }}'] },
+            },
+          ],
         },
         // Scheduled by the event of the case the first workflow creates.
         [ON_CREATED_WORKFLOW_ID]: {
@@ -101,7 +188,10 @@ describe('cases workflow steps served from the workflow:scheduled bundle', () =>
           steps: [{ name: 'log', type: 'console', with: { message: 'case created' } }],
         },
       },
-      settings: { cases: casesSettings },
+      settings: {
+        cases: casesSettings,
+        [ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID]: alertsSnapshot,
+      },
       // The usage counters index Kibana has: the process stores what the cases client counts.
       savedObjectTypes: [
         ...getCasesTaskProcessSavedObjectTypes(),
@@ -214,11 +304,37 @@ describe('cases workflow steps served from the workflow:scheduled bundle', () =>
     );
   });
 
-  it('declines a workflow that deletes cases, writing nothing', async () => {
-    const onDispatchFailure = jest.fn();
-    await expect(harness.run(DELETE_WORKFLOW_ID, onDispatchFailure)).rejects.toThrow('422');
-
-    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
-    expect(await harness.executionsOf(DELETE_WORKFLOW_ID)).toHaveLength(0);
+  it('creates attachments and file contents, then deletes them with the case in the worker', async () => {
+    const failure = jest.fn();
+    await harness.run(DELETE_WORKFLOW_ID, failure);
+    expect(failure).not.toHaveBeenCalled();
+    const [execution] = await harness.executionsOf(DELETE_WORKFLOW_ID);
+    expect(execution.status).toBe('completed');
+    const steps = await harness.stepsOf(execution.id);
+    expect(steps.map(({ stepId, status }) => ({ stepId, status }))).toEqual(
+      expect.arrayContaining([
+        { stepId: 'create', status: 'completed' },
+        { stepId: 'attach', status: 'completed' },
+        { stepId: 'removeAttachment', status: 'completed' },
+        { stepId: 'file', status: 'completed' },
+        { stepId: 'delete', status: 'completed' },
+      ])
+    );
+    const created = steps.find(({ stepId }) => stepId === 'create');
+    const storedFile = steps.find(({ stepId }) => stepId === 'file');
+    expect(storedFile?.output.bytes).toBe(Buffer.byteLength('Evidence uploaded by the worker'));
+    expect(storedFile?.output.chunks).toBeGreaterThan(0);
+    const caseId = created?.output.case.id;
+    if (typeof caseId !== 'string') throw new Error('The created case id was not persisted');
+    expect(
+      await harness.es.exists({ index: CASES_INDEX, id: `${CASE_SAVED_OBJECT}:${caseId}` })
+    ).toBe(false);
+    await harness.es.indices.refresh({ index: '.kibana' });
+    const files = await harness.es.count({ index: '.kibana', query: { term: { type: 'file' } } });
+    expect(files.count).toBe(0);
+    const internalEs = harness.es.child({ headers: { 'x-elastic-product-origin': 'kibana' } });
+    await internalEs.indices.refresh({ index: '.kibana_blob_storage' });
+    expect((await internalEs.count({ index: '.kibana_blob_storage' })).count).toBe(0);
+    expect(harness.kibanaRequests).toEqual([]);
   });
 });

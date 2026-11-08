@@ -103,7 +103,8 @@ describe('getAttackRelatedAttachments', () => {
     coreSetup.getStartServices.mockResolvedValue([coreStart, {}, {}]);
 
     getRelated = getAttackRelatedAttachments({
-      getStartServices: coreSetup.getStartServices,
+      getScopedElasticsearchClient: async (scopedRequest) =>
+        coreStart.elasticsearch.client.asScoped(scopedRequest).asCurrentUser,
       logger: loggerMock.create(),
     });
   });

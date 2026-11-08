@@ -11,6 +11,8 @@ import type { BuiltinToolDefinition, ToolHandlerContext } from '@kbn/agent-build
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { Logger } from '@kbn/logging';
 import type { CoreSetup } from '@kbn/core/server';
+import { createCasesToolServices } from '../cases_tool_services';
+import type { CasesToolServices } from '../cases_tool_services';
 import type { CasesClient } from '../../client';
 import type { CasesServerStartDependencies } from '../../types';
 import { getCaseStepCommonDefinition } from '../../../common/workflows/steps/get_case';
@@ -152,6 +154,12 @@ function enhanceCases(
 export const searchCasesTool = (
   coreSetup: CoreSetup<CasesServerStartDependencies>,
   getCasesClientFn: (request: KibanaRequest) => Promise<CasesClient>
+): BuiltinToolDefinition<typeof casesSchema> =>
+  searchCasesToolWithServices(createCasesToolServices(coreSetup), getCasesClientFn);
+
+export const searchCasesToolWithServices = (
+  services: CasesToolServices,
+  getCasesClientFn: (request: KibanaRequest) => Promise<CasesClient>
 ): BuiltinToolDefinition<typeof casesSchema> => {
   return {
     id: platformCoreTools.cases,
@@ -201,8 +209,8 @@ Returns metadata only; for comments/alert/event attachments call \`platform.core
       { request, spaceId, logger, attachments }
     ) => {
       try {
-        const [coreStart] = await coreSetup.getStartServices();
-        const coreServices: CoreServices = { coreStart, spaceId };
+        const basePath = await services.getBasePath();
+        const coreServices: CoreServices = { coreStart: { http: { basePath } }, spaceId };
 
         const casesClient = await getCasesClientFn(request);
 

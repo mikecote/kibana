@@ -629,6 +629,13 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   compare-and-set revisions and verifies fresh revisions in all four worker modes. Attack-discovery
   rules use the same initializer and native scheduler for either storage mode, including encrypted
   workflow tasks; data-stream storage no longer causes those rules to decline.
+- **Cases attachments and files.** `cases-attachment-types` contributions restore the native definitions
+  registered by Security Solution, Observability, Osquery, ML and AIOps. Main sends the current type IDs,
+  feature settings and file configuration; Cases checks registry parity before operations. Attachments,
+  events and alerts use native validation, scoped file services and authorized rule-registry clients.
+  Main and workers use Core's serializer and the same Spaces service. The four-mode execution matrix
+  creates and deletes attachments, uploads evidence and verifies deletion of its metadata and blob contents.
+  Native file usage counters and performance events use the worker's durable counters and analytics.
 - **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
   plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
   `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
@@ -820,8 +827,7 @@ proposals (the services over the plugin's storage, and agent builder's attachmen
 (the AI index services, the signals and improvements stores), cases (the cases client of `createCasesRunServices`,
 with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
 capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
-license switchers). Differences from Kibana are in the comment of each contribution (the AI
-indices other plugins register as managed, the attachment types and the alerts client of solutions, and files).
+license switchers). Remaining differences are documented by each contribution.
 Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
 the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
 are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
@@ -991,10 +997,9 @@ These remaining capability gaps currently fail process execution; they must be c
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
   what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
-- **cases:** `cases.addAlerts`, `cases.addEvents`, `cases.addAttachments`, `cases.deleteAttachments` and
-  `cases.deleteCases` (attachment types registered by solutions, the rule registry alerts client, the
-  files plugin). Run checks also decline status, close reason and assign steps when Kibana has a listener,
-  a close reason validator or an email service the process lacks.
+- **cases:** status changes, close reasons and assignee notifications still require native providers
+  when Main has alert-status listeners, close-reason validators or email services enabled. Run checks
+  reject those combinations until their providers are available.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
 

@@ -6,6 +6,7 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type {
@@ -13,11 +14,14 @@ import type {
   WorkflowStepsRegistry,
   WorkflowTriggerEmitterSource,
 } from '@kbn/workflows-extensions/server';
+import type { CasesAlertsClient } from '../services/alerts';
 import { APP_ID } from '../../common/constants';
 import { CasesEventBus } from '../events/event_bus';
 import { registerCaseWorkflowSteps } from '../workflows';
 import { registerCaseWorkflowTriggers } from '../workflows/triggers';
 import { registerCasesWorkflowEventBridge } from '../workflows/triggers/event_bridge';
+import { createCasesAttachmentTypeRegistry } from './create_attachment_type_registry';
+import type { CasesTaskProcessAttachmentTypes } from './create_attachment_type_registry';
 import type { CasesTaskProcessSettings } from './cases_task_process_settings';
 import { getCasesTaskProcessSavedObjectTypes } from './cases_saved_object_types';
 import { createCasesWorkflowRunCheck } from './cases_workflow_run_checks';
@@ -74,10 +78,7 @@ const withEventsFlushed = (
  * `addComment`, `addObservables`, `updateObservable`, `deleteObservable`, `bulkDeleteObservables`,
  * `pushCases` and the eight triggers.
  *
- * Not registered (a workflow that uses one is declined and Kibana runs it), see
- * `KIBANA_ONLY_CASES_STEPS`: `addAlerts`, `addEvents` and `addAttachments` (the attachment types
- * that solutions register, and the alerts client of the rule registry), `deleteAttachments` and
- * `deleteCases` (files and the alerts client).
+ * Attachment creation and deletion use the restored native type registry, scoped files and alerts.
  *
  * Declined by a check of the run, depending on what Kibana has (`createCasesWorkflowRunCheck`):
  * status changes when a plugin listens to the alert status changes, close reasons when a plugin
@@ -88,6 +89,14 @@ export const contribution: WorkflowStepsContribution = {
     savedObjectTypes: getCasesTaskProcessSavedObjectTypes(),
     settings: ['cases'],
   },
+  provides: {
+    'cases.attachmentTypes': ({ host, settings }) => {
+      const snapshot = (settings.cases as CasesTaskProcessSettings | undefined)?.workflows;
+      if (!snapshot)
+        throw new Error('Cases attachment registrations require their dispatch snapshot');
+      return createCasesAttachmentTypeRegistry(host as TaskHost, snapshot.attachmentTypeIds);
+    },
+  },
   register: (registry, { host, logger, services, settings, publicBaseUrl, registerRunCheck }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const workflows = (settings.cases as CasesTaskProcessSettings | undefined)?.workflows;
@@ -96,6 +105,7 @@ export const contribution: WorkflowStepsContribution = {
     if (!workflows) return;
     const {
       elasticsearch,
+      analytics,
       savedObjects,
       licensing,
       userProfile,
@@ -111,6 +121,11 @@ export const contribution: WorkflowStepsContribution = {
       throw new Error('The task process host did not lend Core user profile service');
     }
 
+    const attachmentTypes =
+      services.getService<CasesTaskProcessAttachmentTypes>('cases.attachmentTypes');
+    registerRunCheck?.(({ type }) =>
+      type.startsWith('cases.') ? attachmentTypes.getParityError() : undefined
+    );
     const casesLogger = logger.get('cases');
     const casesEventBus = new CasesEventBus(casesLogger);
     const { getCasesClient } = createCasesRunServices({
@@ -120,10 +135,24 @@ export const contribution: WorkflowStepsContribution = {
       savedObjects,
       security: securityPlugin,
       securityService: security,
+      isFipsMode: security.fips.isEnabled(),
+      unifiedAttachmentTypeRegistry: attachmentTypes.registry,
+      getAttachmentParityError: attachmentTypes.getParityError,
+      getRacClientWithRequest: (request) =>
+        services
+          .getService<{
+            getRacClientWithRequest: (scopedRequest: KibanaRequest) => Promise<CasesAlertsClient>;
+          }>('ruleRegistry')
+          .getRacClientWithRequest(request),
       userProfile,
+      spaces: workflows.spacesEnabled
+        ? services.getService<SpacesPluginStart>('spaces').spacesService
+        : undefined,
       licensing,
       getActionsClientWithRequest: services.getActionsClientWithRequest,
       usageCounter: usageCounters.getUsageCounter(APP_ID),
+      filesUsageCounter: usageCounters.getUsageCounter('files'),
+      analytics,
       publicBaseUrl,
       casesEventBus,
     });
@@ -150,10 +179,15 @@ export const contribution: WorkflowStepsContribution = {
 
     registerRunCheck?.(createCasesWorkflowRunCheck(workflows));
     registerCaseWorkflowTriggers(registry);
-    registerCaseWorkflowSteps(
-      withEventsFlushed(registry, flushEvents),
-      { getCasesClient, isTemplatesEnabled: workflows.config.templates.enabled },
-      { inTaskProcess: true }
-    );
+    registerCaseWorkflowSteps(withEventsFlushed(registry, flushEvents), {
+      getCasesClient,
+      isTemplatesEnabled: workflows.config.templates.enabled,
+      addAttachments: workflows.config.attachments.enabled
+        ? {
+            unifiedAttachmentTypeRegistry: attachmentTypes.registry,
+            waitForAttachmentTypes: () => Promise.resolve(),
+          }
+        : undefined,
+    });
   },
 };

@@ -13,7 +13,6 @@ import { CreateCaseFromTemplateStepTypeId } from '../../common/workflows/steps/c
 import { SetStatusStepTypeId } from '../../common/workflows/steps/set_status';
 import { UpdateCaseStepTypeId } from '../../common/workflows/steps/update_case';
 import { UpdateCasesStepTypeId } from '../../common/workflows/steps/update_cases';
-import { KIBANA_ONLY_CASES_STEPS } from '../workflows/kibana_only_steps';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 
 /** Whether the step as written names one of the fields (a template expression may produce it). */
@@ -25,11 +24,7 @@ const mentions = (config: Record<string, unknown>, fields: string[]) => {
 const UPDATE_STEPS = new Set([UpdateCaseStepTypeId, UpdateCasesStepTypeId]);
 
 /**
- * The steps that a task process does not serve (`KIBANA_ONLY_CASES_STEPS`: they are not registered,
- * and a `cases.*` step type missing from the registry would be taken for a sub action of the
- * `.cases` connector, so the check declines them by name) and the steps that it serves differently
- * from Kibana depending on what Kibana has registered or configured, which a process cannot
- * rebuild. The run is declined (Kibana runs it) before it has side effects.
+ * Rejects operations requiring listeners, validators or email services absent from the process.
  *
  * - Changing the status of a case syncs the status of its alerts, and Kibana reports the alerts
  *   that changed to the plugins that listen on the cases event bus (the security solution turns them
@@ -49,10 +44,6 @@ export const createCasesWorkflowRunCheck =
     'hasAlertStatusChangedListeners' | 'closeReasonOwners' | 'isEmailServiceAvailable'
   >): WorkflowStepRunCheck =>
   ({ type, config }) => {
-    if (type in KIBANA_ONLY_CASES_STEPS) {
-      return KIBANA_ONLY_CASES_STEPS[type];
-    }
-
     if (hasAlertStatusChangedListeners) {
       const changesStatus =
         type === SetStatusStepTypeId ||

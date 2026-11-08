@@ -102,6 +102,7 @@ describe('workflow task type modules', () => {
         'alerting-rule-run',
         'workflow-steps',
         'agent-builder',
+        'cases-attachment-types',
       ]);
       expect(module.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',

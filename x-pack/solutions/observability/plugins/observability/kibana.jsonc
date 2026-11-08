@@ -8,7 +8,10 @@
     "id": "observability",
     "browser": true,
     "server": true,
-    "taskTypeContributions": { "workflow-steps": ["server/task_types/workflow_ui_settings_contribution.ts"] },
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_ui_settings_contribution.ts"],
+      "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"]
+    },
     "taskTypes": [
       "server/task_types/custom_threshold.task.ts"
     ],

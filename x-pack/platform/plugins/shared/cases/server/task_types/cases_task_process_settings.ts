@@ -6,7 +6,7 @@
  */
 
 import type { ServerlessProjectType } from '../../common/constants/types';
-import type { CasesClientConfig } from '../config';
+import type { CasesClientConfig, ConfigType } from '../config';
 
 /**
  * What the cases client reads of what other plugins register or configure in Kibana, which a task
@@ -14,9 +14,10 @@ import type { CasesClientConfig } from '../config';
  */
 export interface CasesWorkflowsProcessSettings {
   /** The part of the validated config that the cases client reads, and the analytics v2 switch. */
-  config: CasesClientConfig & { analyticsV2: { enabled: boolean } };
+  config: CasesClientConfig & Pick<ConfigType, 'files'> & { analyticsV2: { enabled: boolean } };
   /** Whether the spaces plugin is enabled: the disabled features of the space limit the owners. */
   spacesEnabled: boolean;
+  attachmentTypeIds: string[];
   /** The features that grant access to cases, with the owners each grants (the features registry). */
   featureCaseOwners: Array<{ id: string; cases: string[] }>;
   /** Whether the notifications plugin can send the assignees an email (a connector is configured). */

@@ -8,20 +8,19 @@
 import type { IUsageCounter } from '@kbn/usage-collection-plugin/server/usage_counters/usage_counter';
 import type { Observable } from 'rxjs';
 import type {
+  AnalyticsServiceStart,
   IClusterClient,
   KibanaRequest,
   Logger,
   SavedObjectsServiceStart,
   SecurityServiceStart,
 } from '@kbn/core/server';
-import type { FilesStart } from '@kbn/files-plugin/server';
-import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
-import { SavedObjectsSerializer } from '@kbn/core-saved-objects-base-server-internal';
+import { createFilesRunServices } from '@kbn/files-plugin/server';
 import type { ActionsClient } from '@kbn/actions-plugin/server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
-import type { Space } from '@kbn/spaces-plugin/server';
+import type { Space, SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { SecurityLicenseService } from '@kbn/security-plugin/common/licensing/license_service';
 import { authorizationModeFactory } from '@kbn/security-plugin/server/authorization/mode';
 import type { RunTimeSecurity } from '@kbn/security-plugin/server/run_time_security';
@@ -42,29 +41,15 @@ import {
 import type { CasesEventBus } from '../events/event_bus';
 import { registerInternalAttachments } from '../internal_attachments';
 import type { CasesAlertsClient } from '../services/alerts';
+import { createCaseFileKinds } from '../files';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { taskProcessLensEmbeddableFactory } from './cases_saved_object_types';
-
-const SPACE_SAVED_OBJECT_TYPE = 'space';
 
 const NOOP_DATA_VIEW_REFRESHER: CasesAnalyticsV2DataViewRefresher = () => {};
 
 const onlyInKibana = (what: string) => (): never => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);
 };
-
-/** An object whose every method throws: for a service that cannot exist in a task process. */
-const onlyInKibanaService = <T extends object>(what: string): T =>
-  new Proxy(
-    {},
-    {
-      // Not a thenable, so that awaiting the service does not call it.
-      get: (_target, property) =>
-        property === 'then' || typeof property === 'symbol'
-          ? undefined
-          : onlyInKibana(`${what} (${property})`),
-    }
-  ) as T;
 
 /** What a task process has of the services the cases client is built from. */
 export interface CasesRunServicesDeps {
@@ -74,13 +59,14 @@ export interface CasesRunServicesDeps {
   elasticsearch: Pick<IClusterClient, 'asInternalUser' | 'asScoped'>;
   savedObjects: Pick<
     SavedObjectsServiceStart,
-    'createInternalRepository' | 'getScopedClient' | 'getTypeRegistry'
+    'createInternalRepository' | 'getScopedClient' | 'createSerializer'
   >;
   /** The security task plugin: privilege checks and the audit log. */
   security: { authz: RunTimeSecurity['authz']; audit: AuditServiceSetup };
   /** Core's security service (the user of a request). */
   securityService: Pick<SecurityServiceStart, 'authc'>;
   userProfile: UserProfileServiceStart;
+  spaces?: Pick<SpacesPluginStart['spacesService'], 'getSpaceId' | 'getActiveSpace'>;
   licensing: {
     license$: Observable<ILicense>;
     featureUsage?: { notifyUsage: (featureName: string, usedAt?: number | Date) => void };
@@ -91,7 +77,12 @@ export interface CasesRunServicesDeps {
    * in a process the process counts and stores it itself when the run ends.
    */
   usageCounter: IUsageCounter;
+  filesUsageCounter: IUsageCounter;
+  analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
   publicBaseUrl?: string;
+  isFipsMode: boolean;
+  getAttachmentParityError: () => string | undefined;
+  getRacClientWithRequest: (request: KibanaRequest) => Promise<CasesAlertsClient>;
   /** The bus the client emits its events on: the caller bridges it to the workflow triggers. */
   casesEventBus: CasesEventBus;
   /** What the client records as its source: `workflow` for the steps, `agent_builder` for the tools. */
@@ -101,23 +92,14 @@ export interface CasesRunServicesDeps {
 }
 
 export interface CasesRunServices {
-  /** The attachment types of the process: the internal ones; solutions register theirs in Kibana. */
+  /** The native attachment registry restored from the current dispatch. */
   unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
   /** The space of a request, as the spaces plugin gives it: `undefined` when spaces are disabled. */
   getActiveSpace?: (request: KibanaRequest) => Promise<Space>;
   getCasesClient: (request: KibanaRequest, options?: GetCasesClientOptions) => Promise<CasesClient>;
 }
 
-/**
- * The cases client of a task process: the same `CasesClientFactory` Kibana uses, built from what a
- * process has instead of the plugins' start contracts. What a process cannot have throws when used:
- *
- * - the alerts client of the rule registry and the files service (their steps are Kibana-only),
- * - the email service (a run that would notify assignees is declined when Kibana can send emails).
- *
- * Its attachment type registry only has the types cases registers itself: a step that adds
- * attachments of the types solutions register is Kibana-only.
- */
+/** Builds native Cases clients with scoped storage, alerts, files and restored attachment types. */
 export const createCasesRunServices = ({
   logger,
   settings,
@@ -126,10 +108,16 @@ export const createCasesRunServices = ({
   security,
   securityService,
   userProfile,
+  spaces,
   licensing,
   getActionsClientWithRequest,
   usageCounter,
+  filesUsageCounter,
+  analytics,
   publicBaseUrl,
+  isFipsMode,
+  getAttachmentParityError,
+  getRacClientWithRequest,
   casesEventBus,
   clientSource = 'workflow',
   unifiedAttachmentTypeRegistry: providedRegistry,
@@ -142,7 +130,7 @@ export const createCasesRunServices = ({
     license$: licensing.license$,
   }).license;
   const { spacesEnabled, config } = settings;
-  const spaceRepository = savedObjects.createInternalRepository([SPACE_SAVED_OBJECT_TYPE]);
+  if (spacesEnabled && !spaces) throw new Error('Cases operations require native Spaces services');
 
   // The analytics v2 writers write to indices that Kibana created.
   const analyticsV2 = config.analyticsV2.enabled
@@ -166,19 +154,6 @@ export const createCasesRunServices = ({
         attachmentsWriter: V2_NOOP_ATTACHMENTS_WRITER,
       };
 
-  const spacesService = spacesEnabled
-    ? {
-        getSpaceId: (request: KibanaRequest) => request.spaceId ?? DEFAULT_SPACE_ID,
-        getActiveSpace: async (request: KibanaRequest) => {
-          const { id, attributes } = await spaceRepository.get<Omit<Space, 'id'>>(
-            SPACE_SAVED_OBJECT_TYPE,
-            request.spaceId ?? DEFAULT_SPACE_ID
-          );
-          return { id, ...attributes } as Space;
-        },
-      }
-    : undefined;
-
   const factory = new CasesClientFactory(logger);
   factory.initialize({
     securityPluginSetup: { audit: security.audit },
@@ -187,7 +162,7 @@ export const createCasesRunServices = ({
       userProfiles: userProfile,
     },
     securityServiceStart: securityService,
-    spacesPluginStart: spacesService ? { spacesService } : undefined,
+    spacesPluginStart: spaces ? { spacesService: spaces } : undefined,
     featuresPluginStart: {
       getKibanaFeatures: () => settings.featureCaseOwners,
     },
@@ -215,18 +190,16 @@ export const createCasesRunServices = ({
       isEmailServiceAvailable: () => settings.isEmailServiceAvailable,
       getEmailService: onlyInKibana('The email service'),
     },
-    ruleRegistry: {
-      getRacClientWithRequest: async () =>
-        onlyInKibanaService<CasesAlertsClient>('The alerts client'),
-    },
-    filesPluginStart: {
-      fileServiceFactory: {
-        asScoped: () =>
-          onlyInKibanaService<ReturnType<FilesStart['fileServiceFactory']['asScoped']>>(
-            'The file service'
-          ),
-      },
-    },
+    ruleRegistry: { getRacClientWithRequest },
+    filesPluginStart: createFilesRunServices({
+      savedObjects,
+      esClient: elasticsearch.asInternalUser,
+      security: { audit: security.audit },
+      logger: logger.get('files'),
+      analytics,
+      usageCounter: filesUsageCounter,
+      fileKinds: Object.values(createCaseFileKinds(settings.config.files, isFipsMode)),
+    }),
     usageCounter,
     config,
     casesEventBus,
@@ -239,23 +212,19 @@ export const createCasesRunServices = ({
     analyticsV2DataViewRefresher: NOOP_DATA_VIEW_REFRESHER,
   });
 
-  const savedObjectsService = {
-    getScopedClient: savedObjects.getScopedClient,
-    createSerializer: () =>
-      // Core builds it over the same registry; the process has the part of it the serializer reads.
-      new SavedObjectsSerializer(savedObjects.getTypeRegistry() as never),
-  };
-
   return {
     unifiedAttachmentTypeRegistry,
-    getActiveSpace: spacesService?.getActiveSpace,
-    getCasesClient: (request, options) =>
-      factory.create({
+    getActiveSpace: spaces?.getActiveSpace.bind(spaces),
+    getCasesClient: async (request, options) => {
+      const parityError = getAttachmentParityError();
+      if (parityError) throw new Error(parityError);
+      return factory.create({
         request,
         scopedClusterClient: elasticsearch.asScoped(request).asCurrentUser,
-        savedObjectsService,
+        savedObjectsService: savedObjects,
         clientSource,
         actionSource: options?.actionSource,
-      }),
+      });
+    },
   };
 };

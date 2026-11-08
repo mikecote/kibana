@@ -13,7 +13,6 @@ import type { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unif
 import { casesStepRegistry } from './registry';
 import { createCaseFromTemplateStepDefinition } from './steps/create_case_from_template';
 import { setExtendedFieldsStepDefinition } from './steps/set_extended_fields';
-import { KIBANA_ONLY_CASES_STEPS } from './kibana_only_steps';
 
 /**
  * What the cases steps need to run: Kibana builds it from the plugin's services and a task process
@@ -24,28 +23,24 @@ export interface CasesWorkflowStepServices {
   isTemplatesEnabled: boolean;
   /**
    * `cases.addAttachments` and its flag. It reads the attachment type registry that solutions fill
-   * in their own `setup()`, so a task process, which does not run those, leaves it out.
+   * in their own `setup()`; task processes restore them through native contributions.
    */
   addAttachments?: {
     unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
     /**
-     * Resolves once cases's own `start()` has been called by core. Used by the
-     * `cases.addAttachments` loader so the discriminated union sees
-     * solution-contributed attachment types.
+     * Resolves when solution-contributed attachment definitions are available to build the input schema.
      */
-    waitForStartServices: () => Promise<unknown>;
+    waitForAttachmentTypes: () => Promise<void>;
   };
 }
 
 /**
  * Registers the cases steps: what `plugin.ts` calls with Kibana's services and the contribution to
  * the task process of the workflow task types calls with the services of the process.
- * `inTaskProcess` leaves out the steps in `KIBANA_ONLY_CASES_STEPS`.
  */
 export function registerCaseWorkflowSteps(
   registry: Pick<WorkflowStepsRegistry, 'registerStepDefinition'> | undefined,
-  { getCasesClient, isTemplatesEnabled, addAttachments }: CasesWorkflowStepServices,
-  { inTaskProcess = false }: { inTaskProcess?: boolean } = {}
+  { getCasesClient, isTemplatesEnabled, addAttachments }: CasesWorkflowStepServices
 ) {
   if (!registry) {
     return;
@@ -53,9 +48,7 @@ export function registerCaseWorkflowSteps(
 
   for (const factory of casesStepRegistry) {
     const definition = factory(getCasesClient);
-    if (!inTaskProcess || !(definition.id in KIBANA_ONLY_CASES_STEPS)) {
-      registry.registerStepDefinition(definition);
-    }
+    registry.registerStepDefinition(definition);
   }
 
   // `cases.createCaseFromTemplate` is registered in every flag state: with the templates feature
@@ -75,11 +68,11 @@ export function registerCaseWorkflowSteps(
 
   // `cases.addAttachments` is registered separately from the uniform registry:
   // it is flag-gated, needs the attachment registry, and must defer until
-  // solution-contributed types have registered (see `waitForStartServices`).
+  // solution-contributed types have registered (see `waitForAttachmentTypes`).
   if (addAttachments) {
-    const { unifiedAttachmentTypeRegistry, waitForStartServices } = addAttachments;
+    const { unifiedAttachmentTypeRegistry, waitForAttachmentTypes } = addAttachments;
     registry.registerStepDefinition(async () => {
-      await waitForStartServices();
+      await waitForAttachmentTypes();
       const { addAttachmentsStepDefinition } = await import('./steps/add_attachments');
       return addAttachmentsStepDefinition(unifiedAttachmentTypeRegistry, getCasesClient);
     });

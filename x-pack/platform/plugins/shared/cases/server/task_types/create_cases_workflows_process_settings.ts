@@ -23,19 +23,25 @@ export const createCasesWorkflowsProcessSettings = ({
   notifications,
   casesEventBus,
   closeReasonOwners,
+  attachmentTypeIds,
 }: {
-  config: Pick<ConfigType, 'templates' | 'assigneeIdentity' | 'attachments' | 'analyticsV2'>;
+  config: Pick<
+    ConfigType,
+    'templates' | 'assigneeIdentity' | 'attachments' | 'analyticsV2' | 'files'
+  >;
   spacesEnabled: boolean;
   features: CasesFeatures;
   notifications: Pick<NotificationsPluginStart, 'isEmailServiceAvailable'>;
   casesEventBus: Pick<CasesEventBus, 'hasAlertStatusChangedListeners'>;
   closeReasonOwners: string[];
+  attachmentTypeIds: string[];
 }): CasesWorkflowsProcessSettings => ({
   config: {
     templates: { enabled: config.templates.enabled },
     assigneeIdentity: { enabled: config.assigneeIdentity.enabled },
     attachments: { enabled: config.attachments.enabled },
     analyticsV2: { enabled: config.analyticsV2.enabled },
+    files: { ...config.files, allowedMimeTypes: [...config.files.allowedMimeTypes] },
   },
   spacesEnabled,
   featureCaseOwners: features
@@ -44,4 +50,5 @@ export const createCasesWorkflowsProcessSettings = ({
   isEmailServiceAvailable: notifications.isEmailServiceAvailable(),
   hasAlertStatusChangedListeners: casesEventBus.hasAlertStatusChangedListeners(),
   closeReasonOwners,
+  attachmentTypeIds: [...attachmentTypeIds],
 });

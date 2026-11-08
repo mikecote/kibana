@@ -141,10 +141,11 @@ export class File<M = unknown> implements IFile {
     if (this.isDeleted()) {
       throw new AlreadyDeletedError('File has already been deleted');
     }
+    const hasContent = this.isReady();
     await this.updateFileState({
       action: 'delete',
     });
-    await this.fileClient.delete({ id: this.id, hasContent: this.isReady() });
+    await this.fileClient.delete({ id: this.id, hasContent });
   }
 
   public async share({

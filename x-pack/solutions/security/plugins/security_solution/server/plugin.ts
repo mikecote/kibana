@@ -77,6 +77,7 @@ import {
   DEFAULT_DETECTIONS_CLOSE_REASONS_KEY,
   EXCLUDE_COLD_AND_FROZEN_TIERS_IN_ANALYZER,
 } from '../common/constants';
+import { SECURITY_CASE_ATTACHMENTS_SETTINGS_ID } from './task_types/case_attachment_type_contribution';
 import { registerCaseAttachments } from './cases/attachments/register';
 import { securityAlertAttachmentType } from './cases/attachments/alert';
 import { DefaultClosingReasonSchema } from '../common/types';
@@ -580,7 +581,10 @@ export class Plugin implements ISecuritySolutionPlugin {
     this.telemetryUsageCounter = plugins.usageCollection?.createUsageCounter(APP_ID);
     this.usageCollection = plugins.usageCollection;
     registerCaseAttachments(plugins.cases.attachmentFramework, experimentalFeatures, {
-      getStartServices: core.getStartServices,
+      getScopedElasticsearchClient: async (request) => {
+        const [coreStart] = await core.getStartServices();
+        return coreStart.elasticsearch.client.asScoped(request).asCurrentUser;
+      },
       logger: this.logger,
     });
     plugins.cases.attachmentFramework.registerAttachment(securityAlertAttachmentType);
@@ -706,6 +710,13 @@ export class Plugin implements ISecuritySolutionPlugin {
         kibanaBranch: pluginContext.env.packageInfo.branch,
         buildFlavor: pluginContext.env.packageInfo.buildFlavor,
         workflowEventsAvailable: this.securityEventBus !== undefined,
+      })
+    );
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      SECURITY_CASE_ATTACHMENTS_SETTINGS_ID,
+      () => ({
+        entityAttachmentsEnabled: experimentalFeatures.entityAttachmentsEnabled,
+        attackAttachmentsEnabled: experimentalFeatures.attackAttachmentsEnabled,
       })
     );
     this.securityAlertsClientFactory = async (request) => {

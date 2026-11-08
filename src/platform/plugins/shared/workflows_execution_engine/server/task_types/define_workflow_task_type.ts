@@ -25,6 +25,7 @@ import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import {
   AGENT_BUILDER_CONTRIBUTIONS_KEY,
+  CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
   RULE_RUN_CONTRIBUTIONS_KEY,
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
   WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID,
@@ -112,11 +113,11 @@ export const defineWorkflowTaskType = (
   >,
   pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction,
   stepContributions: WorkflowStepsContribution[] = [],
-  agentBuilderContributions: Array<{ declares?: AgentBuilderContributionDeclares }> = []
+  additionalContributions: Array<{ declares?: AgentBuilderContributionDeclares }> = []
 ): TaskTypeModule => {
   const declared: Array<NonNullable<WorkflowStepsContribution['declares']>> = [
     ...stepContributions.map((contribution) => contribution.declares ?? {}),
-    ...agentBuilderContributions.map((contribution) => contribution.declares ?? {}),
+    ...additionalContributions.map((contribution) => contribution.declares ?? {}),
   ];
   const taskType = defineTaskType({
     ...definition,
@@ -209,6 +210,7 @@ export const defineWorkflowTaskType = (
         RULE_RUN_CONTRIBUTIONS_KEY,
         WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
         AGENT_BUILDER_CONTRIBUTIONS_KEY,
+        CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
       ],
       // A task process hands over what plugins contribute; the module is built again with it.
       apply: (contributed) =>
@@ -216,7 +218,10 @@ export const defineWorkflowTaskType = (
           definition,
           pick,
           (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ?? []) as WorkflowStepsContribution[],
-          (contributed[AGENT_BUILDER_CONTRIBUTIONS_KEY] ?? []) as Array<{
+          [
+            ...(contributed[AGENT_BUILDER_CONTRIBUTIONS_KEY] ?? []),
+            ...(contributed[CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY] ?? []),
+          ] as Array<{
             declares?: AgentBuilderContributionDeclares;
           }>
         ),

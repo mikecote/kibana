@@ -5,10 +5,12 @@
  * 2.0.
  */
 
+import { registerInternalAttachments } from '../internal_attachments';
+import { ConfigSchema } from '../config';
 import { of } from 'rxjs';
 import { loggerMock } from '@kbn/logging-mocks';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepRunCheck, WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepRunCheck } from '@kbn/workflows-extensions/server';
 import { License } from '@kbn/licensing-plugin/common/license';
 import {
   CASE_ATTACHMENT_SAVED_OBJECT,
@@ -22,10 +24,12 @@ import {
 } from '../../common/constants';
 import { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
 import { registerCaseWorkflowSteps } from '../workflows';
-import { KIBANA_ONLY_CASES_STEPS } from '../workflows/kibana_only_steps';
 import { registerCaseWorkflowTriggers } from '../workflows/triggers';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { contribution } from './workflow_steps_contribution';
+
+const attachmentRegistry = new UnifiedAttachmentTypeRegistry();
+registerInternalAttachments(attachmentRegistry);
 
 const workflowsSettings: CasesWorkflowsProcessSettings = {
   config: {
@@ -33,8 +37,10 @@ const workflowsSettings: CasesWorkflowsProcessSettings = {
     assigneeIdentity: { enabled: true },
     attachments: { enabled: true },
     analyticsV2: { enabled: false },
+    files: ConfigSchema.validate({}).files,
   },
   spacesEnabled: true,
+  attachmentTypeIds: attachmentRegistry.list().map(({ id }) => id),
   featureCaseOwners: [{ id: 'securitySolutionCasesV3', cases: ['securitySolution'] }],
   isEmailServiceAvailable: false,
   hasAlertStatusChangedListeners: false,
@@ -65,13 +71,14 @@ const registerContribution = async (
       savedObjects: {
         createInternalRepository: jest.fn(),
         getScopedClient: jest.fn(),
-        getTypeRegistry: jest.fn(),
+        createSerializer: jest.fn(),
       },
-      security: { authc: {} },
+      security: { authc: {}, fips: { isEnabled: jest.fn(() => false) } },
       userProfile: {},
+      analytics: { reportEvent: jest.fn() },
       licensing: { license$: of(license), featureUsage: { notifyUsage: jest.fn() } },
       usageCounters: {
-        getUsageCounter: jest.fn(() => ({ domainId: 'cases', incrementCounter: jest.fn() })),
+        getUsageCounter: jest.fn((domainId: string) => ({ domainId, incrementCounter: jest.fn() })),
       },
       plugins: { security: { authz: { actions: {} }, audit: {} } },
     },
@@ -87,7 +94,13 @@ const registerContribution = async (
       stepRegistry: createServerStepRegistry(loggerMock.create()),
       registerService: jest.fn(),
       registerRunCompletion: jest.fn(),
-      getService: jest.fn(),
+      getService: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          id === 'spaces'
+            ? { spacesService: { getActiveSpace: jest.fn(), getSpaceId: jest.fn() } }
+            : { registry: attachmentRegistry, getParityError: () => undefined }
+        ),
       getExecutionEngine: jest.fn(),
       getUnsecuredActionsClient: jest.fn(),
       executionDataClients: {
@@ -104,54 +117,48 @@ const registerContribution = async (
 };
 
 /** The ids Kibana registers: what `plugin.ts` registers through the same function. */
-const registeredByKibana = () => {
-  const steps: string[] = [];
-  const loaders: unknown[] = [];
-  const triggers: string[] = [];
-  const registry = {
-    registerStepDefinition: (definition: { id?: string }) =>
-      typeof definition === 'function' ? loaders.push(definition) : steps.push(definition.id!),
-    registerTriggerDefinition: (definition: { id: string }) => triggers.push(definition.id),
-  } as unknown as WorkflowStepsRegistry;
+const registeredByKibana = async () => {
+  const registry = createServerStepRegistry(loggerMock.create());
   registerCaseWorkflowSteps(registry, {
     getCasesClient: jest.fn(),
     isTemplatesEnabled: true,
     addAttachments: {
-      unifiedAttachmentTypeRegistry: new UnifiedAttachmentTypeRegistry(),
-      waitForStartServices: jest.fn(),
+      unifiedAttachmentTypeRegistry: attachmentRegistry,
+      waitForAttachmentTypes: () => Promise.resolve(),
     },
   });
   registerCaseWorkflowTriggers(registry);
-  return { steps, loaders, triggers };
+  await registry.isReady();
+  return {
+    steps: registry
+      .getAllStepDefinitions()
+      .map(({ id }) => id)
+      .filter((id) => id.startsWith('cases.')),
+    triggers: registry
+      .getAllTriggerDefinitions()
+      .map(({ id }) => id)
+      .filter((id) => id.startsWith('cases.')),
+  };
 };
 
 describe('cases workflow-steps contribution', () => {
-  it('registers every step and trigger Kibana registers, except the ones that only Kibana serves', async () => {
+  it('registers every step and trigger Kibana registers', async () => {
     const { registry, internalSteps, internalTriggers } = await registerContribution();
-    const kibana = registeredByKibana();
+    const kibana = await registeredByKibana();
 
     expect(kibana.steps.length).toBeGreaterThan(30);
-    // Only `cases.addAttachments` is a loader (it waits for the attachment types of the solutions).
-    expect(kibana.loaders).toHaveLength(1);
     expect(kibana.triggers).toHaveLength(8);
-
-    const declined = Object.keys(KIBANA_ONLY_CASES_STEPS);
-    expect(declined.sort()).toEqual([
+    for (const id of [
       'cases.addAlerts',
       'cases.addAttachments',
       'cases.addEvents',
       'cases.deleteAttachments',
       'cases.deleteCases',
-    ]);
-    // `cases.addAttachments` is the loader.
-    declined
-      .filter((id) => id !== 'cases.addAttachments')
-      .forEach((id) => expect(kibana.steps).toContain(id));
-    declined.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(false));
-
-    const served = kibana.steps.filter((id) => !declined.includes(id));
-    served.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
-    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + served.length);
+    ]) {
+      expect(registry.hasStepDefinition(id)).toBe(true);
+    }
+    kibana.steps.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
+    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + kibana.steps.length);
 
     kibana.triggers.forEach((id) => expect(registry.getTriggerDefinition(id)).toBeDefined());
     expect(registry.getAllTriggerDefinitions().length).toBe(internalTriggers + 8);
@@ -201,10 +208,15 @@ describe('cases workflow-steps contribution', () => {
     });
     const decline = (checks: WorkflowStepRunCheck[], type: string, config = {}) =>
       checks.map((check) => check({ type, config })).find(Boolean);
-    const declined = Object.keys(KIBANA_ONLY_CASES_STEPS);
-
-    // Declined by name, whatever Kibana has.
-    declined.forEach((id) => expect(decline(quiet.checks, id)).toEqual(expect.any(String)));
+    for (const id of [
+      'cases.addAlerts',
+      'cases.addAttachments',
+      'cases.addEvents',
+      'cases.deleteAttachments',
+      'cases.deleteCases',
+    ]) {
+      expect(decline(quiet.checks, id)).toBeUndefined();
+    }
     expect(decline(quiet.checks, 'cases.setStatus')).toBeUndefined();
     expect(decline(quiet.checks, 'cases.assignCase')).toBeUndefined();
     expect(decline(quiet.checks, 'cases.updateCase', { updates: { closeReason: 'x' } })).toBe(
