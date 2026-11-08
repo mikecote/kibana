@@ -94,6 +94,25 @@ export const createDataStreamDataClients = ({
   };
 };
 
+/** Initializes the execution streams through native Core before opening their shared data clients. */
+export const initializeDataStreamDataClients = async ({
+  esClient,
+  logger,
+  dataStreams,
+}: {
+  esClient: ElasticsearchClient;
+  logger: Logger;
+  dataStreams: Pick<CoreStart['dataStreams'], 'initializeClient'>;
+}): Promise<ReturnType<typeof createDataStreamDataClients>> => {
+  await Promise.all([
+    dataStreams.initializeClient(WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.name),
+    dataStreams.initializeClient(STEP_EXECUTIONS_DATA_STREAM_DEFINITION.name),
+  ]);
+  const clients = createDataStreamDataClients({ esClient, logger });
+  await clients.init();
+  return clients;
+};
+
 export class DataStreamDataClientBundle implements DataClientBundle {
   private clients: ReturnType<typeof createDataStreamDataClients> | undefined;
 
@@ -106,20 +125,14 @@ export class DataStreamDataClientBundle implements DataClientBundle {
   async initSetup(_coreSetup: CoreSetup): Promise<void> {}
 
   async initStart(coreStart: CoreStart): Promise<void> {
-    await Promise.all([
-      coreStart.dataStreams.initializeClient(WORKFLOW_EXECUTIONS_DATA_STREAM_DEFINITION.name),
-      coreStart.dataStreams.initializeClient(STEP_EXECUTIONS_DATA_STREAM_DEFINITION.name),
-    ]);
-
-    const clients = createDataStreamDataClients({
+    this.clients = await initializeDataStreamDataClients({
+      dataStreams: coreStart.dataStreams,
       esClient: createRetryingEsClient(
         coreStart.elasticsearch.client.asInternalUser,
         this.deps.logger
       ),
       logger: this.deps.logger,
     });
-    await clients.init();
-    this.clients = clients;
   }
 
   async stop(): Promise<void> {

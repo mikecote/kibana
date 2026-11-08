@@ -8,6 +8,7 @@
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { analyticsServiceMock } from '@kbn/core-analytics-server-mocks';
 import { expectModuleToMatchRegisteredRuleType } from '@kbn/alerting-plugin/server/task_types/rule_task_type.mocks';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
 import { RULE_RUN_CONTRIBUTIONS } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
 import {
   ATTACK_DISCOVERY_EVENT_PROVIDER,
@@ -15,11 +16,7 @@ import {
 } from '@kbn/discoveries';
 import { ATTACK_DISCOVERY_WORKFLOWS_ENABLED_FEATURE_FLAG } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { getAttackDiscoveryScheduleType } from '../lib/attack_discovery/schedules/register_schedule/definition';
-import {
-  declineUnsupportedWorkflowStorage,
-  getUnsupportedStorage,
-  taskType,
-} from './attack_discovery.task';
+import { taskType } from './attack_discovery.task';
 
 describe('attack_discovery task type module', () => {
   it('builds the rule type that the plugin registers', () => {
@@ -35,35 +32,38 @@ describe('attack_discovery task type module', () => {
     );
   });
 
-  describe('declining a rule', () => {
-    const settings = (source: string) => ({ workflowsExecutionEngine: { storage: { source } } });
-
-    it('declines a workflow rule whose executions are not stored in a plain index', () => {
-      expect(
-        declineUnsupportedWorkflowStorage({
-          settings: settings('data_stream'),
-          ruleParams: { workflowConfig: { workflowId: 'w' } },
-        })
-      ).toMatch(/"data_stream" are only available in Kibana/);
+  describe('native workflow storage', () => {
+    it('registers execution data streams with the current retention for workflow rules', () => {
+      const definitions = taskType.createDataStreams?.({
+        workflowsExecutionEngine: { storage: { source: 'data_stream', dataRetention: '9d' } },
+      });
+      expect(definitions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: '.workflows-executions-data-stream',
+            template: expect.objectContaining({ lifecycle: { data_retention: '9d' } }),
+          }),
+          expect.objectContaining({ name: '.workflows-step-executions-data-stream' }),
+        ])
+      );
     });
 
-    it('serves a workflow rule stored in a plain index, and a rule without workflows whatever the storage', () => {
-      expect(
-        declineUnsupportedWorkflowStorage({
-          settings: settings('plain_index'),
-          ruleParams: { workflowConfig: {} },
-        })
-      ).toBeUndefined();
-      expect(
-        declineUnsupportedWorkflowStorage({ settings: settings('data_stream'), ruleParams: {} })
-      ).toBeUndefined();
+    it('keeps plain-index storage without registering execution data streams', () => {
+      const definitions = taskType.createDataStreams?.({
+        workflowsExecutionEngine: { storage: { source: 'plain_index', dataRetention: '9d' } },
+      });
+      expect(definitions?.map(({ name }) => name)).not.toContain(
+        '.workflows-executions-data-stream'
+      );
+      expect(definitions?.map(({ name }) => name)).not.toContain(
+        '.workflows-step-executions-data-stream'
+      );
     });
 
-    it('describes the storage of an engine config', () => {
-      expect(
-        getUnsupportedStorage({ storage: { source: 'plain_index' } } as never)
-      ).toBeUndefined();
-      expect(getUnsupportedStorage(undefined)).toBeUndefined();
+    it('requires the dispatch workflow settings before initializing storage', () => {
+      expect(() => taskType.createDataStreams?.({})).toThrow(
+        'The attack discovery module did not get workflow settings'
+      );
     });
   });
 
@@ -93,6 +93,7 @@ describe('attack_discovery task type module', () => {
   it('lists the contribution of the discoveries plugin next to the ones every rule run reads', () => {
     expect(taskType.contributions?.keys).toEqual([
       RULE_RUN_CONTRIBUTIONS,
+      TASK_SCHEDULING_CONTRIBUTIONS_KEY,
       ATTACK_DISCOVERY_WORKFLOW_EXECUTOR_CONTRIBUTIONS,
     ]);
   });
@@ -102,5 +103,6 @@ describe('attack_discovery task type module', () => {
     expect(applied.featureFlags).toEqual(taskType.featureFlags);
     expect(applied.eventLog?.providers).toEqual(taskType.eventLog?.providers);
     expect(applied.type).toBe(taskType.type);
+    expect(applied.createDataStreams).toBe(taskType.createDataStreams);
   });
 });

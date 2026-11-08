@@ -7,7 +7,7 @@
 
 import { firstValueFrom } from 'rxjs';
 import { kibanaPackageJson } from '@kbn/repo-info';
-import type { KibanaRequest } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { ATTACK_DISCOVERY_SCHEDULES_ALERT_TYPE_ID } from '@kbn/elastic-assistant-common/constants';
 import { createRuleTaskType } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import type {
@@ -15,19 +15,19 @@ import type {
   RuleTypeModuleDeps,
 } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import { registerRunFlusher } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '@kbn/task-manager-plugin/server/task_process/host_capabilities/task_scheduling';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import { createInferenceRunServices } from '@kbn/inference-plugin/server/run_services';
 import { configSchema as inferenceConfigSchema } from '@kbn/inference-plugin/server/config';
 import {
   createPlainIndexDataClients,
+  getWorkflowDataStreamDefinitions,
+  initializeDataStreamDataClients,
   createWorkflowScheduler,
   WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID,
 } from '@kbn/workflows-execution-engine/server';
-import type {
-  WorkflowSchedulerTaskManager,
-  WorkflowsExecutionEngineConfig,
-} from '@kbn/workflows-execution-engine/server';
+import type { WorkflowsExecutionEngineConfig } from '@kbn/workflows-execution-engine/server';
 import {
   createWorkflowsReadApi,
   scheduleWorkflowWithEngine,
@@ -64,34 +64,6 @@ const getBasePath = (publicBaseUrl?: string): string => {
   }
 };
 
-/**
- * Why a process cannot store workflow executions as Kibana does: only plain indices are implemented
- * here, so a rule that schedules workflows runs in Kibana when the engine stores them elsewhere (a
- * data stream implementation comes with the workflows plugins).
- */
-export const getUnsupportedStorage = (
-  engineConfig: Pick<WorkflowsExecutionEngineConfig, 'storage'> | undefined
-): string | undefined =>
-  engineConfig && engineConfig.storage.source !== 'plain_index'
-    ? `Workflow executions stored in "${engineConfig.storage.source}" are only available in Kibana`
-    : undefined;
-
-/** Declines a rule that schedules workflows when the process cannot store their executions as Kibana does. */
-export const declineUnsupportedWorkflowStorage = ({
-  settings,
-  ruleParams,
-}: {
-  settings: Record<string, unknown>;
-  ruleParams: Record<string, unknown>;
-}): string | undefined =>
-  ruleParams.workflowConfig != null
-    ? getUnsupportedStorage(
-        settings[WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID] as
-          | WorkflowsExecutionEngineConfig
-          | undefined
-      )
-    : undefined;
-
 /** What the module reads of the host besides `TaskHost`: the services Core owns that a process lends it. */
 type RunHost = TaskHost & {
   /** Core's user profile service: needed when a workflow is private to its owner. */
@@ -111,10 +83,32 @@ const getInference = (deps: RuleTypeModuleDeps) => {
   });
 };
 
+const createWorkflowDataClientsFromHost = async (
+  host: Pick<TaskHost, 'dataStreams' | 'onRunEnd' | 'elasticsearch'>,
+  engineConfig: Pick<WorkflowsExecutionEngineConfig, 'storage'>,
+  logger: Logger
+): Promise<ReturnType<typeof createPlainIndexDataClients>> => {
+  const esClient = host.elasticsearch.asInternalUser;
+  if (engineConfig.storage.source === 'plain_index') {
+    return createPlainIndexDataClients({ esClient, logger });
+  }
+  const { dataStreams, onRunEnd } = host;
+  if (!dataStreams || !onRunEnd) {
+    throw new Error('Native workflow data streams require Core data streams and run cleanup');
+  }
+  const clients = await initializeDataStreamDataClients({ esClient, logger, dataStreams });
+  const stop = async () => clients.stop();
+  if (!registerRunFlusher(stop)) onRunEnd(stop);
+  return {
+    workflowExecutionsDataClient: clients.createWorkflowDataClient(),
+    stepExecutionsDataClient: clients.createStepDataClient(),
+  };
+};
+
 /**
  * The executor of the rules that carry a `workflowConfig`, built from the host the way the
  * discoveries plugin builds it from its start contracts. Workflows are only scheduled here: their
- * steps run in Kibana, under a `workflow:run` task that carries a clone of the rule's API key.
+ * steps run under a `workflow:run` task that carries a clone of the rule's API key.
  */
 const getWorkflowExecutorFactory = (
   deps: RuleTypeModuleDeps
@@ -152,12 +146,9 @@ const getWorkflowExecutorFactory = (
     const engineConfig = deps.settings[
       WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID
     ] as WorkflowsExecutionEngineConfig;
-    // Declined before the run starts (see `declineRun`); this is the safety net.
-    const unsupportedStorage = getUnsupportedStorage(engineConfig);
-    if (unsupportedStorage) throw new Error(unsupportedStorage);
-
+    if (!engineConfig) throw new Error('The attack discovery module did not get workflow settings');
     const esClient = host.elasticsearch.asInternalUser;
-    const dataClients = createPlainIndexDataClients({ esClient, logger });
+    const dataClients = await createWorkflowDataClientsFromHost(host, engineConfig, logger);
     const core = {
       security: host.security,
       userProfile,
@@ -171,25 +162,13 @@ const getWorkflowExecutorFactory = (
       ...dataClients,
     });
 
-    const schedulable = taskManager as unknown as Partial<WorkflowSchedulerTaskManager>;
     const scheduler = createWorkflowScheduler({
-      taskManager: {
-        // A process writes tasks (with the credential of the request) and nothing else.
-        schedule: schedulable.schedule ?? kibanaOnly('taskManager.schedule'),
-        bulkSchedule: taskManager.bulkSchedule,
-        get: kibanaOnly('taskManager.get'),
-        fetch: kibanaOnly('taskManager.fetch'),
-        removeIfExists: kibanaOnly('taskManager.removeIfExists'),
-        runSoon: kibanaOnly('taskManager.runSoon'),
-        bulkGet: kibanaOnly('taskManager.bulkGet'),
-        bulkRemove: kibanaOnly('taskManager.bulkRemove'),
-        ensureScheduled: kibanaOnly('taskManager.ensureScheduled'),
-      } as unknown as WorkflowSchedulerTaskManager,
+      taskManager,
       esClient,
-      security: host.security as never,
+      security: host.security,
       userProfile,
       elasticsearch: host.elasticsearch,
-      licensing: { getLicense: () => firstValueFrom(licensing.license$) as never },
+      licensing: { getLicense: () => firstValueFrom(licensing.license$) },
       logger,
       config: engineConfig,
       ...dataClients,
@@ -290,7 +269,7 @@ const withFeatureFlagsAndContribution = (module: RuleTaskTypeModule): RuleTaskTy
 /**
  * The attack discovery rule type, which a task process can run. The legacy path calls the model of the
  * rule's connector through the actions executor; the workflow path schedules the workflows, whose
- * steps run in Kibana.
+ * steps run as workflow tasks.
  */
 export const taskType = withFeatureFlagsAndContribution(
   createRuleTaskType(
@@ -316,8 +295,14 @@ export const taskType = withFeatureFlagsAndContribution(
     {
       // The connector of the rule is executed with the actions executor of the process.
       executeConnectors: true,
-      // A rule that schedules workflows needs the storage Kibana's workflow engine has, before it has side effects.
-      declineRun: declineUnsupportedWorkflowStorage,
+      createDataStreams: (settings) => {
+        const engineConfig = settings[
+          WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID
+        ] as WorkflowsExecutionEngineConfig;
+        if (!engineConfig)
+          throw new Error('The attack discovery module did not get workflow settings');
+        return Object.values(getWorkflowDataStreamDefinitions(engineConfig.storage));
+      },
       // The attack discovery event log provider, and the encrypted `task` type its workflow tasks use.
       eventLogProviders: [
         {
@@ -334,7 +319,7 @@ export const taskType = withFeatureFlagsAndContribution(
       ],
       // Prompts are read from saved objects.
       savedObjectTypes: [promptType],
-      // The workflows the rule starts run in Kibana, as `workflow:run` tasks.
+      // The workflow tasks carry the API key cloned by the native scheduler.
       schedulableTaskTypes: [/^workflow:run$/],
       // Privilege checks and the API key clone come from the security plugin's task plugin.
       taskPlugins: [createSecurityTaskPlugin(kibanaPackageJson.version)],
