@@ -934,7 +934,7 @@ const events = [
   ENTITY_STORE_RESOLUTION_STATE_EVENT,
 ] as const;
 
-export const registerTelemetry = (analytics: AnalyticsServiceSetup) =>
+export const registerTelemetry = (analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>) =>
   events.forEach((eventConfig: EventTypeOpts<{}>) => analytics.registerEventType(eventConfig));
 
 // ------------------------------------

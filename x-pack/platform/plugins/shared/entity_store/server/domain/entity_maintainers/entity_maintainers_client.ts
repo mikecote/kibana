@@ -32,6 +32,7 @@ import {
 import { entityMaintainersRegistry } from '../../tasks/entity_maintainers/entity_maintainers_registry';
 import type {
   EntityMaintainerState,
+  EntityMaintainerTaskEntry,
   EntityMaintainerStatus,
 } from '../../tasks/entity_maintainers/types';
 import { EntityMaintainerTaskStatus } from '../../tasks/entity_maintainers/types';
@@ -381,13 +382,15 @@ const getMaintainers = async ({
   namespace,
   logger,
   ids,
+  registeredMaintainers,
 }: {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'get'>;
   namespace: string;
   logger: Logger;
   ids?: string[];
+  registeredMaintainers?: readonly EntityMaintainerTaskEntry[];
 }): Promise<EntityMaintainerListEntry[]> => {
-  const entries = entityMaintainersRegistry.getAll();
+  const entries = registeredMaintainers ?? entityMaintainersRegistry.getAll();
   const filteredEntries = ids?.length ? entries.filter(({ id }) => ids.includes(id)) : entries;
 
   const results = await Promise.all(
@@ -442,13 +445,21 @@ export const getMaintainerStatus = async ({
   namespace,
   logger,
   ids,
+  registeredMaintainers,
 }: {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'get'>;
   namespace: string;
   logger: Logger;
   ids?: string[];
+  registeredMaintainers?: readonly EntityMaintainerTaskEntry[];
 }): Promise<EntityMaintainerStatusEntry[]> => {
-  const entries = await getMaintainers({ taskManager, namespace, logger, ids });
+  const entries = await getMaintainers({
+    taskManager,
+    namespace,
+    logger,
+    ids,
+    registeredMaintainers,
+  });
   return entries.map(({ id, taskStatus, taskSnapshot }) => ({
     id,
     taskStatus,

@@ -10,6 +10,14 @@ import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { createEntityStoreRunServices } from '../entity_store_run_services';
+import {
+  createEntityStoreClientServices,
+  ENTITY_STORE_RUNTIME_SETTINGS_ID,
+} from '../create_entity_store_client_services';
+import type { EntityStoreRuntimeSettings } from '../create_entity_store_client_services';
+import { EntityResolutionRuleType } from '../domain/resolution/rules/saved_object';
+import { CustomResolutionRuleType } from '../domain/resolution/rules';
+import { registerTelemetry } from '../telemetry/events';
 import { registerEntityStoreWorkflowSteps } from '../workflow/steps';
 import { registerTriggers } from '../workflow/triggers';
 
@@ -20,6 +28,35 @@ import { registerTriggers } from '../workflow/triggers';
  * trigger events of the entities the step updates.
  */
 export const contribution: WorkflowStepsContribution = {
+  declares: {
+    settings: [ENTITY_STORE_RUNTIME_SETTINGS_ID],
+    registerAnalyticsEventTypes: registerTelemetry,
+    createSavedObjectTypes: (_encryption, settings) =>
+      settings[ENTITY_STORE_RUNTIME_SETTINGS_ID]
+        ? [EntityResolutionRuleType, CustomResolutionRuleType]
+        : [],
+  },
+  provides: {
+    entityStore: ({ host: taskHost, settings, logger }) => {
+      const host = taskHost as TaskHost;
+      const snapshot = settings[ENTITY_STORE_RUNTIME_SETTINGS_ID] as
+        | EntityStoreRuntimeSettings
+        | undefined;
+      if (!snapshot || !host.taskManager)
+        throw new Error(
+          'Native entity clients require Main registration metadata and Task Manager'
+        );
+      return {
+        ...createEntityStoreRunServices({ logger }),
+        ...createEntityStoreClientServices({
+          logger,
+          analytics: host.analytics,
+          taskManager: host.taskManager,
+          getMaintainers: () => snapshot.maintainers,
+        }),
+      };
+    },
+  },
   register: (registry, { host, logger, services }) => {
     const { licensing, plugins } = host as TaskHost;
     const { createCRUDClient } = createEntityStoreRunServices({

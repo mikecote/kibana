@@ -1047,6 +1047,12 @@ feature and plugin-presence gates. Worker tests cover native agent installation 
 mTLS workspace allocation and quota denial across independent runs in all four execution modes,
 without Kibana HTTP calls.
 
+Entity Store exposes its native metadata, relationship, resolution, resolution-rule and maintainer-status
+clients in workers through the same factory Main uses. Main captures its live maintainer registry for each
+dispatch; workers use that execution's registry with the real Task Manager and scoped Elasticsearch and saved
+objects clients. All four worker modes cover persisted resolution-rule changes, entity linking, relationship
+reads and maintainer status without business calls to Main.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services).
 
@@ -1054,6 +1060,8 @@ services).
 
 These remaining capability gaps currently fail process execution; they must be completed for full parity:
 
+- **Streams:** native rule reads and encrypted configuration clients still require completion.
+- **Lens:** custom visualization migration registrations still require native contributions.
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
   what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
