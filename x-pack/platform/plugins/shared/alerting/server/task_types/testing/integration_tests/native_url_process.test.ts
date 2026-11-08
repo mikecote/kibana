@@ -24,6 +24,7 @@ const resultSchema = z.object({
       slug: z.string(),
       dashboardId: z.literal('native-dashboard'),
       removed: z.boolean(),
+      completedRuns: z.number().int().nonnegative(),
     }),
   }),
 });
@@ -52,6 +53,7 @@ describe.each(modes)('Native rule short URLs in $mode/$reuse', ({ mode, reuse })
     const created = await harness.run('create-url', 'test.native-url');
     expect(created.onDispatchFailure).not.toHaveBeenCalled();
     const first = resultSchema.parse(created.result).state.alertTypeState;
+    expect(first.completedRuns).toBe(0);
     const repository = harness.seeder.host.savedObjects.getUnsafeInternalClient();
     const stored = await repository.get<{ slug: string; locatorJSON: string; accessCount: number }>(
       'url',
@@ -79,6 +81,7 @@ describe.each(modes)('Native rule short URLs in $mode/$reuse', ({ mode, reuse })
       expect(resultSchema.parse(outcome.result).state.alertTypeState).toEqual({
         ...first,
         removed: remove,
+        completedRuns: reuse ? (remove ? 2 : 1) : 0,
       });
       if (!remove) {
         const updated = await repository.get<{ accessCount: number }>('url', first.id);

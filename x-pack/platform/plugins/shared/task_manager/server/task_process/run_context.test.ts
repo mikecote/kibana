@@ -12,11 +12,56 @@ import {
   getActiveTaskExecutions,
   incrementCreatedTaskCount,
   requestDispatchTaskPool,
+  registerRunFlusher,
   runFlushers,
   runInRunContext,
 } from './run_context';
 
 describe('task process run context', () => {
+  it('registers completion callbacks only for executions, not setup contexts', async () => {
+    const callback = jest.fn().mockResolvedValue(undefined);
+    expect(registerRunFlusher(callback)).toBe(false);
+    const setup = await runInRunContext(async () => registerRunFlusher(callback));
+    expect(setup).toEqual({ value: false });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('isolates completion callbacks for overlapping executions and later retained runs', async () => {
+    const firstCallback = jest.fn().mockResolvedValue(undefined);
+    const secondCallback = jest.fn().mockResolvedValue(undefined);
+    const gate = Promise.withResolvers<void>();
+    const firstFlushers: Array<() => Promise<void>> = [];
+    const secondFlushers: Array<() => Promise<void>> = [];
+    const first = runInRunContext(
+      async () => {
+        expect(registerRunFlusher(firstCallback)).toBe(true);
+        await gate.promise;
+        await runFlushers(firstFlushers, { warn: jest.fn() });
+      },
+      { executionId: 'first', flushers: firstFlushers }
+    );
+    const second = await runInRunContext(
+      async () => {
+        expect(registerRunFlusher(secondCallback)).toBe(true);
+        await runFlushers(secondFlushers, { warn: jest.fn() });
+      },
+      { executionId: 'second', flushers: secondFlushers }
+    );
+    expect(second).toEqual({ value: undefined });
+    expect(secondCallback).toHaveBeenCalledTimes(1);
+    expect(firstCallback).not.toHaveBeenCalled();
+    gate.resolve();
+    expect(await first).toEqual({ value: undefined });
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    const laterFlushers: Array<() => Promise<void>> = [];
+    await runInRunContext(async () => runFlushers(laterFlushers, { warn: jest.fn() }), {
+      executionId: 'later',
+      flushers: laterFlushers,
+    });
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    expect(secondCallback).toHaveBeenCalledTimes(1);
+  });
+
   it('returns the value of the run, or the error it threw', async () => {
     const failure = new Error('boom');
 

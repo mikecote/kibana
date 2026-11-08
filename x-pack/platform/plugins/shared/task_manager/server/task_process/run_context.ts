@@ -89,7 +89,7 @@ export const runInRunContext = async <T>(
 /** Registers a flusher for the active execution and reports whether a run is active. */
 export const registerRunFlusher = (flusher: () => Promise<void>): boolean => {
   const run = storage.getStore();
-  if (!run) return false;
+  if (!run?.executionId) return false;
   run.flushers.push(flusher);
   return true;
 };

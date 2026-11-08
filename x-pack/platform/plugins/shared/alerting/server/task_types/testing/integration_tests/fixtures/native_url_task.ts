@@ -43,8 +43,10 @@ interface State extends RuleTypeState {
   slug: string;
   dashboardId: string;
   removed: boolean;
+  completedRuns: number;
 }
-const nativeRule: RuleType<Params, Params, State, {}, {}, 'default', 'recovered'> = {
+type NativeRuleType = RuleType<Params, Params, State, {}, {}, 'default', 'recovered'>;
+const nativeRule: NativeRuleType = {
   id: 'test.native-url',
   name: 'Native rule URL proof',
   actionGroups: [{ id: 'default', name: 'Default' }],
@@ -81,6 +83,7 @@ const nativeRule: RuleType<Params, Params, State, {}, {}, 'default', 'recovered'
         slug: short.data.slug,
         dashboardId,
         removed: params.remove,
+        completedRuns: 0,
       },
     };
   },
@@ -89,7 +92,23 @@ const nativeRule: RuleType<Params, Params, State, {}, {}, 'default', 'recovered'
 export const taskType = createRuleTaskType(
   {
     ruleTypeId: nativeRule.id,
-    getRuleType: () => nativeRule,
+    getRuleType: ({ host }): NativeRuleType => {
+      let completedRuns = 0;
+      return {
+        ...nativeRule,
+        executor: async (options) => {
+          if (!host.onRunEnd) throw new Error('Native rule needs run completion tracking');
+          host.onRunEnd(async () => {
+            completedRuns++;
+          });
+          const result = await nativeRule.executor(options);
+          return {
+            ...result,
+            state: { ...result.state, completedRuns },
+          };
+        },
+      };
+    },
   },
   { locators: [locator] }
 );

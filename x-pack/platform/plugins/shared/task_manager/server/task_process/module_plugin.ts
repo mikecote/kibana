@@ -35,7 +35,11 @@ import {
   TASK_SCHEDULING_CONTRIBUTIONS_KEY,
   type TaskSchedulingContribution,
 } from '../task_scheduling_contribution';
-import { requestDispatchTaskPool, incrementCreatedTaskCount } from './run_context';
+import {
+  requestDispatchTaskPool,
+  incrementCreatedTaskCount,
+  registerRunFlusher,
+} from './run_context';
 import { toTaskDefinition } from '../task_type_module';
 import type { TaskHost } from '../task_type_module';
 import { TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS } from '../task_encryption';
@@ -188,7 +192,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
           },
         },
         onRunEnd: (flusher) => {
-          context.flushers.push(flusher);
+          if (!registerRunFlusher(flusher)) context.flushers.push(flusher);
         },
         logger,
         parity: init.parity,
@@ -332,7 +336,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         if (nudge) stops.push(async () => nudge.stop());
         const encryptedSavedObjects = deps.encryptedSavedObjects;
         host.taskManager = createHostTaskScheduling({
-          onRunEnd: (flusher) => context.flushers.push(flusher),
+          onRunEnd: host.onRunEnd,
           store: {
             esClient: core.elasticsearch.client.asInternalUser,
             index: TASK_MANAGER_INDEX,

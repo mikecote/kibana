@@ -53,7 +53,10 @@ import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/t
 import { reviveTaskInstance } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
-import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
+import {
+  runFlushers,
+  runInRunContext,
+} from '@kbn/task-manager-plugin/server/task_process/run_context';
 import type {
   CancellableTask,
   RemoteRunObserver,
@@ -913,15 +916,16 @@ export class RuleProcessHarness {
       const applied = module.contributions?.apply?.(this.loadContributions()) ?? module;
       task = applied.createTaskRunner(context, this.seeder.host);
     }
+    const flushers: Array<() => Promise<void>> = [];
     const { value, error } = await runInRunContext(
       async () => {
         try {
           return await task.run();
         } finally {
-          await this.seeder.flush();
+          await Promise.all([runFlushers(flushers, this.seeder.host.logger), this.seeder.flush()]);
         }
       },
-      { executionId: `${context.taskInstance.id}::${context.executionUuid}` }
+      { executionId: `${context.taskInstance.id}::${context.executionUuid}`, flushers }
     );
     if (error !== undefined) throw error;
     return value;
