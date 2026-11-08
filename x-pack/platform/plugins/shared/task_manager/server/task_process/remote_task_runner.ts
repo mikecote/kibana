@@ -310,11 +310,18 @@ export class RemoteTaskRunner implements CancellableTask {
       if (!response.ok) {
         // A process that declines says why, which is what to alarm on.
         let reason: string | undefined;
+        let incompatible = false;
         if (response.status === DECLINED_STATUS) {
           const failure = (await response.json().catch(() => undefined)) as
-            | { reason?: string; createdTaskCount?: number; prometheus?: TaskProcessMetricSnapshot }
+            | {
+                kind?: string;
+                reason?: string;
+                createdTaskCount?: number;
+                prometheus?: TaskProcessMetricSnapshot;
+              }
             | undefined;
           reason = failure?.reason;
+          incompatible = failure?.kind === 'incompatible';
           this.reportCreatedTasks(failure?.createdTaskCount);
           this.reportMetrics(failure?.prometheus);
         } else {
@@ -326,7 +333,11 @@ export class RemoteTaskRunner implements CancellableTask {
         if (response.status === 404 || response.status === DECLINED_STATUS) {
           this.params.onDispatchFailure?.(
             request.taskType,
-            response.status === DECLINED_STATUS ? 'declined' : 'not_served',
+            response.status === DECLINED_STATUS
+              ? incompatible
+                ? 'incompatible'
+                : 'declined'
+              : 'not_served',
             reason ?? message
           );
           throwUnrecoverableError(new Error(message));

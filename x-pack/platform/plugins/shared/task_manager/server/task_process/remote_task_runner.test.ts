@@ -284,6 +284,24 @@ describe('RemoteTaskRunner dispatch', () => {
     expect(onTasksCreated).toHaveBeenCalledWith(2);
   });
 
+  it('reports receiver-side flag incompatibility as a permanent dispatch failure', async () => {
+    const fetchFn = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        kind: 'incompatible',
+        reason: 'Main did not evaluate native task feature flags: sdk.enabled',
+      }),
+    });
+    const { runner, onDispatchFailure } = create(fetchFn);
+    await expect(runner.run()).rejects.toThrow('sdk.enabled');
+    expect(onDispatchFailure).toHaveBeenCalledWith(
+      'alerting:test',
+      'incompatible',
+      'Main did not evaluate native task feature flags: sdk.enabled'
+    );
+  });
+
   it('reports a process that does not serve the task type', async () => {
     const fetchFn = jest.fn().mockResolvedValue({ ok: false, status: 404, body: null });
     const { runner, onDispatchFailure } = create(fetchFn);

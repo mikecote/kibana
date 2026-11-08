@@ -65,7 +65,7 @@ describe('task process server', () => {
   beforeEach(async () => {
     runAsDefinition = undefined;
     collectGauges.mockClear();
-    getFeatureFlagDefinitions.mockReset().mockReturnValue({ 'sdk.enabled': false });
+    getFeatureFlagDefinitions.mockReset().mockReturnValue({});
     enrichFakeRequest = jest.fn();
     cleanup.mockReset();
     order.length = 0;
@@ -177,6 +177,7 @@ describe('task process server', () => {
   });
 
   it('authenticates SDK flag declarations and rejects missing bundle metadata before a run', async () => {
+    getFeatureFlagDefinitions.mockReturnValue({ 'sdk.enabled': false });
     const endpoint = `${url}${TASK_PROCESS_PATHS.featureFlags}`;
     expect((await undiciFetch(`${endpoint}?taskType=${TYPE}`)).status).toBe(401);
     expect(getFeatureFlagDefinitions).not.toHaveBeenCalled();
@@ -202,6 +203,75 @@ describe('task process server', () => {
       await invalid.body?.cancel();
     }
     expect(order).toEqual([]);
+  });
+
+  it.each([undefined, { 'sdk.enabled': 'false' }])(
+    'refuses unevaluated native flags before creating a task: %p',
+    async (featureFlags) => {
+      getFeatureFlagDefinitions.mockReturnValue({ 'sdk.enabled': false });
+      const create = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+      createTask = create;
+      const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+          taskType: TYPE,
+          taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+          executionUuid: 'unnegotiated-flags',
+          featureFlags,
+        }),
+      });
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({
+        kind: 'incompatible',
+        reason: expect.stringContaining('sdk.enabled'),
+      });
+      expect(create).not.toHaveBeenCalled();
+      expect(order).toEqual([]);
+      expect(flush).not.toHaveBeenCalled();
+    }
+  );
+
+  it('refuses a forwarded snapshot whose flag values differ before forwarding business work', async () => {
+    const forwardRun = jest.fn(() => ({ run: async () => ({ state: {} }) }));
+    const gateway = startTaskProcessServer({
+      taskDefinitions: new Map(),
+      forwardRun,
+      getFeatureFlagDefinitions: () => ({ 'sdk.enabled': false }),
+      port: 0,
+      logger: loggingSystemMock.createLogger(),
+      kibanaVersion: '9.9.9',
+      authToken: TOKEN,
+    });
+    await new Promise<void>((resolve) => gateway.once('listening', resolve));
+    const address = gateway.address();
+    if (!address || typeof address === 'string') throw new Error('The gateway has no TCP address');
+    try {
+      const response = await undiciFetch(
+        `http://127.0.0.1:${address.port}${TASK_PROCESS_PATHS.run}`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+            taskType: TYPE,
+            taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
+            executionUuid: 'inconsistent-flags',
+            featureFlags: { 'sdk.enabled': false },
+            snapshot: { featureFlags: { 'sdk.enabled': true } },
+          }),
+        }
+      );
+      expect(response.status).toBe(422);
+      expect(await response.json()).toEqual({
+        kind: 'incompatible',
+        reason: 'Run and dispatch snapshot feature flags disagree',
+      });
+      expect(forwardRun).not.toHaveBeenCalled();
+    } finally {
+      gateway.close();
+    }
   });
 
   it('advertises the current dispatch contract separately from liveness', async () => {
@@ -673,6 +743,9 @@ describe('remote task worker', () => {
   beforeEach(async () => {
     jest.spyOn(TaskProcessSupervisor.prototype, 'start').mockImplementation(() => {});
     jest.spyOn(TaskProcessSupervisor.prototype, 'getTaskTypes').mockImplementation(getTaskTypes);
+    jest
+      .spyOn(TaskProcessSupervisor.prototype, 'getFeatureFlagDefinitions')
+      .mockReturnValue({ 'test.flag': false });
     jest.spyOn(TaskProcessSupervisor.prototype, 'getRoute').mockReturnValue({ acquire });
     jest.spyOn(TaskProcessSupervisor.prototype, 'stop').mockResolvedValue();
     release.mockReset();
@@ -739,6 +812,7 @@ describe('remote task worker', () => {
         },
         timeoutMs: 10_000,
         setCustomTaskRunEventFields: setFields,
+        getFeatureFlags: async () => current.featureFlags,
         fetchFn: fetch,
       });
       await expect(runner.run()).resolves.toEqual({
@@ -765,6 +839,7 @@ describe('remote task worker', () => {
         taskType: TYPE,
         taskInstance: {},
         executionUuid: 'missing',
+        featureFlags: { 'test.flag': false },
       }),
     });
     expect(await response.json()).toMatchObject({ kind: 'thrown' });

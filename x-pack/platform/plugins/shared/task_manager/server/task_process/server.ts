@@ -16,6 +16,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
+import { assertTaskFeatureFlagValues } from './feature_flag_declarations';
+import { TaskProcessAcquireError } from './acquire_error';
 import { TaskProcessMetrics } from './run_metrics';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
@@ -186,6 +188,29 @@ export const startTaskProcessServer = ({
     if (!definition && !forwardRun) return undefined;
     if (body.snapshot && !forwardRun) {
       throw new RefusedRun(409, 'Dispatch snapshots require a task worker supervisor');
+    }
+    if (getFeatureFlagDefinitions) {
+      const declared = getFeatureFlagDefinitions(body.taskType);
+      if (!declared) {
+        throw new TaskProcessAcquireError(
+          'incompatible',
+          'Missing native feature flag declarations; rebuild the bundle'
+        );
+      }
+      assertTaskFeatureFlagValues(body.featureFlags, declared);
+      if (body.snapshot) {
+        assertTaskFeatureFlagValues(body.snapshot.featureFlags, declared);
+        if (
+          Object.keys(declared).some(
+            (name) => body.featureFlags?.[name] !== body.snapshot?.featureFlags?.[name]
+          )
+        ) {
+          throw new TaskProcessAcquireError(
+            'incompatible',
+            'Run and dispatch snapshot feature flags disagree'
+          );
+        }
+      }
     }
     if (draining) throw new RefusedRun(503, 'task process is shutting down');
     if (!forwardRun && inFlight.size) throw new RefusedRun(503, 'task process is busy');
@@ -487,6 +512,10 @@ export const startTaskProcessServer = ({
 
       sendJson(res, 404, { error: 'not found' });
     } catch (error) {
+      if (error instanceof TaskProcessAcquireError) {
+        sendJson(res, DECLINED_STATUS, { kind: 'incompatible', reason: error.message });
+        return;
+      }
       if (error instanceof RefusedRun) {
         sendJson(
           res,

@@ -22,7 +22,8 @@
  */
 
 // eslint-disable-next-line @kbn/eslint/require_kbn_fs
-import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import type { TaskFeatureFlagDefinitions } from '@kbn/task-manager-plugin/server/task_process/feature_flag_declarations';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createRequire } from 'module';
@@ -122,6 +123,7 @@ export interface RuleModuleUnderTest {
 export interface RuleProcessHarnessOptions {
   mode?: 'child_process' | 'remote';
   reuse?: boolean;
+  featureFlags?: TaskFeatureFlagDefinitions;
   instrumentation?: TaskProcessInit['instrumentation'];
   onMetrics?: TaskProcessDispatch['onMetrics'];
   /** The rule types to serve. Their bundles are built in parallel, once. */
@@ -328,7 +330,7 @@ export class RuleProcessHarness {
     const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
     if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
     const names = new Set(options.rules.map(({ bundle }) => bundle));
-    const entries = [
+    const entries: Array<{ name: string; file: string }> = [
       ...getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name)),
       ...options.rules.flatMap(({ file, bundle }) => (file ? [{ name: bundle, file }] : [])),
     ];
@@ -344,13 +346,22 @@ export class RuleProcessHarness {
             throw new Error(`Missing prebuilt task bundle ${name} in ${prebuiltDir}`);
           }
         }
-        return entries;
+        const manifestPath = join(prebuiltDir, 'manifest.json');
+        const manifest = existsSync(manifestPath)
+          ? (JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+              bundles: Record<string, { featureFlags?: TaskFeatureFlagDefinitions }>;
+            })
+          : undefined;
+        return entries.map((entry) => ({
+          ...entry,
+          featureFlags: manifest?.bundles[entry.name]?.featureFlags,
+        }));
       }
-      const built: unknown[] = [];
+      const built: Array<{ name: string; featureFlags?: TaskFeatureFlagDefinitions }> = [];
       for (let i = 0; i < entries.length; i += BUILD_CONCURRENCY) {
         built.push(
           ...(await Promise.all(
-            entries.slice(i, i + BUILD_CONCURRENCY).map((entry: unknown) =>
+            entries.slice(i, i + BUILD_CONCURRENCY).map((entry) =>
               buildTaskBundle({
                 entry,
                 outDir: bundleDir,
@@ -451,14 +462,21 @@ export class RuleProcessHarness {
     });
     this.defaultApiKey = await this.createApiKey();
 
-    const built = (await building) as Array<{ name: string }>;
+    const built = await building;
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
         bundles: Object.fromEntries(
           options.rules.map(({ bundle, taskType }) => {
             const entry = built.find(({ name }) => name === bundle)!;
-            return [entry.name, { file: `${entry.name}.mjs`, taskType: taskType.type }];
+            return [
+              entry.name,
+              {
+                file: `${entry.name}.mjs`,
+                taskType: taskType.type,
+                featureFlags: entry.featureFlags,
+              },
+            ];
           })
         ),
       })
@@ -847,6 +865,10 @@ export class RuleProcessHarness {
       onDispatchFailure: onDispatchFailure as never,
       observer: options.observer,
       onMetrics: this.options.onMetrics,
+      getFeatureFlags: async (_taskType, declarations) => ({
+        ...declarations,
+        ...this.options.featureFlags,
+      }),
       signal: options.signal,
     });
     /** Resolves when the process has the run in flight: it booted and the task is running. */
@@ -949,7 +971,11 @@ export class RuleProcessHarness {
           await Promise.all([runFlushers(flushers, this.seeder.host.logger), this.seeder.flush()]);
         }
       },
-      { executionId: `${context.taskInstance.id}::${context.executionUuid}`, flushers }
+      {
+        executionId: `${context.taskInstance.id}::${context.executionUuid}`,
+        flushers,
+        featureFlags: this.options.featureFlags,
+      }
     );
     if (error !== undefined) throw error;
     return value;

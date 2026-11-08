@@ -697,7 +697,13 @@ const startHarness = async (
       onTasksCreated: (count) => createdTaskCounts.push(count),
       onMetrics: options.onMetrics,
       getCurrentTasksInPool: options.getCurrentTasksInPool,
-      getFeatureFlags: options.getFeatureFlags,
+      getFeatureFlags:
+        options.getFeatureFlags ??
+        (async (_taskType, declarations) => ({
+          ...declarations,
+          [WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG]: true,
+          ...options.featureFlags,
+        })),
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 
