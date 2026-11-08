@@ -11,8 +11,8 @@ import type {
   Logger,
   SavedObjectsClientContract,
 } from '@kbn/core/server';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { RelationshipsClient } from '@kbn/entity-store/server';
+import type { EntityAnalyticsMlServices } from '../../ml_anomaly_detection/ml_services';
 import type { RiskScoreDataClient } from '../../risk_score/risk_score_data_client';
 import { getAlertsIndex } from '../../../../../common/entity_analytics/utils';
 import type { LeadEntity } from '../types';
@@ -38,7 +38,7 @@ export interface ObservationModuleDeps {
   readonly esClient: ElasticsearchClient;
   readonly spaceId: string;
   readonly riskScoreDataClient: RiskScoreDataClient;
-  readonly ml?: MlPluginSetup;
+  readonly ml?: EntityAnalyticsMlServices;
   readonly request?: KibanaRequest;
   readonly soClient?: SavedObjectsClientContract;
   readonly relationshipsClient: RelationshipsClient;

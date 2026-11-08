@@ -25,7 +25,7 @@ interface HasReferences {
 }
 
 export interface FindRuleOptions {
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
   filter: string | undefined;
   fields?: string[];
   sortField: FindRulesSortField | undefined;

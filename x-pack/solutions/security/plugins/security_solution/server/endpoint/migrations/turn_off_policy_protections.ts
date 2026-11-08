@@ -19,12 +19,12 @@ import {
 import type { PolicyData } from '../../../common/endpoint/types';
 import type { EndpointInternalFleetServicesInterface } from '../services/fleet';
 import { getPolicyDataForUpdate } from '../../../common/endpoint/service/policy';
-import type { ProductFeaturesService } from '../../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../../lib/product_features_service/product_features_reader';
 
 export const turnOffPolicyProtectionsIfNotSupported = async (
   esClient: ElasticsearchClient,
   fleetServices: EndpointInternalFleetServicesInterface,
-  productFeaturesService: ProductFeaturesService,
+  productFeaturesService: ProductFeaturesReader,
   logger: Logger
 ): Promise<void> => {
   const log = logger.get('endpoint', 'policyProtectionsComplianceChecks');

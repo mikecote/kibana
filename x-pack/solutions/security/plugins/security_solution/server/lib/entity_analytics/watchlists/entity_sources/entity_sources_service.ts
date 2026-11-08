@@ -9,13 +9,15 @@ import type {
   ElasticsearchClient,
   Logger,
   SavedObjectsClientContract,
+  CoreStart,
   StartServicesAccessor,
+  IClusterClient,
 } from '@kbn/core/server';
 import type { SortResults } from '@elastic/elasticsearch/lib/api/types';
 import { CRUDClient } from '@kbn/entity-store/server/domain/crud/crud_client';
 import { getEntitiesAlias, ENTITY_LATEST } from '@kbn/entity-store/server';
 import { getFakeKibanaRequest } from '@kbn/security-plugin/server/authentication/api_keys/fake_kibana_request';
-import type { StartPlugins } from '../../../../plugin';
+import type { EncryptedSavedObjectsPluginStart } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { MonitoringEntitySource } from '../../../../../common/api/entity_analytics/watchlists/data_source/common.gen';
 import {
   type IntegrationType,
@@ -31,6 +33,16 @@ import { createIndexSyncService } from './sync/index_sync';
 import { applyBulkRemoveSource } from './bulk/soft_delete';
 import type { StaleEntity } from './bulk/soft_delete';
 import { MANUAL_SOURCE_ID } from './manual/constants';
+
+export interface EntitySourcesServices {
+  getStartServices: () => Promise<
+    [
+      Pick<CoreStart, 'security'> & { elasticsearch: { client: Pick<IClusterClient, 'asScoped'> } },
+      { encryptedSavedObjects?: Pick<EncryptedSavedObjectsPluginStart, 'getClient'> },
+      pluginStart?: Awaited<ReturnType<StartServicesAccessor>>[2]
+    ]
+  >;
+}
 
 interface WatchlistMeta {
   name: string;
@@ -129,7 +141,7 @@ export const createEntitySourcesService = ({
   soClient: SavedObjectsClientContract;
   logger: Logger;
   namespace: string;
-  getStartServices: StartServicesAccessor<StartPlugins>;
+  getStartServices: EntitySourcesServices['getStartServices'];
   hasEncryptionKey: boolean;
 }) => {
   const watchlistClient = new WatchlistConfigClient({ esClient, soClient, logger, namespace });

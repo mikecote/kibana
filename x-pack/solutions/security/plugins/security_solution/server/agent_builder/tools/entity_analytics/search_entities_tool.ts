@@ -23,7 +23,7 @@ import {
 } from '../../../../common/api/entity_analytics/common/common.gen';
 import type { ExperimentalFeatures } from '../../../../common';
 import { AssetCriticalityLevel } from '../../../../common/api/entity_analytics/asset_criticality/common.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityEntityToolServices } from './entity_services';
 import { securityTool } from '../constants';
 import { buildRenderAttachmentTag } from './attachment_utils';
 import { getEntityAnalyticsToolAvailability } from './entity_analytics_availability';
@@ -673,7 +673,7 @@ const buildAttachmentSideEffectResults = async ({
 };
 
 export const searchEntitiesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

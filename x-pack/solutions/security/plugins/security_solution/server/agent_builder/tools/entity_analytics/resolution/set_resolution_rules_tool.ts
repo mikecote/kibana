@@ -14,7 +14,7 @@ import { RESOLUTION_RULE_IDS, type ResolutionRuleId } from '@kbn/entity-store/co
 import { ENTITY_ANALYTICS_MANAGE_KIBANA_FEATURE_PRIVILEGES } from '@kbn/entity-store/server';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
 import { checkResolutionAccess } from './check_resolution_access';
@@ -45,7 +45,7 @@ const schema = z.object({
 export const SECURITY_SET_RESOLUTION_RULES_TOOL_ID = securityTool('set_resolution_rules');
 
 export const setResolutionRulesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

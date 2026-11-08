@@ -86,7 +86,7 @@ import {
   disableProtections,
   resetCustomNotifications,
 } from '../../common/endpoint/models/policy_config_helpers';
-import type { ProductFeaturesService } from '../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../lib/product_features_service';
 import { createProductFeaturesServiceMock } from '../lib/product_features_service/mocks';
 import * as moment from 'moment';
 import type {
@@ -159,7 +159,7 @@ describe('Fleet integrations', () => {
   const generator = new EndpointDocGenerator();
   const cloudService = cloudMock.createSetup();
   const telemetryConfigProviderMock = createTelemetryConfigProviderMock();
-  let productFeaturesService: ProductFeaturesService;
+  let productFeaturesService: ProductFeaturesReader;
   let endpointMetadataService: EndpointMetadataService;
   let logger: Logger;
   let experimentalFeatures: ExperimentalFeatures;

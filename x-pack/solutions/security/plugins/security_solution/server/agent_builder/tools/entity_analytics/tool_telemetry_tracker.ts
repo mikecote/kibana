@@ -6,7 +6,7 @@
  */
 
 import type { ConfirmationStatus } from '@kbn/agent-builder-common/agents/prompts';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityEntityToolServices } from './entity_services';
 import { ENTITY_ANALYTICS_AI_TOOL_USAGE_EVENT } from '../../../lib/telemetry/event_based/events';
 
 /**
@@ -20,7 +20,7 @@ export const createToolTelemetryTracker = ({
   actionType,
   entityTypes,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: SecurityEntityToolServices;
   toolId: string;
   spaceId: string;
   actionType: 'read' | 'mutation';

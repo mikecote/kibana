@@ -53,6 +53,7 @@ export const collectRegisteredIds = async ({
     taskProcess: { registerSettings: () => {} },
   });
   const contributionServices: AgentBuilderContributionServices = {
+    registerRunCompletion: unavailable('Run completion'),
     getService: unavailable('Contributed services'),
     getCoreStart: unavailable('Core') as never,
     getActionsStart: unavailable('The actions plugin') as never,

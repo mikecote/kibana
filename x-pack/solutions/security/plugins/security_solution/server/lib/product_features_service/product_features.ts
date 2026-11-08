@@ -128,6 +128,11 @@ export class ProductFeatures {
     });
   }
 
+  /** Returns the actions successfully registered through the product feature configurations. */
+  public getRegisteredActions(): string[] {
+    return [...this.registeredActions];
+  }
+
   public isActionRegistered(action: string) {
     return this.registeredActions.has(action);
   }

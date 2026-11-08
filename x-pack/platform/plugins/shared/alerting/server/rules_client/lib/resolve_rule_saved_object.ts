@@ -8,7 +8,7 @@
 import type { SavedObjectsResolveResponse } from '@kbn/core/server';
 import { withSpan } from '@kbn/apm-utils';
 import { ruleAuditEvent, RuleAuditAction } from '../common/audit_events';
-import type { RulesClientContext } from '../types';
+import type { RulesReadContext } from '../rules_read_context';
 import { resolveRuleSo } from '../../data/rule';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';
 import type { RawRule } from '../../types';
@@ -18,7 +18,7 @@ interface ResolveRuleSavedObjectParams {
 }
 
 export async function resolveRuleSavedObject(
-  context: RulesClientContext,
+  context: Pick<RulesReadContext, 'auditLogger' | 'unsecuredSavedObjectsClient'>,
   params: ResolveRuleSavedObjectParams
 ): Promise<SavedObjectsResolveResponse<RawRule>> {
   const { ruleId } = params;

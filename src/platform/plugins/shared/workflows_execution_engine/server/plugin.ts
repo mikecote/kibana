@@ -219,9 +219,30 @@ export class WorkflowsExecutionEnginePlugin
     // How a process ships analytics events and counts usage, as this Kibana does: the process does
     // its side effects itself, so it is told what Kibana would apply.
     if (plugins.data) {
-      this.taskTypeSettings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] = () => ({
-        multiSearchDocLink: core.docLinks.links.apis.multiSearch,
-      });
+      this.taskTypeSettings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] = async () => {
+        const [, startPlugins] = await core.getStartServices();
+        const search = startPlugins.data?.search.getTaskProcessSettings?.();
+        if (!search)
+          throw new Error('Native workflow search requires Data search runtime metadata');
+        return {
+          multiSearchDocLink: core.docLinks.links.apis.multiSearch,
+          search,
+          docLinks: {
+            links: {
+              query: { luceneQuery: core.docLinks.links.query.luceneQuery },
+              apis: {
+                searchPreference: core.docLinks.links.apis.searchPreference,
+                multiSearch: core.docLinks.links.apis.multiSearch,
+              },
+              date: { dateMath: core.docLinks.links.date.dateMath },
+              elasticsearch: { sortSearch: core.docLinks.links.elasticsearch.sortSearch },
+              kibana: {
+                autocompleteSuggestions: core.docLinks.links.kibana.autocompleteSuggestions,
+              },
+            },
+          },
+        };
+      };
     }
     const { dataViews } = plugins;
     if (dataViews) {

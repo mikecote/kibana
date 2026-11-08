@@ -6,9 +6,9 @@
  */
 
 import type { KibanaRequest, Logger, SavedObjectsClientContract } from '@kbn/core/server';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { EntityType } from '@kbn/entity-store/common';
 import { euid, getBuiltInEntityDefinition } from '@kbn/entity-store/common/euid_helpers';
+import type { EntityAnalyticsMlServices } from '../../../ml_anomaly_detection/ml_services';
 import type { LeadEntity } from '../../types';
 import { errorMessage, groupEntitiesByType } from '../utils';
 import { getSecurityMlJobIds } from '../../../ml_anomaly_detection/get_security_ml_job_ids';
@@ -25,7 +25,7 @@ import {
 } from './config';
 
 interface FetchAnomalySummariesDeps {
-  readonly ml: MlPluginSetup;
+  readonly ml: EntityAnalyticsMlServices;
   readonly request: KibanaRequest;
   readonly soClient: SavedObjectsClientContract;
   readonly entities: readonly LeadEntity[];
@@ -106,7 +106,7 @@ export const fetchAnomalySummariesForEntities = async ({
 };
 
 interface SearchAnomalyBucketsDeps {
-  readonly mlSystem: ReturnType<MlPluginSetup['mlSystemProvider']>;
+  readonly mlSystem: ReturnType<EntityAnalyticsMlServices['mlSystemProvider']>;
   readonly entityType: EntityType;
   readonly euids: string[];
   readonly jobIds: string[];

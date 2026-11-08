@@ -7,8 +7,8 @@
 
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../lib/product_features_service/product_features_service';
+import type { SecurityAccessToolServices } from '../access_services';
+import type { ProductFeaturesReader } from '../../../lib/product_features_service';
 import { getRuleMigrationTool } from './rules/get_rule_migration_tool';
 import { startRuleMigrationTool } from './rules/start_rule_migration_tool';
 import { getAllRuleMigrationStatsTool } from './rules/get_all_rule_migration_stats_tool';
@@ -25,8 +25,8 @@ import { installMigrationRulesTool } from './rules/install_migration_rules_tool'
 
 export const registerSiemMigrationTools = (
   agentBuilder: AgentBuilderPluginSetup,
-  core: SecuritySolutionPluginCoreSetupDependencies,
-  productFeaturesService: ProductFeaturesService,
+  core: SecurityAccessToolServices,
+  productFeaturesService: ProductFeaturesReader,
   logger: Logger
 ) => {
   agentBuilder.tools.register(getRuleMigrationTool(core, logger, productFeaturesService));

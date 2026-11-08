@@ -70,6 +70,12 @@ export const contribution: WorkflowStepsContribution = {
               searchConfiguration: SerializedSearchSourceFields;
             }
           >({ id: 'query-rule' });
+          const resolved = await rulesClient.resolve<typeof rule.params>({ id: 'query-rule' });
+          if (
+            resolved.outcome !== 'exactMatch' ||
+            resolved.params.searchConfiguration.index !== rule.params.searchConfiguration.index
+          )
+            throw new Error('Native rule resolution must restore the same references as get');
           const bulk = await rulesClient.bulkGetRules({ ids: ['query-rule', 'threshold-rule'] });
           const found = await rulesClient.find({
             options: { search: 'Native', searchFields: ['name'] },
@@ -89,7 +95,7 @@ export const contribution: WorkflowStepsContribution = {
               url: threshold?.viewInAppRelativeUrl ?? '',
               attachmentNames: attachments.map(({ title }) => title).sort(),
               suggestions: suggestions.map(({ title }) => title).sort(),
-              hasApiKey: [rule, ...found.data, ...bulk.rules].some((value) =>
+              hasApiKey: [rule, resolved, ...found.data, ...bulk.rules].some((value) =>
                 Object.hasOwn(value, 'apiKey')
               ),
             },

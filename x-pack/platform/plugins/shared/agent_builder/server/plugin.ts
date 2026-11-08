@@ -124,7 +124,7 @@ export class AgentBuilderPlugin
       coreSetup.analytics,
       this.logger.get('telemetry').get('analytics')
     );
-    this.analyticsService.registerAgentBuilderEventTypes();
+    this.analyticsService.registerAgentBuilderEventTypes(coreSetup.analytics);
 
     const getCoreStart = async () => (await coreSetup.getStartServices())[0];
     this.services = createAgentBuilderRunServices({
@@ -240,8 +240,7 @@ export class AgentBuilderPlugin
       licensing,
       security: securityPlugin,
     } = startDeps;
-    const { elasticsearch, http, security, uiSettings, savedObjects, dataStreams, featureFlags } =
-      coreStart;
+    const { elasticsearch, http, security, uiSettings, savedObjects, featureFlags } = coreStart;
 
     this.cleanupLegacySmlTasks(taskManager).catch((error) => {
       this.logger.warn(`Failed to clean up legacy SML tasks: ${(error as Error).message}`);
@@ -263,7 +262,6 @@ export class AgentBuilderPlugin
       uiSettings,
       savedObjects,
       featureFlags,
-      dataStreams,
       taskManager,
       trackingService: this.trackingService,
       analyticsService: this.analyticsService,

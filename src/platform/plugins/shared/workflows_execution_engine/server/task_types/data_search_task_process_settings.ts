@@ -7,8 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import type { SearchTaskProcessSettings } from '@kbn/data-plugin/server/search/types';
+import type { DataUiSettingsDocLinks } from '@kbn/data-plugin/server/ui_settings';
+
 export const DATA_SEARCH_TASK_PROCESS_SETTINGS_ID = 'dataSearchRuntime';
 
 export interface DataSearchTaskProcessSettings {
   multiSearchDocLink: string;
+  search?: SearchTaskProcessSettings;
+  docLinks?: DataUiSettingsDocLinks;
 }

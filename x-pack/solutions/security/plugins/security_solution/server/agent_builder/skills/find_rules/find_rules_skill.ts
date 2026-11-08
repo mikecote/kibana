@@ -5,17 +5,16 @@
  * 2.0.
  */
 
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import type { SkillDefinition } from '@kbn/agent-builder-server/skills';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
+import type { SecuritySkillServices } from '../services';
 import { SECURITY_ALERTS_TOOL_ID } from '../../tools';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 import { createFindRulesInlineTool } from './find_rules_tool';
 import { createDiscoverRuleTagsInlineTool } from './discover_rule_tags_tool';
 
 interface FindRulesSkillDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
 }
 

@@ -81,6 +81,7 @@ export const createAgentBuilderProcessServices = async ({
   getService,
   getWorkflowsManagement,
   emitEvent,
+  registerRunCompletion,
 }: {
   host: TaskHost;
   logger: Logger;
@@ -96,6 +97,7 @@ export const createAgentBuilderProcessServices = async ({
   getWorkflowsManagement: () => WorkflowsServerPluginSetup['management'];
   /** Emits a workflow trigger event through the engine's runtime. */
   emitEvent: AgentBuilderContributionServices['emitEvent'];
+  registerRunCompletion: AgentBuilderContributionServices['registerRunCompletion'];
 }): Promise<AgentBuilderProcessServices | undefined> => {
   const runSettings = settings[AGENT_BUILDER_RUN_SETTINGS_ID] as
     | AgentBuilderRunSettings
@@ -151,11 +153,11 @@ export const createAgentBuilderProcessServices = async ({
 
   const usageCounter = host.usageCounters?.getUsageCounter(AGENTBUILDER_USAGE_DOMAIN);
   const trackingService = usageCounter
-    ? new TrackingService(usageCounter as never, logger.get('telemetry'))
+    ? new TrackingService(usageCounter, logger.get('telemetry'))
     : undefined;
   // The event types are declared by the contribution and registered with Core by the module.
   const analyticsService = new AnalyticsService(
-    { reportEvent: host.analytics.reportEvent, registerEventType: () => {} } as never,
+    host.analytics,
     logger.get('telemetry').get('analytics')
   );
 
@@ -206,6 +208,7 @@ export const createAgentBuilderProcessServices = async ({
       getInferenceStart: () => inference,
       getWorkflowsManagement: () => workflowsManagement,
       emitEvent,
+      registerRunCompletion,
       getAgentBuilderStart: () => {
         if (!startContract) throw new Error('Agent builder is not started in this process yet');
         return startContract;
@@ -232,7 +235,6 @@ export const createAgentBuilderProcessServices = async ({
     uiSettings: uiSettings as never,
     savedObjects: savedObjects as never,
     featureFlags: host.featureFlags as never,
-    dataStreams: undefined as never,
     taskManager: host.taskManager as never,
     securityPlugin: undefined,
     trackingService,

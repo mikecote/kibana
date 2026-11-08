@@ -8,7 +8,7 @@
 import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types';
 import type { KibanaRequest, Logger, SavedObjectsClientContract } from '@kbn/core/server';
 import type { Entity, EntityType } from '@kbn/entity-store/common';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
+import type { EntityAnalyticsMlServices } from './ml_services';
 import { buildEntitiesFilter, getMatchedEntityId } from './build_entities_filter';
 import { ENTITY_ANOMALY_DEFAULT_LOOKBACK } from '../../../../common/constants';
 import type { AnomalyScoreRange } from '../../../../common/api/entity_analytics';
@@ -96,7 +96,7 @@ export interface SearchEntityAnomaliesOpts {
   from?: number;
   size?: number;
   logger: Logger;
-  ml: MlPluginSetup;
+  ml: EntityAnalyticsMlServices;
   request: KibanaRequest;
   securityJobIds?: string[];
   soClient: SavedObjectsClientContract;

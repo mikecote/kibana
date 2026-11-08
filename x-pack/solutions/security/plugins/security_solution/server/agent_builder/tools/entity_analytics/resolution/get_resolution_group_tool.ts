@@ -13,7 +13,7 @@ import { getFieldValue } from '@kbn/entity-store/server';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { IdentifierType } from '../../../../../common/api/entity_analytics/common/common.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { requireResolvedEntity } from '../entity_resolution';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
@@ -36,7 +36,7 @@ const schema = z.object({
 export const SECURITY_GET_RESOLUTION_GROUP_TOOL_ID = securityTool('get_resolution_group');
 
 export const getResolutionGroupTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

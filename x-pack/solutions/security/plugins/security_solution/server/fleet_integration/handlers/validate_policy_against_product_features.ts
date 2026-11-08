@@ -8,11 +8,11 @@
 import type { NewPackagePolicyInput } from '@kbn/fleet-plugin/common';
 import { ProductFeatureSecurityKey } from '@kbn/security-solution-features/keys';
 import { checkIfPopupMessagesContainCustomNotifications } from '../../../common/endpoint/models/policy_config_helpers';
-import type { ProductFeaturesService } from '../../lib/product_features_service';
+import type { ProductFeaturesReader } from '../../lib/product_features_service';
 
 export const validatePolicyAgainstProductFeatures = (
   inputs: NewPackagePolicyInput[],
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): void => {
   const input = inputs.find((i) => i.type === 'endpoint');
   const policySettings = input?.config?.policy?.value;

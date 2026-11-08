@@ -14,7 +14,7 @@ import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { WATCHLIST_IDENTIFIER_FIELDS } from '../../../../../common/entity_analytics/watchlists/constants';
 import type { MonitoringEntitySource } from '../../../../../common/api/entity_analytics/watchlists/data_source/common.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityWatchlistToolServices } from './services';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
 import { syncWatchlistInBackground } from '../../../../lib/entity_analytics/watchlists/entity_sources/entity_sources_service';
 import {
@@ -152,7 +152,7 @@ const buildSourceName = (watchlistId: string, type: RuleBasedSourceType): string
   `${watchlistId}-${type}`;
 
 export const setWatchlistRuleBasedDataSourceTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityWatchlistToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   hasEncryptionKey: boolean
@@ -472,7 +472,7 @@ Resolve the watchlist id via \`security.get_watchlist_id\` first when the user n
           }
         }
 
-        void syncWatchlistInBackground({
+        const sync = syncWatchlistInBackground({
           watchlistId: source.watchlistId,
           logContext: SECURITY_SET_WATCHLIST_RULE_BASED_DATA_SOURCE_TOOL_ID,
           esClient: esClient.asCurrentUser,
@@ -482,6 +482,7 @@ Resolve the watchlist id via \`security.get_watchlist_id\` first when the user n
           getStartServices: core.getStartServices,
           hasEncryptionKey,
         });
+        core.trackBackgroundTask?.(sync);
 
         telemetryTracker.recordResultCount(1);
         return {

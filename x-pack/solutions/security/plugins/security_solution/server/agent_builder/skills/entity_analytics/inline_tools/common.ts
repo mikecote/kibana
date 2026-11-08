@@ -8,9 +8,9 @@
 import { z, lazySchema } from '@kbn/zod/v4';
 import type { IScopedClusterClient, KibanaRequest } from '@kbn/core/server';
 import { FF_ENABLE_ENTITY_STORE_V2 } from '@kbn/entity-store/common';
+import type { SecuritySkillServices } from '../../services';
 import { DEFAULT_DATA_VIEW_ID, DEFAULT_ALERTS_INDEX } from '../../../../../common/constants';
 import { IdentifierType } from '../../../../../common/api/entity_analytics/common/common.gen';
-import type { EntityAnalyticsRoutesDeps } from '../../../../lib/entity_analytics/types';
 import type { EntityType } from '../../../../../common/entity_analytics/types';
 import { EntityTypeToIdentifierField } from '../../../../../common/entity_analytics/types';
 
@@ -36,7 +36,7 @@ export type EntityAnalyticsCommonType = Omit<
 interface BootstrapCommonServicesOpts {
   entityType: EntityType;
   esClient: IScopedClusterClient;
-  getStartServices: EntityAnalyticsRoutesDeps['getStartServices'];
+  getStartServices: SecuritySkillServices['getStartServices'];
   request: KibanaRequest;
   spaceId: string;
 }

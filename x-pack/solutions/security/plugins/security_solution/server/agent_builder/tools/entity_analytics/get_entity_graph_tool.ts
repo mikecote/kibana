@@ -13,8 +13,8 @@ import type { Logger } from '@kbn/logging';
 import { ProductFeatureKey } from '@kbn/security-solution-features/keys';
 import type { ExperimentalFeatures } from '../../../../common';
 import { IdentifierType } from '../../../../common/api/entity_analytics/common/common.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../lib/product_features_service';
+import type { SecurityEntityToolServices } from './entity_services';
+import type { ProductFeaturesReader } from '../../../lib/product_features_service';
 import { securityTool } from '../constants';
 import { buildRenderAttachmentTag } from './attachment_utils';
 import { getEntityAnalyticsToolAvailability } from './entity_analytics_availability';
@@ -47,10 +47,10 @@ const DEFAULT_ENTITY_GRAPH_TIME_RANGE = { from: 'now-30d', to: 'now' } as const;
 export const SECURITY_GET_ENTITY_GRAPH_TOOL_ID = securityTool('get_entity_graph');
 
 export const getEntityGraphTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): BuiltinToolDefinition<typeof schema> => {
   return {
     id: SECURITY_GET_ENTITY_GRAPH_TOOL_ID,

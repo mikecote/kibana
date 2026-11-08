@@ -59,6 +59,8 @@ export interface AgentBuilderContributionDeclares {
  * not while registering. Execution dependencies use their shared runtime implementations.
  */
 export interface AgentBuilderContributionServices {
+  /** Waits for contributed background work before execution services are disposed. */
+  registerRunCompletion: (complete: () => Promise<void>) => void;
   /** Resolves a contributed service for this execution. */
   getService: <T extends object>(id: string) => T;
   /** What a tool reads of Core: the Elasticsearch client, saved objects, ui settings and the base path. */

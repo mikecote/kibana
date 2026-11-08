@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { ExperimentalFeatures } from '../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityAttachmentsServices } from './services';
 import { createRuleAttachmentType } from './rule';
 import { createAlertAttachmentType } from './alert';
 import { createBulkAlertsAttachmentType } from './alerts';
@@ -33,7 +33,7 @@ import { SIEM_READINESS_AGENT_BUILDER_ENABLED } from '../siem_readiness_feature_
  */
 export const registerAttachments = async (
   agentBuilder: AgentBuilderPluginSetup,
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAttachmentsServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ) => {

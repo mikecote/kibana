@@ -17,8 +17,8 @@ import {
   GetRuleMigrationRulesRequestQuery,
   type GetRuleMigrationRulesResponse,
 } from '../../../../../common/siem_migrations/model/api/rules/rule_migration.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { SecurityAccessToolServices } from '../../access_services';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service';
 import { createSelfClient, type SelfClient } from '../../../../common/self_client/self_client';
 import { createSiemMigrationAvailability } from '../common/availability';
 import { hasRuleMigrationPrivileges } from '../common/privileges';
@@ -125,9 +125,9 @@ const projectRuleSummary = (rule: GetRuleMigrationRulesResponse['data'][number])
 });
 
 export const getMigrationRulesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   logger: Logger,
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): BuiltinToolDefinition<typeof schema> => {
   const callSelfClient: SelfClient = createSelfClient({ core, logger });
 

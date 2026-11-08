@@ -22,7 +22,7 @@ export const fetchRiskScoreGrounding = async ({
   namespace,
   logger,
 }: {
-  entityStore: EntityStoreStartContract;
+  entityStore: Pick<EntityStoreStartContract, 'getMaintainerStatus'>;
   namespace: string;
   logger: Logger;
 }) => {
@@ -46,7 +46,7 @@ const getRiskScoreMaintainerStatus = async ({
   entityStore,
   namespace,
 }: {
-  entityStore: EntityStoreStartContract;
+  entityStore: Pick<EntityStoreStartContract, 'getMaintainerStatus'>;
   namespace: string;
 }): Promise<{ status: EntityMaintainerTaskStatus; lastScoreTimeAgo?: string }> => {
   const [maintainer] = await entityStore.getMaintainerStatus(namespace, [RISK_SCORE_MAINTAINER_ID]);

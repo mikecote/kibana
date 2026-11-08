@@ -7,9 +7,12 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import { firstValueFrom } from 'rxjs';
 import { createDataViewsCapabilities } from '@kbn/alerting-plugin/server/task_types/standalone/create_data_views_capabilities';
 import { createStandaloneFieldFormats } from '@kbn/alerting-plugin/server/task_types/standalone/field_formats';
+import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import {
+  getUiSettings as getDataUiSettings,
   getSearchMaxConcurrentShardUiSettings,
   searchIncludeFrozenUiSettings,
 } from '@kbn/data-plugin/server/ui_settings';
@@ -46,7 +49,13 @@ export const contribution: WorkflowStepsContribution = {
       const search = settings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] as
         | DataSearchTaskProcessSettings
         | undefined;
-      if (search) {
+      const dataUiSettings =
+        search?.docLinks && typeof search.search?.uiSettingsValidationsEnabled === 'boolean'
+          ? getDataUiSettings(search.docLinks, search.search.uiSettingsValidationsEnabled)
+          : undefined;
+      if (dataUiSettings) {
+        registry.register(dataUiSettings);
+      } else if (search) {
         registry.register(searchIncludeFrozenUiSettings);
         registry.register(getSearchMaxConcurrentShardUiSettings(search.multiSearchDocLink));
       }
@@ -56,10 +65,41 @@ export const contribution: WorkflowStepsContribution = {
       if (!snapshot) return;
       registerDataViewsUiSettings(registry, snapshot);
       registry.register(getFieldFormatUiSettings());
-      registry.register(dataViewServiceUiSettings);
+      if (!dataUiSettings) registry.register(dataViewServiceUiSettings);
     },
   },
   provides: {
+    'data.search': ({ host: taskHost, settings, services }) => {
+      const host = taskHost as TaskHost;
+      const snapshot = settings[DATA_SEARCH_TASK_PROCESS_SETTINGS_ID] as
+        | DataSearchTaskProcessSettings
+        | undefined;
+      if (
+        !snapshot?.search ||
+        typeof snapshot.search.uiSettingsValidationsEnabled !== 'boolean' ||
+        !snapshot.docLinks ||
+        !services ||
+        !host.uiSettings ||
+        !host.licensing
+      )
+        throw new Error(
+          'Native Data search requires dispatch settings, licensing and scoped services'
+        );
+      const { license$ } = host.licensing;
+      return createStandaloneSearch({
+        logger: host.logger.get('data', 'search'),
+        elasticsearch: { client: host.elasticsearch },
+        savedObjects: host.savedObjects,
+        uiSettings: host.uiSettings,
+        dataViews: services.getService<DataViewsServerPluginStart>('dataViews'),
+        fieldFormats: createStandaloneFieldFormats(),
+        isServerless: host.server.isServerless,
+        searchConfig: snapshot.search.searchConfig,
+        elasticsearchTimeouts: snapshot.search.elasticsearchTimeouts,
+        rollupsEnabled: snapshot.search.rollupsEnabled,
+        licensing: { getLicense: () => firstValueFrom(license$) },
+      });
+    },
     dataViews: ({ host: taskHost, settings, services }): DataViewsServerPluginStart => {
       const snapshot = settings[DATA_VIEWS_TASK_PROCESS_SETTINGS_ID] as
         | DataViewsTaskProcessSettings

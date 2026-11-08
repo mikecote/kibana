@@ -1054,7 +1054,7 @@ objects clients. All four worker modes cover persisted resolution-rule changes, 
 reads and maintainer status without business calls to Main.
 
 Alerting exposes native scoped rule readers through the workflow service registry. They execute the same
-`get`, `find` and `bulkGetRules` domain operations as Main, with native authorization, audit logging, licensing,
+`get`, `resolve`, `find` and `bulkGetRules` domain operations as Main, with native authorization, audit logging, licensing,
 reference injection and secret sanitization. Main captures its current rule catalog at dispatch. Owning plugins
 contribute their actual reference injectors and view URL callbacks; a missing required callback fails explicitly.
 Streams uses these readers for attachments and suggestions, and registers its canvas configuration and encrypted
@@ -1065,8 +1065,23 @@ actual migration functions, and the worker verifies that they match Main's enabl
 its embeddable factory. The example visualization shares its migration factory between Main and workers.
 Dashboard saved object migrations and execution services resolve the same contributed migration registry.
 
-Agent contributions still needed: security_solution (endpoint, detections and entity analytics
-services).
+Native workflow search uses Data's strategy providers with Main's search configuration, Elasticsearch
+timeouts, rollup setting, UI validation setting and documentation links. Scoped cancellation and TTL
+extension preserve the request principal and project routing. Shared Data and Data Views defaults are
+registered once when the SDKs are composed.
+
+Security's Endpoint workflow services compose native Fleet authorization and file clients, scoped Data
+search, Spaces, connector actions, telemetry opt-in and the product-feature snapshot. Main and workers
+share the Endpoint CPS resolver and the product-feature reader. The four-mode process matrix executes
+24 searches and authorization checks while changing feature gates and telemetry opt-in, verifies reuse
+within unchanged settings and replacement after settings change, and asserts no business calls to Main.
+
+Security's Agent Builder contribution is under validation and is not enabled in its manifest yet.
+It shares Main's complete skill registrar, attachment registrations, analytical tools, rule draft
+generation, entity clients and watchlist source tools. Managed MITRE clients use the owning population
+and retry lifecycle. Background watchlist sync and lead generation register completion callbacks so
+the worker finishes their writes before disposing execution services. Rule preview remains to be
+composed before enabling the contribution and closing the registration inventory gap.
 
 ### Remaining workflow parity gaps
 

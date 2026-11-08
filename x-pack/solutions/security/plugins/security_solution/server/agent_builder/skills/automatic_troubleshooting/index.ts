@@ -10,7 +10,8 @@ import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definitio
 import { platformCoreTools } from '@kbn/agent-builder-common';
 
 import type { ExperimentalFeatures } from '../../../../common/experimental_features';
-import type { EndpointAppContextService } from '../../../endpoint/endpoint_app_context_services';
+import { createEndpointInlineTools } from '../endpoint_skill_services';
+import type { EndpointSkillServices } from '../endpoint_skill_services';
 import {
   getPackageConfigurationsTool,
   generateInsightTool,
@@ -66,7 +67,7 @@ const CUSTOM_YARA_SIGNATURES_TEXT: CustomYaraSignaturesText = {
 };
 
 export const createAutomaticTroubleshootingSkill = (
-  endpointAppContextService: EndpointAppContextService,
+  endpointAppContextService: EndpointSkillServices,
   experimentalFeatures: ExperimentalFeatures
 ): SkillDefinition<typeof NAME, typeof BASE_PATH> => {
   const customYaraSignaturesText = experimentalFeatures.customYaraSignaturesEnabled
@@ -260,13 +261,13 @@ Use exact terms from the user's request and queried endpoint evidence when calli
       platformCoreTools.getDocumentById,
       platformCoreTools.integrationKnowledge,
     ],
-    getInlineTools: () => {
+    getInlineTools: createEndpointInlineTools(endpointAppContextService, (endpointServices) => {
       return [
-        checkEndpointPackageFreshnessTool(endpointAppContextService),
-        getPackageConfigurationsTool(endpointAppContextService),
-        getEndpointArtifactsTool(endpointAppContextService, experimentalFeatures),
-        generateInsightTool(endpointAppContextService),
+        checkEndpointPackageFreshnessTool(endpointServices),
+        getPackageConfigurationsTool(endpointServices),
+        getEndpointArtifactsTool(endpointServices, experimentalFeatures),
+        generateInsightTool(endpointServices),
       ];
-    },
+    }),
   });
 };

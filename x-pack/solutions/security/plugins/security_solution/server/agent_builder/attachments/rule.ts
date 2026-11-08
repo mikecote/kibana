@@ -14,7 +14,7 @@ import type { Attachment } from '@kbn/agent-builder-common/attachments';
 import { platformCoreTools } from '@kbn/agent-builder-common';
 import { z, lazySchema } from '@kbn/zod/v4';
 import { SecurityAgentBuilderAttachments } from '../../../common/constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityAttachmentsServices } from './services';
 import { readRules } from '../../lib/detection_engine/rule_management/logic/detection_rules_client/read_rules';
 import { transform } from '../../lib/detection_engine/rule_management/utils/utils';
 import { SECURITY_CREATE_DETECTION_RULE_TOOL_ID, SECURITY_LABS_SEARCH_TOOL_ID } from '../tools';
@@ -41,7 +41,7 @@ const isRuleAttachmentData = (data: unknown): data is RuleAttachmentData => {
 };
 
 export const createRuleAttachmentType = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAttachmentsServices,
   logger: Logger
 ): AttachmentTypeDefinition => {
   return {

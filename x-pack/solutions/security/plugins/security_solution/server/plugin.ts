@@ -10,7 +10,6 @@ import type { Observable } from 'rxjs';
 import { QUERY_RULE_TYPE_ID, SAVED_QUERY_RULE_TYPE_ID } from '@kbn/securitysolution-rules';
 import type {
   ElasticsearchClient,
-  KibanaRequest,
   Logger,
   LogMeta,
   RequestHandlerContext,
@@ -31,6 +30,9 @@ import { createSecurityAlertsClientFactory } from './lib/detection_engine/alerts
 
 import { registerScriptsLibraryRoutes } from './endpoint/routes/scripts_library';
 import { registerCustomYaraSignaturesRoutes } from './endpoint/routes/custom_yara_signatures';
+import { SECURITY_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_settings';
+import { createEndpointCpsResolver } from './endpoint/services/create_cps_resolver';
+import type { SecurityAgentBuilderSettings } from './task_types/agent_builder_settings';
 import { registerAttachments } from './agent_builder/attachments/register_attachments';
 import { registerTools } from './agent_builder/tools/register_tools';
 import { registerSkills } from './agent_builder/skills/register_skills';
@@ -313,6 +315,35 @@ export class Plugin implements ISecuritySolutionPlugin {
     }
 
     const agentBuilder = plugins.agentBuilder;
+
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      SECURITY_AGENT_BUILDER_SETTINGS_ID,
+      async (): Promise<SecurityAgentBuilderSettings> => {
+        const [, startPlugins] = await core.getStartServices();
+        return {
+          config: this.config,
+          productFeatures: this.productFeaturesService.getRuntimeSnapshot(),
+          cloud: plugins.cloud
+            ? {
+                isCloudEnabled: plugins.cloud.isCloudEnabled,
+                isServerlessEnabled: plugins.cloud.isServerlessEnabled,
+              }
+            : undefined,
+          telemetryOptIn: this.telemetryConfigProvider.getIsOptedIn(),
+          isServerless: this.isServerless,
+          canEncrypt: plugins.encryptedSavedObjects?.canEncrypt === true,
+          cpsAvailable: Boolean(plugins.cps),
+          plugins: {
+            ml: Boolean(plugins.ml),
+            security: Boolean(plugins.security),
+            osquery: Boolean(plugins.osquery),
+            llmTasks: Boolean(startPlugins.llmTasks),
+            fleet: Boolean(startPlugins.fleet),
+            mitreAttack: Boolean(startPlugins.mitreAttack?.getMitreDataClient?.()),
+          },
+        };
+      }
+    );
 
     const experimentalFeatures = this.config.experimentalFeatures;
     const endpointAppContextService = this.endpointAppContextService;
@@ -1083,8 +1114,10 @@ export class Plugin implements ISecuritySolutionPlugin {
       // almost always a custom role missing `read_project_routing` -- and fanning those out would
       // put exactly the principals we know least about on `asCurrentUser`. The cost is that such a
       // role reads origin-only until the predefined roles carry the privilege.
-      isCpsActive: async (request: KibanaRequest): Promise<boolean> =>
-        this.defendCpsFeatureFlagEnabled && (await plugins.cps?.isCpsActive(request)) === true,
+      isCpsActive: createEndpointCpsResolver(
+        this.defendCpsFeatureFlagEnabled,
+        plugins.cps?.isCpsActive
+      ),
       productFeaturesService,
       savedObjectsServiceStart: core.savedObjects,
       connectorActions: plugins.actions,

@@ -47,7 +47,7 @@ interface Deps {
   request: KibanaRequest;
   conversationsService: ConversationService;
   attachmentsService: AttachmentServiceStart;
-  coreStart: CoreStart;
+  coreStart: Pick<CoreStart, 'savedObjects'>;
   spaces?: SpacesPluginStart;
   /**
    * Bound at construction: recorded as `source` on every attachment event this client emits.

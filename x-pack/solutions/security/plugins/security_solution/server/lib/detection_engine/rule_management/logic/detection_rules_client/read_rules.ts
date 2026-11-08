@@ -18,7 +18,7 @@ import { hasValidRuleType } from '../../../rule_schema';
 import { findRules } from '../search/find_rules';
 
 export interface ReadRuleOptions {
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'resolve' | 'find'>;
   id: RuleObjectId | undefined;
   ruleId: RuleSignatureId | undefined;
 }

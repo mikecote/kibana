@@ -88,6 +88,7 @@ export const contribution: WorkflowStepsContribution = {
       spaces: services.getService('spaces'),
       getService: services.getService,
       emitEvent: services.emitEvent,
+      registerRunCompletion: services.registerRunCompletion,
       getWorkflowsManagement: () => services.getService('workflows.management'),
     });
     if (!processServices) return;

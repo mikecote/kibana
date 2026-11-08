@@ -253,7 +253,13 @@ export interface RuleRunRuntime {
   auditService?: AuditServiceSetup;
   cancelAlertsOnRuleTimeout: boolean;
   connectorAdapterRegistry: ConnectorAdapterRegistry;
-  data: { search: Pick<DataPluginStart['search'], 'asScoped' | 'searchSource'> };
+  data: {
+    search: Pick<DataPluginStart['search'], 'searchSource'> & {
+      asScoped: (
+        ...args: Parameters<DataPluginStart['search']['asScoped']>
+      ) => Pick<ReturnType<DataPluginStart['search']['asScoped']>, 'search'>;
+    };
+  };
   dataViews: Pick<DataViewsPluginStart, 'dataViewsServiceFactory'>;
   elasticsearch: { client: Pick<IClusterClient, 'asInternalUser' | 'asScoped'> };
   encryptedSavedObjectsClient: EncryptedSavedObjectsClient;

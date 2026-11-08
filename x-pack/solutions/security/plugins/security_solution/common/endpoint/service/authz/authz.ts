@@ -9,7 +9,7 @@ import type { ENDPOINT_PRIVILEGES, FleetAuthz } from '@kbn/fleet-plugin/common';
 
 import { omit } from 'lodash';
 import type { Capabilities } from '@kbn/core-capabilities-common';
-import type { ProductFeaturesService } from '../../../../server/lib/product_features_service';
+import type { ProductFeaturesReader } from '../../../../server/lib/product_features_service';
 import {
   RESPONSE_CONSOLE_ACTION_COMMANDS_TO_REQUIRED_AUTHZ,
   CANCELLABLE_RESPONSE_ACTION_COMMANDS_TO_REQUIRED_AUTHZ,
@@ -28,7 +28,7 @@ import type { MaybeImmutable } from '../../types';
  * @param fleetAuthz
  * @param productFeatureService
  */
-function hasAuthFactory(fleetAuthz: FleetAuthz, productFeatureService?: ProductFeaturesService) {
+function hasAuthFactory(fleetAuthz: FleetAuthz, productFeatureService?: ProductFeaturesReader) {
   return function hasAuth(
     privilege: keyof typeof ENDPOINT_PRIVILEGES,
     { action }: { action?: string } = {}
@@ -64,7 +64,7 @@ export const calculateEndpointAuthz = (
   fleetAuthz: FleetAuthz,
   userRoles: MaybeImmutable<string[]> = [],
   isServerless: boolean,
-  productFeaturesService?: ProductFeaturesService // only exists on the server side
+  productFeaturesService?: ProductFeaturesReader // only exists on the server side
 ): EndpointAuthz => {
   const hasAuth = hasAuthFactory(fleetAuthz, productFeaturesService);
   const hasSuperuserRole = userRoles.includes('superuser');

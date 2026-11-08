@@ -13,6 +13,11 @@ import { securityServiceMock } from '@kbn/core-security-server-mocks';
 import { httpServerMock } from '@kbn/core-http-server-mocks';
 import type { ILicense } from '@kbn/licensing-types';
 import { createFleetStartContractMock } from '@kbn/fleet-plugin/server/mocks';
+import { dataPluginMock } from '@kbn/data-plugin/server/mocks';
+import { spacesMock } from '@kbn/spaces-plugin/server/mocks';
+import { ProductFeatureKey } from '@kbn/security-solution-features/keys';
+import { TelemetryConfigProvider } from '../../../common/telemetry_config/telemetry_config_provider';
+import { createNativeProductFeaturesReader } from '../../lib/product_features_service';
 
 import { allowedExperimentalValues } from '../../../common/experimental_features';
 import {
@@ -104,6 +109,47 @@ describe('createEndpointResponseActionsRunServices', () => {
     services.endpointAppContextService.getFeatureUsageService().notifyUsage('HOST_ISOLATION');
 
     expect(featureUsage.notifyUsage).toHaveBeenCalledWith('Host isolation');
+    services.stop();
+  });
+
+  it('uses native execution dependencies for request routing and policy gates', async () => {
+    const clusterClient = elasticsearchServiceMock.createStart().client;
+    const dataStart = dataPluginMock.createStartContract();
+    const spacesService = spacesMock.createStart().spacesService;
+    const telemetryConfigProvider = new TelemetryConfigProvider(true);
+    const productFeaturesService = createNativeProductFeaturesReader({
+      enabledProductFeatureKeys: [ProductFeatureKey.graphVisualization],
+      registeredActions: [],
+    });
+    const isCpsActive = jest.fn().mockResolvedValue(true);
+    const { services } = await build({
+      cloud: { isCloudEnabled: true, isServerlessEnabled: false },
+      executionServices: {
+        clusterClient,
+        dataStart,
+        spacesService,
+        telemetryConfigProvider,
+        productFeaturesService,
+        isCpsActive,
+      },
+    });
+    const endpoint = services.endpointAppContextService;
+    const request = httpServerMock.createKibanaRequest();
+    await endpoint.getScopedSearchClient(request);
+    expect(dataStart.search.asScoped).toHaveBeenLastCalledWith(request, {
+      projectRouting: 'space',
+    });
+    expect(await endpoint.getReadEsClient(request)).toBe(clusterClient.asScoped().asCurrentUser);
+    expect(
+      endpoint.getProductFeaturesService().isEnabled(ProductFeatureKey.graphVisualization)
+    ).toBe(true);
+    expect(endpoint.getTelemetryConfigProvider().getIsOptedIn()).toBe(true);
+    expect(endpoint.getCloudSetup().isCloudEnabled).toBe(true);
+
+    isCpsActive.mockResolvedValue(false);
+    await endpoint.getScopedSearchClient(request);
+    expect(dataStart.search.asScoped).toHaveBeenLastCalledWith(request);
+    expect(await endpoint.getReadEsClient(request)).toBe(endpoint.getInternalEsClient());
     services.stop();
   });
 

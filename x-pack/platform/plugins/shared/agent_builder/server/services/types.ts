@@ -14,7 +14,6 @@ import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
-import type { DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
@@ -112,7 +111,6 @@ export interface ServicesStartDeps {
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
   featureFlags: FeatureFlagsStart;
-  dataStreams: DataStreamsStart;
   // plugin deps
   inference: InferenceServerStart;
   spaces?: SpacesPluginStart;

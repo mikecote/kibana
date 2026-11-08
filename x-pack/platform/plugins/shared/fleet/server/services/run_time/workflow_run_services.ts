@@ -5,6 +5,9 @@
  * 2.0.
  */
 
+import type { FleetStartContract } from '../../plugin';
+import { getAuthzFromRequestWithSecurity } from '../security/security';
+import { getFilesClientFactory } from '../files/get_files_client_factory';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { FleetPackageMetadataTaskProcessSettings } from '../../package_metadata_task_process_settings';
@@ -15,8 +18,11 @@ import {
   type FleetRunServices,
 } from './fleet_run_services';
 
+export type FleetWorkflowServices = FleetRunServices &
+  Pick<FleetStartContract, 'authz' | 'createFilesClient'>;
+
 export interface FleetWorkflowRunServices {
-  getServices: () => Promise<FleetRunServices>;
+  getServices: () => Promise<FleetWorkflowServices>;
 }
 
 /** Creates task-owned native Fleet services with the dispatch configuration and run lifecycle. */
@@ -24,8 +30,8 @@ export const createFleetWorkflowRunServices = (
   host: TaskHost,
   packageMetadata: FleetPackageMetadataTaskProcessSettings
 ): FleetWorkflowRunServices => {
-  let services: Promise<FleetRunServices> | undefined;
-  const build = async (): Promise<FleetRunServices> => {
+  let services: Promise<FleetWorkflowServices> | undefined;
+  const build = async (): Promise<FleetWorkflowServices> => {
     const security = host.plugins?.security as SecurityTaskPluginStart | undefined;
     if (!security || !host.licensing || !host.encryptedSavedObjects || !host.onRunEnd) {
       throw new Error(
@@ -49,7 +55,16 @@ export const createFleetWorkflowRunServices = (
       kibanaInstanceId: host.server.uuid,
       isFipsEnabled: host.security.fips.isEnabled(),
     });
-    return createFleetRunServices(deps);
+    return {
+      ...createFleetRunServices(deps),
+      authz: { fromRequest: (request) => getAuthzFromRequestWithSecurity(request, security) },
+      createFilesClient: Object.freeze(
+        getFilesClientFactory({
+          esClient: host.elasticsearch.asInternalUser,
+          logger: deps.loggerFactory,
+        })
+      ),
+    };
   };
   return { getServices: () => (services ??= build()) };
 };

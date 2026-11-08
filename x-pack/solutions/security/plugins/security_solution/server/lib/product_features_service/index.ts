@@ -5,3 +5,9 @@
  * 2.0.
  */
 export { ProductFeaturesService } from './product_features_service';
+
+export type {
+  ProductFeaturesReader,
+  ProductFeaturesRuntimeSnapshot,
+} from './product_features_reader';
+export { createNativeProductFeaturesReader } from './product_features_reader';

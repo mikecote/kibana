@@ -10,7 +10,7 @@ import { ToolType, ToolResultType } from '@kbn/agent-builder-common';
 import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from './core_services';
 import { getAgentBuilderResourceAvailability } from '../utils/get_agent_builder_resource_availability';
 import { securityTool } from './constants';
 import {
@@ -136,7 +136,7 @@ const rollupOverallStatus = (rows: EvaluatedRequirement[]): ComplianceStatus => 
  * that were checked, and a QSA disclaimer so downstream consumers can cite provenance.
  */
 export const pciComplianceTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof pciComplianceSchema> => {
   return {

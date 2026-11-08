@@ -8,7 +8,8 @@
 import type { SkillDefinition } from '@kbn/agent-builder-server/skills';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
 
-import type { EndpointAppContextService } from '../../../endpoint/endpoint_app_context_services';
+import { createEndpointInlineTools } from '../endpoint_skill_services';
+import type { EndpointSkillServices } from '../endpoint_skill_services';
 import {
   isolateHostTool,
   unisolateHostTool,
@@ -99,7 +100,7 @@ from chat: say so and point the analyst to the Response Actions UI.
   \`./reference\`.`;
 
 export const createEndpointResponseActionsSkill = (
-  endpointAppContextService: EndpointAppContextService
+  endpointAppContextService: EndpointSkillServices
 ): SkillDefinition<typeof NAME, typeof BASE_PATH> => {
   return defineSkillType({
     id: ID,
@@ -115,14 +116,14 @@ export const createEndpointResponseActionsSkill = (
         content: ENDPOINT_RESPONSE_ACTIONS_REFERENCE,
       },
     ],
-    getInlineTools: () => [
-      listEndpointsTool(endpointAppContextService),
-      isolateHostTool(endpointAppContextService),
-      unisolateHostTool(endpointAppContextService),
-      getEndpointStatusTool(endpointAppContextService),
-      getRunningProcessesTool(endpointAppContextService),
-      scanHostTool(endpointAppContextService),
-      getResponseActionStatusTool(endpointAppContextService),
-    ],
+    getInlineTools: createEndpointInlineTools(endpointAppContextService, (endpointServices) => [
+      listEndpointsTool(endpointServices),
+      isolateHostTool(endpointServices),
+      unisolateHostTool(endpointServices),
+      getEndpointStatusTool(endpointServices),
+      getRunningProcessesTool(endpointServices),
+      scanHostTool(endpointServices),
+      getResponseActionStatusTool(endpointServices),
+    ]),
   });
 };

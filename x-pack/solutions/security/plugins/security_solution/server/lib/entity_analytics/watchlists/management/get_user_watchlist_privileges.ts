@@ -16,7 +16,7 @@ import { getIndexForWatchlist } from '../entities/utils';
 
 export const getUserWatchlistPrivileges = async (
   request: KibanaRequest,
-  security: SecurityPluginStart,
+  security: Pick<SecurityPluginStart, 'authz'>,
   namespace: string
 ) => {
   const watchlistsIndex = getIndexForWatchlist(namespace);

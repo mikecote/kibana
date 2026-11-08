@@ -9,7 +9,7 @@ import type { KibanaRequest } from '@kbn/core-http-server';
 import type { ToolAvailabilityResult } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { getEntityAnalyticsToolAvailability } from '../entity_analytics_availability';
 
 /**
@@ -22,7 +22,7 @@ export const getResolutionToolAvailability = async ({
   experimentalFeatures,
   logger,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: SecurityEntityToolServices;
   request: KibanaRequest;
   spaceId: string;
   experimentalFeatures: ExperimentalFeatures;

@@ -13,7 +13,7 @@ import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import { CRUDClient } from '@kbn/entity-store/server/domain/crud';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { getIndexForWatchlist } from '../../../../lib/entity_analytics/watchlists/entities/utils';
 import { createManualEntityService } from '../../../../lib/entity_analytics/watchlists/entity_sources/manual/service';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
@@ -52,7 +52,7 @@ interface ResolvedWatchlistEntitiesState {
 export const SECURITY_ADD_ENTITIES_TO_WATCHLIST_TOOL_ID = securityTool('add_entities_to_watchlist');
 
 export const addEntitiesToWatchlistTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

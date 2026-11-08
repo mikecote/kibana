@@ -13,7 +13,7 @@ import type { Logger } from '@kbn/logging';
 import type { MainCategories } from '@kbn/siem-readiness';
 import { getIndexCategoryMap, isQualityIncompatible, enrichFindings } from '@kbn/siem-readiness';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityReadinessToolServices } from './services';
 import { getQuality } from '../../../lib/siem_readiness/dimensions';
 import {
   getSiemReadinessSharedContext,
@@ -24,7 +24,7 @@ import { SIEM_READINESS_QUALITY_TOOL_ID } from './tool_ids';
 const schema = lazySchema(() => z.object({}));
 
 export const getQualityTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityReadinessToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof schema> => ({
   id: SIEM_READINESS_QUALITY_TOOL_ID,

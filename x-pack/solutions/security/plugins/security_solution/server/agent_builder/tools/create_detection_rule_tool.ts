@@ -13,13 +13,10 @@ import { getLatestVersion } from '@kbn/agent-builder-common/attachments';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-builder-server';
 import type { AttachmentStateManager } from '@kbn/agent-builder-server/attachments';
-import type { CoreSetup, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import { ENABLE_ESQL } from '@kbn/esql-utils';
 import { RULES_UI_EDIT } from '@kbn/security-solution-features/constants';
-import type {
-  SecuritySolutionPluginStart,
-  SecuritySolutionPluginStartDependencies,
-} from '../../plugin_contract';
+import type { SecurityRuleCreationServices } from './rule_creation_services';
 import { securityTool } from './constants';
 import type { ExperimentalFeatures } from '../../../common';
 import { EsqlRuleCreateProps } from '../../../common/api/detection_engine/model/rule_schema';
@@ -150,7 +147,7 @@ const createDetectionRuleSchema = lazySchema(() =>
 );
 
 export function createDetectionRuleTool(
-  core: CoreSetup<SecuritySolutionPluginStartDependencies, SecuritySolutionPluginStart>,
+  core: SecurityRuleCreationServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): StaticToolRegistration<typeof createDetectionRuleSchema> {

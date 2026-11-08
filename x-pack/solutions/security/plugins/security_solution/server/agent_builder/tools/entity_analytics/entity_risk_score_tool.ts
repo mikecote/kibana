@@ -12,7 +12,7 @@ import type { BuiltinToolDefinition, ToolAvailabilityContext } from '@kbn/agent-
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import { AGENT_BUILDER_EXPERIMENTAL_FEATURES_SETTING_ID } from '@kbn/management-settings-ids';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityCoreToolServices } from '../core_services';
 import type { EntityRiskScoreRecord } from '../../../../common/api/entity_analytics/common';
 import { createGetRiskScores } from '../../../lib/entity_analytics/risk_score/get_risk_score';
 import type { EntityType } from '../../../../common/entity_analytics/types';
@@ -92,7 +92,7 @@ const queryRiskIndexForWildcard = async ({
 };
 
 export const entityRiskScoreTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof entityRiskScoreSchema> => {
   return {

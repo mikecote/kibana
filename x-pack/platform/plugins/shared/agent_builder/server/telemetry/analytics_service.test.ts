@@ -38,7 +38,7 @@ describe('AnalyticsService', () => {
       reportEvent: jest.fn(),
     };
     logger = loggerMock.create();
-    service = new AnalyticsService(analytics as unknown as AnalyticsServiceSetup, logger);
+    service = new AnalyticsService(analytics, logger);
   });
 
   afterEach(() => {
@@ -47,7 +47,7 @@ describe('AnalyticsService', () => {
 
   describe('registerAgentBuilderEventTypes', () => {
     beforeEach(() => {
-      service.registerAgentBuilderEventTypes();
+      service.registerAgentBuilderEventTypes(analytics);
     });
 
     describe.each(agentBuilderServerEbtEvents)('eventType: $eventType', (eventConfig) => {
@@ -92,10 +92,9 @@ describe('AnalyticsService', () => {
       const devAnalytics = createAnalytics({ isDev: true, logger: loggerMock.create() });
 
       beforeAll(() => {
-        new AnalyticsService(
-          devAnalytics as unknown as AnalyticsServiceSetup,
-          loggerMock.create()
-        ).registerAgentBuilderEventTypes();
+        new AnalyticsService(devAnalytics, loggerMock.create()).registerAgentBuilderEventTypes(
+          devAnalytics
+        );
       });
 
       afterAll(async () => {

@@ -649,6 +649,15 @@ describe('setWatchlistRuleBasedDataSourceTool', () => {
       });
 
       it('on accept: creates a new store source and links it to the watchlist', async () => {
+        const background = Promise.resolve();
+        mockSyncWatchlistInBackgroundFn.mockReturnValueOnce(background);
+        const trackBackgroundTask = jest.fn();
+        const trackedTool = setWatchlistRuleBasedDataSourceTool(
+          { ...mocks.mockCore, trackBackgroundTask },
+          mocks.mockLogger,
+          mockExperimentalFeatures,
+          true
+        );
         mockGetWatchlistFn.mockResolvedValueOnce(buildWatchlist({ name: 'Privileged Users' }));
         mockCreateFn.mockResolvedValueOnce({
           id: 'src-new',
@@ -664,7 +673,7 @@ describe('setWatchlistRuleBasedDataSourceTool', () => {
           .fn()
           .mockReturnValue({ existingSourceFingerprint: fingerprintDataSource(undefined) });
 
-        const result = (await tool.handler(
+        const result = (await trackedTool.handler(
           { type: 'store', watchlistId: 'wl-1', queryRule: 'host.os.name: "Ubuntu*"' },
           ctx
         )) as ToolHandlerStandardReturn;
@@ -681,6 +690,7 @@ describe('setWatchlistRuleBasedDataSourceTool', () => {
         const other = result.results[0] as OtherResult;
         expect(other.type).toBe(ToolResultType.other);
         expect(other.data).toMatchObject({ action: 'created', watchlistId: 'wl-1' });
+        expect(trackBackgroundTask).toHaveBeenCalledWith(background);
       });
 
       it('on accept: rolls back the newly created source when linking it to the watchlist fails', async () => {

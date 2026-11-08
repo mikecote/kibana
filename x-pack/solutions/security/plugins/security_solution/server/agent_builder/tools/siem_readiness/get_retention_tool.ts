@@ -17,7 +17,7 @@ import {
   enrichFindings,
 } from '@kbn/siem-readiness';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityReadinessToolServices } from './services';
 import { getRetention } from '../../../lib/siem_readiness/dimensions';
 import {
   getSiemReadinessSharedContext,
@@ -28,7 +28,7 @@ import { SIEM_READINESS_RETENTION_TOOL_ID } from './tool_ids';
 const schema = lazySchema(() => z.object({}));
 
 export const getRetentionTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityReadinessToolServices,
   logger: Logger,
   isServerless: boolean
 ): BuiltinToolDefinition<typeof schema> => ({

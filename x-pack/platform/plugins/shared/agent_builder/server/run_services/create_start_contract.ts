@@ -106,7 +106,7 @@ export const createAgentBuilderStartContract = ({
           request,
           conversationsService: conversations,
           attachmentsService: attachments,
-          coreStart: coreStart as CoreStart,
+          coreStart,
           spaces,
           source: 'server_api',
         }),

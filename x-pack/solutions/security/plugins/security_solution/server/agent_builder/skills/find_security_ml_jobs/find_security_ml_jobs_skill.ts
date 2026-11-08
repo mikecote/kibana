@@ -7,15 +7,16 @@
 
 import type { Logger } from '@kbn/core/server';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
-import type { EntityAnalyticsRoutesDeps } from '../../../lib/entity_analytics/types';
+import type { EntityAnalyticsMlServices } from '../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
+import type { SecuritySkillServices } from '../services';
 import { extractEuidFromMlDataTool, findSecurityMlJobsTool } from './inline_tools';
 import { SECURITY_GET_ENTITY_TOOL_ID } from '../../tools';
 
 export interface FindSecurityMlJobsSkillsContext {
-  getStartServices: EntityAnalyticsRoutesDeps['getStartServices'];
+  getStartServices: SecuritySkillServices['getStartServices'];
   isEntityStoreV2Enabled: boolean;
   logger: Logger;
-  ml: EntityAnalyticsRoutesDeps['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
 }
 
 const getAnomalyKeepFields = (isEntityStoreV2Enabled: boolean) => {

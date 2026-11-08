@@ -85,7 +85,7 @@ export function isDebugAuthorized(req: KibanaRequest) {
 }
 
 const computeUiApiPrivileges = (
-  security: SecurityPluginStart,
+  security: Pick<SecurityPluginStart, 'authz'>,
   privileges: Record<string, PrivilegeMapObject>
 ): string[] => {
   return Object.entries(privileges).map(
@@ -101,8 +101,14 @@ const computeUiApiPrivileges = (
 const FLEET_SUBFEATURES = ['agents', 'agent-policies', 'settings'];
 
 export async function getAuthzFromRequest(req: KibanaRequest): Promise<FleetAuthz> {
-  const security = appContextService.getSecurity();
+  return getAuthzFromRequestWithSecurity(req, appContextService.getSecurity());
+}
 
+/** Computes native Fleet and Endpoint privileges with the current request's security services. */
+export async function getAuthzFromRequestWithSecurity(
+  req: KibanaRequest,
+  security: Pick<SecurityPluginStart, 'authz'>
+): Promise<FleetAuthz> {
   if (security.authz.mode.useRbacForRequest(req)) {
     const checkPrivileges = security.authz.checkPrivilegesDynamicallyWithRequest(req);
     const endpointPrivileges = computeUiApiPrivileges(security, ENDPOINT_PRIVILEGES);

@@ -38,7 +38,7 @@ import {
   removeLinuxRansomware,
   removeRegistryCredentialHardening,
 } from '../../../common/endpoint/models/policy_config_helpers';
-import type { ProductFeaturesService } from '../../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../../lib/product_features_service/product_features_reader';
 
 /**
  * Create the default endpoint policy based on the current license and configuration type
@@ -46,9 +46,9 @@ import type { ProductFeaturesService } from '../../lib/product_features_service/
 export const createDefaultPolicy = (
   licenseService: LicenseService,
   config: AnyPolicyCreateConfig | undefined,
-  cloud: CloudSetup,
-  esClientInfo: InfoResponse,
-  productFeatures: ProductFeaturesService,
+  cloud: Pick<CloudSetup, 'isCloudEnabled' | 'isServerlessEnabled'>,
+  esClientInfo: Pick<InfoResponse, 'cluster_uuid' | 'cluster_name'> | undefined,
+  productFeatures: ProductFeaturesReader,
   telemetryConfigProvider: TelemetryConfigProvider,
   experimentalFeatures: ExperimentalFeatures
 ): PolicyConfig => {

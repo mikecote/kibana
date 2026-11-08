@@ -14,7 +14,7 @@ import type { ResolutionClient } from '@kbn/entity-store/server';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { RESOLUTION_GROUP_UPDATED_TOOL_EVENT } from '../../../../../common/entity_analytics/tool_events';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { requireResolvedEntity } from '../entity_resolution';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
@@ -70,7 +70,7 @@ const schema = z.object({
 export const SECURITY_UNLINK_ENTITIES_TOOL_ID = securityTool('unlink_entities');
 
 export const unlinkEntitiesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

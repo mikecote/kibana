@@ -11,7 +11,7 @@ import { getEntitiesAlias, ENTITY_LATEST } from '@kbn/entity-store/server';
 import type { LicenseType } from '@kbn/licensing-types';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityEntityToolServices } from './entity_services';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
 
 /**
@@ -31,7 +31,7 @@ export const getEntityAnalyticsToolAvailability = async ({
   logger,
   minLicense,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: SecurityEntityToolServices;
   request: KibanaRequest;
   spaceId: string;
   experimentalFeatures: ExperimentalFeatures;

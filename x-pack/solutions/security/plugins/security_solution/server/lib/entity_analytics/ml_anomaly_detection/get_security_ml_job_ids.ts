@@ -6,8 +6,8 @@
  */
 
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { ModuleJob } from '@kbn/ml-common-types/modules';
+import type { EntityAnalyticsMlServices } from './ml_services';
 import {
   ML_GROUP_IDS,
   type LEGACY_ML_GROUP_ID,
@@ -20,7 +20,7 @@ const isSecurityJob = (job: ModuleJob): boolean =>
   ) || false;
 
 interface GetSecurityMlJobIdsOpts {
-  ml: MlPluginSetup;
+  ml: EntityAnalyticsMlServices;
   request: KibanaRequest;
   soClient: SavedObjectsClientContract;
 }

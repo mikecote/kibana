@@ -22,6 +22,13 @@ import {
   type SecurityAlertsTaskProcessSettings,
 } from './security_alerts_settings';
 import { registerSecurityWorkflowSteps } from '../workflows/register_security_workflow_steps';
+import { createEndpointWorkflowServices } from './endpoint_workflow_services';
+import {
+  SECURITY_AGENT_BUILDER_SETTINGS_ID,
+  type SecurityAgentBuilderSettings,
+} from './agent_builder_settings';
+import { getEndpointResponseActionsRunSavedObjectTypes } from '../endpoint/run_time/saved_objects';
+import { events } from '../lib/telemetry/event_based/events';
 
 export interface SecurityWorkflowEvents {
   eventBus?: SecuritySolutionEventBus;
@@ -33,8 +40,29 @@ export interface SecurityWorkflowEvents {
  * Listed under `taskTypeContributions['workflow-steps']` in `kibana.jsonc`.
  */
 export const contribution: WorkflowStepsContribution = {
-  declares: { settings: [SECURITY_ALERTS_SETTINGS_ID] },
+  declares: {
+    settings: [SECURITY_ALERTS_SETTINGS_ID, SECURITY_AGENT_BUILDER_SETTINGS_ID],
+    registerAnalyticsEventTypes: (analytics) => {
+      events.forEach((event) => analytics.registerEventType(event));
+    },
+    createSavedObjectTypes: (_encryption, settings) => {
+      const snapshot = settings[SECURITY_AGENT_BUILDER_SETTINGS_ID] as
+        | SecurityAgentBuilderSettings
+        | undefined;
+      return snapshot
+        ? getEndpointResponseActionsRunSavedObjectTypes(snapshot.config.experimentalFeatures)
+        : [];
+    },
+  },
   provides: {
+    'securitySolution.endpoint': ({ host, settings, services }) => {
+      const snapshot = settings[SECURITY_AGENT_BUILDER_SETTINGS_ID] as
+        | SecurityAgentBuilderSettings
+        | undefined;
+      if (!snapshot || !services)
+        throw new Error('Native Endpoint requires its dispatch settings and execution services');
+      return createEndpointWorkflowServices(host as TaskHost, snapshot, services);
+    },
     'securitySolution.events': ({ host: taskHost, settings, services, logger }) => {
       const host = taskHost as TaskHost;
       const snapshot = settings[SECURITY_ALERTS_SETTINGS_ID] as

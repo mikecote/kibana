@@ -57,7 +57,7 @@ export interface GetBuildAgentParams {
   logger: Logger;
   request: KibanaRequest;
   savedObjectsClient: SavedObjectsClientContract;
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
   events?: ToolEventEmitter;
   /** Resolved managed MITRE data client. Absent when xpack.mitreAttack.managedSourceEnabled is off. */
   mitreDataClient?: MitreAttackDataClient;

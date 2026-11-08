@@ -13,18 +13,18 @@ import type {
   SavedObjectsClientContract,
 } from '@kbn/core/server';
 import type { Entity } from '@kbn/entity-store/common';
-import type { MlPluginSetup, MlSummaryJob } from '@kbn/ml-plugin/server';
+import type { MlSummaryJob } from '@kbn/ml-plugin/server';
 import { euid, getBuiltInEntityDefinition } from '@kbn/entity-store/common/euid_helpers';
 import type { MitreAttackDataClient } from '@kbn/mitre-attack-plugin/server';
 import type { ExperimentalFeatures } from '../../../../../../common';
-import type { EntityAnalyticsRoutesDeps } from '../../../types';
+import type { EntityAnalyticsMlServices } from '../../../ml_anomaly_detection/ml_services';
 import { getThreshold } from '../../../../../../common/utils/ml';
 import { isSecurityJob } from '../../../../../../common/machine_learning/is_security_job';
 import { DEFAULT_ANOMALY_SCORE } from '../../../../../../common/constants';
 import type { EntityType } from '../../../../../../common/entity_analytics/types';
 import { getEntityAnomalies } from '../../../anomaly_summary';
 
-type Ml = EntityAnalyticsRoutesDeps['ml'];
+type Ml = EntityAnalyticsMlServices | undefined;
 
 export interface AnomalyRecord {
   source: Record<string, unknown>;
@@ -49,7 +49,7 @@ interface GetAnomalyDataOptions {
 }
 
 const getSecurityJobIds = async (
-  ml: MlPluginSetup,
+  ml: EntityAnalyticsMlServices,
   soClient: SavedObjectsClientContract,
   request: KibanaRequest
 ): Promise<{

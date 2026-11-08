@@ -14,7 +14,10 @@ import type {
 import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
 import type { CloudSetup, CloudStart } from '@kbn/cloud-plugin/server';
 import type { CoreStart, KibanaRequest } from '@kbn/core/server';
-import type { PluginSetup as DataPluginSetup } from '@kbn/data-plugin/server';
+import type {
+  PluginSetup as DataPluginSetup,
+  PluginStart as DataPluginStart,
+} from '@kbn/data-plugin/server';
 import type { DataViewsServerPluginSetup } from '@kbn/data-views-plugin/server';
 import type {
   EncryptedSavedObjectsPluginSetup,
@@ -130,6 +133,7 @@ export interface WorkflowsExecutionEnginePluginSetupDeps {
 }
 
 export interface WorkflowsExecutionEnginePluginStartDeps {
+  data?: DataPluginStart;
   taskManager: TaskManagerStartContract;
   actions: ActionsPluginStartContract;
   cloud: CloudStart;

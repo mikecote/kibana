@@ -70,7 +70,7 @@ import { notifyProtectionFeatureUsage } from './notify_protection_feature_usage'
 import type { AnyPolicyCreateConfig } from './types';
 import { ENDPOINT_INTEGRATION_CONFIG_KEY } from './constants';
 import { createEventFilters } from './handlers/create_event_filters';
-import type { ProductFeaturesService } from '../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../lib/product_features_service/product_features_reader';
 import { removeProtectionUpdatesNote } from './handlers/remove_protection_updates_note';
 import { catchAndWrapError } from '../endpoint/utils';
 import { EndpointIntegrationFleetError } from './handlers/errors';
@@ -141,8 +141,8 @@ export const getPackagePolicyCreateCallback = (
   securitySolutionRequestContextFactory: IRequestContextFactory,
   alerts: AlertingServerStart,
   licenseService: LicenseService,
-  cloud: CloudSetup,
-  productFeatures: ProductFeaturesService,
+  cloud: Pick<CloudSetup, 'isCloudEnabled' | 'isServerlessEnabled'>,
+  productFeatures: ProductFeaturesReader,
   telemetryConfigProvider: TelemetryConfigProvider,
   experimentalFeatures: ExperimentalFeatures
 ): PostPackagePolicyCreateCallback => {
@@ -269,8 +269,8 @@ export const getPackagePolicyCreateCallback = (
 
 export const getPackagePolicyUpdateCallback = (
   endpointServices: EndpointAppContextService,
-  cloud: CloudSetup,
-  productFeatures: ProductFeaturesService,
+  cloud: Pick<CloudSetup, 'isCloudEnabled' | 'isServerlessEnabled'>,
+  productFeatures: ProductFeaturesReader,
   experimentalFeatures: ExperimentalFeatures
 ): PutPackagePolicyUpdateCallback => {
   const logger = endpointServices.createLogger('endpointPackagePolicyUpdateCallback');
@@ -538,7 +538,7 @@ const throwAgentTamperProtectionUnavailableError = (
 
 export const getAgentPolicyCreateCallback = (
   logger: Logger,
-  productFeatures: ProductFeaturesService
+  productFeatures: ProductFeaturesReader
 ): PostAgentPolicyCreateCallback => {
   return async (agentPolicy: NewAgentPolicy): Promise<NewAgentPolicy> => {
     if (
@@ -553,7 +553,7 @@ export const getAgentPolicyCreateCallback = (
 
 export const getAgentPolicyUpdateCallback = (
   logger: Logger,
-  productFeatures: ProductFeaturesService
+  productFeatures: ProductFeaturesReader
 ): PostAgentPolicyUpdateCallback => {
   return async (agentPolicy: Partial<AgentPolicy>): Promise<Partial<AgentPolicy>> => {
     if (

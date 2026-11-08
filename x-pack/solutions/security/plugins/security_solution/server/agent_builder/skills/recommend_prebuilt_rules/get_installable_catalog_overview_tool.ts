@@ -6,18 +6,17 @@
  */
 
 import { z, lazySchema } from '@kbn/zod/v4';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
+import type { SecuritySkillServices } from '../services';
+import type { EntityAnalyticsMlServices } from '../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
 import { createPrebuiltRuleAssetsClient } from '../../../lib/detection_engine/prebuilt_rules/logic/rule_assets/prebuilt_rule_assets_client';
 import { createPrebuiltRuleObjectsClient } from '../../../lib/detection_engine/prebuilt_rules/logic/rule_objects/prebuilt_rule_objects_client';
 import { getInstallableRuleVersions } from '../../../lib/detection_engine/prebuilt_rules/logic/get_installable_rules_for_review';
 import { PREBUILT_RULE_ASSETS_SO_TYPE } from '../../../lib/detection_engine/prebuilt_rules/logic/rule_assets/prebuilt_rule_assets_type';
 import { buildMlAuthz } from '../../../lib/machine_learning/authz';
-import type { EntityAnalyticsRoutesDeps } from '../../../lib/entity_analytics/types';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 
 export const GET_INSTALLABLE_CATALOG_OVERVIEW_INLINE_TOOL_ID =
   'security.get_installable_catalog_overview';
@@ -28,9 +27,9 @@ const TAGS_AGG_SIZE = 1000;
 const TAGS_AGG_KEY = 'facet_tags';
 
 interface GetInstallableCatalogOverviewToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
-  ml: EntityAnalyticsRoutesDeps['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
 }
 
 export const createGetInstallableCatalogOverviewTool = ({

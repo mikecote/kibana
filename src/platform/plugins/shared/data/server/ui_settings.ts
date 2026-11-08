@@ -10,7 +10,7 @@
 import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
 import { dataViewServiceUiSettings } from '@kbn/data-views-plugin/server';
-import type { DocLinksServiceSetup, UiSettingsParams } from '@kbn/core/server';
+import type { UiSettingsParams } from '@kbn/core/server';
 import { DEFAULT_HISTOGRAM_BAR_TARGET, DEFAULT_QUERY_LANGUAGE, UI_SETTINGS } from '../common';
 
 const luceneQueryLanguageLabel = i18n.translate('data.advancedSettings.searchQueryLanguageLucene', {
@@ -33,8 +33,18 @@ const requestPreferenceOptionLabels = {
   }),
 };
 
+export interface DataUiSettingsDocLinks {
+  links: {
+    query: { luceneQuery: string };
+    apis: { searchPreference: string; multiSearch: string };
+    date: { dateMath: string };
+    elasticsearch: Record<string, string>;
+    kibana: { autocompleteSuggestions: string };
+  };
+}
+
 export function getUiSettings(
-  docLinks: DocLinksServiceSetup,
+  docLinks: DataUiSettingsDocLinks,
   enableValidations: boolean
 ): Record<string, UiSettingsParams<unknown>> {
   return {

@@ -23,7 +23,7 @@ export interface SiemReadinessSharedContext {
 }
 
 export interface FetchSiemReadinessSharedContextDeps {
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
   esClient: ElasticsearchClient;
   dataViewsService: DataViewsService;
   logger: Logger;

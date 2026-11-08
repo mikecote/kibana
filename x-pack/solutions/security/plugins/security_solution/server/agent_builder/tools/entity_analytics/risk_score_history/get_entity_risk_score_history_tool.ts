@@ -20,7 +20,7 @@ import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { IdentifierType } from '../../../../../common/api/entity_analytics/common/common.gen';
 import { RiskScoreDataClient } from '../../../../lib/entity_analytics/risk_score/risk_score_data_client';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { buildRenderAttachmentTag } from '../attachment_utils';
 import { getEntityAnalyticsToolAvailability } from '../entity_analytics_availability';
@@ -100,7 +100,7 @@ const getRiskScoreHistoryToolAvailability = async ({
   logger,
   experimentalFeatures,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: SecurityEntityToolServices;
   request: KibanaRequest;
   spaceId: string;
   logger: Logger;
@@ -130,7 +130,7 @@ const checkEntityAnalyticsAccess = async ({
   security,
 }: {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
 }): Promise<{ allowed: true } | { allowed: false; result: ErrorResult }> => {
   const checkPrivileges = security.authz.checkPrivilegesDynamicallyWithRequest(request);
   const { hasAllRequested } = await checkPrivileges({
@@ -157,7 +157,7 @@ const checkEntityAnalyticsAccess = async ({
 };
 
 export const getEntityRiskScoreHistoryTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   kibanaVersion: string

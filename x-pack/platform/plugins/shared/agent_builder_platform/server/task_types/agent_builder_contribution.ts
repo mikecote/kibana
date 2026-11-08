@@ -18,9 +18,8 @@ import {
   createFilesRunServices,
   filesRunSavedObjectTypes,
 } from '@kbn/files-plugin/server/create_files_run_services';
-import { createLlmTasksStartContract } from '@kbn/llm-tasks-plugin/server/create_llm_tasks_start_contract';
+import { createLlmTasksRunServices } from '@kbn/llm-tasks-plugin/server/create_llm_tasks_run_services';
 import {
-  createProductDocReadServices,
   productDocReadSavedObjectTypes,
   PRODUCT_DOC_READ_SETTINGS_ID,
 } from '@kbn/product-doc-base-plugin/server/create_product_doc_read_services';
@@ -64,7 +63,7 @@ export const contribution: AgentBuilderContribution = {
     const { basePath } = taskHost.http;
 
     // Built when first read: the host is complete by the time a tool runs.
-    let llmTasks: ReturnType<typeof createLlmTasksStartContract> | undefined;
+    let llmTasks: ReturnType<typeof createLlmTasksRunServices> | undefined;
     const getLlmTasks = () => {
       if (!sent.llmTasks) return undefined;
       if (!llmTasks) {
@@ -75,23 +74,16 @@ export const contribution: AgentBuilderContribution = {
           | undefined;
         if (!docSettings)
           throw new Error('Native product documentation requires repository settings');
-        llmTasks = createLlmTasksStartContract({
+        llmTasks = createLlmTasksRunServices({
           inference: services.getInferenceStart() as InferenceServerStart,
-          productDocBase: {
-            ...(() => {
-              const read = createProductDocReadServices({
-                esClient: taskHost.elasticsearch.asInternalUser,
-                createInternalRepository: (types) =>
-                  taskHost.savedObjects.createInternalRepository(types),
-                logger: logger.get('productDocBase'),
-                taskManager: taskHost.taskManager,
-                settings: docSettings,
-                kibanaVersion: taskHost.server.version,
-                isServerless: taskHost.server.isServerless,
-              });
-              return { search: read.search, management: read };
-            })(),
-          },
+          esClient: taskHost.elasticsearch.asInternalUser,
+          createInternalRepository: (types) =>
+            taskHost.savedObjects.createInternalRepository(types),
+          taskManager: taskHost.taskManager,
+          settings: docSettings,
+          kibanaVersion: taskHost.server.version,
+          isServerless: taskHost.server.isServerless,
+          documentationLogger: logger.get('productDocBase'),
           logger: logger.get('llmTasks'),
         });
       }
