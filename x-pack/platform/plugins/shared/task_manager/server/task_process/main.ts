@@ -78,6 +78,8 @@ export const runTaskProcess = async (
       },
       onShutdown: stop,
       flush: core.flush,
+      collectMetrics: instrumentation?.collectMetrics,
+      collectGauges: instrumentation?.collectGauges,
     });
   } catch (error) {
     await instrumentation?.shutdown().catch((shutdownError: Error) => {

@@ -74,6 +74,8 @@ dependsOn:
   - '@kbn/metrics-config'
   - '@kbn/apm-config-loader'
   - '@kbn/fs'
+  - '@kbn/metrics'
+  - '@kbn/core-http-router-server-internal'
 tags:
   - plugin
   - prod

@@ -10,10 +10,7 @@ import { telemetryConfigSchema } from '@kbn/telemetry-config';
 import { serializeSettings } from '../settings';
 import type { TaskProcessInit } from '../wire';
 
-/** Uses the native delta exporter configuration that Main serializes for process dispatch. */
-export const createNativeMetricsInstrumentation = (
-  url: string
-): NonNullable<TaskProcessInit['instrumentation']> => ({
+const createInstrumentation = (url?: string): NonNullable<TaskProcessInit['instrumentation']> => ({
   apm: serializeSettings({ active: false, contextPropagationOnly: false }),
   environment: {},
   files: [],
@@ -22,11 +19,29 @@ export const createNativeMetricsInstrumentation = (
     telemetryConfigSchema.validate({
       tracing: { enabled: false },
       metrics: {
-        enabled: true,
+        enabled: url !== undefined,
         interval: '1h',
-        exporters: [{ http: { url, temporalityPreference: 'delta', exportTimeout: '5s' } }],
+        exporters:
+          url === undefined
+            ? []
+            : [{ http: { url, temporalityPreference: 'delta', exportTimeout: '5s' } }],
       },
     })
   ),
-  monitoringCollection: serializeSettings(monitoringCollectionSchema.validate({ enabled: false })),
+  monitoringCollection: serializeSettings(
+    monitoringCollectionSchema.validate({
+      enabled: url === undefined,
+      opentelemetry: { metrics: { prometheus: { enabled: url === undefined }, otlp: { url: '' } } },
+    })
+  ),
 });
+
+/** Uses the native delta exporter configuration that Main serializes for process dispatch. */
+export const createNativeMetricsInstrumentation = (
+  url: string
+): NonNullable<TaskProcessInit['instrumentation']> => createInstrumentation(url);
+
+/** Enables the native Prometheus handoff and live gauge readers with no push exporter. */
+export const createNativePrometheusInstrumentation = (): NonNullable<
+  TaskProcessInit['instrumentation']
+> => createInstrumentation();

@@ -141,7 +141,13 @@ export interface SerializedRunResult {
   taskRunError?: SerializedTaskRunError;
 }
 
+export interface TaskProcessMetricSnapshot {
+  sequence: number;
+  encoded: string;
+}
+
 export interface TaskProcessRunMetrics {
+  prometheus?: TaskProcessMetricSnapshot;
   createdTaskCount?: number;
   activePoolRequestIds?: string[];
 }
@@ -152,6 +158,7 @@ export type TaskProcessRunResponse = (
 ) & {
   /** Native tasks created during this execution, including before a run error. */
   createdTaskCount?: number;
+  prometheus?: TaskProcessMetricSnapshot;
   customTaskRunEventFields?: Record<string, unknown>;
   /** True only when this process supports reuse and the run's cleanup and flush succeeded. */
   reusable?: boolean;

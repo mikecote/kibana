@@ -84,6 +84,8 @@
     "@kbn/encrypted-saved-objects-plugin",
     "@kbn/apm-config-loader",
     "@kbn/metrics-config",
+    "@kbn/metrics",
+    "@kbn/core-http-router-server-internal",
     "@kbn/telemetry-config",
     "@kbn/fs",
     "@kbn/telemetry",

@@ -5,6 +5,8 @@
  * 2.0.
  */
 
+import { encodeMetricResources } from '@kbn/metrics';
+import type { ScopeMetrics, MetricResourceSnapshot } from '@kbn/metrics';
 import type { ExecutionContextSetup } from '@kbn/core-execution-context-server';
 import { schema } from '@kbn/config-schema';
 import type { TypeOf } from '@kbn/config-schema';
@@ -13,6 +15,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import { TaskProcessMetrics } from './run_metrics';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
   TASK_PROCESS_CAPABILITIES,
@@ -27,7 +30,11 @@ import {
   throwUnrecoverableError,
 } from '../task_running/errors';
 import { createRunAsContext } from '../task_running/run_as_context';
-import type { TaskProcessRunRequest, TaskProcessRunResponse } from './wire';
+import type {
+  TaskProcessRunRequest,
+  TaskProcessRunResponse,
+  TaskProcessMetricSnapshot,
+} from './wire';
 import { DECLINED_STATUS, MAX_TIMER_MS, reviveTaskInstance, serializeRunResult } from './wire';
 import {
   buildTaskFakeRequest,
@@ -48,6 +55,7 @@ interface InFlight {
   readonly finished: Promise<void>;
   readonly adHocTaskCounter: AdHocTaskCounter;
   readonly activeTaskPool: ActiveTaskPoolRequests;
+  readonly metrics: TaskProcessMetrics;
 }
 
 const activePoolReplySchema = schema.object({
@@ -89,7 +97,8 @@ class RefusedRun extends Error {
   constructor(
     public readonly status: number,
     message: string,
-    public readonly createdTaskCount?: number
+    public readonly createdTaskCount?: number,
+    public readonly prometheus?: TaskProcessMetricSnapshot
   ) {
     super(message);
   }
@@ -123,6 +132,8 @@ export const startTaskProcessServer = ({
   onListening,
   onShutdown,
   flush,
+  collectMetrics,
+  collectGauges,
   forwardRun,
   getTaskTypes,
   enrichFakeRequest,
@@ -149,6 +160,8 @@ export const startTaskProcessServer = ({
    * is sent: Kibana does nothing with a run besides rescheduling it. Bounded by the caller.
    */
   flush?: () => Promise<boolean | void>;
+  collectMetrics?: () => Promise<ScopeMetrics[]>;
+  collectGauges?: (owner?: string) => Promise<MetricResourceSnapshot[]>;
   /** A remote supervisor forwards each run to an isolated execution process. */
   forwardRun?: (
     request: TaskProcessRunRequest,
@@ -208,9 +221,11 @@ export const startTaskProcessServer = ({
     const finished = new Promise<void>((resolve) => (finish = resolve));
     const adHocTaskCounter = new AdHocTaskCounter();
     const activeTaskPool = new ActiveTaskPoolRequests(abortController.signal);
+    const metrics = new TaskProcessMetrics(collectMetrics);
     inFlight.set(body.executionUuid, {
       adHocTaskCounter,
       activeTaskPool,
+      metrics,
       abortController,
       task: { cancel: async () => task?.cancel?.() },
       finished,
@@ -290,15 +305,27 @@ export const startTaskProcessServer = ({
               ? `${body.taskInstance.id}::${body.executionUuid}`
               : undefined,
           adHocTaskCounter,
+          prometheusMetrics: metrics,
           getCurrentTasksInPool: activeTaskPool.getCurrentTasksInPool,
         }
       );
+      const prometheus = await metrics.collect(true).catch((metricError: Error) => {
+        flushed = false;
+        logger.warn(`Native metric collection for ${body.taskType} failed: ${metricError.message}`);
+        return metrics.snapshot();
+      });
       if (error !== undefined) {
         if (isDeclinedRunError(error)) {
-          throw new RefusedRun(DECLINED_STATUS, (error as Error).message, adHocTaskCounter.count);
+          throw new RefusedRun(
+            DECLINED_STATUS,
+            (error as Error).message,
+            adHocTaskCounter.count,
+            prometheus
+          );
         }
         return {
           kind: 'thrown',
+          prometheus,
           createdTaskCount: adHocTaskCounter.count,
           error: serializeTaskRunError(error),
           customTaskRunEventFields: customFields.at(-1),
@@ -306,6 +333,7 @@ export const startTaskProcessServer = ({
       }
       const response = {
         kind: 'result',
+        prometheus,
         createdTaskCount: adHocTaskCounter.count,
         result: serializeRunResult(value as never),
         customTaskRunEventFields: customFields.at(-1),
@@ -343,7 +371,10 @@ export const startTaskProcessServer = ({
           (req.url === TASK_PROCESS_PATHS.run ||
             req.url?.startsWith(TASK_PROCESS_PATHS.cancel) ||
             req.url?.startsWith(TASK_PROCESS_PATHS.activePool))) ||
-        (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics))
+        (req.method === 'GET' &&
+          (req.url?.startsWith(TASK_PROCESS_PATHS.metrics) ||
+            req.url === TASK_PROCESS_PATHS.gauges ||
+            req.url?.startsWith(`${TASK_PROCESS_PATHS.gauges}?`)))
       ) {
         if (!isAuthorized) {
           sendJson(res, 401, { error: 'unauthorized' });
@@ -351,13 +382,33 @@ export const startTaskProcessServer = ({
         }
       }
 
+      if (
+        req.method === 'GET' &&
+        (req.url === TASK_PROCESS_PATHS.gauges ||
+          req.url?.startsWith(`${TASK_PROCESS_PATHS.gauges}?`))
+      ) {
+        const owner = new URL(req.url, 'http://task-worker').searchParams.get('owner') ?? undefined;
+        if (owner !== undefined && (!owner.length || owner.length > 128)) {
+          throw new RefusedRun(400, 'Invalid native metric owner');
+        }
+        sendJson(res, 200, {
+          encoded: encodeMetricResources(collectGauges ? await collectGauges(owner) : []),
+        });
+        return;
+      }
+
       if (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics)) {
         const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.metrics.length));
+        const prometheus = await entry?.metrics.collect().catch((error: Error) => {
+          logger.warn(`Native metric progress collection failed: ${error.message}`);
+          return entry.metrics.snapshot();
+        });
         sendJson(
           res,
           entry ? 200 : 404,
           entry
             ? {
+                prometheus,
                 createdTaskCount: entry.adHocTaskCounter.count,
                 activePoolRequestIds: entry.activeTaskPool.getRequestIds(),
               }
@@ -403,6 +454,7 @@ export const startTaskProcessServer = ({
         await entry.finished;
         sendJson(res, 200, {
           outcome: 'cancelled',
+          prometheus: entry.metrics.snapshot(),
           createdTaskCount: entry.adHocTaskCounter.count,
         });
         return;
@@ -415,7 +467,12 @@ export const startTaskProcessServer = ({
           res,
           error.status,
           error.status === DECLINED_STATUS
-            ? { kind: 'declined', reason: error.message, createdTaskCount: error.createdTaskCount }
+            ? {
+                kind: 'declined',
+                reason: error.message,
+                createdTaskCount: error.createdTaskCount,
+                prometheus: error.prometheus,
+              }
             : { error: error.message }
         );
         return;

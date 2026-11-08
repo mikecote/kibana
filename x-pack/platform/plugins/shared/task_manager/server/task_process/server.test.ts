@@ -10,6 +10,7 @@
  * 2.0.
  */
 
+import { decodeMetricResources } from '@kbn/metrics';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
   TASK_PROCESS_CAPABILITIES,
@@ -50,6 +51,7 @@ describe('task process server', () => {
   let server: Server;
   let url: string;
   const cleanup = jest.fn();
+  const collectGauges = jest.fn(async () => []);
   const flush = jest.fn();
   const order: string[] = [];
   let createTask: (context: RunContext) => CancellableTask;
@@ -58,6 +60,7 @@ describe('task process server', () => {
 
   beforeEach(async () => {
     runAsDefinition = undefined;
+    collectGauges.mockClear();
     enrichFakeRequest = jest.fn();
     cleanup.mockReset();
     order.length = 0;
@@ -89,6 +92,7 @@ describe('task process server', () => {
       kibanaVersion: '9.9.9',
       authToken: TOKEN,
       flush,
+      collectGauges,
       enrichFakeRequest,
     });
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
@@ -138,6 +142,32 @@ describe('task process server', () => {
   it('reports the task types it serves', async () => {
     const response = await undiciFetch(`${url}/health`);
     expect(((await response.json()) as { taskTypes: string[] }).taskTypes).toEqual([TYPE]);
+  });
+
+  it('authenticates gauge collection and bounds its owner before invoking the native source', async () => {
+    const endpoint = `${url}${TASK_PROCESS_PATHS.gauges}`;
+    expect((await undiciFetch(`${endpoint}?owner=node`)).status).toBe(401);
+    expect(collectGauges).not.toHaveBeenCalled();
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const response = await undiciFetch(`${endpoint}?owner=node`, { headers });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      !('encoded' in body) ||
+      typeof body.encoded !== 'string'
+    ) {
+      throw new Error('The native gauge response has no metric payload');
+    }
+    expect(decodeMetricResources(body.encoded)).toEqual([]);
+    expect(collectGauges).toHaveBeenCalledWith('node');
+    for (const owner of ['', 'x'.repeat(129)]) {
+      const invalid = await undiciFetch(`${endpoint}?owner=${owner}`, { headers });
+      expect(invalid.status).toBe(400);
+      await invalid.body?.cancel();
+    }
+    expect(collectGauges).toHaveBeenCalledTimes(1);
   });
 
   it('advertises the current dispatch contract separately from liveness', async () => {
@@ -783,9 +813,14 @@ describe('native task creation metrics', () => {
   });
 });
 
-it.each([false, true])(
-  'never dispatches to legacy business routes with a compatible health replica: %s',
-  async (compatibleHealth) => {
+it.each([
+  { compatibleHealth: false, legacyRun: '/run' },
+  { compatibleHealth: true, legacyRun: '/run' },
+  { compatibleHealth: false, legacyRun: '/v2/run' },
+  { compatibleHealth: true, legacyRun: '/v2/run' },
+])(
+  'never dispatches to $legacyRun with a compatible health replica: $compatibleHealth',
+  async ({ compatibleHealth, legacyRun }) => {
     const business = jest.fn();
     const paths: string[] = [];
     const server = createServer((request, response) => {
@@ -804,7 +839,7 @@ it.each([false, true])(
         );
         return;
       }
-      if (request.method === 'POST' && request.url === '/run') {
+      if (request.method === 'POST' && request.url === legacyRun) {
         business();
         response.end(JSON.stringify({ kind: 'result', result: { state: {} } }));
         return;

@@ -160,14 +160,14 @@ Missing task types and incompatible deployments fail explicitly. Capacity and st
 on the process route. Existing standalone bundle endpoints are useful for development, but remote
 mode now targets the supervisor so every dispatch receives its current configuration.
 
-Dispatch protocol v2 uses `/v2/run` and versioned cancellation, progress and active-pool endpoints.
-Before each dispatch, Main checks `/v2/health` for the current protocol and required runtime capabilities;
+Dispatch protocol v3 uses `/v3/run` and versioned cancellation, progress and active-pool endpoints.
+Before each dispatch, Main checks `/v3/health` for the current protocol and required runtime capabilities;
 child readiness advertises the same contract before a lease is issued. There are no unversioned business
 aliases. A health check that reaches a new replica cannot cause a subsequent run to execute on an old
 replica: its versioned run endpoint does not exist. Incompatibility fails permanently without local
 execution. `/health` remains available for liveness probes. Rebuild task bundles and deploy matching
 workers when upgrading this protocol. Changes to required dispatch semantics must update the protocol
-and endpoint version together.
+and endpoint version together. Native metric transport also negotiates its serializer format before a run starts.
 
 ## What a process is
 
@@ -510,7 +510,14 @@ reschedule, the task state, the retries). What differs, and why:
   connectors across fresh and reused child and remote workers. Each execution is counted once with delta
   temporality and native credential or connector labels. Reused workers retain their metric identity;
   fresh workers have distinct identities. Exports are flushed before the run answers.
-- **Instrumentation work remaining.** Aggregation for Main's Prometheus endpoint still needs completion.
+- **Native Prometheus.** Workers hand off ordered native sum and explicit histogram aggregates through
+  execution progress and final responses. Main retains cumulative totals after workers retire, using the
+  SDK's cardinality limit and overflow series. Duplicate or late snapshots are not counted again, including
+  cancellation acknowledgements and failed executions. The native exporter collects gauges from live,
+  ready workers on each scrape, including retained idle workers, and preserves their resource identities.
+  Gauges from other dispatching Kibana nodes are excluded. SDK numeric values retain their types across
+  transport, and each Prometheus family has one metadata header. The native connector and rule Prometheus
+  cases exercise the real exporter, Kibana response factory and Hapi adapter in both process modes.
 - **Execution limits.** A rule that uses a connector type or adapter the process does not know, or a workflow
   rule whose executions are stored where the process cannot store them, fails explicitly. Fresh workers
   pay for the encryption service, license and alerts resource checks at startup. Reused workers retain

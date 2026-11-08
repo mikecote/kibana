@@ -31,6 +31,8 @@ import { PrometheusExporter } from './prometheus_exporter';
  * Options to the initMetrics method
  */
 export interface InitMetricsOptions {
+  prometheusReader?: IMetricReader;
+  additionalReaders?: IMetricReader[];
   /**
    * The OpenTelemetry resource information
    */
@@ -58,7 +60,7 @@ export function initMetrics(initMetricsOptions: InitMetricsOptions): {
   const globalExportIntervalMillis = metricsConfig.interval.asMilliseconds();
   const globalExportTimeoutMillis = metricsConfig.timeout?.asMilliseconds();
 
-  const readers: IMetricReader[] = [];
+  const readers: IMetricReader[] = [...(initMetricsOptions.additionalReaders ?? [])];
 
   // OTel requires all readers to be initialized when initializing the SDK.
   // If the monitoring collection plugin requires the prometheus exporter, we need to initialize it now.
@@ -66,7 +68,7 @@ export function initMetrics(initMetricsOptions: InitMetricsOptions): {
     monitoringCollectionConfig.enabled &&
     monitoringCollectionConfig.opentelemetry.metrics.prometheus.enabled
   ) {
-    readers.push(PrometheusExporter.get());
+    readers.push(initMetricsOptions.prometheusReader ?? PrometheusExporter.get());
   }
 
   const exporters = metricsConfig.enabled ? castArray(metricsConfig.exporters) : [];

@@ -10,13 +10,18 @@ import apm from 'elastic-apm-node';
 import type { AgentConfigOptions } from 'elastic-apm-node';
 import { initApmFromConfiguration } from '@kbn/apm-config-loader';
 import type { TelemetryConfiguration } from '@kbn/apm-config-loader';
+import { DeltaMetricReader, GaugeMetricReader } from '@kbn/metrics';
+import type { ScopeMetrics, MetricResourceSnapshot } from '@kbn/metrics';
 import { buildOtelResources, initTelemetryFromConfiguration } from '@kbn/telemetry';
+import { diag } from '@opentelemetry/api';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { reviveSettings } from './settings';
 import type { TaskProcessInit } from './wire';
 
 export interface TaskProcessInstrumentation {
   forceFlush: () => Promise<void>;
+  collectMetrics?: () => Promise<ScopeMetrics[]>;
+  collectGauges?: () => Promise<MetricResourceSnapshot[]>;
   shutdown: () => Promise<void>;
 }
 
@@ -34,12 +39,22 @@ export const initializeTaskProcessInstrumentation = async (
       serialized.monitoringCollection
     ) as TelemetryConfiguration['monitoringCollection'],
   };
+  const prometheusReader =
+    configuration.telemetry.enabled &&
+    configuration.monitoringCollection.enabled &&
+    configuration.monitoringCollection.opentelemetry.metrics.prometheus.enabled
+      ? new DeltaMetricReader()
+      : undefined;
+  const gaugeReader = prometheusReader ? new GaugeMetricReader() : undefined;
   const serviceName = configuration.apm.serviceName ?? 'kibana';
   initApmFromConfiguration(configuration.apm, configuration.redactUsers, serviceName);
-  const telemetry = initTelemetryFromConfiguration(configuration, () =>
-    buildOtelResources(serviceName, configuration.apm).merge(
-      resourceFromAttributes({ 'service.instance.id': randomUUID() })
-    )
+  const telemetry = initTelemetryFromConfiguration(
+    configuration,
+    () =>
+      buildOtelResources(serviceName, configuration.apm).merge(
+        resourceFromAttributes({ 'service.instance.id': randomUUID() })
+      ),
+    { prometheusReader, additionalReaders: gaugeReader ? [gaugeReader] : [] }
   );
   await telemetry.ready;
   const forceFlush = async (): Promise<void> => {
@@ -48,6 +63,28 @@ export const initializeTaskProcessInstrumentation = async (
   let shutdownPromise: Promise<void> | undefined;
   return {
     forceFlush,
+    collectGauges: gaugeReader
+      ? async () => {
+          const { resourceMetrics, errors } = await gaugeReader.collect({ timeoutMillis: 5000 });
+          if (errors.length)
+            throw new AggregateError(errors, 'Native worker gauge collection failed');
+          return [
+            {
+              resourceAttributes: resourceMetrics.resource.attributes,
+              scopeMetrics: resourceMetrics.scopeMetrics,
+            },
+          ];
+        }
+      : undefined,
+    collectMetrics: prometheusReader
+      ? async () => {
+          const { resourceMetrics, errors } = await prometheusReader.collect({
+            timeoutMillis: 5000,
+          });
+          if (errors.length) diag.warn('Native worker metric collection errors', ...errors);
+          return resourceMetrics.scopeMetrics;
+        }
+      : undefined,
     shutdown: () =>
       (shutdownPromise ??= (async () => {
         await forceFlush();

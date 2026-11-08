@@ -28,6 +28,7 @@ import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
 import { License } from '@kbn/licensing-plugin/common/license';
 import { featureUsageSavedObjectType } from '@kbn/licensing-plugin/server/services/feature_usage_store';
+import type { MetricResourceSnapshot } from '@kbn/metrics';
 import { kibanaPackageJson, REPO_ROOT } from '@kbn/repo-info';
 import { config as ruleRegistryConfig } from '@kbn/rule-registry-plugin/server/config';
 import {
@@ -40,6 +41,7 @@ import { ApiKeyType } from '@kbn/task-manager-plugin/server/config';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from '@kbn/task-manager-plugin/server/constants';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
+import { collectRemoteGaugeMetrics } from '@kbn/task-manager-plugin/server/task_process/metrics_transport';
 import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -184,6 +186,7 @@ export interface StubRequest {
 export interface WorkflowProcessHarnessOptions {
   logger?: Logger;
   mode?: 'child_process' | 'remote';
+  serverUuid?: string;
   reuse?: boolean;
   maxIdleProcesses?: number;
   includeRunTask?: boolean;
@@ -192,6 +195,7 @@ export interface WorkflowProcessHarnessOptions {
   executionTask?: ExecutionTaskFixture;
   middlewareIds?: string[];
   instrumentation?: TaskProcessInit['instrumentation'];
+  onMetrics?: TaskProcessDispatch['onMetrics'];
   executionContext?: TaskProcessInit['executionContext'];
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   additionalContributions?: Record<string, string[]>;
@@ -351,7 +355,12 @@ const startHarness = async (
   const initFor = () => ({
     instrumentation: options.instrumentation,
     executionContext: options.executionContext,
-    server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false, publicBaseUrl: kibanaUrl },
+    server: {
+      uuid: options.serverUuid ?? KIBANA_UUID,
+      buildNum: 1,
+      isServerless: false,
+      publicBaseUrl: kibanaUrl,
+    },
     encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
     ...(options.parity ? { parity: options.parity } : {}),
     settings: Object.fromEntries(
@@ -564,6 +573,7 @@ const startHarness = async (
   };
   let getRoute: TaskProcessSupervisor['getRoute'];
   let getWorkerStats: TaskProcessSupervisor['getStats'];
+  let collectGaugeMetrics: (owner?: string) => Promise<MetricResourceSnapshot[]>;
   if (options.mode === 'remote') {
     const worker = startTaskProcessWorker({
       settings: workerSettings,
@@ -578,7 +588,10 @@ const startHarness = async (
     const address = worker.server.address();
     if (!address || typeof address === 'string')
       throw new Error('The workflow test worker has no listening address');
-    getRoute = () => ({ url: `http://127.0.0.1:${address.port}`, token: 'workflow-test-worker' });
+    const remote = { url: `http://127.0.0.1:${address.port}`, token: 'workflow-test-worker' };
+    getRoute = () => remote;
+    collectGaugeMetrics = (owner = options.serverUuid ?? KIBANA_UUID) =>
+      collectRemoteGaugeMetrics(remote, owner);
   } else {
     const supervisor = new TaskProcessSupervisor({
       settings: { ...workerSettings, getElasticsearchConfig: esConfig, getInitFor: initFor },
@@ -588,6 +601,8 @@ const startHarness = async (
     cleanups.push(() => supervisor.stop());
     getRoute = (taskType) => supervisor.getRoute(taskType);
     getWorkerStats = () => supervisor.getStats();
+    collectGaugeMetrics = (owner = options.serverUuid ?? KIBANA_UUID) =>
+      supervisor.collectGaugeMetrics(owner);
   }
 
   const createdTaskCounts: number[] = [];
@@ -641,6 +656,7 @@ const startHarness = async (
       setCustomTaskRunEventFields: jest.fn(),
       onDispatchFailure,
       onTasksCreated: (count) => createdTaskCounts.push(count),
+      onMetrics: options.onMetrics,
       getCurrentTasksInPool: options.getCurrentTasksInPool,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
@@ -720,6 +736,7 @@ const startHarness = async (
     runTask,
     waitForRunTask,
     getWorkerStats,
+    collectGaugeMetrics,
     createdTaskCounts,
     executionsOf,
     stepsOf,

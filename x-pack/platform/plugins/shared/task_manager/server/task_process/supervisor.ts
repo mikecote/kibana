@@ -5,12 +5,14 @@
  * 2.0.
  */
 
+import type { MetricResourceSnapshot } from '@kbn/metrics';
 import { fork } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import { createHash, randomBytes } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Logger } from '@kbn/core/server';
+import { collectRemoteGaugeMetrics } from './metrics_transport';
 import type {
   TaskProcessAcquireContext,
   TaskProcessLease,
@@ -86,6 +88,7 @@ interface ReusableChild {
   child: ChildProcess;
   bundle: Bundle;
   fingerprint: string;
+  owner?: string;
   port: number;
   born: number;
   runs: number;
@@ -94,15 +97,11 @@ interface ReusableChild {
   idleTimer?: NodeJS.Timeout;
 }
 
-/**
- * Runs each run of a task type that has a bundle in a child process of Kibana that lives as long as
- * the run by default. Opt-in reuse retains compatible idle processes between successful runs. The same bundles run as
- * a remote process; only who starts them differs. When a process cannot be started the run goes to
- * Kibana, so a failing bundle never strands a task.
- */
+/** Starts and leases isolated task workers while preserving process routing on startup failure. */
 export class TaskProcessSupervisor {
   private readonly token = randomBytes(32).toString('hex');
   private readonly children = new Set<ChildProcess>();
+  private readonly managed = new Map<ChildProcess, ReusableChild>();
   private readonly bundleByTaskType = new Map<string, Bundle>();
   private readonly idle = new Set<ReusableChild>();
   private stopping = false;
@@ -321,12 +320,14 @@ export class TaskProcessSupervisor {
       child,
       bundle,
       fingerprint,
+      owner: init?.server?.uuid,
       port: 0,
       labels,
       giveBack,
       born: Date.now(),
       runs: 0,
     };
+    this.managed.set(child, managed);
     const childLogger = logger.get('task_process');
     const stopForwarding = [
       child.stdout && forwardChildLogs({ stream: child.stdout, logger: childLogger, labels }),
@@ -340,6 +341,7 @@ export class TaskProcessSupervisor {
     ];
     child.once('exit', () => {
       this.children.delete(child);
+      this.managed.delete(child);
       clearTimeout(managed.idleTimer);
       this.idle.delete(managed);
       managed.giveBack();
@@ -414,6 +416,32 @@ export class TaskProcessSupervisor {
 
     managed.port = port;
     return this.lease(managed);
+  }
+
+  /** Collects gauges from this node's live execution processes, including retained idle workers. */
+  public async collectGaugeMetrics(owner: string): Promise<MetricResourceSnapshot[]> {
+    const live = [...this.managed.values()].filter(
+      ({ child, port, owner: parent }) =>
+        parent === owner &&
+        port > 0 &&
+        !child.killed &&
+        child.exitCode === null &&
+        child.signalCode === null
+    );
+    const collected = await Promise.all(
+      live.map(async ({ child, port }) => {
+        try {
+          return await collectRemoteGaugeMetrics(
+            { url: `http://127.0.0.1:${port}`, token: this.token },
+            owner
+          );
+        } catch (error) {
+          if (child.killed || child.exitCode !== null || child.signalCode !== null) return [];
+          throw error;
+        }
+      })
+    );
+    return collected.flat();
   }
 
   private lease(process: ReusableChild): TaskProcessLease {

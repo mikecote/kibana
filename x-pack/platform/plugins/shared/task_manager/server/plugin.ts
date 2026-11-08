@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { PrometheusExporter } from '@kbn/metrics';
 import { getTelemetryConfiguration } from '@kbn/apm-config-loader';
 import type { Observable } from 'rxjs';
 import { combineLatest, firstValueFrom, Subject, BehaviorSubject } from 'rxjs';
@@ -31,6 +32,7 @@ import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server'
 import { join } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
 import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
+import { collectRemoteGaugeMetrics } from './task_process/metrics_transport';
 import { TASK_PROCESS_PROTOCOL_VERSION } from './task_process/protocol';
 import type { TaskProcessDispatch } from './task_process/remote_task_runner';
 import { serializeElasticsearchConfig } from './task_process/es_config';
@@ -214,6 +216,7 @@ export class TaskManagerPlugin
   private taskProcessDispatch?: TaskProcessDispatch;
   private featureFlagsService?: CoreStart['featureFlags'];
   private taskProcessSupervisor?: TaskProcessSupervisor;
+  private unregisterGaugeSource?: () => void;
   /** The task types registered as modules: the ones that can run outside this process. */
   private readonly moduleTaskTypes = new Set<string>();
   private readonly moduleRegistrations = new Map<
@@ -496,8 +499,27 @@ export class TaskManagerPlugin
 
     const { mode = 'in_process', remote } = this.config.task_execution ?? {};
     if (mode !== 'in_process') {
+      const telemetry = getTelemetryConfiguration('kibana');
+      if (
+        telemetry?.telemetry.enabled &&
+        telemetry.monitoringCollection.enabled &&
+        telemetry.monitoringCollection.opentelemetry.metrics.prometheus.enabled
+      ) {
+        this.unregisterGaugeSource = PrometheusExporter.get().registerGaugeSource(async () => {
+          const owner = this.initContext.env.instanceUuid;
+          if (mode === 'remote') {
+            if (!remote) throw new Error('The remote worker gauge source is not configured');
+            return collectRemoteGaugeMetrics({ url: remote.url, token: remote.token }, owner);
+          }
+          if (!this.taskProcessSupervisor)
+            throw new Error('The task worker gauge source has not started');
+          return this.taskProcessSupervisor.collectGaugeMetrics(owner);
+        });
+      }
+
       this.taskProcessDispatch = {
         onTasksCreated: (count) => this.adHocTaskCounter.increment(count),
+        onMetrics: (metrics) => PrometheusExporter.get().addMetrics(metrics),
         getCurrentTasksInPool: () => {
           if (!this.taskPollingLifecycle)
             throw new Error('Task Manager execution pool has not started');
@@ -976,6 +998,7 @@ export class TaskManagerPlugin
   }
 
   public async stop() {
+    this.unregisterGaugeSource?.();
     await this.taskProcessSupervisor?.stop();
     this.licenseSubscriber?.cleanup();
     this.claimNudgeService?.stop();

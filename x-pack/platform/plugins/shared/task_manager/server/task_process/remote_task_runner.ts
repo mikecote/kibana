@@ -6,6 +6,8 @@
  */
 
 import { Agent } from 'undici';
+import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
+import type { ScopeMetrics } from '@kbn/metrics';
 import { captureTaskRunTrace } from '../task_running/task_tracing';
 import type { TaskExecutionPool } from '../task_scheduling';
 import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
@@ -27,6 +29,7 @@ import type {
   TaskProcessRunRequest,
   TaskProcessRunResponse,
   TaskProcessRunMetrics,
+  TaskProcessMetricSnapshot,
 } from './wire';
 
 /** Where a run goes: its address, and the bearer token the process requires. */
@@ -64,6 +67,7 @@ export interface TaskProcessDispatch {
   getSnapshot?: (taskType: string) => Promise<TaskProcessDispatchSnapshot>;
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   onTasksCreated?: (count: number) => void;
+  onMetrics?: (metrics: ScopeMetrics[]) => void;
   getCancelGracePeriodMs?: (taskType: string) => number | undefined;
   /** Called when dispatch fails; the task remains assigned to process execution. */
   onDispatchFailure?: (
@@ -127,11 +131,13 @@ export class RemoteTaskRunner implements CancellableTask {
       observer?: RemoteRunObserver;
       getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
       onTasksCreated?: (count: number) => void;
+      onMetrics?: (metrics: ScopeMetrics[]) => void;
       fetchFn?: typeof fetch;
     }
   ) {}
 
   private reportedCreatedTaskCount = 0;
+  private reportedMetrics?: TaskProcessMetricSnapshot;
   private cancelled = false;
   private target?: TaskProcessAddress | TaskProcessLease;
   private cancellation?: Promise<void>;
@@ -254,10 +260,11 @@ export class RemoteTaskRunner implements CancellableTask {
         let reason: string | undefined;
         if (response.status === DECLINED_STATUS) {
           const failure = (await response.json().catch(() => undefined)) as
-            | { reason?: string; createdTaskCount?: number }
+            | { reason?: string; createdTaskCount?: number; prometheus?: TaskProcessMetricSnapshot }
             | undefined;
           reason = failure?.reason;
           this.reportCreatedTasks(failure?.createdTaskCount);
+          this.reportMetrics(failure?.prometheus);
         } else {
           await response.body?.cancel().catch(() => undefined);
         }
@@ -281,6 +288,7 @@ export class RemoteTaskRunner implements CancellableTask {
       }
       const body = (await response.json()) as TaskProcessRunResponse;
       this.reportCreatedTasks(body.createdTaskCount);
+      this.reportMetrics(body.prometheus);
       if (body.customTaskRunEventFields) {
         setCustomTaskRunEventFields(body.customTaskRunEventFields);
       }
@@ -300,6 +308,26 @@ export class RemoteTaskRunner implements CancellableTask {
     }
   }
 
+  private reportMetrics(snapshot: TaskProcessMetricSnapshot | undefined): void {
+    if (!snapshot) return;
+    if (
+      !Number.isSafeInteger(snapshot.sequence) ||
+      snapshot.sequence < 1 ||
+      typeof snapshot.encoded !== 'string'
+    ) {
+      throw new Error('Task worker returned invalid native metric metadata');
+    }
+    if (snapshot.sequence <= (this.reportedMetrics?.sequence ?? 0)) return;
+    if (!this.params.onMetrics) throw new Error('Task dispatch has no native Prometheus receiver');
+    const delta = combineMetricCollections(
+      this.reportedMetrics ? decodeMetricScopes(this.reportedMetrics.encoded) : [],
+      decodeMetricScopes(snapshot.encoded),
+      'subtract'
+    );
+    this.params.onMetrics(delta);
+    this.reportedMetrics = snapshot;
+  }
+
   private reportCreatedTasks(count: number | undefined): void {
     if (
       !Number.isSafeInteger(count) ||
@@ -313,7 +341,8 @@ export class RemoteTaskRunner implements CancellableTask {
   }
 
   private startControlPolling(address: TaskProcessAddress): () => void {
-    if (!this.params.onTasksCreated && !this.params.getCurrentTasksInPool) return () => {};
+    if (!this.params.onTasksCreated && !this.params.getCurrentTasksInPool && !this.params.onMetrics)
+      return () => {};
     const controller = new AbortController();
     let pending = false;
     const timer = setInterval(async () => {
@@ -333,6 +362,7 @@ export class RemoteTaskRunner implements CancellableTask {
         }
         const metrics = (await response.json()) as TaskProcessRunMetrics;
         this.reportCreatedTasks(metrics.createdTaskCount);
+        this.reportMetrics(metrics.prometheus);
         const getPool = this.params.getCurrentTasksInPool;
         if (getPool) {
           for (const requestId of metrics.activePoolRequestIds ?? []) {
@@ -403,11 +433,11 @@ export class RemoteTaskRunner implements CancellableTask {
             signal,
           }
         );
-        if (response.ok)
-          this.reportCreatedTasks(
-            ((await response.json()) as { createdTaskCount?: number }).createdTaskCount
-          );
-        else await response.body?.cancel();
+        if (response.ok) {
+          const metrics = (await response.json()) as TaskProcessRunMetrics;
+          this.reportCreatedTasks(metrics.createdTaskCount);
+          this.reportMetrics(metrics.prometheus);
+        } else await response.body?.cancel();
       } finally {
         dispose();
       }

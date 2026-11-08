@@ -10,6 +10,8 @@
  * 2.0.
  */
 
+import { createNativePrometheusCollector } from '@kbn/task-manager-plugin/server/task_process/testing/native_prometheus_collector';
+import { createNativePrometheusInstrumentation } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_instrumentation';
 import { createNativeMetricsCollector } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_collector';
 import { createNativeMetricsInstrumentation } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_instrumentation';
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
@@ -238,6 +240,72 @@ describe.each([
         .map(({ instanceId }) => instanceId)
     );
     expect(instances.size).toBe(reuse ? 1 : 2);
+    expect(harness.supervisor.getStats().spawned).toBe(reuse ? 1 : 2);
+  });
+});
+
+describe.each([
+  { mode: 'child_process', reuse: false },
+  { mode: 'child_process', reuse: true },
+  { mode: 'remote', reuse: false },
+  { mode: 'remote', reuse: true },
+] as const)('native rule Prometheus in $mode (reuse: $reuse)', ({ mode, reuse }) => {
+  let harness: RuleProcessHarness;
+  let collector: Awaited<ReturnType<typeof createNativePrometheusCollector>>;
+  let unregisterGauges: (() => void) | undefined;
+  beforeAll(async () => {
+    collector = await createNativePrometheusCollector();
+    harness = await startRuleProcessHarness({
+      mode,
+      reuse,
+      instrumentation: createNativePrometheusInstrumentation(),
+      onMetrics: (metrics) => collector.exporter.addMetrics(metrics),
+      rules: [{ taskType, bundle: 'stackAlerts__es_query' }],
+    });
+    unregisterGauges = collector.exporter.registerGaugeSource(() => harness.collectGaugeMetrics());
+    await harness.createRule({
+      id: 'native-metrics-rule',
+      ruleTypeId: RULE_TYPE,
+      params: ruleParams,
+      actions: [],
+    });
+    await harness.es.index({
+      index: SOURCE_INDEX,
+      document: { '@timestamp': new Date().toISOString() },
+      refresh: 'wait_for',
+    });
+  });
+  afterAll(async () => {
+    try {
+      unregisterGauges?.();
+      await harness?.stop();
+    } finally {
+      await collector?.stop();
+    }
+  });
+  it('retains exact native rule counters at the Main scrape endpoint across worker reuse and retirement', async () => {
+    for (const expected of [1, 2]) {
+      const { result, onDispatchFailure } = await harness.run('native-metrics-rule', RULE_TYPE);
+      expect(result).toEqual(
+        expect.objectContaining({ state: expect.any(Object), schedule: { interval: '1m' } })
+      );
+      expect(onDispatchFailure).not.toHaveBeenCalled();
+      const body = await collector.scrape();
+      const counters = body
+        .split('\n')
+        .filter((line) => line.startsWith('kibana_alerting_rule_run_count_total{'));
+      expect(
+        counters.reduce((total, line) => total + Number(line.slice(line.lastIndexOf(' ') + 1)), 0)
+      ).toBe(expected);
+      expect(
+        counters.every(
+          (line) =>
+            line.includes('credential_type="es_api_key"') &&
+            line.includes('credential_reason="config"')
+        )
+      ).toBe(true);
+    }
+    expect(await harness.collectGaugeMetrics()).toHaveLength(reuse ? 1 : 0);
     expect(harness.supervisor.getStats().spawned).toBe(reuse ? 1 : 2);
   });
 });

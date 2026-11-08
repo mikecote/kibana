@@ -9,6 +9,7 @@
 import type { TelemetryConfiguration } from '@kbn/apm-config-loader';
 import { initTracing } from '@kbn/tracing';
 import { initMetrics } from '@kbn/metrics';
+import type { InitMetricsOptions } from '@kbn/metrics';
 import { context } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import type { Resource } from '@opentelemetry/resources';
@@ -23,7 +24,8 @@ export interface TelemetryLifecycle {
 /** Initializes the native telemetry providers from resolved settings and a native resource. */
 export const initTelemetryFromConfiguration = (
   configuration: Pick<TelemetryConfiguration, 'apm' | 'telemetry' | 'monitoringCollection'>,
-  createResource: () => Resource
+  createResource: () => Resource,
+  metricsOptions: Pick<InitMetricsOptions, 'prometheusReader' | 'additionalReaders'> = {}
 ): TelemetryLifecycle => {
   const {
     apm: apmConfig,
@@ -49,6 +51,7 @@ export const initTelemetryFromConfiguration = (
     if (telemetryConfig.tracing.enabled) maybeInitAutoInstrumentations();
     if (telemetryConfig.metrics.enabled || monitoringCollectionConfig.enabled) {
       metrics = initMetrics({
+        ...metricsOptions,
         resource,
         metricsConfig: telemetryConfig.metrics,
         monitoringCollectionConfig,

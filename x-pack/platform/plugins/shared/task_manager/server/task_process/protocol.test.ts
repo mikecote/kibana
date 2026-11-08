@@ -25,7 +25,7 @@ it('accepts the current contract and additive capabilities', () => {
 });
 
 it('rejects old and future protocols before business execution', () => {
-  for (const protocolVersion of [1, 3]) {
+  for (const protocolVersion of [1, 2, 4]) {
     expect(() => assertTaskProcessProtocol({ ...current, protocolVersion })).toThrow(
       TaskProcessAcquireError
     );

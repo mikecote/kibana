@@ -42,7 +42,11 @@ import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
-import type { TaskProcessAddress } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import { collectRemoteGaugeMetrics } from '@kbn/task-manager-plugin/server/task_process/metrics_transport';
+import type {
+  TaskProcessAddress,
+  TaskProcessDispatch,
+} from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
 import type { TaskProcessInit } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
 import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
@@ -113,6 +117,7 @@ export interface RuleProcessHarnessOptions {
   mode?: 'child_process' | 'remote';
   reuse?: boolean;
   instrumentation?: TaskProcessInit['instrumentation'];
+  onMetrics?: TaskProcessDispatch['onMetrics'];
   /** The rule types to serve. Their bundles are built in parallel, once. */
   rules: RuleModuleUnderTest[];
   /**
@@ -487,6 +492,13 @@ export class RuleProcessHarness {
     }
   }
 
+  /** Collects this harness node's gauges through the same local or remote worker control path. */
+  public collectGaugeMetrics(): ReturnType<TaskProcessSupervisor['collectGaugeMetrics']> {
+    return this.remoteAddress
+      ? collectRemoteGaugeMetrics(this.remoteAddress, KIBANA_UUID)
+      : this.supervisor.collectGaugeMetrics(KIBANA_UUID);
+  }
+
   public async stop() {
     if (this.worker) await this.worker.stop();
     else await this.supervisor?.stop();
@@ -803,6 +815,7 @@ export class RuleProcessHarness {
       fetchFn: undiciFetch as unknown as typeof fetch,
       onDispatchFailure: onDispatchFailure as never,
       observer: options.observer,
+      onMetrics: this.options.onMetrics,
       signal: options.signal,
     });
     /** Resolves when the process has the run in flight: it booted and the task is running. */

@@ -5,10 +5,11 @@
  * 2.0.
  */
 
+import { METRIC_SERIALIZATION_VERSION } from '@kbn/metrics';
 import { schema } from '@kbn/config-schema';
 import { TaskProcessAcquireError } from './acquire_error';
 
-export const TASK_PROCESS_PROTOCOL_VERSION = 2;
+export const TASK_PROCESS_PROTOCOL_VERSION = 3;
 export const TASK_PROCESS_CAPABILITIES = [
   'native-task-scheduling',
   'ordered-task-middleware',
@@ -16,14 +17,18 @@ export const TASK_PROCESS_CAPABILITIES = [
   'native-tracing-with-portable-tls',
   'core-execution-context',
   'created-task-counts',
+  'native-prometheus-handoff',
+  'live-worker-gauge-collection',
+  `native-metric-format-${METRIC_SERIALIZATION_VERSION}`,
 ] as const;
 
 export const TASK_PROCESS_PATHS = {
-  health: '/v2/health',
-  run: '/v2/run',
-  cancel: '/v2/cancel/',
-  metrics: '/v2/metrics/',
-  activePool: '/v2/active_pool/',
+  health: '/v3/health',
+  gauges: '/v3/gauges',
+  run: '/v3/run',
+  cancel: '/v3/cancel/',
+  metrics: '/v3/metrics/',
+  activePool: '/v3/active_pool/',
 } as const;
 
 const protocolSchema = schema.object(

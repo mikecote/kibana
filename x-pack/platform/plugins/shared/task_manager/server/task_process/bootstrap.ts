@@ -33,6 +33,8 @@ export const bootstrapTaskProcess = async (): Promise<{
       let shutdownPromise: Promise<void> | undefined;
       instrumentation = {
         forceFlush: native.forceFlush,
+        collectMetrics: native.collectMetrics,
+        collectGauges: native.collectGauges,
         shutdown: () =>
           (shutdownPromise ??= (async () => {
             try {

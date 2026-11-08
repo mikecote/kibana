@@ -5,8 +5,10 @@
  * 2.0.
  */
 
+import type { ScopeMetrics } from '@kbn/metrics';
 import { AsyncLocalStorage } from 'async_hooks';
 import { defer, of } from 'rxjs';
+import type { TaskProcessMetrics } from './run_metrics';
 import type { TaskExecutionPool } from '../task_scheduling';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import type { TaskHost } from '../task_type_module';
@@ -16,6 +18,7 @@ interface RunStore {
   executionId?: string;
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   adHocTaskCounter: AdHocTaskCounter;
+  prometheusMetrics?: TaskProcessMetrics;
   flushers: Array<() => Promise<void>>;
 }
 
@@ -39,6 +42,13 @@ export const incrementCreatedTaskCount = (by: number = 1): void => {
   run.adHocTaskCounter.increment(by);
 };
 
+/** Adds forwarded native metric deltas to the active execution's control channel. */
+export const accumulateTaskProcessMetrics = (scopes: ScopeMetrics[]): void => {
+  const metrics = storage.getStore()?.prometheusMetrics;
+  if (!metrics) throw new Error('Native metrics require an active task execution');
+  metrics.addDelta(scopes);
+};
+
 /**
  * Runs `fn` with what is particular to one run. A process may serve several runs at once, so each
  * run's values are found through the async context the run executes in.
@@ -51,13 +61,21 @@ export const runInRunContext = async <T>(
     executionId,
     getCurrentTasksInPool,
     adHocTaskCounter = new AdHocTaskCounter(),
+    prometheusMetrics,
   }: Partial<RunStore> = {}
 ): Promise<{ value?: T; error?: unknown }> => {
   if (executionId) activeExecutions.add(executionId);
   try {
     return {
       value: await storage.run(
-        { featureFlags, flushers, executionId, getCurrentTasksInPool, adHocTaskCounter },
+        {
+          featureFlags,
+          flushers,
+          executionId,
+          getCurrentTasksInPool,
+          adHocTaskCounter,
+          prometheusMetrics,
+        },
         fn
       ),
     };

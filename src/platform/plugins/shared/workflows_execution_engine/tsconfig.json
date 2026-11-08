@@ -70,7 +70,9 @@
     "@kbn/telemetry-config",
     "@kbn/metrics-config",
     "@kbn/apm-config-loader",
-    "@kbn/fs"
+    "@kbn/fs",
+    "@kbn/metrics",
+    "@kbn/core-http-router-server-internal"
   ],
   "exclude": ["target/**/*"]
 }

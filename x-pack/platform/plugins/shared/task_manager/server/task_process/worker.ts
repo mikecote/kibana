@@ -7,7 +7,11 @@
 
 import type { Server } from 'node:http';
 import type { Logger } from '@kbn/logging';
-import { incrementCreatedTaskCount, requestDispatchTaskPool } from './run_context';
+import {
+  incrementCreatedTaskCount,
+  requestDispatchTaskPool,
+  accumulateTaskProcessMetrics,
+} from './run_context';
 import { throwUnrecoverableError } from '../task_running/errors';
 import { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
 import { RemoteTaskRunner } from './remote_task_runner';
@@ -56,6 +60,10 @@ export const startTaskProcessWorker = ({
     logger,
     kibanaVersion: settings.kibanaVersion,
     getTaskTypes: () => supervisor.getTaskTypes(),
+    collectGauges: (owner) => {
+      if (!owner) throw new Error('A remote gauge collection requires its dispatch owner');
+      return supervisor.collectGaugeMetrics(owner);
+    },
     forwardRun: (request, { signal, setCustomTaskRunEventFields }) => {
       const { snapshot, deadline, ...run } = request;
       if (
@@ -73,6 +81,7 @@ export const startTaskProcessWorker = ({
         signal,
         setCustomTaskRunEventFields,
         onTasksCreated: incrementCreatedTaskCount,
+        onMetrics: accumulateTaskProcessMetrics,
         getCurrentTasksInPool: requestDispatchTaskPool,
       });
     },

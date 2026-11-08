@@ -379,6 +379,7 @@ describe('TaskProcessSupervisor', () => {
   it.each([
     {},
     { protocolVersion: 1, capabilities: TASK_PROCESS_CAPABILITIES },
+    { protocolVersion: 2, capabilities: TASK_PROCESS_CAPABILITIES },
     { protocolVersion: TASK_PROCESS_PROTOCOL_VERSION, capabilities: [] },
   ])('rejects incompatible readiness before leasing a child: %j', async (protocol) => {
     const { supervisor, children, acquire } = setup();
