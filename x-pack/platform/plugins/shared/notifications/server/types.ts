@@ -10,6 +10,11 @@ import type { EmailServiceStart, EmailServiceSetupDeps, EmailServiceStartDeps } 
 // The 'notifications' plugin is currently only exposing an email service.
 // If we want to expose other services in the future, we should update these types accordingly
 export type NotificationsServerSetup = void;
-export type NotificationsServerStart = EmailServiceStart;
+export interface NotificationsTaskProcessSettings {
+  emailConnectorId?: string;
+}
+export type NotificationsServerStart = EmailServiceStart & {
+  getTaskProcessSettings: () => NotificationsTaskProcessSettings;
+};
 export type NotificationsServerSetupDependencies = EmailServiceSetupDeps;
 export type NotificationsServerStartDependencies = EmailServiceStartDeps;

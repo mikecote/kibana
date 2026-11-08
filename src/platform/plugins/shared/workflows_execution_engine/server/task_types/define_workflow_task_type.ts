@@ -26,6 +26,7 @@ import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server
 import {
   AGENT_BUILDER_CONTRIBUTIONS_KEY,
   CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
+  CASES_CLIENT_CONTRIBUTIONS_KEY,
   RULE_RUN_CONTRIBUTIONS_KEY,
   WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
   WORKFLOWS_ENGINE_CLOUD_SETTINGS_ID,
@@ -211,6 +212,7 @@ export const defineWorkflowTaskType = (
         WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
         AGENT_BUILDER_CONTRIBUTIONS_KEY,
         CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
+        CASES_CLIENT_CONTRIBUTIONS_KEY,
       ],
       // A task process hands over what plugins contribute; the module is built again with it.
       apply: (contributed) =>
@@ -221,6 +223,7 @@ export const defineWorkflowTaskType = (
           [
             ...(contributed[AGENT_BUILDER_CONTRIBUTIONS_KEY] ?? []),
             ...(contributed[CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY] ?? []),
+            ...(contributed[CASES_CLIENT_CONTRIBUTIONS_KEY] ?? []),
           ] as Array<{
             declares?: AgentBuilderContributionDeclares;
           }>

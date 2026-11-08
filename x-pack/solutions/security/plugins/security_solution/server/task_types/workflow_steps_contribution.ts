@@ -23,6 +23,11 @@ import {
 } from './security_alerts_settings';
 import { registerSecurityWorkflowSteps } from '../workflows/register_security_workflow_steps';
 
+export interface SecurityWorkflowEvents {
+  eventBus?: SecuritySolutionEventBus;
+  flushEvents?: () => Promise<void>;
+}
+
 /**
  * The workflow steps and triggers of the plugin, in the task process of the workflow task types.
  * Listed under `taskTypeContributions['workflow-steps']` in `kibana.jsonc`.
@@ -30,7 +35,29 @@ import { registerSecurityWorkflowSteps } from '../workflows/register_security_wo
 export const contribution: WorkflowStepsContribution = {
   declares: { settings: [SECURITY_ALERTS_SETTINGS_ID] },
   provides: {
-    'securitySolution.alerts': ({ host: taskHost, settings, services, logger }) => {
+    'securitySolution.events': ({ host: taskHost, settings, services, logger }) => {
+      const host = taskHost as TaskHost;
+      const snapshot = settings[SECURITY_ALERTS_SETTINGS_ID] as
+        | SecurityAlertsTaskProcessSettings
+        | undefined;
+      if (!snapshot || !services || !host.onRunEnd)
+        throw new Error(
+          'Native Security events require their dispatch snapshot and lifecycle services'
+        );
+      if (!snapshot.workflowEventsAvailable) return { eventBus: undefined };
+      const eventBus = new SecuritySolutionEventBus();
+      const flushEvents = registerSecurityWorkflowEventBridge(
+        eventBus,
+        services.getService<WorkflowsExtensionsServerPluginStart>('workflows.extensions'),
+        logger
+      );
+      services.registerRunCompletion(flushEvents);
+      host.onRunEnd(async () => {
+        eventBus.removeAllListeners();
+      });
+      return { eventBus, flushEvents };
+    },
+    'securitySolution.alerts': ({ host: taskHost, settings, services }) => {
       const host = taskHost as TaskHost;
       const snapshot = settings[SECURITY_ALERTS_SETTINGS_ID] as
         | SecurityAlertsTaskProcessSettings
@@ -41,22 +68,7 @@ export const contribution: WorkflowStepsContribution = {
           'Native Security alerts require their dispatch settings, Security and run lifecycle services'
         );
       const spaces = services.getService<SpacesPluginStart>('spaces');
-      const eventBus = snapshot.workflowEventsAvailable
-        ? new SecuritySolutionEventBus()
-        : undefined;
-      if (eventBus) {
-        services.registerRunCompletion(
-          registerSecurityWorkflowEventBridge(
-            eventBus,
-            services.getService<WorkflowsExtensionsServerPluginStart>('workflows.extensions'),
-            logger
-          )
-        );
-        host.onRunEnd(() => {
-          eventBus.removeAllListeners();
-          return Promise.resolve();
-        });
-      }
+      const { eventBus } = services.getService<SecurityWorkflowEvents>('securitySolution.events');
       return createSecurityAlertsClientFactory({
         getEsClient: (request) => host.elasticsearch.asScoped(request).asCurrentUser,
         getSearchIndex: (request) =>

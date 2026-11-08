@@ -103,6 +103,7 @@ describe('workflow task type modules', () => {
         'workflow-steps',
         'agent-builder',
         'cases-attachment-types',
+        'cases-client',
       ]);
       expect(module.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',

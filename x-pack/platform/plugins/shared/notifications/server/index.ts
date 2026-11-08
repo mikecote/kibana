@@ -16,3 +16,6 @@ export async function plugin(initializerContext: PluginInitializerContext) {
   const { NotificationsPlugin } = await import('./plugin');
   return new NotificationsPlugin(initializerContext);
 }
+
+export { createEmailService } from './services/create_email_service';
+export type { NotificationsTaskProcessSettings } from './types';

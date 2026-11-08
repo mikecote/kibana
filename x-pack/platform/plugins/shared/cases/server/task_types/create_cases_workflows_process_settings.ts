@@ -31,7 +31,10 @@ export const createCasesWorkflowsProcessSettings = ({
   >;
   spacesEnabled: boolean;
   features: CasesFeatures;
-  notifications: Pick<NotificationsPluginStart, 'isEmailServiceAvailable'>;
+  notifications: Pick<
+    NotificationsPluginStart,
+    'isEmailServiceAvailable' | 'getTaskProcessSettings'
+  >;
   casesEventBus: Pick<CasesEventBus, 'hasAlertStatusChangedListeners'>;
   closeReasonOwners: string[];
   attachmentTypeIds: string[];
@@ -48,6 +51,7 @@ export const createCasesWorkflowsProcessSettings = ({
     .getKibanaFeatures()
     .flatMap(({ id, cases }) => (cases?.length ? [{ id, cases: [...cases] }] : [])),
   isEmailServiceAvailable: notifications.isEmailServiceAvailable(),
+  emailConnectorId: notifications.getTaskProcessSettings().emailConnectorId,
   hasAlertStatusChangedListeners: casesEventBus.hasAlertStatusChangedListeners(),
   closeReasonOwners,
   attachmentTypeIds: [...attachmentTypeIds],

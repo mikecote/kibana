@@ -16,7 +16,8 @@ import type {
   SecurityServiceStart,
 } from '@kbn/core/server';
 import { createFilesRunServices } from '@kbn/files-plugin/server';
-import type { ActionsClient } from '@kbn/actions-plugin/server';
+import type { ActionsClient, IUnsecuredActionsClient } from '@kbn/actions-plugin/server';
+import { createEmailService } from '@kbn/notifications-plugin/server';
 import type { UserProfileServiceStart } from '@kbn/core-user-profile-server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { AuditServiceSetup } from '@kbn/security-plugin-types-server';
@@ -26,6 +27,7 @@ import { authorizationModeFactory } from '@kbn/security-plugin/server/authorizat
 import type { RunTimeSecurity } from '@kbn/security-plugin/server/run_time_security';
 import { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
 import { CasesClientFactory } from '../client/factory';
+import type { CasesClientFactoryArgs } from '../client/factory';
 import type { CasesClient } from '../client';
 import type { CasesClientSource, GetCasesClientOptions } from '../client/types';
 import type { CasesAnalyticsV2DataViewRefresher } from '../cases_analytics_v2/service';
@@ -46,10 +48,6 @@ import type { CasesWorkflowsProcessSettings } from './cases_task_process_setting
 import { taskProcessLensEmbeddableFactory } from './cases_saved_object_types';
 
 const NOOP_DATA_VIEW_REFRESHER: CasesAnalyticsV2DataViewRefresher = () => {};
-
-const onlyInKibana = (what: string) => (): never => {
-  throw new Error(`${what} is only available in Kibana, not in a task process`);
-};
 
 /** What a task process has of the services the cases client is built from. */
 export interface CasesRunServicesDeps {
@@ -78,6 +76,7 @@ export interface CasesRunServicesDeps {
    */
   usageCounter: IUsageCounter;
   filesUsageCounter: IUsageCounter;
+  getUnsecuredActionsClient: () => IUnsecuredActionsClient;
   analytics: Pick<AnalyticsServiceStart, 'reportEvent'>;
   publicBaseUrl?: string;
   isFipsMode: boolean;
@@ -85,6 +84,7 @@ export interface CasesRunServicesDeps {
   getRacClientWithRequest: (request: KibanaRequest) => Promise<CasesAlertsClient>;
   /** The bus the client emits its events on: the caller bridges it to the workflow triggers. */
   casesEventBus: CasesEventBus;
+  closeReasonValidator?: CasesClientFactoryArgs['closeReasonValidator'];
   /** What the client records as its source: `workflow` for the steps, `agent_builder` for the tools. */
   clientSource?: CasesClientSource;
   /** The attachment types to use, with the internal ones registered by the caller (a new registry with them when not given). */
@@ -113,12 +113,14 @@ export const createCasesRunServices = ({
   getActionsClientWithRequest,
   usageCounter,
   filesUsageCounter,
+  getUnsecuredActionsClient,
   analytics,
   publicBaseUrl,
   isFipsMode,
   getAttachmentParityError,
   getRacClientWithRequest,
   casesEventBus,
+  closeReasonValidator,
   clientSource = 'workflow',
   unifiedAttachmentTypeRegistry: providedRegistry,
 }: CasesRunServicesDeps): CasesRunServices => {
@@ -154,6 +156,18 @@ export const createCasesRunServices = ({
         attachmentsWriter: V2_NOOP_ATTACHMENTS_WRITER,
       };
 
+  if (settings.isEmailServiceAvailable && !settings.emailConnectorId) {
+    throw new Error('Available Cases email service requires its native connector dispatch setting');
+  }
+  const emailService =
+    settings.isEmailServiceAvailable && settings.emailConnectorId
+      ? createEmailService({
+          connectorId: settings.emailConnectorId,
+          actionsClient: getUnsecuredActionsClient(),
+          license$: licensing.license$,
+          logger: logger.get('notifications'),
+        })
+      : undefined;
   const factory = new CasesClientFactory(logger);
   factory.initialize({
     securityPluginSetup: { audit: security.audit },
@@ -185,10 +199,11 @@ export const createCasesRunServices = ({
     unifiedAttachmentTypeRegistry,
     publicBaseUrl,
     notifications: {
-      // A run that would send an email is declined when Kibana can send emails, so this is false only
-      // when Kibana cannot either.
       isEmailServiceAvailable: () => settings.isEmailServiceAvailable,
-      getEmailService: onlyInKibana('The email service'),
+      getEmailService: () => {
+        if (!emailService) throw new Error('Email notifications are unavailable in this dispatch');
+        return emailService;
+      },
     },
     ruleRegistry: { getRacClientWithRequest },
     filesPluginStart: createFilesRunServices({
@@ -203,8 +218,7 @@ export const createCasesRunServices = ({
     usageCounter,
     config,
     casesEventBus,
-    // A run that sets a close reason is declined when a plugin registered a validator.
-    closeReasonValidator: undefined,
+    closeReasonValidator,
     analyticsV2Writer: analyticsV2.writer,
     analyticsV2ActivityWriter: analyticsV2.activityWriter,
     analyticsV2AttachmentsWriter: analyticsV2.attachmentsWriter,

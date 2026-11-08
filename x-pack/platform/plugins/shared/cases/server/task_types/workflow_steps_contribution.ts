@@ -6,6 +6,7 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
+import type { IUnsecuredActionsClient } from '@kbn/actions-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
@@ -17,6 +18,7 @@ import type {
 import type { CasesAlertsClient } from '../services/alerts';
 import { APP_ID } from '../../common/constants';
 import { CasesEventBus } from '../events/event_bus';
+import { createCasesClientExtensions } from './create_client_extensions';
 import { registerCaseWorkflowSteps } from '../workflows';
 import { registerCaseWorkflowTriggers } from '../workflows/triggers';
 import { registerCasesWorkflowEventBridge } from '../workflows/triggers/event_bridge';
@@ -24,7 +26,6 @@ import { createCasesAttachmentTypeRegistry } from './create_attachment_type_regi
 import type { CasesTaskProcessAttachmentTypes } from './create_attachment_type_registry';
 import type { CasesTaskProcessSettings } from './cases_task_process_settings';
 import { getCasesTaskProcessSavedObjectTypes } from './cases_saved_object_types';
-import { createCasesWorkflowRunCheck } from './cases_workflow_run_checks';
 import { createCasesRunServices } from './create_cases_run_services';
 
 /**
@@ -63,27 +64,7 @@ const withEventsFlushed = (
   };
 };
 
-/**
- * The cases steps and triggers in the task process of the workflow task types. Listed under
- * `taskTypeContributions['workflow-steps']` in `kibana.jsonc`. The steps are registered by the
- * function `plugin.ts` calls, with the cases client of `createCasesRunServices` (the factory Kibana
- * uses, over the services of the process); what Kibana sent (`settings.cases.workflows`) stands in
- * for what other plugins register in their `setup()`. The cases events reach the engine: the
- * bridge of the plugin forwards the bus's events to the triggers through the runtime of the engine.
- *
- * Served in a process: `getCase`, `getCases`, `findCases`, `findSimilarCases`, `getCasesByAlertId`,
- * `getAllAttachments`, `createCase`, `createCaseFromTemplate`, `updateCase`, `updateCases`,
- * `setStatus`, `setSeverity`, `setTitle`, `setDescription`, `setCategory`, `setCustomField`,
- * `setExtendedFields`, `closeCase`, `assignCase`, `unassignCase`, `addTags`, `removeTags`,
- * `addComment`, `addObservables`, `updateObservable`, `deleteObservable`, `bulkDeleteObservables`,
- * `pushCases` and the eight triggers.
- *
- * Attachment creation and deletion use the restored native type registry, scoped files and alerts.
- *
- * Declined by a check of the run, depending on what Kibana has (`createCasesWorkflowRunCheck`):
- * status changes when a plugin listens to the alert status changes, close reasons when a plugin
- * registered a validator, and assigning users when Kibana can send emails.
- */
+/** Registers native Cases workflow steps, attachment types and solution event services. */
 export const contribution: WorkflowStepsContribution = {
   declares: {
     savedObjectTypes: getCasesTaskProcessSavedObjectTypes(),
@@ -97,7 +78,8 @@ export const contribution: WorkflowStepsContribution = {
       return createCasesAttachmentTypeRegistry(host as TaskHost, snapshot.attachmentTypeIds);
     },
   },
-  register: (registry, { host, logger, services, settings, publicBaseUrl, registerRunCheck }) => {
+  register: (registry, context) => {
+    const { host, logger, services, settings, publicBaseUrl, registerRunCheck } = context;
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const workflows = (settings.cases as CasesTaskProcessSettings | undefined)?.workflows;
     // Cases is disabled in Kibana, which then sends no settings: nothing to register, and a workflow
@@ -128,6 +110,11 @@ export const contribution: WorkflowStepsContribution = {
     );
     const casesLogger = logger.get('cases');
     const casesEventBus = new CasesEventBus(casesLogger);
+    const clientExtensions = createCasesClientExtensions(context, workflows);
+    clientExtensions.registerAlertStatusListeners(casesEventBus);
+    registerRunCheck?.(({ type }) =>
+      type.startsWith('cases.') ? clientExtensions.getParityError() : undefined
+    );
     const { getCasesClient } = createCasesRunServices({
       logger: casesLogger,
       settings: workflows,
@@ -137,7 +124,9 @@ export const contribution: WorkflowStepsContribution = {
       securityService: security,
       isFipsMode: security.fips.isEnabled(),
       unifiedAttachmentTypeRegistry: attachmentTypes.registry,
-      getAttachmentParityError: attachmentTypes.getParityError,
+      getAttachmentParityError: () =>
+        attachmentTypes.getParityError() ?? clientExtensions.getParityError(),
+      closeReasonValidator: clientExtensions.closeReasonValidator,
       getRacClientWithRequest: (request) =>
         services
           .getService<{
@@ -150,6 +139,8 @@ export const contribution: WorkflowStepsContribution = {
         : undefined,
       licensing,
       getActionsClientWithRequest: services.getActionsClientWithRequest,
+      getUnsecuredActionsClient: () =>
+        services.getUnsecuredActionsClient() as IUnsecuredActionsClient,
       usageCounter: usageCounters.getUsageCounter(APP_ID),
       filesUsageCounter: usageCounters.getUsageCounter('files'),
       analytics,
@@ -177,7 +168,6 @@ export const contribution: WorkflowStepsContribution = {
       await Promise.allSettled([...pendingEvents]);
     };
 
-    registerRunCheck?.(createCasesWorkflowRunCheck(workflows));
     registerCaseWorkflowTriggers(registry);
     registerCaseWorkflowSteps(withEventsFlushed(registry, flushEvents), {
       getCasesClient,

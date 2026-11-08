@@ -5,13 +5,11 @@
  * 2.0.
  */
 
-import fs from 'fs';
 import mustache from 'mustache';
-import { join } from 'path';
 import { assertNever } from '@kbn/std';
 import { CaseStatuses, CaseSeverity } from '../../../../../common/types/domain';
 import type { CaseSavedObjectTransformed } from '../../../../common/types/case';
-import { getTemplateFilePath } from '../utils';
+import content from './template.html.text';
 
 const TAG_LIMIT = 3;
 const DESCRIPTION_LIMIT = 300;
@@ -56,13 +54,6 @@ export const assigneesTemplateRenderer = async (
   caseData: CaseSavedObjectTransformed,
   caseUrl: string | null
 ): Promise<string> => {
-  const fileDir = join('.', 'assignees');
-  const fileName = 'template.html';
-
-  const dataPath = getTemplateFilePath(fileDir, fileName);
-
-  const content = await fs.promises.readFile(dataPath, 'utf8');
-
   const hasMoreTags = caseData.attributes.tags.length > TAG_LIMIT;
   const numOfExtraTags = Math.max(caseData.attributes.tags.length - TAG_LIMIT, 0);
 

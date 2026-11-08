@@ -6,6 +6,7 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
+import type { PluginStartContract as ActionsStart } from '@kbn/actions-plugin/server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
@@ -15,6 +16,7 @@ import type { CasesAlertsClient } from '../services/alerts';
 import { APP_ID } from '../../common/constants';
 import { registerCasesAgentBuilderToolsWithServices } from '../agent_builder';
 import { CasesEventBus } from '../events/event_bus';
+import { createCasesClientExtensions } from './create_client_extensions';
 import { registerCasesWorkflowEventBridge } from '../workflows/triggers/event_bridge';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { getCasesTaskProcessSavedObjectTypes } from './cases_saved_object_types';
@@ -41,14 +43,15 @@ export interface CasesAgentBuilderSettings {
  * of the plugin, and the run waits for them.
  *
  * Attachment, alert and file operations share native services with the workflow runtime.
- * Notification and solution event capabilities are validated separately.
+ * Native notifications and solution callbacks share the workflow client services.
  */
 export const contribution: AgentBuilderContribution = {
   declares: {
     savedObjectTypes: getCasesTaskProcessSavedObjectTypes(),
     settings: [CASES_AGENT_BUILDER_SETTINGS_ID],
   },
-  register: (agentBuilder, { host, logger, settings, services }) => {
+  register: (agentBuilder, context) => {
+    const { host, logger, settings, services } = context;
     const { workflows } =
       (settings[CASES_AGENT_BUILDER_SETTINGS_ID] as CasesAgentBuilderSettings | undefined) ?? {};
     // Without the settings cases is disabled (or not allowed) in this Kibana: nothing is registered.
@@ -57,6 +60,8 @@ export const contribution: AgentBuilderContribution = {
     const taskHost = host as TaskHost;
     const casesLogger = logger.get('cases');
     const casesEventBus = new CasesEventBus(casesLogger);
+    const clientExtensions = createCasesClientExtensions(context, workflows);
+    clientExtensions.registerAlertStatusListeners(casesEventBus);
     const attachmentTypes =
       services.getService<CasesTaskProcessAttachmentTypes>('cases.attachmentTypes');
     const unifiedAttachmentTypeRegistry = attachmentTypes.registry;
@@ -80,7 +85,9 @@ export const contribution: AgentBuilderContribution = {
           security: securityPlugin,
           securityService: security,
           isFipsMode: security.fips.isEnabled(),
-          getAttachmentParityError: attachmentTypes.getParityError,
+          getAttachmentParityError: () =>
+            attachmentTypes.getParityError() ?? clientExtensions.getParityError(),
+          closeReasonValidator: clientExtensions.closeReasonValidator,
           getRacClientWithRequest: (request) =>
             services
               .getService<{
@@ -95,6 +102,10 @@ export const contribution: AgentBuilderContribution = {
             : undefined,
           licensing,
           getActionsClientWithRequest: services.getActionsClientWithRequest,
+          getUnsecuredActionsClient: () =>
+            services
+              .getService<Pick<ActionsStart, 'getUnsecuredActionsClient'>>('actions')
+              .getUnsecuredActionsClient(),
           usageCounter: usageCounters.getUsageCounter(APP_ID),
           filesUsageCounter: usageCounters.getUsageCounter('files'),
           analytics: taskHost.analytics,

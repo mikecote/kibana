@@ -74,13 +74,12 @@ import {
   APP_ID,
   APP_UI_ID,
   DEFAULT_ALERTS_INDEX,
-  DEFAULT_DETECTIONS_CLOSE_REASONS_KEY,
   EXCLUDE_COLD_AND_FROZEN_TIERS_IN_ANALYZER,
 } from '../common/constants';
 import { SECURITY_CASE_ATTACHMENTS_SETTINGS_ID } from './task_types/case_attachment_type_contribution';
 import { registerCaseAttachments } from './cases/attachments/register';
 import { securityAlertAttachmentType } from './cases/attachments/alert';
-import { DefaultClosingReasonSchema } from '../common/types';
+import { createSecurityCloseReasonValidator } from './cases/close_reason_validator';
 import { registerEndpointRoutes } from './endpoint/routes/metadata';
 import { registerPolicyRoutes } from './endpoint/routes/policy';
 import { registerActionRoutes } from './endpoint/routes/actions';
@@ -589,15 +588,15 @@ export class Plugin implements ISecuritySolutionPlugin {
     });
     plugins.cases.attachmentFramework.registerAttachment(securityAlertAttachmentType);
 
-    plugins.cases.registerCloseReasonValidator(APP_ID, async (closeReason, request) => {
-      const [coreStart] = await core.getStartServices();
-      const soClient = coreStart.savedObjects.getScopedClient(request);
-      const uiSettingsClient = coreStart.uiSettings.asScopedToClient(soClient);
-      const customReasons =
-        (await uiSettingsClient.get<string[]>(DEFAULT_DETECTIONS_CLOSE_REASONS_KEY)) ?? [];
-      const allowedReasons = new Set([...DefaultClosingReasonSchema.options, ...customReasons]);
-      return allowedReasons.has(closeReason);
-    });
+    plugins.cases.registerCloseReasonValidator(
+      APP_ID,
+      createSecurityCloseReasonValidator(async (request) => {
+        const [coreStart] = await core.getStartServices();
+        return coreStart.uiSettings.asScopedToClient(
+          coreStart.savedObjects.getScopedClient(request)
+        );
+      })
+    );
 
     const { ruleDataService } = plugins.ruleRegistry;
     let previewRuleDataClient: IRuleDataClient | null = null;

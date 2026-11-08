@@ -22,6 +22,7 @@
       "server/task_types/notifications.task.ts"
     ],
     "taskTypeContributions": {
+      "cases-client": ["server/task_types/cases_client_contribution.ts"],
       "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"],
       "workflow-steps": [
         "server/task_types/workflow_steps_contribution.ts"

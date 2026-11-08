@@ -23,6 +23,7 @@ const createEmailServiceMock = () => {
 
 const startMock: jest.Mocked<NotificationsServerStart> = lazyObject({
   isEmailServiceAvailable: jest.fn(),
+  getTaskProcessSettings: jest.fn(() => ({})),
   getEmailService: jest.fn(createEmailServiceMock),
 });
 
@@ -48,6 +49,7 @@ export const notificationsMock = {
     emailServiceMock.sendPlainTextEmail.mockClear();
     emailServiceMock.sendHTMLEmail.mockClear();
     startMock.getEmailService.mockClear();
+    startMock.getTaskProcessSettings.mockClear();
     startMock.isEmailServiceAvailable.mockClear();
     notificationsPluginMock.setup.mockClear();
     notificationsPluginMock.start.mockClear();

@@ -198,6 +198,8 @@ export interface WorkflowProcessHarnessOptions {
   claimNudge?: boolean;
   executionTask?: ExecutionTaskFixture;
   middlewareIds?: string[];
+  /** Captures additional native task registrations present in the dispatching Main instance. */
+  registerTaskSchedulingDefinitions?: (definitions: TaskSchedulingDefinitions) => void;
   instrumentation?: TaskProcessInit['instrumentation'];
   onMetrics?: TaskProcessDispatch['onMetrics'];
   executionContext?: TaskProcessInit['executionContext'];
@@ -255,12 +257,14 @@ const createTaskManagerSettings = (
 });
 
 const createFixtureSchedulingDefinitions = (
-  executionTask?: ExecutionTaskFixture
+  executionTask?: ExecutionTaskFixture,
+  registerDefinitions?: WorkflowProcessHarnessOptions['registerTaskSchedulingDefinitions']
 ): TaskSchedulingDefinitions => {
   const definitions = new TaskSchedulingDefinitions();
   definitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   if (executionTask)
     definitions.registerTaskDefinitions({ [executionTask.taskType.type]: executionTask.taskType });
+  registerDefinitions?.(definitions);
   return definitions;
 };
 
@@ -325,7 +329,10 @@ const startHarness = async (
   cleanups.push(() => new Promise((resolve) => kibanaStub.close(resolve)));
   const kibanaUrl = `http://127.0.0.1:${(kibanaStub.address() as AddressInfo).port}`;
 
-  const taskSchedulingDefinitions = createFixtureSchedulingDefinitions(options.executionTask);
+  const taskSchedulingDefinitions = createFixtureSchedulingDefinitions(
+    options.executionTask,
+    options.registerTaskSchedulingDefinitions
+  );
   const licenseExpiryDate = Date.now() + 86400000;
   const settings = () => ({
     evalsTaskProviders: { names: ['inference', 'agentBuilder.converse'] },

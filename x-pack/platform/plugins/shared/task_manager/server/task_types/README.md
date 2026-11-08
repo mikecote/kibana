@@ -636,6 +636,14 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   Main and workers use Core's serializer and the same Spaces service. The four-mode execution matrix
   creates and deletes attachments, uploads evidence and verifies deletion of its metadata and blob contents.
   Native file usage counters and performance events use the worker's durable counters and analytics.
+- **Cases solution services.** `cases-client` contributions restore solution-owned close-reason
+  validators and alert-status listeners. Security uses the same scoped UI-setting validator as Main
+  and forwards Cases mutations through the shared native Security event bus. The run flushes that
+  bridge before cleanup. Missing or unexpected owner registrations fail before a Cases operation.
+  Notifications restore Main's configured email connector ID and use the shared license-checked
+  connector service to enqueue native Actions tasks. The assignee HTML template is a `.text` asset
+  imported by the common renderer, so process bundles do not depend on the source-tree layout.
+
 - **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
   plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
   `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
@@ -997,9 +1005,6 @@ These remaining capability gaps currently fail process execution; they must be c
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
   what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
-- **cases:** status changes, close reasons and assignee notifications still require native providers
-  when Main has alert-status listeners, close-reason validators or email services enabled. Run checks
-  reject those combinations until their providers are available.
 - **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
   plugin and agent execution).
 

@@ -27,6 +27,7 @@ import { registerCaseWorkflowSteps } from '../workflows';
 import { registerCaseWorkflowTriggers } from '../workflows/triggers';
 import type { CasesWorkflowsProcessSettings } from './cases_task_process_settings';
 import { contribution } from './workflow_steps_contribution';
+import type { CasesClientContribution } from './client_contribution';
 
 const attachmentRegistry = new UnifiedAttachmentTypeRegistry();
 registerInternalAttachments(attachmentRegistry);
@@ -48,7 +49,8 @@ const workflowsSettings: CasesWorkflowsProcessSettings = {
 };
 
 const registerContribution = async (
-  workflows: typeof workflowsSettings | null = workflowsSettings
+  workflows: typeof workflowsSettings | null = workflowsSettings,
+  clientContributions: CasesClientContribution[] = []
 ) => {
   const registry = createServerStepRegistry(loggerMock.create());
   const internalSteps = registry.getAllStepDefinitions().length;
@@ -67,6 +69,7 @@ const registerContribution = async (
   });
   await contribution.register(registry, {
     host: {
+      contributions: { 'cases-client': clientContributions },
       elasticsearch: { asInternalUser: {}, asScoped: jest.fn() },
       savedObjects: {
         createInternalRepository: jest.fn(),
@@ -198,47 +201,57 @@ describe('cases workflow-steps contribution', () => {
     expect(contribution.declares?.settings).toEqual(['cases']);
   });
 
-  it('declines the steps a process cannot serve like Kibana, by what Kibana has', async () => {
-    const quiet = await registerContribution();
-    const busy = await registerContribution({
+  it('runs status, close reason and assignment steps when native solution services are restored', async () => {
+    const restored = await registerContribution(
+      {
+        ...workflowsSettings,
+        isEmailServiceAvailable: true,
+        emailConnectorId: 'native-email',
+        hasAlertStatusChangedListeners: true,
+        closeReasonOwners: ['securitySolution'],
+      },
+      [
+        {
+          closeReasonOwners: ['securitySolution'],
+          providesAlertStatusListener: true,
+          create: () => ({
+            closeReasonValidators: { securitySolution: async () => true },
+            registerAlertStatusListener: (bus) => bus.onAlertStatusChanged(jest.fn()),
+          }),
+        },
+      ]
+    );
+    for (const type of [
+      'cases.setStatus',
+      'cases.closeCase',
+      'cases.assignCase',
+      'cases.updateCases',
+      'cases.createCase',
+    ]) {
+      expect(
+        restored.checks
+          .map((check) =>
+            check({ type, config: { closeReason: 'other', assignees: [{ uid: 'u' }] } })
+          )
+          .find(Boolean)
+      ).toBeUndefined();
+    }
+  });
+
+  it('rejects missing native solution services before any Cases operation starts', async () => {
+    const missing = await registerContribution({
       ...workflowsSettings,
-      isEmailServiceAvailable: true,
-      hasAlertStatusChangedListeners: true,
       closeReasonOwners: ['securitySolution'],
     });
-    const decline = (checks: WorkflowStepRunCheck[], type: string, config = {}) =>
-      checks.map((check) => check({ type, config })).find(Boolean);
-    for (const id of [
-      'cases.addAlerts',
-      'cases.addAttachments',
-      'cases.addEvents',
-      'cases.deleteAttachments',
-      'cases.deleteCases',
-    ]) {
-      expect(decline(quiet.checks, id)).toBeUndefined();
-    }
-    expect(decline(quiet.checks, 'cases.setStatus')).toBeUndefined();
-    expect(decline(quiet.checks, 'cases.assignCase')).toBeUndefined();
-    expect(decline(quiet.checks, 'cases.updateCase', { updates: { closeReason: 'x' } })).toBe(
-      undefined
-    );
-
-    expect(decline(busy.checks, 'cases.setStatus')).toMatch(/event bus/);
-    expect(decline(busy.checks, 'cases.closeCase')).toMatch(/event bus/);
     expect(
-      decline(busy.checks, 'cases.updateCase', { with: { updates: { status: 'closed' } } })
-    ).toMatch(/event bus/);
-    expect(decline(busy.checks, 'cases.updateCase', { with: { updates: { title: 't' } } })).toBe(
-      undefined
-    );
+      missing.checks.map((check) => check({ type: 'cases.updateCase', config: {} })).find(Boolean)
+    ).toContain('missing [securitySolution]');
+    const listener = await registerContribution({
+      ...workflowsSettings,
+      hasAlertStatusChangedListeners: true,
+    });
     expect(
-      decline(busy.checks, 'cases.updateCases', { with: { cases: [{ closeReason: 'x' }] } })
-    ).toMatch(/close reason/);
-    expect(decline(busy.checks, 'cases.assignCase')).toMatch(/emails/);
-    expect(
-      decline(busy.checks, 'cases.createCase', { with: { assignees: [{ uid: 'u' }] } })
-    ).toMatch(/emails/);
-    expect(decline(busy.checks, 'cases.createCase', { with: { title: 't' } })).toBeUndefined();
-    expect(decline(busy.checks, 'cases.getCase')).toBeUndefined();
+      listener.checks.map((check) => check({ type: 'cases.setStatus', config: {} })).find(Boolean)
+    ).toContain('alert status listeners differ');
   });
 });
