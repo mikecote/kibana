@@ -48,3 +48,5 @@ export const config: PluginConfigDescriptor<ConfigSchema> = {
 };
 
 export { createServerUrlService } from './url_service/create_server_url_service';
+
+export { createUrlServiceSavedObjectType } from './url_service/saved_objects/register_url_service_saved_object_type';

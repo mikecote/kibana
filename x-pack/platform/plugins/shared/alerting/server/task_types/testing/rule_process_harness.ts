@@ -111,6 +111,8 @@ export interface RuleModuleUnderTest {
   taskType: TaskTypeModule;
   /** The name of its bundle, as `getTaskBundleEntries()` names it (`stackAlerts__es_query`). */
   bundle: string;
+  /** An integration fixture module to build in place of a production task entry. */
+  file?: string;
 }
 
 export interface RuleProcessHarnessOptions {
@@ -318,7 +320,10 @@ export class RuleProcessHarness {
     const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
     if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
     const names = new Set(options.rules.map(({ bundle }) => bundle));
-    const entries = getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name));
+    const entries = [
+      ...getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name)),
+      ...options.rules.flatMap(({ file, bundle }) => (file ? [{ name: bundle, file }] : [])),
+    ];
     const missing = [...names].filter(
       (name) => !entries.some((entry: { name: string }) => entry.name === name)
     );

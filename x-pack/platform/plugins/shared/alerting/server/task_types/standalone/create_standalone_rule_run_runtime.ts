@@ -11,7 +11,6 @@ import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server';
 import type { SharePluginStart } from '@kbn/share-plugin/server';
-import type { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
@@ -56,7 +55,7 @@ export interface StandaloneRuleRunOptions {
   getRuleType: () => UntypedNormalizedRuleType;
   /** The locators the rule type's executor reads from `services.share.url.locators`. */
   /** The URL service the rule type was built with, so executors read the same locators. */
-  urlService: UrlService;
+  urlService: SharePluginStart['url'];
   /** The connector adapters that rules of this rule type may use through system actions. */
   connectorAdapters?: ConnectorAdapter[];
   /** What other plugins add to a rule run: connector types and adapters of system actions. */
@@ -281,7 +280,7 @@ export const createStandaloneRuleRunRuntime = ({
     rulesSettingsService,
     apiKeyType: (config.rules.apiKeyType as ApiKeyType) ?? ApiKeyType.ES,
     savedObjects,
-    share: { url: urlService } as unknown as SharePluginStart,
+    share: { url: urlService },
     spaceIdToNamespace,
     uiSettings,
     usageCounter,

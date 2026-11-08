@@ -25,7 +25,7 @@ import {
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
 import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
-import { UrlService } from '@kbn/share-plugin/common/url_service';
+import { createServerUrlService, createUrlServiceSavedObjectType } from '@kbn/share-plugin/server';
 import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
 import {
   EVENT_LOG_ACTIONS as ACTIONS_EVENT_LOG_ACTIONS,
@@ -42,7 +42,15 @@ import type { UntypedNormalizedRuleType } from '../rule_type_registry';
 import { RULE_SAVED_OBJECT_TYPE } from '../saved_objects';
 import { TaskRunner } from '../task_runner/task_runner';
 import type { RuleRunRuntime } from '../task_runner/types';
-import type { UntypedRuleType } from '../types';
+import type {
+  RuleType,
+  UntypedRuleType,
+  RuleTypeParams,
+  RuleTypeState,
+  AlertInstanceState,
+  AlertInstanceContext,
+  RuleAlertData,
+} from '../types';
 import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
@@ -146,39 +154,18 @@ interface PreparedRuleRun {
 }
 
 const createUrlService = (
-  host: Pick<TaskHost, 'server'>,
+  config: Parameters<typeof createServerUrlService>[0],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   locators: Array<LocatorDefinition<any>> = [],
   registerLocators?: (locators: LocatorClient) => void
 ) => {
-  const urlService = new UrlService({
-    baseUrl: host.server.publicBaseUrl ?? '',
-    version: host.server.version,
-    navigate: async () => {
-      throw new Error('Locator .navigate() is not supported in a task process.');
-    },
-    getUrl: async () => {
-      throw new Error('Locator .getUrl() is not supported in a task process.');
-    },
-    // Built when the service is, but only failing when a short URL is used.
-    shortUrls: () => ({
-      get: () =>
-        new Proxy(
-          {},
-          {
-            get: () => () => {
-              throw new Error('Short URLs are not supported in a task process.');
-            },
-          }
-        ),
-    }),
-  } as never);
+  const urlService = createServerUrlService(config);
   locators.forEach((locator) => urlService.locators.create(locator));
   registerLocators?.(urlService.locators);
   return urlService;
 };
 
-type HostForRuleType = Pick<TaskHost, 'logger' | 'server' | 'settings'>;
+type HostForRuleType = Pick<TaskHost, 'logger' | 'server' | 'settings' | 'http' | 'onRunEnd'>;
 
 /** A rule task type module, which also says which rule type it builds. */
 export type RuleTaskTypeModule = TaskTypeModule & {
@@ -194,21 +181,76 @@ export type RuleTaskTypeModule = TaskTypeModule & {
  */
 export function createRuleTaskType(
   source: RuleTypeSource,
+  options?: RuleTaskTypeOptions,
+  contributions?: RuleRunContribution[]
+): RuleTaskTypeModule;
+export function createRuleTaskType<
+  Params extends RuleTypeParams,
+  ExtractedParams extends RuleTypeParams,
+  State extends RuleTypeState,
+  InstanceState extends AlertInstanceState,
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string,
+  AlertData extends RuleAlertData
+>(
+  source: {
+    ruleTypeId: string;
+    getRuleType: (
+      deps: RuleTypeModuleDeps
+    ) => RuleType<
+      Params,
+      ExtractedParams,
+      State,
+      InstanceState,
+      InstanceContext,
+      ActionGroupIds,
+      RecoveryActionGroupId,
+      AlertData
+    >;
+  },
+  options?: RuleTaskTypeOptions,
+  contributions?: RuleRunContribution[]
+): RuleTaskTypeModule;
+export function createRuleTaskType(
+  source: InternalRuleTypeSource,
   options: RuleTaskTypeOptions = {},
-  /** A task process: what other plugins add to a rule run, such as connector types of system actions. */
   contributions: RuleRunContribution[] = []
 ): RuleTaskTypeModule {
+  return createRuleTaskTypeInternal(source, options, contributions);
+}
+
+type InternalRuleTypeSource =
+  | { ruleType: UntypedNormalizedRuleType }
+  | { ruleTypeId: string; getRuleType: (deps: RuleTypeModuleDeps) => object };
+
+const createRuleTaskTypeInternal = (
+  source: InternalRuleTypeSource,
+  options: RuleTaskTypeOptions,
+  contributions: RuleRunContribution[]
+): RuleTaskTypeModule => {
   const kibanaRuleType = 'ruleType' in source ? source.ruleType : undefined;
   const id = kibanaRuleType ? kibanaRuleType.id : (source as { ruleTypeId: string }).ruleTypeId;
   const cost = RULE_TYPES_WITH_CUSTOM_COST[id];
 
   let ruleType: UntypedNormalizedRuleType | undefined = kibanaRuleType;
-  let urlService: UrlService | undefined;
+  let urlService: ReturnType<typeof createServerUrlService> | undefined;
   const buildRuleType = (
     host: HostForRuleType,
     services: Partial<Pick<RuleTypeModuleDeps, 'runtime' | 'fieldFormats'>> = {}
   ) => {
-    urlService ??= createUrlService(host, options.locators, options.registerLocators);
+    urlService ??= createUrlService(
+      {
+        baseUrl: host.server.publicBaseUrl || host.http.basePath.serverBasePath,
+        version: host.server.version,
+        onBackgroundTask: (task) => {
+          if (!host.onRunEnd) throw new Error('Native short URLs require run completion tracking');
+          host.onRunEnd(() => task);
+        },
+      },
+      options.locators,
+      options.registerLocators
+    );
     ruleType ??= normalizeRuleType(
       (source as { getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType }).getRuleType({
         logger: host.logger,
@@ -235,7 +277,19 @@ export function createRuleTaskType(
       ? options.getRuntime().then((runtime): PreparedRuleRun => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
           ({ createStandaloneRuleRunRuntime }) => {
-            urlService ??= createUrlService(host, options.locators, options.registerLocators);
+            urlService ??= createUrlService(
+              {
+                baseUrl: host.server.publicBaseUrl || host.http.basePath.serverBasePath,
+                version: host.server.version,
+                onBackgroundTask: (task) => {
+                  if (!host.onRunEnd)
+                    throw new Error('Native short URLs require run completion tracking');
+                  host.onRunEnd(() => task);
+                },
+              },
+              options.locators,
+              options.registerLocators
+            );
             // The runtime first, so the factory of the rule type can build its services from it.
             const standalone = createStandaloneRuleRunRuntime({
               host,
@@ -425,6 +479,13 @@ export function createRuleTaskType(
         enumerable: true,
         get: () => [
           ...getDeclarations().savedObjectTypes,
+          createUrlServiceSavedObjectType(
+            createUrlService(
+              { baseUrl: '', version: kibanaPackageJson.version },
+              options.locators,
+              options.registerLocators
+            )
+          ),
           ...(options.savedObjectTypes ?? []),
           ...contributions.flatMap((contribution) => contribution.declares?.savedObjectTypes ?? []),
         ],
@@ -472,7 +533,7 @@ export function createRuleTaskType(
       contributions: {
         keys: [RULE_RUN_CONTRIBUTIONS, TASK_SCHEDULING_CONTRIBUTIONS_KEY],
         apply: (contributed: Record<string, unknown[]>) =>
-          createRuleTaskType(
+          createRuleTaskTypeInternal(
             source,
             options,
             (contributed[RULE_RUN_CONTRIBUTIONS] ?? []) as RuleRunContribution[]
@@ -481,4 +542,4 @@ export function createRuleTaskType(
     });
   }
   return Object.assign(taskType, { buildRuleType });
-}
+};

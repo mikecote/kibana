@@ -15,65 +15,66 @@ import type {
 import type { LocatorData } from '../../../common/url_service';
 import type { ServerUrlService } from '..';
 
+/** Builds the native URL saved object definition over the registered locator migrations. */
+export const createUrlServiceSavedObjectType = (service: ServerUrlService): SavedObjectsType => ({
+  name: 'url',
+  namespaceType: 'single',
+  hidden: false,
+  management: {
+    icon: 'link',
+    defaultSearchField: 'url',
+    importableAndExportable: true,
+    getTitle(obj) {
+      return `/goto/${encodeURIComponent(obj.id)}`;
+    },
+    getInAppUrl(obj) {
+      return {
+        path: '/goto/' + encodeURIComponent(obj.id),
+        uiCapabilitiesPath: '',
+      };
+    },
+  },
+  mappings: {
+    dynamic: false,
+    properties: {
+      slug: {
+        type: 'text',
+        fields: {
+          keyword: {
+            type: 'keyword',
+          },
+        },
+      },
+      accessDate: {
+        type: 'date',
+      },
+      createDate: {
+        type: 'date',
+      },
+    },
+  },
+  migrations: () => {
+    const locatorMigrations = service.locators.getAllMigrations();
+    const savedObjectLocatorMigrations: SavedObjectMigrationMap = {};
+
+    for (const [version, locatorMigration] of Object.entries(locatorMigrations)) {
+      savedObjectLocatorMigrations[version] = (doc) => {
+        const locator = JSON.parse(doc.attributes.locatorJSON) as LocatorData;
+        doc.attributes = {
+          ...doc.attributes,
+          locatorJSON: JSON.stringify(locatorMigration(locator)),
+        };
+        return doc;
+      };
+    }
+
+    return savedObjectLocatorMigrations;
+  },
+});
+
 export const registerUrlServiceSavedObjectType = (
   so: Pick<SavedObjectsServiceSetup, 'registerType'>,
   service: ServerUrlService
-) => {
-  const urlSavedObjectType: SavedObjectsType = {
-    name: 'url',
-    namespaceType: 'single',
-    hidden: false,
-    management: {
-      icon: 'link',
-      defaultSearchField: 'url',
-      importableAndExportable: true,
-      getTitle(obj) {
-        return `/goto/${encodeURIComponent(obj.id)}`;
-      },
-      getInAppUrl(obj) {
-        return {
-          path: '/goto/' + encodeURIComponent(obj.id),
-          uiCapabilitiesPath: '',
-        };
-      },
-    },
-    mappings: {
-      dynamic: false,
-      properties: {
-        slug: {
-          type: 'text',
-          fields: {
-            keyword: {
-              type: 'keyword',
-            },
-          },
-        },
-        accessDate: {
-          type: 'date',
-        },
-        createDate: {
-          type: 'date',
-        },
-      },
-    },
-    migrations: () => {
-      const locatorMigrations = service.locators.getAllMigrations();
-      const savedObjectLocatorMigrations: SavedObjectMigrationMap = {};
-
-      for (const [version, locatorMigration] of Object.entries(locatorMigrations)) {
-        savedObjectLocatorMigrations[version] = (doc) => {
-          const locator = JSON.parse(doc.attributes.locatorJSON) as LocatorData;
-          doc.attributes = {
-            ...doc.attributes,
-            locatorJSON: JSON.stringify(locatorMigration(locator)),
-          };
-          return doc;
-        };
-      }
-
-      return savedObjectLocatorMigrations;
-    },
-  };
-
-  so.registerType(urlSavedObjectType);
+): void => {
+  so.registerType(createUrlServiceSavedObjectType(service));
 };

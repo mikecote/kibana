@@ -467,6 +467,13 @@ Options: `locators`, `savedObjectTypes`, `createSavedObjectTypes`, `encryptedSav
 its config calls `alerting.registerTaskProcessSettings(id, getConfig)`. Add a test with
 `expectModuleToMatchRegisteredRuleType` so the module and the plugin cannot drift.
 
+Rule factories retain their typed parameters, state and action groups when passed to
+`createRuleTaskType`. Rule workers use the native server Share URL client, the built-in and declared
+locators, and the shared URL saved object definition with their locator migrations. Short URL
+creation, reads, slug resolution and deletion use the request's saved objects client. Background
+access-count updates finish before the worker returns, and redirect links honor the public URL
+and server base path.
+
 A run in a process does what it does in Kibana; Kibana starts it and processes its end result (the
 reschedule, the task state, the retries). What differs, and why:
 

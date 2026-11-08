@@ -313,6 +313,35 @@ describe('createRuleTaskType', () => {
       );
     });
 
+    it('uses the server base path for native locator redirects without a public URL', () => {
+      const host = createRuleTypeHostMock();
+      let redirect: string | undefined;
+      const taskType = createRuleTaskType(
+        {
+          ruleTypeId: 'test.rule',
+          getRuleType: ({ locators }) => {
+            redirect = locators.get('BASE_PATH_LOCATOR')?.getRedirectUrl({});
+            return getRuleType();
+          },
+        },
+        {
+          locators: [
+            {
+              id: 'BASE_PATH_LOCATOR',
+              getLocation: async () => ({ app: 'test', path: '/', state: {} }),
+            },
+          ],
+        }
+      );
+      taskType.buildRuleType({
+        ...host,
+        server: { ...host.server, publicBaseUrl: undefined },
+        http: { ...host.http, basePath: { ...host.http.basePath, serverBasePath: '/kibana' } },
+      });
+      expect(redirect).toMatch(/^\/kibana\//);
+      expect(taskType.savedObjectTypes?.map(({ name }) => name)).toContain('url');
+    });
+
     it('creates the locators the module lists for the factory to use', () => {
       const registerLocators = jest.fn();
       const taskType = createRuleTaskType(

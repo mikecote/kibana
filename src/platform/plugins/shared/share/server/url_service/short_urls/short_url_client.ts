@@ -51,6 +51,7 @@ export interface ServerShortUrlClientDependencies {
    * The locators service.
    */
   locators: ILocatorClient;
+  onBackgroundTask?: (task: Promise<void>) => void;
 }
 
 export class ServerShortUrlClient implements IShortUrlClient {
@@ -158,13 +159,17 @@ export class ServerShortUrlClient implements IShortUrlClient {
   protected updateAccessFields(record: ShortUrlRecord) {
     const { storage } = this.dependencies;
     const { id, ...attributes } = record.data;
-    storage
+    const task = storage
       .update(id, {
         ...attributes,
         accessDate: Date.now(),
         accessCount: (attributes.accessCount || 0) + 1,
       })
-      .catch(() => {}); // We are not interested if it succeeds or not.
+      .then(
+        () => undefined,
+        () => undefined
+      );
+    this.dependencies.onBackgroundTask?.(task);
   }
 
   public async delete(id: string): Promise<void> {

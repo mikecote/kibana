@@ -30,8 +30,6 @@ import { CSV_SEPARATOR_SETTING, CSV_QUOTE_VALUES_SETTING } from '../common/const
 import { createServerUrlService } from './url_service/create_server_url_service';
 import type { ServerUrlService } from './url_service';
 import { registerUrlServiceRoutes, registerUrlServiceSavedObjectType } from './url_service';
-import { LegacyShortUrlLocatorDefinition } from '../common/url_service/locators/legacy_short_url_locator';
-import { ShortUrlRedirectLocatorDefinition } from '../common/url_service/locators/short_url_redirect_locator';
 import type { ConfigSchema } from './config';
 
 /** @public */
@@ -77,8 +75,6 @@ export class SharePlugin
       baseUrl: core.http.basePath.publicBaseUrl || core.http.basePath.serverBasePath,
       version: this.version,
     });
-    this.url.locators.create(new LegacyShortUrlLocatorDefinition());
-    this.url.locators.create(new ShortUrlRedirectLocatorDefinition());
 
     registerUrlServiceSavedObjectType(core.savedObjects, this.url);
     registerUrlServiceRoutes(core, core.http.createRouter(), this.url);
