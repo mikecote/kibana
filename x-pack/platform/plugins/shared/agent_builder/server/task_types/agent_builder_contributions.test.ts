@@ -33,8 +33,6 @@ const NOT_YET_CONTRIBUTED: Record<string, string> = {
   // Hard: services that only exist in Kibana, or many registrations that read them.
   'x-pack/solutions/security/plugins/security_solution':
     'endpoint, detections and entity analytics services',
-  'x-pack/solutions/observability/plugins/nightshift_investigations':
-    'the investigations client, the sandbox plugin and agent execution',
 };
 
 const git = (args: string) => execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8' });

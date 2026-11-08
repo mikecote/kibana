@@ -7,22 +7,11 @@
 
 import { loggerMock } from '@kbn/logging-mocks';
 import { createServerStepRegistry } from '@kbn/workflows-extensions/server';
-import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
+import { createServerUrlService } from '@kbn/share-plugin/server';
+import { InvestigationLocatorDefinition } from '../../common/locators';
 import { investigationsTriggerCommonDefinitions } from '../../common/workflows/triggers';
-import { cortexHydrateStepDefinition } from '../step_definitions/cortex_hydrate';
-import { cortexOptimizeStepDefinition } from '../step_definitions/cortex_optimize';
-import { decisionTreeHydrateStepDefinition } from '../step_definitions/decision_tree_hydrate';
-import { decisionTreeReinforceStepDefinition } from '../step_definitions/decision_tree_reinforce';
-import { ensureInvestigationAgentStepDefinition } from '../step_definitions/ensure_investigation_agent';
-import { handleInvestigationFailureStepDefinition } from '../step_definitions/handle_investigation_failure';
-import { memoryMaterializeToSandboxStepDefinition } from '../step_definitions/memory_materialize_to_sandbox';
-import { memoryOptimizeStepDefinition } from '../step_definitions/memory_optimize';
-import { obtainSandboxStepDefinition } from '../step_definitions/obtain_sandbox';
-import { renderSlackMessageStepDefinition } from '../step_definitions/render_slack_message';
-import { sendNotificationsStepDefinition } from '../step_definitions/send_notifications';
-import { triggerInvestigationStepDefinition } from '../step_definitions/trigger_investigation';
-import { registerNightshiftProcessSteps } from '../workflows/register_process_steps';
-import { KIBANA_ONLY_NIGHTSHIFT_STEPS } from './kibana_only_steps';
+import { NightshiftTelemetryClient } from '../telemetry';
+import { registerNightshiftWorkflowSteps } from '../workflows/register_workflow_steps';
 import { contribution } from './workflow_steps_contribution';
 
 const registerContribution = async (
@@ -37,6 +26,7 @@ const registerContribution = async (
   await contribution.register(registry, {
     host: {
       elasticsearch: { asInternalUser: {}, asScoped: jest.fn() },
+      analytics: { reportEvent: jest.fn() },
       savedObjects: { getScopedClient: jest.fn() },
       uiSettings: { asScopedToClient: jest.fn() },
     },
@@ -63,60 +53,49 @@ const registerContribution = async (
   return { registry, internalSteps, internalTriggers };
 };
 
-/** The ids Kibana registers: `plugin.ts` registers the process steps through the same function, and the others with these definitions. */
-const registeredByKibana = (): string[] => {
-  const ids: string[] = [];
-  const registry = {
-    registerStepDefinition: (definition: { id: string }) => ids.push(definition.id),
-    registerTriggerDefinition: jest.fn(),
-  } as unknown as WorkflowStepsRegistry;
-  registerNightshiftProcessSteps(registry, {
+const registeredByKibana = async (): Promise<string[]> => {
+  const logger = loggerMock.create();
+  const registry = createServerStepRegistry(logger);
+  const analytics = { reportEvent: jest.fn() };
+  registerNightshiftWorkflowSteps(registry, {
     getInference: jest.fn(),
     getSavedObjects: jest.fn(),
     getUiSettings: jest.fn(),
     getTelemetryConnectorId: jest.fn(),
     isDecisionTreesEnabled: jest.fn(),
-    logger: loggerMock.create(),
+    isCortexEnabled: jest.fn(),
+    isMemoryEnabled: jest.fn(),
+    logger,
+    getInvestigationsClient: jest.fn(),
+    getAutomationsSoClient: jest.fn(),
+    getAgentBuilder: jest.fn(),
+    getAgentAvailability: jest.fn(),
+    getActions: jest.fn(),
+    getRoutingClient: jest.fn(),
+    getTriggerEmitter: jest.fn(),
+    getSandboxStart: jest.fn(),
+    analytics,
+    telemetry: new NightshiftTelemetryClient(analytics, logger),
+    investigationLocator: createServerUrlService({
+      baseUrl: 'https://kibana.example.test',
+      version: '9.6.0',
+    }).locators.create(new InvestigationLocatorDefinition()),
   });
-  const any = {} as never;
-  ids.push(
-    ...[
-      triggerInvestigationStepDefinition(any, any),
-      ensureInvestigationAgentStepDefinition(any),
-      sendNotificationsStepDefinition(any),
-      handleInvestigationFailureStepDefinition(any),
-      renderSlackMessageStepDefinition(any),
-      obtainSandboxStepDefinition(any),
-      cortexHydrateStepDefinition(any),
-      memoryMaterializeToSandboxStepDefinition(any),
-      decisionTreeHydrateStepDefinition(any),
-      cortexOptimizeStepDefinition(any),
-      memoryOptimizeStepDefinition(any),
-      decisionTreeReinforceStepDefinition(any),
-    ].map(({ id }) => id)
-  );
-  return ids;
+  await registry.isReady();
+  return registry
+    .getAllStepDefinitions()
+    .map(({ id }) => id)
+    .filter((id) => id.startsWith('nightshift.'));
 };
 
 describe('nightshift investigations workflow-steps contribution', () => {
-  it('registers every step Kibana registers, except the ones that need Agent Builder or the sandbox', async () => {
+  it('registers every Nightshift step registered by Main', async () => {
     const { registry, internalSteps, internalTriggers } = await registerContribution();
-    const kibana = registeredByKibana();
+    const kibana = await registeredByKibana();
 
     expect(kibana).toHaveLength(15);
-    const declined = Object.keys(KIBANA_ONLY_NIGHTSHIFT_STEPS);
-    declined.forEach((id) => {
-      expect(kibana).toContain(id);
-      expect(registry.hasStepDefinition(id)).toBe(false);
-    });
-    const served = kibana.filter((id) => !declined.includes(id));
-    expect(served.sort()).toEqual([
-      'nightshift.composeHydrateNotifications',
-      'nightshift.decisionTreePrepare',
-      'nightshift.resolveModel',
-    ]);
-    served.forEach((id) => expect(registry.hasStepDefinition(id)).toBe(true));
-    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + served.length);
+    for (const id of kibana) expect(registry.hasStepDefinition(id)).toBe(true);
+    expect(registry.getAllStepDefinitions().length).toBe(internalSteps + kibana.length);
 
     investigationsTriggerCommonDefinitions.forEach(({ id }) =>
       expect(registry.getTriggerDefinition(id)).toBeDefined()

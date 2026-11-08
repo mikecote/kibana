@@ -59,7 +59,7 @@ const getAllowedConnectorSecretValues = async ({
   actions,
   callContext,
 }: {
-  actions: ActionsPluginStart;
+  actions: Pick<ActionsPluginStart, 'getActionsClientWithRequest' | 'inMemoryConnectors'>;
   callContext: SandboxCallContext;
 }): Promise<string[]> => {
   if (callContext.allowedConnectorIds.length === 0) return [];
@@ -101,7 +101,7 @@ export const createSandboxOutputRedactorProvider =
     getDeps,
   }: {
     getDeps: () => {
-      actions?: ActionsPluginStart;
+      actions?: Pick<ActionsPluginStart, 'getActionsClientWithRequest' | 'inMemoryConnectors'>;
       sandboxSecretsClient?: Pick<SandboxSecretsClient, 'getRedactionValues'>;
     };
   }): GetSandboxOutputRedactor =>

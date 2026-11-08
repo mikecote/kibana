@@ -5,67 +5,104 @@
  * 2.0.
  */
 
-import type { InferenceServerStart } from '@kbn/inference-plugin/server';
-import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
-import { registerNightshiftProcessSteps } from '../workflows/register_process_steps';
+import { NIGHTSHIFT_ENABLED_FLAG } from '@kbn/nightshift-shared';
+import { registerNightshiftWorkflowSteps } from '../workflows/register_workflow_steps';
 import { registerInvestigationsWorkflowTriggers } from '../workflows/triggers/register_triggers';
 import {
-  NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID,
-  type NightshiftTaskProcessSettings,
-} from './nightshift_task_process_settings';
+  NightshiftTelemetryClient,
+  registerNightshiftTelemetryEvents,
+  registerCortexTelemetryEvents,
+} from '../telemetry';
+import {
+  nightshiftAutomationSavedObjectType,
+  nightshiftAutomationBudgetSavedObjectType,
+  nightshiftSecretsSavedObjectType,
+  nightshiftCustomContextSavedObjectType,
+  nightshiftSecretsEncryptionParams,
+} from '../saved_objects';
+import { createNightshiftProcessServices } from './create_nightshift_process_services';
+import type { NightshiftProcessServices } from './create_nightshift_process_services';
+import { NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID } from './nightshift_task_process_settings';
+import type { NightshiftTaskProcessSettings } from './nightshift_task_process_settings';
 
-/**
- * The Nightshift investigations steps and triggers in the task process of the workflow task types.
- * Listed under `taskTypeContributions['workflow-steps']` in `kibana.jsonc`. The steps are
- * registered by the function `plugin.ts` calls (`registerNightshiftProcessSteps`), with the inference
- * services built from the host (the ones Kibana builds), the host's saved objects and ui settings
- * (the gen AI settings come from the inference workflows contribution), and what Kibana sent
- * (`settings.nightshiftInvestigations`).
- *
- * Served in a process: `nightshift.resolveModel`, `nightshift.composeHydrateNotifications`,
- * `nightshift.decisionTreePrepare` and the investigation triggers.
- *
- * Not registered (a workflow that uses one is declined and Kibana runs it), see
- * `KIBANA_ONLY_NIGHTSHIFT_STEPS` for each reason: the steps that need Agent Builder's agents,
- * conversations, attachments or execution (`triggerInvestigation`, `ensureInvestigationAgent`,
- * `sendNotifications`, `handleInvestigationFailure`, `renderSlackMessage`, `cortexOptimize`,
- * `memoryOptimize`, `decisionTreeReinforce`) and the ones that need the sandbox plugin
- * (`obtainSandbox`, `cortexHydrate`, `memoryMaterializeToSandbox`, `decisionTreeHydrate`).
- */
+/** Registers all Nightshift workflow steps with native stores, agents, quota enforcement and Sandbox. */
 export const contribution: WorkflowStepsContribution = {
-  declares: { settings: [NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID] },
-  register: (registry, { host, logger, services, settings }) => {
-    const nightshift = settings[NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID] as
+  declares: {
+    settings: [NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID],
+    featureFlags: { [NIGHTSHIFT_ENABLED_FLAG]: false },
+    savedObjectTypes: [
+      nightshiftAutomationSavedObjectType,
+      nightshiftAutomationBudgetSavedObjectType,
+      nightshiftSecretsSavedObjectType,
+      nightshiftCustomContextSavedObjectType,
+    ],
+    encryptedSavedObjectTypes: [nightshiftSecretsEncryptionParams],
+    registerAnalyticsEventTypes: (analytics) => {
+      registerNightshiftTelemetryEvents(analytics);
+      registerCortexTelemetryEvents(analytics);
+    },
+  },
+  provides: {
+    'nightshift.runtime': ({ host, settings, services, logger }) => {
+      const snapshot = settings[NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID] as
+        | NightshiftTaskProcessSettings
+        | undefined;
+      if (!snapshot || !services)
+        throw new Error('Native Nightshift requires its dispatch settings and workflow services');
+      return createNightshiftProcessServices({
+        host: host as TaskHost,
+        settings: snapshot,
+        dispatchSettings: settings,
+        services,
+        logger: logger.get('nightshift'),
+        registerRunCompletion: services.registerRunCompletion,
+      });
+    },
+  },
+  register: (registry, { host: taskHost, logger, services, settings }) => {
+    const snapshot = settings[NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID] as
       | NightshiftTaskProcessSettings
       | undefined;
-    // The plugin is disabled in Kibana, which then sends no settings: nothing to register, and a
-    // workflow that uses one of its steps or triggers is declined for the missing type.
-    if (!nightshift) return;
-    if (!services) throw new Error('The workflows task process did not give the engine services');
-
-    // Kibana registers the triggers with the workflows extensions, and the steps only with the
-    // workflows management plugin too.
+    if (!snapshot) return;
+    if (!services) throw new Error('Native Nightshift requires workflow services');
     registerInvestigationsWorkflowTriggers(registry);
-    if (!nightshift.workflowsManagementAvailable) return;
-
-    const { elasticsearch, savedObjects, uiSettings } = host as TaskHost;
-    if (!uiSettings) throw new Error('The workflows task module did not get ui settings');
-
-    let inference: InferenceServerStart | undefined;
-    registerNightshiftProcessSteps(registry, {
-      getInference: () =>
-        (inference ??= createInferenceTaskProcessServices({
-          core: { elasticsearch, savedObjects, uiSettings },
-          logger,
-          getActionsClientWithRequest: services.getActionsClientWithRequest,
-        })),
-      getSavedObjects: () => savedObjects as never,
-      getUiSettings: () => uiSettings as never,
-      getTelemetryConnectorId: () => nightshift.telemetryConnectorId,
-      isDecisionTreesEnabled: () => nightshift.decisionTreesEnabled,
+    if (!snapshot.workflowsManagementAvailable) return;
+    const host = taskHost as TaskHost;
+    if (!host.uiSettings) throw new Error('Native Nightshift requires scoped UI settings');
+    const uiSettings = host.uiSettings;
+    const getRuntime = (): NightshiftProcessServices =>
+      services.getService<NightshiftProcessServices>('nightshift.runtime');
+    registerNightshiftWorkflowSteps(registry, {
+      getInference: () => getRuntime().getInference(),
+      getSavedObjects: () => host.savedObjects,
+      getUiSettings: () => uiSettings,
+      getTelemetryConnectorId: () => snapshot.telemetryConnectorId,
+      isDecisionTreesEnabled: () => snapshot.decisionTreesEnabled,
+      isCortexEnabled: () => snapshot.cortexEnabled === true,
+      isMemoryEnabled: () => snapshot.memoryEnabled === true,
       logger: logger.get('nightshift'),
+      getInvestigationsClient: (request, spaceId) =>
+        getRuntime().getInvestigationsClient(request, spaceId),
+      getAutomationsSoClient: (request, spaceId) =>
+        getRuntime().getAutomationsSoClient(request, spaceId),
+      getAgentBuilder: () => getRuntime().getAgentBuilder(),
+      getAgentAvailability: () => getRuntime().getAgentAvailability(),
+      investigationLocator: {
+        getRedirectUrl: (params, options) =>
+          getRuntime().investigationLocator.getRedirectUrl(params, options),
+      },
+      getActions: () => getRuntime().getActions(),
+      getRoutingClient: (request, spaceId, conversationId, investigationId) =>
+        getRuntime().getRoutingClient(request, spaceId, conversationId, investigationId),
+      getTriggerEmitter: (request) => getRuntime().getTriggerEmitter(request),
+      getSandboxStart: () => getRuntime().getSandboxStart(),
+      analytics: host.analytics,
+      telemetry: new NightshiftTelemetryClient(
+        host.analytics,
+        logger.get('nightshift', 'telemetry')
+      ),
     });
   },
 };

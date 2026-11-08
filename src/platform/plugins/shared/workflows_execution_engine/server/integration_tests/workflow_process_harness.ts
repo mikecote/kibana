@@ -738,22 +738,26 @@ const startHarness = async (
   };
 
   type Document = Record<string, any>;
-  const executionsOf = async (workflowId: string): Promise<Document[]> => {
-    await es.indices.refresh({ index: executionsIndex });
-    const { hits } = await es.search<Document>({
-      index: executionsIndex,
-      query: { term: { workflowId } },
-    });
-    return hits.hits.map((hit) => hit._source!);
+  const findDocuments = async (
+    index: string,
+    field: 'workflowId' | 'workflowRunId',
+    id: string
+  ): Promise<Document[]> => {
+    await es.indices.refresh({ index });
+    const documents: Document[] = [];
+    for await (const page of es.helpers.scrollSearch<Document>({
+      index,
+      size: 1000,
+      query: { term: { [field]: id } },
+    })) {
+      documents.push(...page.documents);
+    }
+    return documents;
   };
-  const stepsOf = async (executionId: string): Promise<Document[]> => {
-    await es.indices.refresh({ index: stepsIndex });
-    const { hits } = await es.search<Document>({
-      index: stepsIndex,
-      query: { term: { workflowRunId: executionId } },
-    });
-    return hits.hits.map((hit) => hit._source!);
-  };
+  const executionsOf = (workflowId: string): Promise<Document[]> =>
+    findDocuments(executionsIndex, 'workflowId', workflowId);
+  const stepsOf = (executionId: string): Promise<Document[]> =>
+    findDocuments(stepsIndex, 'workflowRunId', executionId);
 
   return {
     es,

@@ -32,7 +32,10 @@ export const createSandboxWorkspaceManager = ({
   logger,
 }: {
   getDeps: () => {
-    actions?: ActionsPluginStart;
+    actions?: Pick<
+      ActionsPluginStart,
+      'getActionsClientWithRequest' | 'getActionsAuthorizationWithRequest' | 'inMemoryConnectors'
+    >;
     sandboxSecretsClient?: Pick<SandboxSecretsClient, 'listKeysForSandbox'>;
   };
   /**

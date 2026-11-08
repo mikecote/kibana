@@ -14,6 +14,16 @@ import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
  * process). A contribution that is not listed gets `{}`.
  */
 const EXAMPLES: Record<string, unknown> = {
+  nightshiftInvestigations: {
+    workflowsManagementAvailable: true,
+    decisionTreesEnabled: true,
+    cortexEnabled: true,
+    memoryEnabled: true,
+    sandboxAvailable: true,
+    agentBuilderAvailable: true,
+    agenticInvestigationsAvailable: true,
+    proposalsAvailable: true,
+  },
   alertzeroAgentBuilderRuntime: { actionsAvailable: true, managementAvailable: true },
   observabilityAgentBuilderRuntime: {
     registrations: {
@@ -119,6 +129,15 @@ const EXAMPLES: Record<string, unknown> = {
       isEmailServiceAvailable: false,
       hasAlertStatusChangedListeners: false,
       closeReasonOwners: [],
+      attachmentTypeIds: [
+        'file',
+        'lens',
+        'comment',
+        'stack.alert',
+        'dashboard',
+        'map',
+        'discoverSession',
+      ],
     },
   },
   streamsAgentBuilder: {

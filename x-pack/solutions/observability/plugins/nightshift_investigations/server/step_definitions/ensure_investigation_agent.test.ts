@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { httpServerMock } from '@kbn/core/server/mocks';
 import { loggerMock } from '@kbn/logging-mocks';
 import { installInvestigationAgent } from '../lib/install_investigation_agent';
 import { NIGHTSHIFT_INVESTIGATION_AGENT_ID } from '../agents/investigation';
@@ -20,12 +21,14 @@ jest.mock('../lib/install_decision_tree_reinforcement_agent', () => ({
   installDecisionTreeReinforcementAgent: jest.fn().mockResolvedValue(undefined),
 }));
 describe('ensureInvestigationAgentStepDefinition', () => {
-  const callKibanaApi = jest.fn().mockResolvedValue(undefined);
-  const agentBuilder = { agents: { ensure: jest.fn() } } as never;
+  const getAgent = jest.fn().mockResolvedValue({});
+  const getRegistry = jest.fn().mockResolvedValue({ get: getAgent });
+  const request = httpServerMock.createKibanaRequest({ spaceId: 'space-1' });
+  const agentBuilder = { agents: { ensure: jest.fn(), getRegistry } } as never;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    callKibanaApi.mockResolvedValue(undefined);
+    getAgent.mockResolvedValue({});
   });
 
   const createContext = (input: Record<string, unknown>) =>
@@ -34,10 +37,9 @@ describe('ensureInvestigationAgentStepDefinition', () => {
       rawInput: input,
       contextManager: {
         getContext: jest.fn().mockReturnValue({ workflow: { spaceId: 'space-1' } }),
-        getFakeRequest: jest.fn(),
+        getFakeRequest: jest.fn(() => request),
         getScopedEsClient: jest.fn(),
         renderInputTemplate: jest.fn((val) => val),
-        callKibanaApi,
       },
       logger: loggerMock.create(),
       abortSignal: new AbortController().signal,
@@ -62,10 +64,8 @@ describe('ensureInvestigationAgentStepDefinition', () => {
       spaceId: 'space-1',
       availability,
     });
-    expect(callKibanaApi).toHaveBeenCalledWith({
-      method: 'GET',
-      path: `/api/agent_builder/agents/${NIGHTSHIFT_INVESTIGATION_AGENT_ID}`,
-    });
+    expect(getRegistry).toHaveBeenCalledWith({ request });
+    expect(getAgent).toHaveBeenCalledWith(NIGHTSHIFT_INVESTIGATION_AGENT_ID);
     expect(result).toEqual({
       output: { space_id: 'space-1', agent_id: NIGHTSHIFT_INVESTIGATION_AGENT_ID },
     });
@@ -79,10 +79,8 @@ describe('ensureInvestigationAgentStepDefinition', () => {
       spaceId: 'space-1',
       availability,
     });
-    expect(callKibanaApi).toHaveBeenCalledWith({
-      method: 'GET',
-      path: `/api/agent_builder/agents/${NIGHTSHIFT_INVESTIGATION_AGENT_ID}`,
-    });
+    expect(getRegistry).toHaveBeenCalledWith({ request });
+    expect(getAgent).toHaveBeenCalledWith(NIGHTSHIFT_INVESTIGATION_AGENT_ID);
     expect(result).toEqual({
       output: { space_id: 'space-1', agent_id: NIGHTSHIFT_INVESTIGATION_AGENT_ID },
     });
@@ -97,10 +95,8 @@ describe('ensureInvestigationAgentStepDefinition', () => {
       availability,
     });
     expect(installInvestigationAgent).not.toHaveBeenCalled();
-    expect(callKibanaApi).toHaveBeenCalledWith({
-      method: 'GET',
-      path: `/api/agent_builder/agents/${NIGHTSHIFT_DECISION_TREE_REINFORCEMENT_AGENT_ID}`,
-    });
+    expect(getRegistry).toHaveBeenCalledWith({ request });
+    expect(getAgent).toHaveBeenCalledWith(NIGHTSHIFT_DECISION_TREE_REINFORCEMENT_AGENT_ID);
     expect(result).toEqual({
       output: { space_id: 'space-1', agent_id: NIGHTSHIFT_DECISION_TREE_REINFORCEMENT_AGENT_ID },
     });

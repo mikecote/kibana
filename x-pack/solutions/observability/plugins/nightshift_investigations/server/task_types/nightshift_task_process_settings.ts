@@ -14,14 +14,29 @@ export interface NightshiftTaskProcessSettings {
   workflowsManagementAvailable: boolean;
   decisionTreesEnabled: boolean;
   telemetryConnectorId?: string;
+  telemetryReadableIndices?: string;
+  cortexEnabled?: boolean;
+  memoryEnabled?: boolean;
+  hasInvestigationQuotaCallback?: boolean;
+  agentBuilderAvailable?: boolean;
+  agenticInvestigationsAvailable?: boolean;
+  proposalsAvailable?: boolean;
+  spacesEnabled?: boolean;
+  sandboxAvailable?: boolean;
+  canEncrypt?: boolean;
+  securityAvailable?: boolean;
+  actionsAvailable?: boolean;
+  inferenceAvailable?: boolean;
 }
 
 export const getNightshiftTaskProcessSettings = ({
   workflowsManagementAvailable,
   decisionTreesEnabled,
   telemetryConnectorId,
+  ...nativeServices
 }: NightshiftTaskProcessSettings): NightshiftTaskProcessSettings => ({
   workflowsManagementAvailable,
   decisionTreesEnabled,
+  ...nativeServices,
   ...(telemetryConnectorId ? { telemetryConnectorId } : {}),
 });

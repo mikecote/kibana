@@ -27,7 +27,9 @@ export interface CortexTelemetry {
   reportEditsApplied: (edits: readonly AppliedCortexEdit[]) => void;
 }
 
-export const registerCortexTelemetryEvents = (analytics: AnalyticsServiceSetup): void => {
+export const registerCortexTelemetryEvents = (
+  analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+): void => {
   analytics.registerEventType(cortexHydratedEventType);
   analytics.registerEventType(cortexEditAppliedEventType);
 };
@@ -42,7 +44,7 @@ export const createCortexTelemetry = ({
   roundId,
   logger,
 }: {
-  analytics: AnalyticsServiceSetup;
+  analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>;
   conversationId?: string;
   roundId?: string;
   logger: Logger;

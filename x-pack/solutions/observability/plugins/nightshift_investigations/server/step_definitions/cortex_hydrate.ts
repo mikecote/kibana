@@ -26,7 +26,7 @@ export const cortexHydrateStepDefinition = ({
   isEnabled,
 }: {
   getSandboxStart: () => SandboxPluginStart | undefined;
-  analytics: AnalyticsServiceSetup;
+  analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>;
   logger: Logger;
   isEnabled?: () => boolean;
 }) =>

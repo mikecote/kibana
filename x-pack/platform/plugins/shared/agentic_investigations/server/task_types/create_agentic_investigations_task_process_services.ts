@@ -18,6 +18,11 @@ import {
 } from '@kbn/proposals-plugin/server';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { AgenticInvestigationsPluginStart } from '../types';
+import { createSubjectsClient } from '../subjects/services/subjects_client';
+import { createInvestigationsClient } from '../investigations/services/investigations_client';
+import { InvestigationsQueryService } from '../investigations/services/investigations_query_service';
+import { InProgressResolver } from '../investigations/services/in_progress';
 import { createConversationReadCheck } from '../investigation_attachments';
 import { InvestigationStatusService } from '../investigations/services/investigation_status_service';
 import { createInvestigationsPrivilegesChecker } from '../investigations/services/check_investigations_privileges';
@@ -45,6 +50,9 @@ export interface AgenticInvestigationsTaskProcessServices
   getConversationClient: AgentBuilderPluginStart['conversations']['getScopedClient'];
   getAttachmentClient: AgentBuilderPluginStart['attachments']['getScopedClient'];
   getInvestigationStatusService: () => InvestigationStatusService;
+  getSubjectsClient: AgenticInvestigationsPluginStart['getSubjectsClient'];
+  getInvestigationsClient: AgenticInvestigationsPluginStart['getInvestigationsClient'];
+  getProposals: () => ProposalsPluginStart | undefined;
 }
 
 const runtimes = new WeakMap<TaskHost, AgenticInvestigationsTaskProcessServices>();
@@ -103,18 +111,68 @@ export const getAgenticInvestigationsTaskProcessServices = (
     };
     return proposals;
   };
+  const getSpaceId = (
+    request: Parameters<AgenticInvestigationsPluginStart['getSubjectsClient']>[0]
+  ) =>
+    settings.spacesEnabled
+      ? services.getService<SpacesPluginStart>('spaces').spacesService.getSpaceId(request)
+      : 'default';
+  const resolveUser = (
+    request: Parameters<AgenticInvestigationsPluginStart['getSubjectsClient']>[0]
+  ) => {
+    const { userProfile, security } = host;
+    if (!userProfile) throw new Error('Agentic investigations requires Core user profiles');
+    return createUserResolver({ userProfile, security, logger })(request);
+  };
   let statusService: InvestigationStatusService | undefined;
+  let queryService: InvestigationsQueryService | undefined;
+  const getQueryService = (): InvestigationsQueryService => {
+    queryService ??= new InvestigationsQueryService({
+      getConversationClient: (request) => getConversationClient({ request }),
+      getSpaceId,
+      getImpactService: () => getDocuments().impactService,
+      getSubjectsService: () => getDocuments().subjectsService,
+      getHypothesesService: () => getDocuments().hypothesesService,
+      getProposals,
+      inProgress: new InProgressResolver({
+        getWorkflowsManagement: () =>
+          services.getWorkflowsManagement() as WorkflowsServerPluginSetup['management'],
+        getProposals,
+        logger,
+      }),
+      logger,
+    });
+    return queryService;
+  };
   const runtime: AgenticInvestigationsTaskProcessServices = {
     getConversationClient,
     getAttachmentClient,
+    getProposals,
+    getSubjectsClient: createSubjectsClient({
+      getSubjectsService: () => getDocuments().subjectsService,
+      getSpaceId,
+      privileges,
+      resolveUser,
+      getConversationClient: (request) => getConversationClient({ request }),
+      getAttachmentClient: (request) => getAttachmentClient({ request }),
+    }),
+    getInvestigationsClient: createInvestigationsClient({
+      getQueryService,
+      getSpaceId,
+      privileges,
+      deleteAllInSpace: async (spaceId) => {
+        const { subjectsService, impactService, hypothesesService } = getDocuments();
+        const { subjects, claims } = await subjectsService.deleteAllInSpace(spaceId);
+        const impact = await impactService.getDocumentService().deleteAllInSpace(spaceId);
+        const hypotheses = await hypothesesService.getDocumentService().deleteAllInSpace(spaceId);
+        return { subjects, subjectClaims: claims, impact, hypotheses };
+      },
+    }),
     getInvestigationStatusService: () => {
       statusService ??= new InvestigationStatusService({
         getConversationClient: (request) => getConversationClient({ request }),
         getProposals,
-        getSpaceId: (request) =>
-          settings.spacesEnabled
-            ? services.getService<SpacesPluginStart>('spaces').spacesService.getSpaceId(request)
-            : 'default',
+        getSpaceId,
         logger,
       });
       return statusService;
@@ -122,11 +180,7 @@ export const getAgenticInvestigationsTaskProcessServices = (
     getImpactService: () => getDocuments().impactService,
     getSubjectsService: () => getDocuments().subjectsService,
     getHypothesesService: () => getDocuments().hypothesesService,
-    resolveUser: (request) => {
-      const { userProfile, security } = host;
-      if (!userProfile) throw new Error('Agentic investigations requires Core user profiles');
-      return createUserResolver({ userProfile, security, logger })(request);
-    },
+    resolveUser,
     privileges,
     assertCanReadConversation: createConversationReadCheck({
       getConversationClient: (request) =>

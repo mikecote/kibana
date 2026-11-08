@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { SavedObjectsClientContract } from '@kbn/core/server';
+import type { SavedObjectsClientContract, SavedObjectsServiceStart } from '@kbn/core/server';
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
 import {
   DEFAULT_RUN_QUOTA_SETTINGS,
@@ -20,7 +20,6 @@ import {
   type RunQuotaLedgerAttributes,
   type RunQuotaSettingsAttributes,
 } from './saved_objects';
-import type { SignificantEventsServer } from '../../types';
 
 const MAX_OCC_ATTEMPTS = 100;
 
@@ -29,9 +28,9 @@ export type RunQuotaSavedObjectsRepository = Pick<
   'create' | 'get' | 'update'
 >;
 
-export const createRunQuotaInternalRepository = (
-  server: SignificantEventsServer
-): SavedObjectsClientContract =>
+export const createRunQuotaInternalRepository = (server: {
+  core: { savedObjects: Pick<SavedObjectsServiceStart, 'createInternalRepository'> };
+}): SavedObjectsClientContract =>
   server.core.savedObjects.createInternalRepository([
     RUN_QUOTA_SETTINGS_SO_TYPE,
     RUN_QUOTA_LEDGER_SO_TYPE,

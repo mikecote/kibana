@@ -73,19 +73,16 @@ export const ensureInvestigationAgentStepDefinition = ({
         availability: getAgentAvailability(),
       });
 
-      // Polls in the space the agent was just written to: the fake request carries no space, so
-      // `callKibanaApi` prefixes the path from `workflow.spaceId` instead. Reading through
-      // `getRegistry({ request: getFakeRequest() })` would resolve the default space and could
-      // match an agent installed there rather than the one written here (see #284786).
-      // A 404 while the write is still refreshing throws, which is what drives the retry.
+      const request = context.contextManager.getFakeRequest();
+      if (request.spaceId !== spaceId) {
+        throw new Error('Investigation agent request and execution spaces do not match');
+      }
       await pRetry(async () => {
         if (context.abortSignal.aborted) {
           throw new AbortError(`Cancelled while waiting for the agent in space "${spaceId}"`);
         }
-        await context.contextManager.callKibanaApi({
-          method: 'GET',
-          path: `/api/agent_builder/agents/${agentId}`,
-        });
+        const registry = await agentBuilder.agents.getRegistry({ request });
+        await registry.get(agentId);
       }, VISIBILITY_RETRY_OPTIONS);
 
       return { output: { space_id: spaceId, agent_id: agentId } };

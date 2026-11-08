@@ -6,10 +6,17 @@
  */
 
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
+import type { NightshiftInvestigationQuotaService } from '@kbn/nightshift-investigations-plugin/server';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { registerSignificantEventsWorkflowSteps } from '../workflows/register_significant_events_workflow_steps';
+import {
+  consumeRunQuota,
+  createRunQuotaInternalRepository,
+  runQuotaLedgerSavedObjectType,
+  runQuotaSettingsSavedObjectType,
+} from '../lib/run_quotas';
 
 /**
  * The workflow steps and triggers of the plugin, in the task process of the workflow task types.
@@ -18,6 +25,18 @@ import { registerSignificantEventsWorkflowSteps } from '../workflows/register_si
  * workflows plugin contribute to the same process.
  */
 export const contribution: WorkflowStepsContribution = {
+  declares: { savedObjectTypes: [runQuotaLedgerSavedObjectType, runQuotaSettingsSavedObjectType] },
+  provides: {
+    'nightshift.investigationQuota': ({ host: taskHost }) => {
+      const host = taskHost as TaskHost;
+      const internalRepository = createRunQuotaInternalRepository({
+        core: { savedObjects: host.savedObjects },
+      });
+      return {
+        consume: () => consumeRunQuota({ internalRepository, group: 'investigation' }),
+      } satisfies NightshiftInvestigationQuotaService;
+    },
+  },
   register: (registry, { host, logger, services }) => {
     if (!services) throw new Error('The workflows task process did not give the engine services');
     const { elasticsearch, savedObjects, uiSettings } = host as TaskHost;

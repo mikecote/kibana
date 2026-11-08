@@ -17,6 +17,7 @@ import type {
 } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { createStandaloneEventLogClientService } from '@kbn/event-log-plugin/server/standalone_event_log_client';
+import type { SpaceId } from '@kbn/core-spaces-common';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -69,6 +70,9 @@ export type RuleRunActionsStart = Pick<
   | 'getRelayClient'
   | 'getUnsecuredActionsClient'
   | 'getActionsClientWithRequest'
+  | 'getActionsClientWithRequestInSpace'
+  | 'getActionsAuthorizationWithRequest'
+  | 'inMemoryConnectors'
   | 'isActionExecutable'
   | 'renderActionParameterTemplates'
   | 'isSystemActionConnector'
@@ -273,11 +277,16 @@ export const createRuleRunActions = (
     });
   }
 
-  const getActionsClientWithRequest = async (request: KibanaRequest): Promise<ActionsClient> => {
-    const unsecuredSavedObjectsClient = deps.savedObjects.getScopedClient(request, {
+  const getActionsClientWithRequest = async (
+    request: KibanaRequest,
+    spaceId?: SpaceId
+  ): Promise<ActionsClient> => {
+    const scopedClient = deps.savedObjects.getScopedClient(request, {
       excludedExtensions: [SECURITY_EXTENSION_ID],
       includedHiddenTypes,
     });
+    const unsecuredSavedObjectsClient =
+      spaceId === undefined ? scopedClient : scopedClient.asScopedToNamespace(spaceId);
     return new ActionsClient({
       publicBaseUrl: deps.publicBaseUrl,
       connectorSigningKeysEnabled: config.connectorSigningKeys.enabled,
@@ -289,6 +298,7 @@ export const createRuleRunActions = (
       scopedClusterClient: deps.elasticsearch.asScoped(request),
       inMemoryConnectors,
       request,
+      spaceId,
       authorization: new ActionsAuthorization({ request, authorization: deps.authorization }),
       auditLogger: deps.getAuditLoggerWithRequest?.(request),
       actionExecutor,
@@ -345,6 +355,11 @@ export const createRuleRunActions = (
           connectorTypeRegistry: actionTypeRegistry,
         }),
       getActionsClientWithRequest,
+      getActionsClientWithRequestInSpace: (request, spaceId) =>
+        getActionsClientWithRequest(request, spaceId),
+      getActionsAuthorizationWithRequest: (request) =>
+        new ActionsAuthorization({ request, authorization: deps.authorization }),
+      inMemoryConnectors,
       isActionTypeEnabled: (id, options = { notifyUsage: false }) =>
         actionTypeRegistry.isActionTypeEnabled(id, options),
       isActionExecutable: (actionId, actionTypeId, options) =>

@@ -7,6 +7,8 @@
 
 import { of } from 'rxjs';
 import { httpServerMock } from '@kbn/core-http-server-mocks';
+import { savedObjectsClientMock } from '@kbn/core/server/mocks';
+import { asSpaceId } from '@kbn/core-spaces-common';
 import { ConnectorAuditAction } from '../lib/audit_events';
 import { auditLoggerMock } from '@kbn/security-plugin/server/audit/mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
@@ -213,6 +215,31 @@ describe('createRuleRunActions', () => {
     } as never);
     expect(client.bulkEnqueueExecution).toEqual(expect.any(Function));
     stop();
+  });
+
+  it('scopes native connector reads to the explicitly requested space', async () => {
+    const savedObjects = savedObjectsServiceMock.createStartContract();
+    const scopedClient = savedObjectsClientMock.create();
+    const foreignClient = savedObjectsClientMock.create();
+    savedObjects.getScopedClient.mockReturnValue(scopedClient);
+    scopedClient.asScopedToNamespace.mockReturnValue(foreignClient);
+    foreignClient.get.mockResolvedValue({
+      id: 'foreign-connector',
+      type: 'action',
+      attributes: { actionTypeId: '.server-log', name: 'Foreign connector', config: {} },
+      references: [],
+    });
+    const { actionsPlugin, stop } = create({}, { savedObjects });
+    const request = httpServerMock.createKibanaRequest({ spaceId: 'default' });
+    const client = await actionsPlugin.getActionsClientWithRequestInSpace(
+      request,
+      asSpaceId('investigations')
+    );
+    const connector = await client.get({ id: 'foreign-connector' });
+    expect(scopedClient.asScopedToNamespace).toHaveBeenCalledWith('investigations');
+    expect(foreignClient.get).toHaveBeenCalledWith('action', 'foreign-connector');
+    expect(connector.name).toBe('Foreign connector');
+    await stop();
   });
 
   describe('the privileges of the connector, checked when a run enqueues it', () => {

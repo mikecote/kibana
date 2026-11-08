@@ -52,7 +52,12 @@
     "@kbn/charts-theme",
     "@kbn/core-ui-settings-browser",
     "@kbn/visualization-utils",
-    "@kbn/shared-ux-ai-components"
+    "@kbn/shared-ux-ai-components",
+    "@kbn/core-logging-server-mocks",
+    "@kbn/security-plugin",
+    "@kbn/task-manager-plugin",
+    "@kbn/repo-info",
+    "@kbn/workflows-execution-engine"
   ],
   "exclude": ["target/**/*"]
 }

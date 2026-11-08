@@ -95,6 +95,11 @@ const followupSteps = [
     with: { conversation_id: CONVERSATION_ID },
   },
   { name: 'attachments', type: 'ai.attachment.list', with: { conversation_id: CONVERSATION_ID } },
+  {
+    name: 'query_clients',
+    type: 'test.investigations.queryClients',
+    with: { conversationId: CONVERSATION_ID, subjectId: 'question-1' },
+  },
 ];
 
 describe.each(WORKFLOW_PROCESS_TEST_MODES)(
@@ -131,6 +136,9 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       };
       const ids = await collectRegisteredIds({ contributions, settings, logger });
       harness = await startWorkflowProcessHarness({
+        additionalContributions: {
+          'workflow-steps': [join(__dirname, 'fixtures/query_clients_steps_contribution.ts')],
+        },
         mode,
         reuse,
         logger,
@@ -193,6 +201,15 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
             ],
           },
           followup: { steps: followupSteps },
+          denied_query: {
+            steps: [
+              {
+                name: 'query_clients',
+                type: 'test.investigations.queryClients',
+                with: { conversationId: CONVERSATION_ID, subjectId: 'question-1' },
+              },
+            ],
+          },
           denied_read: { steps: [readImpactStep] },
           denied_write: {
             steps: [
@@ -347,6 +364,12 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
             summary: SUBJECT_SUMMARY,
           }),
         });
+        expect(outputs.query_clients).toEqual({
+          id: CONVERSATION_ID,
+          listedIds: expect.arrayContaining([CONVERSATION_ID]),
+          openIds: expect.arrayContaining([CONVERSATION_ID]),
+          subjectIds: [SUBJECT_ID],
+        });
         expect(outputs.impact_read).toEqual({ id: expect.any(String), entities: [ENTITY] });
         expect(outputs.reopen).toEqual(
           workflow === 'create'
@@ -369,13 +392,13 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           })
         );
         if (workflow === 'create') {
-          for (const deniedWorkflow of ['denied_read', 'denied_write']) {
+          for (const deniedWorkflow of ['denied_read', 'denied_write', 'denied_query']) {
             await harness.run(deniedWorkflow, failure, { apiKey: limitedKey });
             const [denied] = await harness.executionsOf(deniedWorkflow);
             expect(denied.status).toBe('failed');
             expect(denied.error?.message).toContain('Missing privilege');
           }
-          for (const deniedWorkflow of ['denied_read', 'denied_write']) {
+          for (const deniedWorkflow of ['denied_read', 'denied_write', 'denied_query']) {
             await harness.run(deniedWorkflow, failure, {
               apiKey: otherUserKey,
               userName: 'other-investigator',
@@ -423,7 +446,7 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           hypotheses: [HYPOTHESIS],
         }),
       ]);
-      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 6);
+      expect(harness.getWorkerStats().spawned).toBe(reuse ? 1 : 8);
       expect(harness.kibanaRequests).toEqual([]);
       expect(failure).not.toHaveBeenCalled();
     }, 180000);

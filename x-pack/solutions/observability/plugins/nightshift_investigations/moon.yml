@@ -70,6 +70,7 @@ dependsOn:
   - '@kbn/core-security-common'
   - '@kbn/eval-kql'
   - '@kbn/rrule'
+  - '@kbn/repo-info'
 tags:
   - plugin
   - prod

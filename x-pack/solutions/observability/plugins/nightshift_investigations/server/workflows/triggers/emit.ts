@@ -6,7 +6,7 @@
  */
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
+import type { WorkflowTriggerEmitterSource } from '@kbn/workflows-extensions/server';
 import type {
   InvestigationsTriggerId,
   InvestigationsTriggerPayloadMap,
@@ -21,16 +21,18 @@ export const createTriggerEmitter = ({
   workflowsExtensions,
   request,
   logger,
+  onEmission,
 }: {
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart | undefined;
+  workflowsExtensions: WorkflowTriggerEmitterSource | undefined;
   request: KibanaRequest;
   logger: Logger;
+  onEmission?: (emission: Promise<void>) => void;
 }): TriggerEmitter | undefined => {
   if (!workflowsExtensions) {
     return undefined;
   }
 
-  let clientPromise: ReturnType<WorkflowsExtensionsServerPluginStart['getClient']> | undefined;
+  let clientPromise: ReturnType<WorkflowTriggerEmitterSource['getClient']> | undefined;
 
   const logFailure = (triggerId: InvestigationsTriggerId, error: unknown): void => {
     logger.warn(
@@ -52,7 +54,7 @@ export const createTriggerEmitter = ({
   };
 
   return (triggerId, payload) => {
-    void (async () => {
+    const emission = (async () => {
       const client = await resolveClient(triggerId);
       if (!client) {
         return;
@@ -64,5 +66,7 @@ export const createTriggerEmitter = ({
         logFailure(triggerId, error);
       }
     })();
+    onEmission?.(emission);
+    void emission;
   };
 };

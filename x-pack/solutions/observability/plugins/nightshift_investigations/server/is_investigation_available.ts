@@ -21,10 +21,13 @@ import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 
 export interface InvestigationInfrastructureAvailabilityDependencies {
   request: KibanaRequest;
-  featureFlags: FeatureFlagsStart;
+  featureFlags: Pick<FeatureFlagsStart, 'getBooleanValue$'>;
   agentBuilder?: AgentBuilderPluginStart;
   /** Investigations are stored as agentic investigations, so they need the plugin. */
-  agenticInvestigations?: AgenticInvestigationsPluginStart;
+  agenticInvestigations?: Pick<
+    AgenticInvestigationsPluginStart,
+    'getSubjectsClient' | 'getInvestigationsClient'
+  >;
   /** The investigation agent proposes actions with the proposals plugin's tool. */
   proposals?: ProposalsPluginStart;
   inference?: InferenceServerStart;
@@ -32,7 +35,7 @@ export interface InvestigationInfrastructureAvailabilityDependencies {
   spaceId?: string;
   spaces?: SpacesPluginStart;
   workflowsExtensions?: WorkflowsExtensionsServerPluginStart;
-  workflowsManagement?: WorkflowsServerPluginSetup;
+  workflowsManagement?: Pick<WorkflowsServerPluginSetup, 'management'>;
 }
 
 export const isInvestigationInfrastructureAvailable = async ({

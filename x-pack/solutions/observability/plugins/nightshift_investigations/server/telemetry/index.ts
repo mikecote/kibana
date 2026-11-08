@@ -9,15 +9,22 @@ import type { AnalyticsServiceSetup, Logger } from '@kbn/core/server';
 import { NightshiftTelemetryClient } from './client';
 import { semanticMemoryMaterializedEvent, semanticMemoryOptimizedEvent } from './events';
 
+/** Registers native Nightshift event schemas for Main and task-process analytics. */
+export const registerNightshiftTelemetryEvents = (
+  analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+): void => {
+  analytics.registerEventType(semanticMemoryMaterializedEvent);
+  analytics.registerEventType(semanticMemoryOptimizedEvent);
+};
+
 export const setupNightshiftTelemetry = ({
   analytics,
   logger,
 }: {
-  analytics: AnalyticsServiceSetup;
+  analytics: Pick<AnalyticsServiceSetup, 'registerEventType' | 'reportEvent'>;
   logger: Logger;
 }): NightshiftTelemetryClient => {
-  analytics.registerEventType(semanticMemoryMaterializedEvent);
-  analytics.registerEventType(semanticMemoryOptimizedEvent);
+  registerNightshiftTelemetryEvents(analytics);
   return new NightshiftTelemetryClient(analytics, logger);
 };
 

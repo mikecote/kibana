@@ -46,3 +46,5 @@ export const config: PluginConfigDescriptor<ConfigSchema> = {
   },
   schema: configSchema,
 };
+
+export { createServerUrlService } from './url_service/create_server_url_service';

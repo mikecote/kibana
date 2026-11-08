@@ -22,7 +22,7 @@ import type { CasesWorkflowsProcessSettings } from './cases_task_process_setting
 import { getCasesTaskProcessSavedObjectTypes } from './cases_saved_object_types';
 import { createCasesRunServices } from './create_cases_run_services';
 import type { CasesRunServices } from './create_cases_run_services';
-import type { CasesTaskProcessAttachmentTypes } from './create_attachment_type_registry';
+import { createCasesAttachmentTypeRegistry } from './create_attachment_type_registry';
 
 /** The id of the settings the plugin sends a task process to register its agent builder tools. */
 export const CASES_AGENT_BUILDER_SETTINGS_ID = 'casesAgentBuilder';
@@ -62,8 +62,10 @@ export const contribution: AgentBuilderContribution = {
     const casesEventBus = new CasesEventBus(casesLogger);
     const clientExtensions = createCasesClientExtensions(context, workflows);
     clientExtensions.registerAlertStatusListeners(casesEventBus);
-    const attachmentTypes =
-      services.getService<CasesTaskProcessAttachmentTypes>('cases.attachmentTypes');
+    const attachmentTypes = createCasesAttachmentTypeRegistry(
+      { ...taskHost, logger: casesLogger, settings },
+      workflows.attachmentTypeIds
+    );
     const unifiedAttachmentTypeRegistry = attachmentTypes.registry;
     let run: CasesRunServices | undefined;
     const getRun = () => {

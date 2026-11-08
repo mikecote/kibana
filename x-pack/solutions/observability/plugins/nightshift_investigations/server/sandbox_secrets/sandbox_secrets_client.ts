@@ -66,10 +66,15 @@ export interface SandboxSecretsClient {
 }
 
 export interface SandboxSecretsClientDeps {
-  featureFlags?: CoreStart['featureFlags'];
-  savedObjects?: CoreStart['savedObjects'];
-  encryptedSavedObjects?: EncryptedSavedObjectsPluginStart;
-  security?: SecurityPluginStart;
+  featureFlags?: Pick<CoreStart['featureFlags'], 'getBooleanValue$'>;
+  savedObjects?: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+  encryptedSavedObjects?: Pick<EncryptedSavedObjectsPluginStart, 'getClient' | 'isEncryptionError'>;
+  security?: {
+    authz: Pick<
+      SecurityPluginStart['authz'],
+      'mode' | 'actions' | 'checkPrivilegesDynamicallyWithRequest'
+    >;
+  };
   spaces?: SpacesPluginStart;
 }
 

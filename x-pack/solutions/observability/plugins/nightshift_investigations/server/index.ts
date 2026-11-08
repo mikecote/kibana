@@ -18,6 +18,7 @@ export async function plugin(initializerContext: PluginInitializerContext) {
 export type {
   NightshiftInvestigationsServerSetup,
   NightshiftInvestigationsServerStart,
+  NightshiftInvestigationQuotaService,
 } from './types';
 
 export {

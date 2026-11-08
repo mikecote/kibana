@@ -1002,8 +1002,16 @@ audit events and observed tag-change deltas. The native event bridge finishes fo
 a worker answers. Execution tests cover default and foreign spaces, permission changes, filters,
 persisted claims and trigger-event execution lineage in all four worker modes without Kibana calls.
 
+Nightshift registers all fifteen workflow steps through the same factory as Main. Its native runtime
+uses the shared investigation and subject clients, persisted quotas, scoped custom context and
+secrets, notification routing, server locators, Sandbox sessions and trigger completion tracking.
+Main and workers also share its agent, Sandbox-tool and attachment registrations, with the same
+feature and plugin-presence gates. Worker tests cover native agent installation and readiness,
+mTLS workspace allocation and quota denial across independent runs in all four execution modes,
+without Kibana HTTP calls.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
-services) and nightshift_investigations (investigations, sandbox and agent execution services).
+services).
 
 ### Remaining workflow parity gaps
 
@@ -1012,8 +1020,6 @@ These remaining capability gaps currently fail process execution; they must be c
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
   what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
-- **nightshift_investigations:** twelve of the fifteen steps (the investigations client, the sandbox
-  plugin and agent execution).
 
 Inference features are sent as the `inferenceFeatures` settings snapshot at each dispatch, including parent
 relationships, model policies and the current recommended endpoints. Both AI steps and Agent Builder restore
