@@ -12,6 +12,7 @@ import type {
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { SearchApi } from './services/search';
 import type { ProductDocInstallClient } from './services/doc_install_status';
 import type { PackageInstaller } from './services/package_installer';
@@ -21,6 +22,7 @@ import type { DocumentationManager, DocumentationManagerAPI } from './services/d
 
 export interface ProductDocBaseSetupDependencies {
   taskManager: TaskManagerSetupContract;
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   /** Serverless project type lives on CloudSetup (not CloudStart). */
   cloud?: CloudSetup;
 }

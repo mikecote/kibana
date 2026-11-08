@@ -7,36 +7,49 @@
 
 import type { ElasticsearchClient, ISavedObjectsRepository, Logger } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
+import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import { ProductDocInstallClient } from './services/doc_install_status';
-import { getOverallStatus } from './services/doc_manager/doc_manager';
+import type { ProductDocBaseConfig } from './config';
+import { getProductDocStatus } from './services/doc_manager/get_product_doc_status';
+import { PackageInstaller } from './services/package_installer';
+import type {
+  DocGetStatusResponse,
+  SecurityLabsStatusResponse,
+} from './services/doc_manager/types';
 import { SearchService } from './services/search';
 import type { SearchApi } from './services/search';
 import { productDocInstallStatusSavedObjectType } from './saved_objects';
 
+export const PRODUCT_DOC_READ_SETTINGS_ID = 'productDocRead';
+export type ProductDocReadSettings = Pick<
+  ProductDocBaseConfig,
+  'artifactRepositoryUrl' | 'artifactRepositoryProxyUrl' | 'elserInferenceId'
+>;
+
 /** The saved object type the install status is read from: a process declares it. */
 export const productDocReadSavedObjectTypes = [productDocInstallStatusSavedObjectType];
 
-/**
- * What reading the product documentation takes (search it, and whether it is installed), built from
- * explicit dependencies: a task process builds it from its host, where Kibana's plugin has the
- * installer and the tasks that install. Installing and updating the documentation stays Kibana's.
- *
- * Differences from the plugin's `getStatus`: an installation task in flight is not looked at (the
- * documentation counts as installed once every product is, as the status saved objects say), and the
- * status of Security Labs, which needs the package installer, is not available.
- */
+/** Builds native documentation readers with the same status and package clients as Main. */
 export const createProductDocReadServices = ({
   esClient,
   createInternalRepository,
   logger,
+  taskManager,
+  settings,
+  kibanaVersion,
+  isServerless,
 }: {
   esClient: ElasticsearchClient;
   createInternalRepository: (includedHiddenTypes?: string[]) => ISavedObjectsRepository;
   logger: Logger;
+  taskManager: Pick<TaskManagerStartContract, 'fetch'>;
+  settings: ProductDocReadSettings;
+  kibanaVersion: string;
+  isServerless: boolean;
 }): {
   search: SearchApi;
-  getStatus: (options: { inferenceId: string }) => Promise<{ status: string }>;
-  getSecurityLabsStatus: (options: { inferenceId: string }) => Promise<{ status: string }>;
+  getStatus: (options: { inferenceId: string }) => Promise<DocGetStatusResponse>;
+  getSecurityLabsStatus: (options: { inferenceId: string }) => Promise<SecurityLabsStatusResponse>;
 } => {
   const productDocClient = new ProductDocInstallClient({
     soClient: new SavedObjectsClient(
@@ -45,18 +58,19 @@ export const createProductDocReadServices = ({
     log: logger,
   });
   const searchService = new SearchService({ esClient, logger: logger.get('search-service') });
+  const installer = new PackageInstaller({
+    esClient,
+    productDocClient,
+    logger: logger.get('package-installer'),
+    artifactsFolder: 'ai-kb-artifacts',
+    kibanaVersion,
+    isServerless,
+    ...settings,
+  });
   return {
     search: searchService.search.bind(searchService),
-    getStatus: async ({ inferenceId }) => {
-      const installStatus = await productDocClient.getInstallationStatus({ inferenceId });
-      return {
-        status: getOverallStatus(Object.values(installStatus).map((product) => product.status)),
-      };
-    },
-    getSecurityLabsStatus: async () => {
-      throw new Error(
-        'The Security Labs status is only available in Kibana, not in a task process'
-      );
-    },
+    getStatus: ({ inferenceId }) =>
+      getProductDocStatus({ taskManager, docInstallClient: productDocClient, inferenceId }),
+    getSecurityLabsStatus: (options) => installer.getSecurityLabsStatus(options),
   };
 };

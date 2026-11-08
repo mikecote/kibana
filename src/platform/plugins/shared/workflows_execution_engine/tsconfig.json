@@ -73,7 +73,9 @@
     "@kbn/fs",
     "@kbn/metrics",
     "@kbn/core-http-router-server-internal",
-    "@kbn/elastic-assistant-common"
+    "@kbn/elastic-assistant-common",
+    "@kbn/product-doc-base-plugin",
+    "@kbn/product-doc-common"
   ],
   "exclude": ["target/**/*"]
 }

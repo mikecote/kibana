@@ -810,6 +810,11 @@ function `setup()` calls (`registerXAgentBuilder(setup, services)`), so there is
   function the plugin and the process share (`createLlmTasksStartContract` with `createProductDocReadServices`, and
   `createFilesRunServices`, which the platform contribution uses for the product documentation tool and the image
   attachment type).
+  Documentation availability uses Main's shared status reader over native Task Manager storage, so a pending
+  install reports `installing` and a failed task reports `error` even when product records say `installed`.
+  Security Labs uses the native package client, including persisted installation state and update detection
+  against the configured artifact repository. Product Docs captures its repository URL, proxy and inference
+  ID on every dispatch; enabling LLM tasks without that configuration fails explicitly.
 - SML types (`agentBuilderSml.registerType`) are registered with `context.registerSmlType`, which takes the place of
   the SML plugin's setup contract (`{ registerType: context.registerSmlType }`). The process owns an SML service
   (`createSmlService`, started with the privileges of the security task plugin) and an SML start contract

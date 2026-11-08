@@ -55,7 +55,7 @@ export const findTasks = async ({
   inferenceId,
   statuses,
 }: {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'fetch'>;
   taskType: string;
   inferenceId: string;
   statuses: TaskStatus[];
@@ -135,7 +135,7 @@ export const getRequestTaskStatus = async ({
   taskType,
   inferenceId,
 }: {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'fetch'>;
   taskType: string;
   inferenceId: string;
 }): Promise<RequestTaskStatus> => {

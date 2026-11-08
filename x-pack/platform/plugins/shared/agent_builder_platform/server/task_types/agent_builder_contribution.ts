@@ -7,7 +7,6 @@
 
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import {
@@ -23,7 +22,9 @@ import { createLlmTasksStartContract } from '@kbn/llm-tasks-plugin/server/create
 import {
   createProductDocReadServices,
   productDocReadSavedObjectTypes,
+  PRODUCT_DOC_READ_SETTINGS_ID,
 } from '@kbn/product-doc-base-plugin/server/create_product_doc_read_services';
+import type { ProductDocReadSettings } from '@kbn/product-doc-base-plugin/server/create_product_doc_read_services';
 import { registerAgentBuilderPlatform } from '../register_agent_builder';
 import { registerAgentBuilderPlatformSml } from '../sml_types/register_sml';
 import type { AgentBuilderPlatformCoreSetup } from '../types';
@@ -46,12 +47,10 @@ export interface AgentBuilderPlatformTaskProcessSettings {
  * documentation read services) and the file service (`createFilesRunServices`, with the file kind of the
  * chat images) the product documentation tool and the image attachment type read.
  *
- * Differences from Kibana: the product documentation counts as installed from the status saved objects
- * (an installation in flight is not looked at), and Security Labs is not available.
  */
 export const contribution: AgentBuilderContribution = {
   declares: {
-    settings: [AGENT_BUILDER_PLATFORM_SETTINGS_ID],
+    settings: [AGENT_BUILDER_PLATFORM_SETTINGS_ID, PRODUCT_DOC_READ_SETTINGS_ID],
     savedObjectTypes: [...filesRunSavedObjectTypes, ...productDocReadSavedObjectTypes],
   },
   register: (agentBuilder, { host, logger, settings, services, registerSmlType }) => {
@@ -69,6 +68,13 @@ export const contribution: AgentBuilderContribution = {
     const getLlmTasks = () => {
       if (!sent.llmTasks) return undefined;
       if (!llmTasks) {
+        if (!taskHost.taskManager)
+          throw new Error('Native product documentation requires Task Manager');
+        const docSettings = settings[PRODUCT_DOC_READ_SETTINGS_ID] as
+          | ProductDocReadSettings
+          | undefined;
+        if (!docSettings)
+          throw new Error('Native product documentation requires repository settings');
         llmTasks = createLlmTasksStartContract({
           inference: services.getInferenceStart() as InferenceServerStart,
           productDocBase: {
@@ -78,6 +84,10 @@ export const contribution: AgentBuilderContribution = {
                 createInternalRepository: (types) =>
                   taskHost.savedObjects.createInternalRepository(types),
                 logger: logger.get('productDocBase'),
+                taskManager: taskHost.taskManager,
+                settings: docSettings,
+                kibanaVersion: taskHost.server.version,
+                isServerless: taskHost.server.isServerless,
               });
               return { search: read.search, management: read };
             })(),
@@ -91,9 +101,9 @@ export const contribution: AgentBuilderContribution = {
     const getFiles = () => {
       if (!files) {
         files = createFilesRunServices({
-          savedObjects: taskHost.savedObjects as never,
+          savedObjects: taskHost.savedObjects,
           esClient: taskHost.elasticsearch.asInternalUser,
-          security: taskHost.security as unknown as SecurityPluginSetup,
+          security: taskHost.security,
           logger: logger.get('files'),
           fileKinds: [
             {

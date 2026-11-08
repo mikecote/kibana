@@ -12,9 +12,11 @@ import { defaultInferenceEndpoints } from '@kbn/inference-common';
 import { productDocInstallStatusSavedObjectTypeName } from '../common/consts';
 import { LockManagerService } from '@kbn/lock-manager';
 import { ProductDocBasePlugin } from './plugin';
-import type { ProductDocBaseConfig } from './config';
+import { config, type ProductDocBaseConfig } from './config';
 import type { ProductDocBaseSetupDependencies, ProductDocBaseStartDependencies } from './types';
 import { PRODUCT_DOC_INSTALL_LOCK_ID } from './services/install_lock';
+import { workflowsExtensionsMock } from '@kbn/workflows-extensions/server/mocks';
+import { PRODUCT_DOC_READ_SETTINGS_ID } from './create_product_doc_read_services';
 
 jest.mock('@kbn/lock-manager');
 jest.mock('./services/package_installer');
@@ -73,6 +75,8 @@ describe('ProductDocBasePlugin', () => {
   let pluginStartDeps: ProductDocBaseStartDependencies;
 
   beforeEach(() => {
+    jest.mocked(registerRoutes).mockClear();
+    jest.mocked(registerTaskDefinitions).mockClear();
     initContext = createInitContext();
     plugin = new ProductDocBasePlugin(initContext);
     pluginSetupDeps = {
@@ -112,6 +116,35 @@ describe('ProductDocBasePlugin', () => {
   });
 
   describe('#setup', () => {
+    it('captures current repository configuration for native workflow readers', () => {
+      const settings = config.schema.validate({
+        artifactRepositoryUrl: 'https://docs.example.test/repository',
+        artifactRepositoryProxyUrl: 'http://proxy.example.test:8080',
+        elserInferenceId: 'custom-doc-model',
+      });
+      const context = coreMock.createPluginInitializerContext(settings);
+      const subject = new ProductDocBasePlugin(context);
+      const extensions = workflowsExtensionsMock.createSetup();
+      subject.setup(coreMock.createSetup(), {
+        ...pluginSetupDeps,
+        workflowsExtensions: extensions,
+      });
+      const [id, getSettings] = extensions.registerTaskProcessSettings.mock.calls[0];
+      expect(id).toBe(PRODUCT_DOC_READ_SETTINGS_ID);
+      expect(getSettings()).toEqual({
+        artifactRepositoryUrl: settings.artifactRepositoryUrl,
+        artifactRepositoryProxyUrl: settings.artifactRepositoryProxyUrl,
+        elserInferenceId: settings.elserInferenceId,
+      });
+      context.config.get.mockReturnValue({
+        ...settings,
+        artifactRepositoryUrl: 'file:///custom-docs',
+      });
+      expect(getSettings()).toEqual(
+        expect.objectContaining({ artifactRepositoryUrl: 'file:///custom-docs' })
+      );
+    });
+
     it('register the routes', () => {
       plugin.setup(coreMock.createSetup(), pluginSetupDeps);
 
@@ -131,7 +164,7 @@ describe('ProductDocBasePlugin', () => {
     it('register the task definitions', () => {
       plugin.setup(coreMock.createSetup(), pluginSetupDeps);
 
-      expect(registerTaskDefinitions).toHaveBeenCalledTimes(3);
+      expect(registerTaskDefinitions).toHaveBeenCalledTimes(1);
     });
   });
 

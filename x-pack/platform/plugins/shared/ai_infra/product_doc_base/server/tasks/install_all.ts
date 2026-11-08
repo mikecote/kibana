@@ -110,7 +110,7 @@ export const getInstallAllTaskStatus = ({
   taskManager,
   inferenceId,
 }: {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'fetch'>;
   inferenceId: string;
 }): Promise<RequestTaskStatus> =>
   getRequestTaskStatus({ taskManager, taskType: INSTALL_ALL_TASK_TYPE, inferenceId });
