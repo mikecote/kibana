@@ -175,6 +175,8 @@ and sends those current values in both the run and dispatch snapshot. Bundle man
 declared by native SDK contributions, including transitively loaded contributions. Worker readiness
 checks those declarations against the loaded module. Missing declarations, changed defaults or missing
 evaluated values reject the dispatch before business execution; rebuild and deploy matching bundles.
+The receiving worker also validates declared values, and a supervisor verifies that run and snapshot
+values agree, so a caller cannot bypass this contract by omitting Main's preflight.
 Retained workers read execution-scoped values through the feature-flag SDK APIs,
 so false, zero and empty strings remain valid values and overlapping runs cannot share another run's flags.
 
@@ -874,12 +876,16 @@ proposals (the services over the plugin's storage, and agent builder's attachmen
 with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
 capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
 license switchers). Remaining differences are documented by each contribution.
-Also contributing since: agent_builder_dashboards (the dashboard client of the dashboard plugin, `createDashboardServerClient`;
-the embeddable transforms and schemas other plugins register in their `setup()` do not exist in a process, so panels
-are read and validated without them), agent_builder_workflows (over the shared management API, including CRUD, validation, inline
-execution, and scheduling), and the SML types of visualizations, platform, dashboards and
-workflows. Product documentation counts as installed from the status saved objects (an installation in flight is
-not looked at; Security Labs is not available).
+Agent Builder Dashboards uses `createDashboardServerClient` with native embeddable transforms,
+schemas and persisted-state migrations. Main captures the factories, definitions and drilldowns it
+actually registered. Workers restore that inventory through `embeddables` contributions from Controls,
+Dashboard, Markdown, Discover, Visualizations, Lens, Maps, ML, AIOps, Custom Content and URL Drilldown.
+Missing registrations fail explicitly. Lens reads the current `lens.apiFormat` flag for each execution;
+schemas and dashboard read services are isolated across overlapping and retained runs. Dashboard saved
+objects use the full native embeddable migration registry. Agent Builder Workflows uses the shared
+management API, including CRUD, validation, inline execution and scheduling. Visualizations, Platform,
+Dashboards and Workflows contribute their SML types. Product documentation and Security Labs use the
+native status readers described above.
 
 Also contributing since: streams (the scoped clients of `createStreamsRunServices`: the streams client over its
 storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata

@@ -27,7 +27,7 @@ import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
-import type { EmbeddableRegistryDefinition, EmbeddableSetup } from '@kbn/embeddable-plugin/server';
+import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
 import { DataViewPersistableStateService } from '@kbn/data-views-plugin/common';
 import type { SharePluginSetup } from '@kbn/share-plugin/server';
 import { LensConfigBuilder } from '@kbn/lens-embeddable-utils';
@@ -78,6 +78,8 @@ export interface LensServerPluginSetup {
   ) => void;
 }
 
+import { registerLensEmbeddableFactory } from './register_lens_embeddable_factory';
+
 export class LensServerPlugin
   implements Plugin<LensServerPluginSetup, {}, PluginSetupContract, PluginStartContract>
 {
@@ -118,9 +120,7 @@ export class LensServerPlugin
 
     registerDiscoverDrilldown(plugins.embeddable);
 
-    plugins.embeddable.registerEmbeddableFactory(
-      lensEmbeddableFactory() as unknown as EmbeddableRegistryDefinition
-    );
+    registerLensEmbeddableFactory(plugins.embeddable, lensEmbeddableFactory());
 
     const builder = new LensConfigBuilder();
 

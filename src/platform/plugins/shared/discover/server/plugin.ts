@@ -17,9 +17,9 @@ import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { PluginInitializerContext } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
-import { SEARCH_EMBEDDABLE_TYPE } from '@kbn/discover-utils';
+
 import { registerRoutes } from './api/register_routes';
-import { getDiscoverSessionEmbeddableSchema } from './embeddable/schema';
+
 import type { DiscoverServerPluginStart, DiscoverServerPluginStartDeps } from '.';
 import { DISCOVER_APP_LOCATOR } from '../common';
 import { capabilitiesProvider } from './capabilities_provider';
@@ -35,8 +35,10 @@ import {
   METRICS_EXPERIENCE_PRODUCT_FEATURE_ID,
   TRACES_PRODUCT_FEATURE_ID,
 } from '../common/constants';
-import { getSearchEmbeddableTransforms } from '../common/embeddable';
+
 import { createProfileStateRegistry } from '../common/context_awareness';
+
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class DiscoverServerPlugin
   implements Plugin<object, DiscoverServerPluginStart, object, DiscoverServerPluginStartDeps>
@@ -92,11 +94,7 @@ export class DiscoverServerPlugin
     }
 
     plugins.embeddable.registerEmbeddableFactory(createSearchEmbeddableFactory());
-    plugins.embeddable.registerEmbeddableServerDefinition(SEARCH_EMBEDDABLE_TYPE, {
-      title: 'Discover session',
-      getTransforms: (drilldownTransforms) => getSearchEmbeddableTransforms(drilldownTransforms),
-      getSchema: (getDrilldownsSchema) => getDiscoverSessionEmbeddableSchema(getDrilldownsSchema),
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     if (plugins.agentBuilder) {
       // What a task process needs to register what this Kibana registers: the plugin is enabled.

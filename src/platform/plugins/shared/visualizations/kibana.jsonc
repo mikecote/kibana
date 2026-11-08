@@ -8,6 +8,7 @@
   "visibility": "shared",
   "description": "Contains the shared architecture among all the legacy visualizations, e.g. the visualization type registry or the visualization embeddable.",
   "plugin": {
+    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
     "id": "visualizations",
     "browser": true,
     "server": true,

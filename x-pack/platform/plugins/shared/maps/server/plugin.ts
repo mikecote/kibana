@@ -34,7 +34,8 @@ import { setupSavedObjects } from './saved_objects';
 import { registerIntegrations } from './register_integrations';
 import type { StartDeps, SetupDeps } from './types';
 import { MapsStorage } from './content_management';
-import { getTransforms } from '../common/embeddable/transforms/get_transforms';
+
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class MapsPlugin implements Plugin<void, void, SetupDeps, StartDeps> {
   readonly _initializerContext: PluginInitializerContext<MapsXPackConfig>;
@@ -267,10 +268,7 @@ export class MapsPlugin implements Plugin<void, void, SetupDeps, StartDeps> {
 
     setupEmbeddable(plugins.embeddable, getFilterMigrations, getDataViewMigrations);
 
-    plugins.embeddable.registerEmbeddableServerDefinition(MAP_SAVED_OBJECT_TYPE, {
-      title: 'Map',
-      getTransforms,
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     return {
       config: config$,

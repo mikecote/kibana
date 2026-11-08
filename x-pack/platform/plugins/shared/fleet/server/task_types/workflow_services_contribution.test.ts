@@ -29,7 +29,8 @@ describe('native Fleet workflow services', () => {
       };
       const types = contribution.declares?.createSavedObjectTypes?.(
         encryptedSavedObjectsMock.createSetup(),
-        { fleetPackageMetadata: metadata }
+        { fleetPackageMetadata: metadata },
+        { getContributions: () => [] }
       );
       expect(
         types?.find(({ name }) => name === PRECONFIGURATION_DELETION_RECORD_SAVED_OBJECT_TYPE)

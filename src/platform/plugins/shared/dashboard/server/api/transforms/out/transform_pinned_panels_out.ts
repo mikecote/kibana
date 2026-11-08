@@ -22,7 +22,7 @@ import type {
   DashboardPinnedPanelsState,
 } from '@kbn/as-code-dashboard-schema';
 import type { DashboardSavedObjectAttributes } from '../../../dashboard_saved_object';
-import { embeddableService } from '../../../kibana_services';
+import { getDashboardReadServices } from '../../../dashboard_read_services';
 import type { Warnings } from '../../types';
 
 export type StoredPinnedPanels =
@@ -130,7 +130,8 @@ function transformPanels(
   const warnings: Warnings = [];
 
   panels.forEach((panel) => {
-    const { transformOut, schema } = embeddableService.getTransforms(panel.type) ?? {};
+    const { transformOut, schema } =
+      getDashboardReadServices().embeddable.getTransforms(panel.type) ?? {};
     // eslint-disable-next-line prefer-const
     let { config, type, ...rest } = panel;
     try {

@@ -11,10 +11,12 @@ import {
   getPanelSchema as getPanelSchemaFromPackage,
   getDashboardDataSchema,
 } from '@kbn/as-code-dashboard-schema';
-import { embeddableService } from '../kibana_services';
+import { getDashboardReadServices } from '../dashboard_read_services';
 
 export function getPanelSchema() {
-  const embeddableSchemas = embeddableService ? embeddableService.getAllEmbeddableSchemas() : {};
+  const embeddableSchemas = getDashboardReadServices().embeddable
+    ? getDashboardReadServices().embeddable.getAllEmbeddableSchemas()
+    : {};
   return getPanelSchemaFromPackage(embeddableSchemas);
 }
 
@@ -22,6 +24,8 @@ export function getDashboardStateSchema(
   isDashboardAppRequest: boolean,
   isReadRequest: boolean = false
 ) {
-  const embeddableSchemas = embeddableService ? embeddableService.getAllEmbeddableSchemas() : {};
+  const embeddableSchemas = getDashboardReadServices().embeddable
+    ? getDashboardReadServices().embeddable.getAllEmbeddableSchemas()
+    : {};
   return getDashboardDataSchema(embeddableSchemas, { isDashboardAppRequest, isReadRequest });
 }

@@ -84,6 +84,7 @@ const dedupeUiSettings = <T extends Record<string, unknown>>(list: T[]): T[] => 
 export type AgentBuilderContributionDeclares = Pick<
   NonNullable<WorkflowStepsContribution['declares']>,
   | 'savedObjectTypes'
+  | 'contributionKeys'
   | 'createSavedObjectTypes'
   | 'dataStreams'
   | 'encryptedSavedObjectTypes'
@@ -114,7 +115,8 @@ export const defineWorkflowTaskType = (
   >,
   pick: (runtime: WorkflowRuntime) => WorkflowTaskFunction,
   stepContributions: WorkflowStepsContribution[] = [],
-  additionalContributions: Array<{ declares?: AgentBuilderContributionDeclares }> = []
+  additionalContributions: Array<{ declares?: AgentBuilderContributionDeclares }> = [],
+  contributions: NonNullable<TaskHost['contributions']> = {}
 ): TaskTypeModule => {
   const declared: Array<NonNullable<WorkflowStepsContribution['declares']>> = [
     ...stepContributions.map((contribution) => contribution.declares ?? {}),
@@ -146,7 +148,10 @@ export const defineWorkflowTaskType = (
     ],
     createSavedObjectTypes: (encryption, settings) =>
       declared.flatMap(
-        (declaration) => declaration.createSavedObjectTypes?.(encryption, settings) ?? []
+        (declaration) =>
+          declaration.createSavedObjectTypes?.(encryption, settings, {
+            getContributions: <T extends object>(key: string) => (contributions[key] ?? []) as T[],
+          }) ?? []
       ),
     registerUiSettings: declared.some((declaration) => declaration.registerUiSettings)
       ? (registry, settings) => {
@@ -213,21 +218,28 @@ export const defineWorkflowTaskType = (
         AGENT_BUILDER_CONTRIBUTIONS_KEY,
         CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
         CASES_CLIENT_CONTRIBUTIONS_KEY,
+        ...new Set(declared.flatMap(({ contributionKeys }) => contributionKeys ?? [])),
       ],
       // A task process hands over what plugins contribute; the module is built again with it.
-      apply: (contributed) =>
-        defineWorkflowTaskType(
-          definition,
-          pick,
-          (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ?? []) as WorkflowStepsContribution[],
-          [
-            ...(contributed[AGENT_BUILDER_CONTRIBUTIONS_KEY] ?? []),
-            ...(contributed[CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY] ?? []),
-            ...(contributed[CASES_CLIENT_CONTRIBUTIONS_KEY] ?? []),
-          ] as Array<{
-            declares?: AgentBuilderContributionDeclares;
-          }>
-        ),
+      apply: (contributed) => {
+        const steps = (contributed[WORKFLOW_STEPS_CONTRIBUTIONS_KEY] ??
+          []) as WorkflowStepsContribution[];
+        const keys = new Set([
+          AGENT_BUILDER_CONTRIBUTIONS_KEY,
+          CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
+          CASES_CLIENT_CONTRIBUTIONS_KEY,
+          ...steps.flatMap(({ declares }) => declares?.contributionKeys ?? []),
+        ]);
+        const additional: Array<{ declares?: AgentBuilderContributionDeclares }> = [];
+        for (const key of keys) {
+          const entries = (contributed[key] ?? []) as typeof additional;
+          additional.push(...entries);
+          for (const { declares } of entries) {
+            for (const nested of declares?.contributionKeys ?? []) keys.add(nested);
+          }
+        }
+        return defineWorkflowTaskType(definition, pick, steps, additional, contributed);
+      },
     },
     taskPlugins: [
       createSecurityTaskPlugin(kibanaPackageJson.version),

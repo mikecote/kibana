@@ -11,18 +11,23 @@ import { once } from 'lodash';
 import type { SavedObjectsClientContract } from '@kbn/core/server';
 import { read } from './api';
 import { getDashboardStateSchema } from './api/dashboard_state_schemas';
+import { withDashboardReadServices } from './dashboard_read_services';
+import type { DashboardReadServices } from './dashboard_read_services';
 import type { DashboardServerClient } from './types';
 
-/**
- * The dashboard client of the plugin's start contract. The plugin's `start()` and a task process call
- * it (the process after `setReadOnlyKibanaServices`).
- */
-export const createDashboardServerClient = (): DashboardServerClient => {
+/** Builds the dashboard client with native services scoped to each asynchronous read. */
+export const createDashboardServerClient = (
+  services?: DashboardReadServices
+): DashboardServerClient => {
   // Do not call getDashboardStateSchema when registering: plugins register embeddable schemas until
   // all of them are set up, so the schema is built the first time the client is used.
   const getCachedDashboardStateSchema = once(() => getDashboardStateSchema(false));
+  const readDashboard = async (savedObjectsClient: SavedObjectsClientContract, id: string) =>
+    (await read(savedObjectsClient, getCachedDashboardStateSchema(), id)).body;
   return {
-    read: async (savedObjectsClient: SavedObjectsClientContract, id: string) =>
-      (await read(savedObjectsClient, getCachedDashboardStateSchema(), id)).body,
+    read: (savedObjectsClient, id) =>
+      services
+        ? withDashboardReadServices(services, () => readDashboard(savedObjectsClient, id))
+        : readDashboard(savedObjectsClient, id),
   };
 };

@@ -17,8 +17,16 @@
       "savedObjectsManagement",
       "contentManagement"
     ],
-    "optionalPlugins": ["licensing", "savedObjectsTaggingOss", "usageCollection"],
+    "optionalPlugins": [
+      "licensing",
+      "savedObjectsTaggingOss",
+      "usageCollection",
+      "workflowsExtensions"
+    ],
     "requiredBundles": ["kibanaReact", "kibanaUtils", "unifiedSearch"],
-    "extraPublicDirs": ["common"]
+    "extraPublicDirs": ["common"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_process/workflow_runtime_contribution.ts"]
+    }
   }
 }

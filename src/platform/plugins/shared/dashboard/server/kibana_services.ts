@@ -22,12 +22,3 @@ export const setKibanaServices = (core: CoreStart, deps: StartDeps, _logger: Log
   taggingService = deps.savedObjectsTagging;
   logger = _logger;
 };
-
-/**
- * What reading a dashboard (`DashboardServerClient.read`) uses of these services, for a task process that
- * has neither Core's start contract nor the other plugins' start contracts.
- */
-export const setReadOnlyKibanaServices = (embeddable: EmbeddableStart, _logger: Logger) => {
-  embeddableService = embeddable;
-  logger = _logger;
-};

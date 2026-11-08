@@ -13,7 +13,7 @@ import type {
   DashboardPinnedPanel,
 } from '@kbn/as-code-dashboard-schema';
 import { isDashboardSection } from '../../common';
-import { embeddableService } from '../kibana_services';
+import { getDashboardReadServices } from '../dashboard_read_services';
 import type { Warnings } from './types';
 
 export function stripUnmappedKeys(dashboardState: Partial<DashboardState>) {
@@ -21,7 +21,7 @@ export function stripUnmappedKeys(dashboardState: Partial<DashboardState>) {
   const { pinned_panels, panels, ...rest } = dashboardState;
 
   function isMappedPanelType(panel: DashboardPanel | DashboardPinnedPanel) {
-    const transforms = embeddableService?.getTransforms(panel.type);
+    const transforms = getDashboardReadServices().embeddable?.getTransforms(panel.type);
     if (transforms?.throwOnUnmappedPanel) {
       try {
         transforms.throwOnUnmappedPanel(panel.config);

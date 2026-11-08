@@ -38,7 +38,6 @@ dependsOn:
   - '@kbn/share-plugin'
   - '@kbn/css-utils'
   - '@kbn/logging'
-  - '@kbn/task-manager-plugin'
   - '@kbn/core-elasticsearch-server'
   - '@kbn/core-elasticsearch-server-mocks'
   - '@kbn/lens-common'
@@ -55,6 +54,12 @@ dependsOn:
   - '@kbn/ui-actions-plugin'
   - '@kbn/ftr-llm-proxy'
   - '@kbn/ui-callout'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/workflows'
+  - '@kbn/workflows-extensions'
+  - '@kbn/dashboard-markdown'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/repo-info'
 tags:
   - plugin
   - prod

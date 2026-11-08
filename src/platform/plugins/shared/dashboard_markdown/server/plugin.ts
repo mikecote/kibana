@@ -17,11 +17,11 @@ import type {
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 
 import { registerRoutes } from './api/register_routes';
-import { MARKDOWN_EMBEDDABLE_TYPE } from '../common/constants';
-import { markdownEmbeddableSchema } from './embeddable/schemas';
+
 import { markdownSavedObjectType, type StoredMarkdownState } from './markdown_saved_object';
 import type { SetupDeps, StartDeps } from './types';
-import { getTransforms } from './embeddable';
+
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class MarkdownPlugin implements Plugin<void, void, SetupDeps, StartDeps> {
   private readonly logger: Logger;
@@ -32,11 +32,7 @@ export class MarkdownPlugin implements Plugin<void, void, SetupDeps, StartDeps> 
   }
 
   setup(core: CoreSetup<StartDeps>, plugins: SetupDeps) {
-    plugins.embeddable.registerEmbeddableServerDefinition(MARKDOWN_EMBEDDABLE_TYPE, {
-      title: 'Markdown',
-      getSchema: () => markdownEmbeddableSchema,
-      getTransforms,
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     core.savedObjects.registerType<StoredMarkdownState>(markdownSavedObjectType);
 

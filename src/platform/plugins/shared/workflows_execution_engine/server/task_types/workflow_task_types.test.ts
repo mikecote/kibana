@@ -310,6 +310,34 @@ describe('workflow process runtime lifecycle', () => {
 });
 
 describe('workflow native encrypted migration factories', () => {
+  it('resolves transitive SDK requirements and migration registrations in one application', () => {
+    const nested = { declares: { featureFlags: { 'nested.sdk.enabled': false } } };
+    const sdk = { declares: { contributionKeys: ['nested-sdk'] } };
+    const steps: WorkflowStepsContribution = {
+      declares: {
+        contributionKeys: ['native-sdk'],
+        createSavedObjectTypes: (_encryption, _settings, registry) => {
+          expect(registry.getContributions('native-sdk')).toEqual([sdk]);
+          expect(registry.getContributions('nested-sdk')).toEqual([nested]);
+          return [];
+        },
+      },
+      register: () => {},
+    };
+    const applied = runTaskType.contributions?.apply?.({
+      'workflow-steps': [steps],
+      'native-sdk': [sdk],
+      'nested-sdk': [nested],
+    });
+    expect(applied?.featureFlags).toEqual(expect.objectContaining({ 'nested.sdk.enabled': false }));
+    expect(applied?.contributions?.keys).toEqual(
+      expect.arrayContaining(['native-sdk', 'nested-sdk'])
+    );
+    expect(applied?.createSavedObjectTypes?.(encryptedSavedObjectsMock.createSetup(), {})).toEqual(
+      []
+    );
+  });
+
   it('passes native encryption setup and dispatch settings to each saved object factory', () => {
     const createSavedObjectTypes = jest.fn(
       (

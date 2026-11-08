@@ -87,12 +87,15 @@ export interface WorkflowStepsContribution {
    * the plugins listed in `settings` and the feature flags with their fallbacks).
    */
   declares?: {
+    /** Native SDK registrations needed by this contribution, resolved transitively by the bundler. */
+    contributionKeys?: string[];
     schedulableTypes?: RegExp[];
     savedObjectTypes?: SavedObjectsType[];
     /** Builds native saved objects with encryption setup and the dispatching plugin's configuration. */
     createSavedObjectTypes?: (
       encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
-      settings: WorkflowStepsContributionContext['settings']
+      settings: WorkflowStepsContributionContext['settings'],
+      registry: { getContributions: <T extends object>(key: string) => readonly T[] }
     ) => SavedObjectsType[];
     dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];

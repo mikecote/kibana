@@ -27,6 +27,12 @@ export const AGENT_BUILDER_CONTRIBUTIONS_KEY = 'agent-builder';
 export interface AgentBuilderContributionDeclares {
   /** Saved object types the registrations (tools, attachment types ...) read or write. */
   savedObjectTypes?: SavedObjectsType[];
+  /** Builds types whose native migrations depend on contributed SDK registrations. */
+  createSavedObjectTypes?: (
+    encryption: object,
+    settings: AgentBuilderContributionContext['settings'],
+    registry: { getContributions: <T extends object>(key: string) => readonly T[] }
+  ) => SavedObjectsType[];
   /** Data streams initialized lazily by the registrations' execution services. */
   dataStreams?: Array<Parameters<DataStreamsSetup['registerDataStream']>[0]>;
   /** The ids of the plugin configs the registrations read, as `context.settings[id]`. */
