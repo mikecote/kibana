@@ -644,6 +644,13 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   connector service to enqueue native Actions tasks. The assignee HTML template is a `.text` asset
   imported by the common renderer, so process bundles do not depend on the source-tree layout.
 
+- **Sandbox sessions.** `sandbox.runtime` constructs the native gRPC client and session factory shared
+  with Main. The owning plugin captures its validated connection settings and the exact PEM bytes
+  loaded at startup; workers receive no Main-local TLS paths. Session keys retain native space and
+  conversation scoping, and run cleanup closes the gRPC connection. The four-mode integration proof
+  makes eight real mTLS RPCs after deleting Main's temporary certificate files, with no Kibana HTTP
+  requests. Disabled Sandbox configurations retain Main's native unavailable-service behavior.
+
 - **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
   plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
   `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and
