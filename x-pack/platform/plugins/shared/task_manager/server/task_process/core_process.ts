@@ -19,6 +19,7 @@ import type { TaskProcessContext } from './context';
 import { createTaskManagerStaticPlugin } from './task_manager_task_plugin';
 import { createModuleStaticPlugin } from './module_plugin';
 import { runFlushers } from './run_context';
+import { reviveSettingsByPlugin } from './settings';
 import type { TaskProcessInit } from './wire';
 import type { TaskHost, TaskTypeModule } from '../task_type_module';
 import type { TaskRegisterDefinition } from '../task_type_dictionary';
@@ -92,7 +93,8 @@ export const startTaskProcessCore = async ({
 }): Promise<TaskProcessCore> => {
   const definitions = new Map<string, TaskRegisterDefinition>();
   // The module with what plugins contributed to it declared: saved object types and the like.
-  const applied = module.contributions?.apply?.(contributions) ?? module;
+  const applied =
+    module.contributions?.apply?.(contributions, reviveSettingsByPlugin(init.settings)) ?? module;
   const context: TaskProcessContext = {
     init,
     module: applied,

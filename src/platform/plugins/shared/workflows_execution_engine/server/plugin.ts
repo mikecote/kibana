@@ -244,6 +244,9 @@ export class WorkflowsExecutionEnginePlugin
       const { usageCollection } = plugins;
       this.taskTypeSettings.usageCollection = () => usageCollection.getTaskProcessSettings();
     }
+    for (const [id, getSettings] of Object.entries(this.taskTypeSettings)) {
+      plugins.alerting?.registerTaskProcessSettings(id, getSettings);
+    }
     for (const taskType of [runTaskType, resumeTaskType, scheduledTaskType]) {
       plugins.taskManager.registerTaskType(taskType, taskTypeOptions);
     }

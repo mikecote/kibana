@@ -16,7 +16,12 @@ import {
   ACTIONS_CONNECTORS_SETTINGS_ID,
   type ActionsTaskProcessSettings,
 } from '@kbn/actions-plugin/server/task_types/task_process_settings';
-import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
+import { ConnectorAdapterRegistry } from '@kbn/alerting-plugin/server/connector_adapters/connector_adapter_registry';
+import type { AlertStatusChangedOptIn } from '@kbn/alerting-plugin/server/lib/workflow_extensions/alert_status_changed_opt_in';
+import type {
+  RuleRunContribution,
+  RuleRunRegistries,
+} from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
 import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { kibanaPackageJson } from '@kbn/repo-info';
@@ -64,7 +69,11 @@ import type { WorkflowCoreStart } from '../workflow_core_services';
  */
 export const createWorkflowRuntimeFromHost = async (
   taskHost: TaskHost
-): Promise<{ runtime: WorkflowRuntime; stop: () => Promise<void> }> => {
+): Promise<{
+  runtime: WorkflowRuntime;
+  getService: <T extends object>(id: string) => T;
+  stop: () => Promise<void>;
+}> => {
   const enginePlugin = taskHost.plugins?.workflowsExecutionEngine as
     | WorkflowsEngineTaskPluginStart
     | undefined;
@@ -131,6 +140,8 @@ export const createWorkflowRuntimeFromHost = async (
   // Connectors: the actions of the process, with the connector types the plugins contribute.
   const connectorContributions = (host.contributions?.[RULE_RUN_CONTRIBUTIONS_KEY] ??
     []) as RuleRunContribution[];
+  const connectorAdapters = new ConnectorAdapterRegistry();
+  const alertStatusChangedOptIns: AlertStatusChangedOptIn[] = [];
   const { actionsPlugin, hasActionType, stop } = createRuleRunActions({
     logger: logger.get('plugins', 'actions'),
     config: actionsConfig,
@@ -159,9 +170,17 @@ export const createWorkflowRuntimeFromHost = async (
       createInternalRepository: host.savedObjects.createInternalRepository,
     },
     registerConnectorTypes: (actions) => {
-      const registries = { actions, alerting: { registerConnectorAdapter: () => {} } };
+      const registries: RuleRunRegistries = {
+        actions,
+        alerting: {
+          registerConnectorAdapter: (adapter) => connectorAdapters.register(adapter),
+          enableAlertStatusChanged: (optIn) => {
+            alertStatusChangedOptIns.push(optIn);
+          },
+        },
+      };
       connectorContributions.forEach((contribution) =>
-        contribution.register?.(registries as never, {
+        contribution.register?.(registries, {
           logger,
           isServerless: host.server.isServerless,
           kibanaVersion: host.server.version,
@@ -328,6 +347,7 @@ export const createWorkflowRuntimeFromHost = async (
 
   return {
     runtime,
+    getService: runServices.getService,
     stop: async () => {
       try {
         await runServices.complete();

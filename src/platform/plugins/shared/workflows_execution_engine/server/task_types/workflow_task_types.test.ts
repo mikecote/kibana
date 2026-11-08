@@ -256,7 +256,7 @@ describe('workflow process runtime lifecycle', () => {
     const initialized: boolean[] = [];
     createRuntime.mockImplementation(async () => {
       initialized.push(await firstValueFrom(flags.getBooleanValue$('test.flag', false)));
-      return { runtime: { runWorkflowTask } as never, stop };
+      return { runtime: { runWorkflowTask } as never, stop, getService: jest.fn() };
     });
     const host = {} as never;
     for (const enabled of [true, false]) {
@@ -297,6 +297,7 @@ describe('workflow process runtime lifecycle', () => {
         }),
       } as never,
       stop,
+      getService: jest.fn(),
     });
     const runner = runTaskType.createTaskRunner(
       { signal: new AbortController().signal } as never,

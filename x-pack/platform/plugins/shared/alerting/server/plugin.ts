@@ -957,6 +957,8 @@ export class AlertingPlugin {
     });
 
     if (this.alertingEventBus && plugins.workflowsExtensions) {
+      Object.assign(this.taskProcessSettings, plugins.workflowsExtensions.getTaskProcessSettings());
+      Object.assign(this.taskProcessParity, plugins.workflowsExtensions.getTaskProcessParity());
       this.alertStatusChangedSubscriber = new AlertStatusChangedWorkflowSubscriber(
         this.alertingEventBus,
         plugins.workflowsExtensions,

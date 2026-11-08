@@ -72,7 +72,8 @@
     "@kbn/apm-config-loader",
     "@kbn/fs",
     "@kbn/metrics",
-    "@kbn/core-http-router-server-internal"
+    "@kbn/core-http-router-server-internal",
+    "@kbn/elastic-assistant-common"
   ],
   "exclude": ["target/**/*"]
 }

@@ -474,6 +474,14 @@ creation, reads, slug resolution and deletion use the request's saved objects cl
 access-count updates finish before the worker returns, and redirect links honor the public URL
 and server base path.
 
+Rule contributions can declare `executionServices` with a native task module's requirements,
+the service IDs they provide and a factory with execution cleanup. The bundler discovers nested
+contribution keys before building. Core applies the requirements using revived dispatch settings,
+including native plugins, data streams, saved objects, UI settings and scheduling metadata. Each
+rule execution owns its service instances; overlapping and retained runs have separate instances.
+Callbacks registered through `host.onRunEnd` during an execution belong to that execution;
+callbacks registered during process setup remain available for subsequent runs.
+
 A run in a process does what it does in Kibana; Kibana starts it and processes its end result (the
 reschedule, the task state, the retries). What differs, and why:
 
@@ -484,8 +492,10 @@ reschedule, the task state, the retries). What differs, and why:
   `alerting.enableAlertStatusChanged({ isEnabled, featureFlags })` as the plugin does in Kibana (the flags it
   reads go in `declares.featureFlags`; Kibana evaluates them for each dispatch and sends them as
   `host.featureFlags`), and `getWorkflowsClient(request, context)` returns what `workflowsExtensions.getClient`
-  returns. Without a contribution that provides the client, a run sends no events. This branch has no such
-  contribution: the workflows plugins have to add it.
+  returns. Workflow Management supplies this client and the `.workflows` connector's management API
+  from the native workflow runtime. Main forwards its engine and workflow-extension settings and
+  registry snapshots to rule workers. Connector execution uses the shared scheduling implementation;
+  the management API retains the engine's native inline execution behavior for `runWorkflow`.
 - **In-memory metrics.** The `node_rules` collector reads Kibana's counters, so Kibana counts what its processes
   served from the end of the run (`observeRemoteRun`): a result is an execution, a result with a
   `taskRunError` is also a failure (it is the same condition as the outcome of `TaskRunner`), a run Kibana

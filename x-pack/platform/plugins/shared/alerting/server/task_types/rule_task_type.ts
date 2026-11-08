@@ -59,6 +59,7 @@ import { CONNECTOR_ADAPTERS_PARITY_KIND } from './parity_kinds';
 import { ALERTING_RUN_SETTINGS_ID } from './rule_run_settings';
 import { observeRemoteRuleRun } from './remote_run_metrics';
 import type { RuleRunContribution } from './rule_run_contribution';
+import { extendRuleTaskRequirements } from './extend_rule_task_requirements';
 
 export { ruleTaskParamsSchema };
 
@@ -151,6 +152,7 @@ interface PreparedRuleRun {
   unsupportedActionTypes?: (ids: string[]) => string[];
   connectorTypeIds?: () => string[];
   connectorAdapterIds?: () => string[];
+  runWithServices?: <T>(run: () => Promise<T>) => Promise<T>;
 }
 
 const createUrlService = (
@@ -311,15 +313,12 @@ const createRuleTaskTypeInternal = (
               unsupportedActionTypes: standalone.getUnsupportedActionTypes,
               connectorTypeIds: standalone.getRegisteredConnectorTypeIds,
               connectorAdapterIds: standalone.getRegisteredConnectorAdapterIds,
+              runWithServices: standalone.runWithServices,
             };
           }
         ));
 
-  /**
-   * A rule that uses a connector type or connector adapter this process does not know cannot be
-   * served here; saying so before anything is written lets Kibana run the rule instead. This is the
-   * check of one rule; `parity` below is the check, once per process, of everything Kibana has.
-   */
+  /** Rejects unsupported per-rule capabilities before writes, in addition to process-wide parity. */
   const declineIfUnsupported = async (
     { runtime, unsupportedActionTypes }: PreparedRuleRun,
     context: RunContext,
@@ -464,7 +463,11 @@ const createRuleTaskTypeInternal = (
         });
       });
       return {
-        run: async () => (await runner).run(),
+        run: async () => {
+          const services = await prepare(host);
+          const run = async () => (await runner).run();
+          return services.runWithServices ? services.runWithServices(run) : run();
+        },
         cancel: async () => (await runner).cancel(),
       };
     },
@@ -531,13 +534,35 @@ const createRuleTaskTypeInternal = (
     Object.assign(taskType, {
       // A task process hands over what plugins contribute; the module is built again with it.
       contributions: {
-        keys: [RULE_RUN_CONTRIBUTIONS, TASK_SCHEDULING_CONTRIBUTIONS_KEY],
-        apply: (contributed: Record<string, unknown[]>) =>
-          createRuleTaskTypeInternal(
+        keys: [
+          ...new Set([
+            RULE_RUN_CONTRIBUTIONS,
+            TASK_SCHEDULING_CONTRIBUTIONS_KEY,
+            ...contributions.flatMap(
+              (contribution) =>
+                contribution.executionServices?.requirements.contributions?.keys ?? []
+            ),
+          ]),
+        ],
+        apply: (contributed: Record<string, unknown[]>, settings: TaskHost['settings'] = {}) => {
+          const ruleContributions = (contributed[RULE_RUN_CONTRIBUTIONS] ??
+            []) as RuleRunContribution[];
+          let module: TaskTypeModule = createRuleTaskTypeInternal(
             source,
             options,
-            (contributed[RULE_RUN_CONTRIBUTIONS] ?? []) as RuleRunContribution[]
-          ),
+            ruleContributions
+          );
+          for (const contribution of ruleContributions) {
+            const provider = contribution.executionServices;
+            if (!provider?.isEnabled(settings)) continue;
+            const { requirements } = provider;
+            module = extendRuleTaskRequirements(
+              module,
+              requirements.contributions?.apply?.(contributed, settings) ?? requirements
+            );
+          }
+          return module;
+        },
       },
     });
   }

@@ -25,6 +25,7 @@
 import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { createRequire } from 'module';
 import { fetch as undiciFetch } from 'undici';
 import { Client } from '@elastic/elasticsearch';
 import { REPO_ROOT, kibanaPackageJson } from '@kbn/repo-info';
@@ -79,7 +80,7 @@ import { configSchema as alertingConfigSchema } from '../../config';
 import registeredConnectorIds from '../rule_run_connector_type_ids.json';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getTaskBundleEntries, buildTaskBundle, getContributionFiles } = require(join(
+const { getTaskBundleEntries, buildTaskBundle, resolveTaskContributions } = require(join(
   REPO_ROOT,
   'src/dev/task_bundles/build'
 ));
@@ -136,7 +137,9 @@ export interface RuleProcessHarnessOptions {
    * Contributions that only the runs in the test process (`runInProcess`) get, such as a fake workflows
    * client: a forked process has the contributions its bundle was built with.
    */
-  inProcessContributions?: unknown[];
+  inProcessContributions?: RuleRunContribution[];
+  registerTaskSchedulingDefinitions?: (definitions: TaskSchedulingDefinitions) => void;
+  additionalContributions?: Record<string, string[]>;
   /** Extra indices to create (name -> mappings), before any rule runs. */
   indices?: Record<string, Record<string, unknown>>;
 }
@@ -207,6 +210,7 @@ export const DEFAULT_RULE_ATTRIBUTES = () => ({
 });
 
 export class RuleProcessHarness {
+  public readonly logger = loggingSystemMock.createLogger();
   public es!: Client;
   public esServer!: TestElasticsearchUtils;
   public supervisor!: TaskProcessSupervisor;
@@ -311,6 +315,7 @@ export class RuleProcessHarness {
 
   public async start(options: RuleProcessHarnessOptions) {
     this.options = options;
+    options.registerTaskSchedulingDefinitions?.(this.schedulingDefinitions);
     for (const { taskType } of options.rules) {
       this.schedulingDefinitions.registerTaskDefinitions({ [taskType.type]: taskType });
     }
@@ -345,9 +350,13 @@ export class RuleProcessHarness {
       for (let i = 0; i < entries.length; i += BUILD_CONCURRENCY) {
         built.push(
           ...(await Promise.all(
-            entries
-              .slice(i, i + BUILD_CONCURRENCY)
-              .map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
+            entries.slice(i, i + BUILD_CONCURRENCY).map((entry: unknown) =>
+              buildTaskBundle({
+                entry,
+                outDir: bundleDir,
+                additionalContributions: options.additionalContributions,
+              })
+            )
           ))
         );
       }
@@ -394,7 +403,7 @@ export class RuleProcessHarness {
       throw new Error('Native scheduling metadata capture requires the genuine rule host');
     const connectorAdapters = new ConnectorAdapterRegistry();
     const optIns: AlertStatusChangedOptIn[] = [];
-    const contributions: RuleRunContribution[] = this.loadContributions()['alerting-rule-run'];
+    const contributions = this.loadContributions()['alerting-rule-run'] as RuleRunContribution[];
     const actions = createRuleRunActions({
       logger: host.logger.get('actions'),
       config: settings.actions as ActionsConfig,
@@ -468,7 +477,7 @@ export class RuleProcessHarness {
           }
         : {}),
     };
-    const logger = loggingSystemMock.createLogger();
+    const logger = this.logger;
     if (options.mode === 'remote') {
       const token = 'rule-process-harness';
       const worker = startTaskProcessWorker({
@@ -507,6 +516,11 @@ export class RuleProcessHarness {
       : this.supervisor.collectGaugeMetrics(KIBANA_UUID);
   }
 
+  /** Returns the actual supervisor counters for local or remote workers. */
+  public getWorkerStats(): ReturnType<TaskProcessSupervisor['getStats']> {
+    return (this.worker ?? this.supervisor).getStats();
+  }
+
   public async stop() {
     if (this.worker) await this.worker.stop();
     else await this.supervisor?.stop();
@@ -523,7 +537,8 @@ export class RuleProcessHarness {
     const contributions = this.loadContributions();
     // With what plugins contribute applied, as a process applies it to its own module.
     const modules = this.options.rules.map(
-      ({ taskType }) => taskType.contributions?.apply?.(contributions) ?? taskType
+      ({ taskType }) =>
+        taskType.contributions?.apply?.(contributions, this.getSettings()) ?? taskType
     );
     const [first] = modules;
     const savedObjectTypes = new Map(
@@ -549,16 +564,26 @@ export class RuleProcessHarness {
   }
 
   /** What plugins contribute to rule runs, which the bundle builder imports into each bundle. */
-  private loadContributions() {
-    return {
-      'alerting-rule-run': [
-        ...getContributionFiles('alerting-rule-run').map(
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          (file: string) => require(file).contribution
-        ),
-        ...(this.options.inProcessContributions ?? []),
-      ],
-    };
+  private loadContributions(): Record<string, object[]> {
+    const contributions: Record<string, object[]> = {};
+    const requireContribution = createRequire(__filename);
+    for (const { taskType } of this.options.rules) {
+      const filesByKey: Record<string, string[]> = resolveTaskContributions(
+        taskType,
+        this.options.additionalContributions
+      );
+      for (const [key, files] of Object.entries(filesByKey)) {
+        if (contributions[key]) continue;
+        contributions[key] = files.map(
+          (file) => (requireContribution(file) as { contribution: object }).contribution
+        );
+      }
+    }
+    contributions['alerting-rule-run'] = [
+      ...(contributions['alerting-rule-run'] ?? []),
+      ...(this.options.inProcessContributions ?? []),
+    ];
+    return contributions;
   }
 
   /**
@@ -567,14 +592,12 @@ export class RuleProcessHarness {
    */
   private async createKibanaIndices() {
     const indexMappings = new Map<string, Record<string, unknown>>();
-    for (const { taskType } of this.options.rules) {
-      for (const type of taskType.savedObjectTypes ?? []) {
-        const index = type.indexPattern ?? '.kibana';
-        indexMappings.set(index, {
-          ...(indexMappings.get(index) ?? {}),
-          [type.name]: type.mappings,
-        });
-      }
+    for (const type of this.getSeederModule().savedObjectTypes ?? []) {
+      const index = type.indexPattern ?? '.kibana';
+      indexMappings.set(index, {
+        ...(indexMappings.get(index) ?? {}),
+        [type.name]: type.mappings,
+      });
     }
     // The main index, where saved objects such as data views live, even if no rule type has its own.
     indexMappings.set('.kibana', { ...(indexMappings.get('.kibana') ?? {}) });
@@ -913,7 +936,8 @@ export class RuleProcessHarness {
       // needs are alike enough to share: the rule types of one test file do not differ in them.
       const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
       if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
-      const applied = module.contributions?.apply?.(this.loadContributions()) ?? module;
+      const applied =
+        module.contributions?.apply?.(this.loadContributions(), this.getSettings()) ?? module;
       task = applied.createTaskRunner(context, this.seeder.host);
     }
     const flushers: Array<() => Promise<void>> = [];

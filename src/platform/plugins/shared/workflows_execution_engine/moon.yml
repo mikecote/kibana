@@ -76,6 +76,7 @@ dependsOn:
   - '@kbn/fs'
   - '@kbn/metrics'
   - '@kbn/core-http-router-server-internal'
+  - '@kbn/elastic-assistant-common'
 tags:
   - plugin
   - prod

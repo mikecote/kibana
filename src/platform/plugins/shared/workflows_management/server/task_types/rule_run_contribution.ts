@@ -8,11 +8,30 @@
  */
 
 import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
-import type { WorkflowsManagementApi } from '../api/workflows_management_api';
+import { taskType } from '@kbn/workflows-execution-engine/server/task_types/workflow_run.task';
+import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 import { getConnectorType, getWorkflowsConnectorAdapter } from '../connectors/workflows';
+import type { WorkflowConnectorManagement } from '../connectors/workflows';
 
 /** Registers the system connector with the management API of the executing workflow. */
 export const contribution: RuleRunContribution = {
+  executionServices: {
+    ids: ['workflows.management', 'workflows.extensions'],
+    requirements: taskType,
+    isEnabled: (settings) => settings.workflowsManagementRuntime !== undefined,
+    create: async ({ host }) => {
+      const { createWorkflowRuntimeFromHost } = await import(
+        '@kbn/workflows-execution-engine/server/task_types/process_runtime'
+      );
+      return createWorkflowRuntimeFromHost(host);
+    },
+  },
+  getWorkflowsClient: (request, context) => {
+    if (!context.getService) throw new Error('Native workflow services are required');
+    return context
+      .getService<WorkflowsExtensionsServerPluginStart>('workflows.extensions')
+      .getClient(request);
+  },
   register: ({ actions, alerting }, context) => {
     actions.registerType(
       getConnectorType(() => {
@@ -21,8 +40,8 @@ export const contribution: RuleRunContribution = {
             'Workflow execution services are required to execute the workflows connector'
           );
         }
-        return context.getService<WorkflowsManagementApi>('workflows.management');
-      }) as never
+        return context.getService<WorkflowConnectorManagement>('workflows.management');
+      })
     );
     alerting.registerConnectorAdapter(getWorkflowsConnectorAdapter());
   },

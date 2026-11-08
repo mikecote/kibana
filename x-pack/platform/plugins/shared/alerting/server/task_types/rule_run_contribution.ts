@@ -9,7 +9,7 @@ import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { RuleRunActionsSetup } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import type { KibanaRequest } from '@kbn/core/server';
-import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { AlertingServerSetup } from '../plugin';
 import type { GetAlertStatusChangedWorkflowsClient } from '../lib/workflow_extensions/alert_status_changed_emitter';
 
@@ -39,6 +39,12 @@ export interface RuleRunRegistries {
   alerting: Pick<AlertingServerSetup, 'registerConnectorAdapter' | 'enableAlertStatusChanged'>;
 }
 
+/** Native services owned by one rule execution and released before it completes. */
+export interface RuleExecutionServices {
+  getService: <T extends object>(id: string) => T;
+  stop: () => Promise<void>;
+}
+
 /**
  * What a plugin adds to a rule run in a task process, as it adds it to Kibana in its `setup()`: the
  * connector types and connector adapters of system actions, and the saved object types they read.
@@ -46,6 +52,12 @@ export interface RuleRunRegistries {
  * `kibana.jsonc`, so a rule type never has to know about the plugins that add connectors.
  */
 export interface RuleRunContribution {
+  executionServices?: {
+    ids: readonly string[];
+    requirements: TaskTypeModule;
+    isEnabled: (settings: NonNullable<TaskHost['settings']>) => boolean;
+    create: (context: RuleRunContributionContext) => Promise<RuleExecutionServices>;
+  };
   declares?: {
     savedObjectTypes?: SavedObjectsType[];
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];

@@ -85,6 +85,90 @@ const build = (
 describe('createStandaloneRuleRunRuntime', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  describe('native execution services', () => {
+    const createServices = (enabled = true) => {
+      let nextId = 0;
+      let read = (): { id: number } => {
+        throw new Error('Contribution has not registered');
+      };
+      const stops: jest.Mock[] = [];
+      const create = jest.fn(async () => {
+        const instance = { id: ++nextId };
+        const stop = jest.fn().mockResolvedValue(undefined);
+        stops.push(stop);
+        return { getService: jest.fn().mockReturnValue(instance), stop };
+      });
+      const contribution: RuleRunContribution = {
+        executionServices: {
+          ids: ['test.native'],
+          requirements: {
+            type: 'test:native',
+            title: 'Native test services',
+            createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+          },
+          isEnabled: () => enabled,
+          create,
+        },
+        register: (_registries, context) => {
+          read = () => {
+            if (!context.getService) throw new Error('Service resolver is missing');
+            return context.getService<{ id: number }>('test.native');
+          };
+        },
+      };
+      const runtime = build(createHost(), [contribution]);
+      return { ...runtime, create, stops, read: () => read() };
+    };
+
+    it('keeps overlapping runs separate and creates fresh services for retained executions', async () => {
+      const services = createServices();
+      const firstEntered = Promise.withResolvers<void>();
+      const releaseFirst = Promise.withResolvers<void>();
+      const first = services.runWithServices(async () => {
+        expect(services.read()).toEqual({ id: 1 });
+        firstEntered.resolve();
+        await releaseFirst.promise;
+        expect(services.read()).toEqual({ id: 1 });
+      });
+      await firstEntered.promise;
+      await services.runWithServices(async () => expect(services.read()).toEqual({ id: 2 }));
+      expect(services.stops[1]).toHaveBeenCalledTimes(1);
+      expect(services.stops[0]).not.toHaveBeenCalled();
+      releaseFirst.resolve();
+      await first;
+      await services.runWithServices(async () => expect(services.read()).toEqual({ id: 3 }));
+      expect(services.stops.every((stop) => stop.mock.calls.length === 1)).toBe(true);
+      expect(() => services.read()).toThrow('No rule execution service registered for test.native');
+    });
+
+    it('releases services when execution fails and does not initialize disabled providers', async () => {
+      const services = createServices();
+      const error = new Error('Execution failed');
+      await expect(
+        services.runWithServices(async () => {
+          throw error;
+        })
+      ).rejects.toBe(error);
+      expect(services.stops[0]).toHaveBeenCalledTimes(1);
+      const disabled = createServices(false);
+      await disabled.runWithServices(async () => expect(disabled.create).not.toHaveBeenCalled());
+    });
+
+    it('preserves execution and cleanup failures together', async () => {
+      const services = createServices();
+      const executionError = new Error('Execution failed');
+      const cleanupError = new Error('Cleanup failed');
+      const run = services.runWithServices(async () => {
+        services.stops[0].mockRejectedValue(cleanupError);
+        throw executionError;
+      });
+      await expect(run).rejects.toEqual(
+        new AggregateError([executionError, cleanupError], 'Rule service cleanup failed')
+      );
+      expect(services.stops[0]).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('license feature usage', () => {
     it('reports the use of a rule type that needs a license to the feature usage of the host', () => {
       const featureUsage = { notifyUsage: jest.fn() };
@@ -218,6 +302,25 @@ describe('createStandaloneRuleRunRuntime', () => {
   });
 
   describe('alert.status.changed events', () => {
+    it('does not advertise workflow clients for disabled native providers', () => {
+      const { runtime } = build(createHost(), [
+        {
+          getWorkflowsClient: jest.fn(),
+          executionServices: {
+            ids: ['workflows.extensions'],
+            requirements: {
+              type: 'test:disabled-workflows',
+              title: 'Disabled workflows',
+              createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+            },
+            isEnabled: () => false,
+            create: jest.fn(),
+          },
+        },
+      ]);
+      expect(runtime.alertStatusChanged).toBeUndefined();
+    });
+
     it('sends none without a contribution that provides a workflows client', () => {
       const { runtime } = build(createHost(), [
         {

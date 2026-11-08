@@ -58,9 +58,7 @@ const serverLogAction = {
   params: { level: 'info', message: 'matched {{context.title}}' },
 };
 
-// Stands in for the workflows plugin, which this branch gives no contribution: it records what a
-// rule run sends. A forked process has the contributions its bundle was built with, so this is for
-// the runs in the test process.
+// Records request-scoped event delivery in the test process; workers use their native contribution.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const emittedEvents: Array<{ triggerId: string; payload: any }> = [];
 const fakeWorkflows: RuleRunContribution = {

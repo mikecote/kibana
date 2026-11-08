@@ -6,6 +6,7 @@
  */
 
 import { firstValueFrom, of, Subject } from 'rxjs';
+import { AsyncLocalStorage } from 'async_hooks';
 import type { Logger } from '@kbn/core/server';
 import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
@@ -42,7 +43,11 @@ import { ALERTING_FEATURE_ID } from '../../types';
 import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
-import type { RuleRunContribution } from '../rule_run_contribution';
+import type {
+  RuleExecutionServices,
+  RuleRunContribution,
+  RuleRunContributionContext,
+} from '../rule_run_contribution';
 import { ALERTING_RUN_SETTINGS_ID, DEFAULT_ALERTING_RUN_SETTINGS } from '../rule_run_settings';
 import type { AlertingRunSettings } from '../rule_run_settings';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
@@ -90,6 +95,7 @@ export const createStandaloneRuleRunRuntime = ({
   /** The ids of the connector types and connector adapters this process registered. */
   getRegisteredConnectorTypeIds: () => string[];
   getRegisteredConnectorAdapterIds: () => string[];
+  runWithServices: <T>(run: () => Promise<T>) => Promise<T>;
   stop: () => Promise<void>;
 } => {
   const settings = host.settings ?? {};
@@ -174,13 +180,19 @@ export const createStandaloneRuleRunRuntime = ({
     | undefined;
   // The opt-ins of `alert.status.changed` the contributions register, as plugins do in Kibana.
   const alertStatusChangedOptIns: AlertStatusChangedOptIn[] = [];
-  const contributionContext = {
+  const executionServices = new AsyncLocalStorage<Map<string, RuleExecutionServices>>();
+  const contributionContext: RuleRunContributionContext = {
     logger,
     isServerless,
     kibanaVersion,
     publicBaseUrl,
     settings,
     host,
+    getService: <T extends object>(id: string): T => {
+      const services = executionServices.getStore()?.get(id);
+      if (!services) throw new Error(`No rule execution service registered for ${id}`);
+      return services.getService<T>(id);
+    },
   };
   const { actionsPlugin, hasActionType, getActionTypeIds, stop } = createRuleRunActions({
     logger: host.logger.get('plugins', 'actions'),
@@ -243,7 +255,10 @@ export const createStandaloneRuleRunRuntime = ({
   };
 
   // Events go out with the workflows client the workflows plugins contribute; without one nothing is sent.
-  const workflowsContribution = contributions.find(({ getWorkflowsClient }) => getWorkflowsClient);
+  const workflowsContribution = contributions.find(
+    ({ getWorkflowsClient, executionServices: provider }) =>
+      getWorkflowsClient !== undefined && (!provider || provider.isEnabled(settings))
+  );
   const alertStatusChanged = workflowsContribution
     ? createWorkflowsAlertStatusChangedEmitter({
         getClient: (request) =>
@@ -291,6 +306,46 @@ export const createStandaloneRuleRunRuntime = ({
 
   return {
     runtime,
+    runWithServices: (run) =>
+      executionServices.run(new Map(), async () => {
+        const services = executionServices.getStore();
+        if (!services) throw new Error('Rule execution service context is missing');
+        const created: RuleExecutionServices[] = [];
+        const outcome = await (async () => {
+          try {
+            for (const contribution of contributions) {
+              const provider = contribution.executionServices;
+              if (!provider?.isEnabled(settings)) continue;
+              const instance = await provider.create(contributionContext);
+              created.push(instance);
+              for (const id of provider.ids) {
+                if (services.has(id)) throw new Error(`Duplicate rule execution service: ${id}`);
+                services.set(id, instance);
+              }
+            }
+            return { failed: false as const, value: await run() };
+          } catch (error) {
+            return { failed: true as const, error };
+          }
+        })();
+        const results = await Promise.allSettled(
+          created.reverse().map((service) => Promise.resolve().then(() => service.stop()))
+        );
+        const failures = results.flatMap((result) =>
+          result.status === 'rejected'
+            ? [result.reason instanceof Error ? result.reason : new Error(String(result.reason))]
+            : []
+        );
+        if (failures.length) {
+          if (outcome.failed)
+            failures.unshift(
+              outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error))
+            );
+          throw new AggregateError(failures, 'Rule service cleanup failed');
+        }
+        if (outcome.failed) throw outcome.error;
+        return outcome.value;
+      }),
     fieldFormats,
     getRegisteredConnectorTypeIds: getActionTypeIds,
     getRegisteredConnectorAdapterIds: () => connectorAdapterRegistry.getIds(),

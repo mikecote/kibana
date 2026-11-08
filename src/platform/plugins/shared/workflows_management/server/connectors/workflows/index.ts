@@ -38,6 +38,10 @@ import { buildAlertEvent } from '../../../common/utils/build_alert_event';
 import type { WorkflowsManagementApi } from '../../api/workflows_management_api';
 
 const supportedSubActions: string[] = ['run'];
+export type WorkflowConnectorManagement = Pick<
+  WorkflowsManagementApi,
+  'getWorkflow' | 'runWorkflow' | 'scheduleWorkflow'
+>;
 export type ActionParamsType = WorkflowsActionParamsType;
 export const ConnectorTypeId = '.workflows';
 
@@ -59,7 +63,7 @@ export interface GetWorkflowsConnectorTypeArgs {
 
 // connector type definition
 export function getConnectorType(
-  workflowsManagementApi: WorkflowsManagementApi | (() => WorkflowsManagementApi)
+  workflowsManagementApi: WorkflowConnectorManagement | (() => WorkflowConnectorManagement)
 ): ConnectorType<
   Record<string, unknown>,
   Record<string, unknown>,
@@ -94,7 +98,7 @@ export function getConnectorType(
 }
 
 function getWorkflowsConnectorTypeArgs(
-  getWorkflowsManagementApi: () => WorkflowsManagementApi
+  getWorkflowsManagementApi: () => WorkflowConnectorManagement
 ): GetWorkflowsConnectorTypeArgs {
   // Create workflows service function for the connector
   const getWorkflowsService = async (request: KibanaRequest) => {

@@ -245,10 +245,14 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
    * `kibana.jsonc`). The bundler gathers every plugin's files under each key, and a task process
    * hands the exports to `apply`, which returns the module with what they declare added, and to the
    * runner as `host.contributions[key]`. Kibana has the plugins themselves and ignores this.
+   * `apply` receives revived dispatch settings before Core registers the resulting requirements.
    */
   contributions?: {
     keys: string[];
-    apply?: (contributions: Record<string, unknown[]>) => TaskTypeModule;
+    apply?: (
+      contributions: Record<string, unknown[]>,
+      settings?: NonNullable<TaskHost['settings']>
+    ) => TaskTypeModule;
   };
   /**
    * How a task process proves it registered what Kibana did (connector types, say): for each kind,

@@ -22,14 +22,8 @@ const RUNTIME_ENTRY = path.join(
   'x-pack/platform/plugins/shared/task_manager/server/task_process/main'
 );
 
-/** Loads a task type file, which needs the transpiler; undefined when it cannot be loaded here. */
-const loadTaskType = (file) => {
-  try {
-    return createRequire(__filename)(file).taskType;
-  } catch (error) {
-    return undefined;
-  }
-};
+/** Loads a task type file using the registered transpiler. */
+const loadTaskType = (file) => createRequire(__filename)(file).taskType;
 
 /**
  * Native modules stay out of the bundle and resolve from node_modules at run time. `canvas` is the
@@ -50,6 +44,33 @@ const getContributionFiles = (key, packages = getPackages(REPO_ROOT)) =>
       )
     )
     .sort();
+
+/** Resolves contribution keys added by native runtimes until the declaration graph is complete. */
+const resolveTaskContributions = (
+  taskType,
+  additionalContributions = {},
+  getFiles = getContributionFiles,
+  loadContribution = (file) => createRequire(__filename)(file).contribution
+) => {
+  const filesByKey = {};
+  const contributions = {};
+  const keys = new Set(taskType.contributions?.keys ?? []);
+  while ([...keys].some((key) => !(key in filesByKey))) {
+    for (const key of keys) {
+      if (key in filesByKey) continue;
+      const files = [...new Set([...getFiles(key), ...(additionalContributions[key] ?? [])])];
+      filesByKey[key] = files;
+      contributions[key] = files.map((file) => {
+        const contribution = loadContribution(file);
+        if (!contribution) throw new Error(`Task contribution ${file} has no contribution export`);
+        return contribution;
+      });
+    }
+    const applied = taskType.contributions?.apply?.(contributions) ?? taskType;
+    for (const key of applied.contributions?.keys ?? []) keys.add(key);
+  }
+  return filesByKey;
+};
 
 /** Every task type file declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`). */
 const getTaskBundleEntries = (packages = getPackages(REPO_ROOT)) =>
@@ -227,13 +248,9 @@ const buildTaskBundle = async ({
   const outfile = path.join(outDir, `${entry.name}.mjs`);
   const runtime = copyTaskRuntimeDependencies(outDir);
   const loaded = loadTaskType(entry.file);
+  if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
   // What the module says it takes from other plugins: every plugin's file under each key.
-  const contributions = Object.fromEntries(
-    (loaded?.contributions?.keys ?? []).map((key) => [
-      key,
-      [...getContributionFiles(key), ...(additionalContributions[key] ?? [])],
-    ])
-  );
+  const contributions = resolveTaskContributions(loaded, additionalContributions);
   const contributionImports = Object.values(contributions).flat();
   const result = await build({
     stdin: {
@@ -368,6 +385,7 @@ module.exports = {
   OUT_DIR,
   getTaskBundleEntries,
   getContributionFiles,
+  resolveTaskContributions,
   getStartupOutputs,
   buildTaskBundle,
   writeManifest,
