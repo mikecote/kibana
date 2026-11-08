@@ -7,6 +7,7 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { EmbeddableSetup } from '../plugin';
 
@@ -21,10 +22,16 @@ export interface EmbeddableRegistrationIds {
 }
 
 export interface EmbeddableContribution {
-  declares?: { featureFlags?: Record<string, boolean | number | string> };
+  declares?: {
+    featureFlags?: Record<string, boolean | number | string>;
+    contributionKeys?: string[];
+    settings?: string[];
+  };
   register: (
     setup: EmbeddableSetup,
     context: {
+      settings?: TaskHost['settings'];
+      getContributions?: <T extends object>(key: string) => readonly T[];
       featureFlags?: Pick<
         FeatureFlagsStart,
         'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'

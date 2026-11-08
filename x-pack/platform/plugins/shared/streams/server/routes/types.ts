@@ -39,7 +39,7 @@ export interface RouteHandlerScopedClients {
   streamsClient: StreamsClient;
   inferenceClient: InferenceClient;
   contentClient: ContentClient;
-  licensing: LicensingPluginStart;
+  licensing: Pick<LicensingPluginStart, 'getLicense'>;
   uiSettingsClient: IUiSettingsClient;
   globalUiSettingsClient: IUiSettingsClient;
   fieldsMetadataClient: IFieldsMetadataClient;

@@ -31,7 +31,7 @@ import {
   modifyFilterKueryNode,
 } from '../../../../rules_client/common/mapped_params_utils';
 import { alertingAuthorizationFilterOpts } from '../../../../rules_client/common/constants';
-import type { RulesClientContext } from '../../../../rules_client/types';
+import type { RulesReadContext } from '../../../../rules_client/rules_read_context';
 import { formatLegacyActions, getAlertFromRaw } from '../../../../rules_client/lib';
 import { RULE_SAVED_OBJECT_TYPE } from '../../../../saved_objects';
 import type { FindRulesParams } from './types';
@@ -49,7 +49,7 @@ export interface FindResult<Params extends RuleParams> {
 }
 
 export async function findRules<Params extends RuleParams = never>(
-  context: RulesClientContext,
+  context: RulesReadContext,
   params?: FindRulesParams
 ): Promise<FindResult<Params>> {
   const { options } = params || {};

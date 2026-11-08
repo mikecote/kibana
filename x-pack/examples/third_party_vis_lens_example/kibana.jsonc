@@ -5,6 +5,7 @@
   "group": "platform",
   "visibility": "private",
   "plugin": {
+    "taskTypeContributions": {"lens-visualization-migrations": ["server/visualization_migration_contribution.ts"]},
     "id": "thirdPartyVisLensExample",
     "server": true,
     "browser": true,

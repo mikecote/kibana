@@ -14,14 +14,13 @@ import type {
   RuleTypeParams,
   RuleWithLegacyId,
   PartialRuleWithLegacyId,
-  RuleTypeRegistry,
 } from '../../types';
 import {
   ruleExecutionStatusFromRaw,
   convertMonitoringFromRawAndVerify,
   getRuleSnoozeEndTime,
 } from '../../lib';
-import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
+import type { RuleReadTypeDescriptor, RulesReadRegistry } from '../rules_read_context';
 import { getActiveScheduledSnoozes } from '../../lib/is_rule_snoozed';
 import { injectReferencesIntoParams } from '../common';
 import {
@@ -44,11 +43,11 @@ interface GetAlertFromRawOpts {
   rawRule: RawRule;
   references: SavedObjectReference[] | undefined;
   ruleTypeId: string;
-  ruleTypeRegistry: Pick<RuleTypeRegistry, 'get'>;
+  ruleTypeRegistry: Pick<RulesReadRegistry, 'get'>;
 }
 
 type GetPartialRuleFromRawOpts = Omit<GetAlertFromRawOpts, 'ruleTypeRegistry'> & {
-  ruleType: UntypedNormalizedRuleType;
+  ruleType: RuleReadTypeDescriptor;
 };
 /**
  * @deprecated in favor of transformRuleAttributesToRuleDomain

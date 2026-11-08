@@ -5,9 +5,10 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import type {
-  GetViewInAppRelativeUrlFnOpts,
   ActionGroupIdsOf,
   AlertInstanceContext as AlertContext,
   AlertInstanceState as AlertState,
@@ -20,7 +21,6 @@ import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import {
   formatDurationFromTimeUnitChar,
   getAlertDetailsUrl,
-  observabilityPaths,
   ProcessorEvent,
 } from '@kbn/observability-plugin/common';
 import {
@@ -344,7 +344,6 @@ export function registerErrorCountRuleType({
       return { state: {} };
     },
     alerts: ApmRuleTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

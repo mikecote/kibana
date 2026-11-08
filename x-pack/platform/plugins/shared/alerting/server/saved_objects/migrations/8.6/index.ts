@@ -97,7 +97,9 @@ function migrateLastRun(
   };
 }
 
-export const getMigrations860 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations860 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc: SavedObjectUnsanitizedDoc<RawRule>): doc is SavedObjectUnsanitizedDoc<RawRule> => true,

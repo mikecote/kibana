@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type {
   Plugin,
   CoreSetup,
@@ -35,6 +36,10 @@ import {
   LENS_CONTENT_TYPE,
   LENS_ITEM_LATEST_VERSION,
 } from '@kbn/lens-common/content_management/constants';
+import {
+  getLensRuntimeSettings,
+  LENS_RUNTIME_SETTINGS_ID,
+} from './visualization_migration_contribution';
 import { setupSavedObjects } from './saved_objects';
 import { setupExpressions } from './expressions';
 import { makeLensEmbeddableFactory } from './embeddable/make_lens_embeddable_factory';
@@ -48,6 +53,7 @@ import { registerLensEmbeddableTransformsForDashboardApp } from './dashboard_app
 import { registerDiscoverDrilldown } from './drilldowns/register_discover_drilldown';
 
 export interface PluginSetupContract {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   taskManager?: TaskManagerSetupContract;
   embeddable: EmbeddableSetup;
   expressions: ExpressionsServerSetup;
@@ -95,6 +101,9 @@ export class LensServerPlugin
       plugins.data.query.filterManager
     );
     setupSavedObjects(core, getFilterMigrations, this.customVisualizationMigrations);
+    plugins.workflowsExtensions?.registerTaskProcessSettings(LENS_RUNTIME_SETTINGS_ID, () =>
+      getLensRuntimeSettings(this.customVisualizationMigrations)
+    );
     setupExpressions(core, plugins.expressions);
 
     if (plugins.share) {

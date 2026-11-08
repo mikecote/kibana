@@ -10,6 +10,7 @@
     "browser": true,
     "server": true,
     "taskTypeContributions": {
+      "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
       "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
     },
     "taskTypes": [

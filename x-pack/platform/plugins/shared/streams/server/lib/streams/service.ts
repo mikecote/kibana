@@ -33,7 +33,7 @@ export class StreamsService {
     uiSettingsClient: IUiSettingsClient;
     isSecurityEnabled: boolean;
   }): Promise<StreamsClient> {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
 
     const logger = this.logger;
 
@@ -47,7 +47,7 @@ export class StreamsService {
       logger,
       esClient,
       esClientAsInternalUser,
-      lockManager: new LockManagerService(this.coreSetup as never, logger),
+      lockManager: new LockManagerService(this.coreSetup, logger),
       storageClient: createStreamsStorageClient(esClientAsInternalUser, logger),
       isServerless,
       isSecurityEnabled,

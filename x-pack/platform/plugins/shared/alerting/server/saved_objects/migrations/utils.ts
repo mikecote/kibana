@@ -21,7 +21,7 @@ type AlertMigration = (
 ) => SavedObjectUnsanitizedDoc<RawRule>;
 
 export function createEsoMigration(
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
   isMigrationNeededPredicate: IsMigrationNeededPredicate<RawRule, RawRule>,
   migrationFunc: AlertMigration
 ) {

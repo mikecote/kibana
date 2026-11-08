@@ -37,7 +37,8 @@ export const contribution: AgentBuilderContribution = {
         throw new Error('Native dashboard migrations require embeddable registration metadata');
       const embeddables = createNativeEmbeddables(
         registry.getContributions<EmbeddableContribution>(EMBEDDABLE_CONTRIBUTIONS_KEY),
-        expected
+        expected,
+        { settings, getContributions: registry.getContributions }
       );
       return [createDashboardSavedObjectType({ migrationDeps: { embeddable: embeddables.setup } })];
     },

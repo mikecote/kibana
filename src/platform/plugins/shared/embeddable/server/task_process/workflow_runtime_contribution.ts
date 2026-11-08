@@ -31,7 +31,12 @@ export const contribution: WorkflowStepsContribution = {
       return createNativeEmbeddables(
         (taskHost.contributions?.[EMBEDDABLE_CONTRIBUTIONS_KEY] ?? []) as EmbeddableContribution[],
         expected,
-        { featureFlags: taskHost.featureFlags }
+        {
+          featureFlags: taskHost.featureFlags,
+          settings,
+          getContributions: <T extends object>(key: string) =>
+            (taskHost.contributions?.[key] ?? []) as T[],
+        }
       ).start;
     },
   },

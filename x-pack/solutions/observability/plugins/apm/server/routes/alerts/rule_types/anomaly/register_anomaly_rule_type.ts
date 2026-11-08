@@ -5,9 +5,10 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types';
 import type {
-  GetViewInAppRelativeUrlFnOpts,
   ActionGroupIdsOf,
   AlertInstanceContext as AlertContext,
   AlertInstanceState as AlertState,
@@ -22,7 +23,6 @@ import type { ESSearchResponse } from '@kbn/es-types';
 import {
   getAlertDetailsUrl,
   observabilityFeatureId,
-  observabilityPaths,
   ProcessorEvent,
 } from '@kbn/observability-plugin/common';
 import { termQuery, termsQuery } from '@kbn/observability-plugin/server';
@@ -420,7 +420,6 @@ export function registerAnomalyRuleType({
       return { state: {} };
     },
     alerts: ApmRuleTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

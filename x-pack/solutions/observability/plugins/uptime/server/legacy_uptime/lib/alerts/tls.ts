@@ -5,8 +5,9 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import type { GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import moment from 'moment';
 import type { ActionGroupIdsOf } from '@kbn/alerting-plugin/common';
@@ -15,7 +16,6 @@ import {
   alertsLocatorID,
   getAlertUrl,
   observabilityFeatureId,
-  observabilityPaths,
 } from '@kbn/observability-plugin/common';
 import type { LocatorPublic } from '@kbn/share-plugin/common';
 import { ALERT_REASON, ALERT_UUID } from '@kbn/rule-data-utils';
@@ -258,6 +258,5 @@ export const tlsAlertFactory: UptimeAlertTypeFactory<ActionGroupIds> = (
     return { state: updateState(state, foundCerts) };
   },
   alerts: UptimeRuleTypeAlertDefinition,
-  getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-    observabilityPaths.ruleDetails(rule.id),
+  getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
 });

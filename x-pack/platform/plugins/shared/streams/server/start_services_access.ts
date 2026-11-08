@@ -5,14 +5,41 @@
  * 2.0.
  */
 
-import type { CoreSetup } from '@kbn/core/server';
+import type { CoreStart } from '@kbn/core/server';
+import type { RulesReadClient } from '@kbn/alerting-plugin/server/rules_client/create_rules_read_client';
 import type { StreamsPluginStartDependencies } from './types';
 
-/**
- * What the streams services read of `CoreSetup`: the start services, read lazily. In Kibana it is
- * `core`; a task process gives its own (Core's building blocks and the services it builds).
- */
-export type StreamsStartServicesAccess = Pick<
-  CoreSetup<StreamsPluginStartDependencies>,
-  'getStartServices'
->;
+interface StreamsCoreStart {
+  elasticsearch: Pick<CoreStart['elasticsearch'], 'client'> & {
+    getCapabilities: () => Pick<
+      ReturnType<CoreStart['elasticsearch']['getCapabilities']>,
+      'serverless'
+    >;
+  };
+  savedObjects: Pick<
+    CoreStart['savedObjects'],
+    'getScopedClient' | 'getTypeRegistry' | 'createInternalRepository'
+  >;
+  uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient' | 'globalAsScopedToClient'>;
+}
+
+type StreamsStartPlugins = Pick<
+  StreamsPluginStartDependencies,
+  'encryptedSavedObjects' | 'fieldsMetadata'
+> & {
+  inference: Pick<StreamsPluginStartDependencies['inference'], 'getClient'>;
+  licensing: Pick<StreamsPluginStartDependencies['licensing'], 'getLicense'>;
+  alerting: {
+    getRulesClientWithRequest: (
+      ...args: Parameters<StreamsPluginStartDependencies['alerting']['getRulesClientWithRequest']>
+    ) => Promise<RulesReadClient>;
+  };
+};
+
+/** The scoped Core and plugin services consumed by Streams' native clients. */
+export interface StreamsStartServicesAccess {
+  getStartServices: () => Promise<{
+    readonly 0: StreamsCoreStart;
+    readonly 1: StreamsStartPlugins;
+  }>;
+}

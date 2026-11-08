@@ -6,9 +6,9 @@
  */
 
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import { extractReferences, injectReferences } from '@kbn/data-plugin/common';
+import { extractReferences } from '@kbn/data-plugin/common';
 import { i18n } from '@kbn/i18n';
-import type { IRuleTypeAlerts, GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
+import type { IRuleTypeAlerts } from '@kbn/alerting-plugin/server';
 import type { CoreSetup, IBasePath, Logger } from '@kbn/core/server';
 import type { DataViewsServerPluginStart } from '@kbn/data-views-plugin/server';
 import type { PluginStart as DataPluginStart } from '@kbn/data-plugin/server';
@@ -17,7 +17,9 @@ import { OBSERVABILITY_THRESHOLD_RULE_TYPE_ID } from '@kbn/rule-data-utils';
 import type { LicenseType } from '@kbn/licensing-types';
 import type { EsQueryRuleParamsExtractedParams } from '@kbn/stack-alerts-plugin/server/rule_types/es_query/rule_type_params';
 import { customThresholdParamsSchema } from '@kbn/response-ops-rule-params/custom_threshold';
-import { observabilityFeatureId, observabilityPaths } from '../../../../common';
+import { getObservabilityRuleViewUrl } from '../get_rule_view_url';
+import { injectCustomThresholdReferences } from './inject_references';
+import { observabilityFeatureId } from '../../../../common';
 import { THRESHOLD_RULE_REGISTRATION_CONTEXT } from '../../../common/constants';
 import {
   alertDetailUrlActionVariableDescription,
@@ -119,19 +121,13 @@ export function thresholdRuleType(
 
         return { params: newParams, references };
       },
-      injectReferences: (params: any, references: any) => {
-        return {
-          ...params,
-          searchConfiguration: injectReferences(params.searchConfiguration, references),
-        };
-      },
+      injectReferences: injectCustomThresholdReferences,
     },
     category: DEFAULT_APP_CATEGORIES.observability.id,
     producer: observabilityFeatureId,
     solution: 'observability' as const,
     alerts: MetricsRulesTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
     queryInspector: createQueryInspector(
       () =>
         core.getStartServices().then(([coreStart, pluginStart]) => [

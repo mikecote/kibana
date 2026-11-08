@@ -6,10 +6,10 @@
  */
 
 import { firstValueFrom } from 'rxjs';
-import type { KibanaRequest } from '@kbn/core/server';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
+import type { WorkflowRulesReadServices } from '@kbn/alerting-plugin/server/task_types/create_workflow_rules_read_client';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { FieldsMetadataServerStart } from '@kbn/fields-metadata-plugin/server';
 import { registerStreamsAgentBuilder } from '../agent_builder/register';
@@ -27,31 +27,7 @@ export interface StreamsAgentBuilderSettings {
   isServerless: boolean;
 }
 
-/** What a service of streams reads and a process cannot have: it throws when something uses it. */
-const onlyInKibana = (what: string): never =>
-  new Proxy(
-    {},
-    {
-      get: (_target, property) => {
-        if (property === 'then') return undefined;
-        return () => {
-          throw new Error(`${what} is only available in Kibana`);
-        };
-      },
-    }
-  ) as never;
-
-/**
- * What streams registers with agent builder, in the task process of the workflow task types: its
- * tools and its skill, which `setup()` registers with the same function. The scoped clients are the
- * ones of `createStreamsRunServices` over the host of the process (Core's Elasticsearch, saved objects
- * and ui settings, the process's inference, the license and the shared native fields metadata service).
- *
- * Differences from Kibana: the rules client of alerting (which the attachment client uses to read and
- * link rules to streams) and the encrypted saved objects client (canvas configuration, which no tool
- * reads) exist only in Kibana, and throw when used. Integration and stream metadata use the shared
- * registered extractors; tool availability uses the shared authorized Spaces service and native solution gate.
- */
+/** Registers Streams tools over the same scoped native client factories used in Main. */
 export const contribution: AgentBuilderContribution = {
   declares: { settings: [STREAMS_AGENT_BUILDER_SETTINGS_ID] },
   register: async (agentBuilder, { host, logger, settings, services }) => {
@@ -65,9 +41,13 @@ export const contribution: AgentBuilderContribution = {
 
     const core: StreamsStartServicesAccess = {
       getStartServices: async () => {
-        const coreStart = await services.getCoreStart();
+        const uiSettings = taskHost.uiSettings;
+        if (!uiSettings) throw new Error('Native Streams requires UI settings');
         const licensing = taskHost.licensing;
         if (!licensing) throw new Error('The task process did not get the license');
+        const encryptedSavedObjects = taskHost.encryptedSavedObjects;
+        if (!encryptedSavedObjects)
+          throw new Error('Native Streams requires encrypted saved objects');
         return [
           {
             elasticsearch: {
@@ -75,19 +55,16 @@ export const contribution: AgentBuilderContribution = {
               getCapabilities: () => ({ serverless: streamsSettings.isServerless }),
             },
             savedObjects: taskHost.savedObjects,
-            uiSettings: coreStart.uiSettings,
+            uiSettings,
           },
           {
-            encryptedSavedObjects: { getClient: () => onlyInKibana('Encrypted saved objects') },
-            inference: {
-              getClient: ({ request }: { request: KibanaRequest }) =>
-                (services.getInferenceStart() as InferenceServerStart).getClient({ request }),
-            },
+            encryptedSavedObjects,
+            inference: services.getInferenceStart() as InferenceServerStart,
             licensing: { getLicense: () => firstValueFrom(licensing.license$) },
             fieldsMetadata: services.getService<FieldsMetadataServerStart>('fieldsMetadata'),
-            alerting: { getRulesClientWithRequest: async () => onlyInKibana('The rules client') },
+            alerting: services.getService<WorkflowRulesReadServices>('alerting'),
           },
-        ] as never;
+        ] as const;
       },
     };
 

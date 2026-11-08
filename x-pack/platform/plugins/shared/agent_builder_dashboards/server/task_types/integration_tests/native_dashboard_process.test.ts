@@ -16,7 +16,10 @@ import { createEmbeddableServices } from '@kbn/embeddable-plugin/server/create_e
 import { createDashboardSavedObjectType } from '@kbn/dashboard-plugin/server/dashboard_saved_object';
 import { EMBEDDABLE_RUNTIME_SETTINGS_ID } from '@kbn/embeddable-plugin/server/task_process/embeddable_contribution';
 import { contribution } from './__fixtures__/native_dashboard_client';
-import { nativeEmbeddableContributions } from './__fixtures__/native_embeddable_registrations';
+import {
+  nativeEmbeddableContributions,
+  getNativeContributions,
+} from './__fixtures__/native_embeddable_registrations';
 import {
   startWorkflowProcessHarness,
   WORKFLOW_PROCESS_TEST_MODES,
@@ -30,7 +33,11 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
     beforeAll(async () => {
       const main = createEmbeddableServices();
       for (const entry of nativeEmbeddableContributions)
-        entry.register(main.setup, { featureFlags: coreMock.createStart().featureFlags });
+        entry.register(main.setup, {
+          featureFlags: coreMock.createStart().featureFlags,
+          getContributions: getNativeContributions,
+          settings: { lensRuntime: { visualizationMigrations: { rotatingNumber: ['8.1.0'] } } },
+        });
       harness = await startWorkflowProcessHarness({
         mode,
         reuse,
@@ -39,6 +46,7 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           createDashboardSavedObjectType({ migrationDeps: { embeddable: main.setup } }),
         ],
         settings: {
+          lensRuntime: { visualizationMigrations: { rotatingNumber: ['8.1.0'] } },
           [EMBEDDABLE_RUNTIME_SETTINGS_ID]: main.getRegistrationIds(),
           [DASHBOARDS_AGENT_BUILDER_SETTINGS_ID]: {},
         },
@@ -46,6 +54,9 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
           'workflow-steps': [contribution],
           'agent-builder': [dashboards],
           embeddables: [...nativeEmbeddableContributions],
+          'lens-visualization-migrations': [
+            ...getNativeContributions('lens-visualization-migrations'),
+          ],
         },
         additionalContributions: {
           'workflow-steps': [join(__dirname, '__fixtures__/native_dashboard_client.ts')],
@@ -91,6 +102,12 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         expect(execution.status).toBe('completed');
         const output = step.output.output ?? step.output;
         expect(output.lensIssues > 0).toBe(enabled);
+        const migrated = JSON.parse(output.customMigration);
+        expect(migrated.attributes.state.visualization).toEqual({
+          accessor: 'native-column',
+          layerId: 'native-layer',
+          color: '#000000',
+        });
         const dashboard = JSON.parse(output.dashboard);
         expect(dashboard.data.title).toBe('Native SDK dashboard');
         expect(dashboard.data.panels).toEqual([

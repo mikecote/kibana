@@ -96,6 +96,7 @@ import { RuleTypeRegistry } from './rule_type_registry';
 import { TaskRunnerFactory } from './task_runner';
 import { RulesClientFactory } from './rules_client_factory';
 import { ruleQueryInspectorRoute } from './routes/rule/apis/rule_query_inspector/rule_query_inspector_route';
+import { RULE_READ_SETTINGS_ID, getRuleReadSettings } from './task_types/rule_read_contribution';
 import type { RulesClientCreateOptions } from './rules_client_factory';
 import {
   RulesSettingsClientFactory,
@@ -617,6 +618,13 @@ export class AlertingPlugin {
       this.ruleTypeRegistry!,
       createGetAlertIndicesAliasFn(this.ruleTypeRegistry!),
       core
+    );
+
+    const getReadSettings = () => getRuleReadSettings(ruleTypeRegistry);
+    this.taskProcessSettings[RULE_READ_SETTINGS_ID] = getReadSettings;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      RULE_READ_SETTINGS_ID,
+      getReadSettings
     );
 
     const getAuthorizationSettings = async () => {

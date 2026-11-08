@@ -98,10 +98,19 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       if (module.createSavedObjectTypes && !deps.encryptedSavedObjects) {
         throw new Error('Native saved object factories require encrypted saved objects setup');
       }
+      const encryptedTypes = new Map(
+        (module.encryptedSavedObjectTypes ?? []).map((registration) => [
+          registration.type,
+          registration,
+        ])
+      );
       const createdTypes =
         module.createSavedObjectTypes && deps.encryptedSavedObjects
           ? module.createSavedObjectTypes(
-              deps.encryptedSavedObjects,
+              {
+                createMigration: deps.encryptedSavedObjects.createMigration,
+                registerType: (registration) => encryptedTypes.set(registration.type, registration),
+              },
               reviveSettingsByPlugin(init.settings)
             )
           : [];
@@ -121,12 +130,6 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       // The `task` type and its neighbours, which `host.taskManager` writes.
       if (module.taskManager) registerTaskManagerSavedObjects(core.savedObjects);
 
-      const encryptedTypes = new Map(
-        (module.encryptedSavedObjectTypes ?? []).map((registration) => [
-          registration.type,
-          registration,
-        ])
-      );
       if (module.taskManager) {
         for (const registration of TASK_ENCRYPTED_SAVED_OBJECT_TYPE_REGISTRATIONS)
           encryptedTypes.set(registration.type, registration);

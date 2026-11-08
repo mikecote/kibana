@@ -4,8 +4,9 @@
  * 2.0; you may not use this file except in compliance with the Elastic License
  * 2.0.
  */
+
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import type { GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import { min } from 'lodash';
 import moment from 'moment';
@@ -23,7 +24,6 @@ import {
   formatDurationFromTimeUnitChar,
   getAlertUrl,
   observabilityFeatureId,
-  observabilityPaths,
 } from '@kbn/observability-plugin/common';
 import type { LocatorPublic } from '@kbn/share-plugin/common';
 import { asyncForEach } from '@kbn/std';
@@ -546,6 +546,5 @@ export const statusCheckAlertFactory: UptimeAlertTypeFactory<ActionGroupIds> = (
     return { state: updateState(state, downMonitorsByLocation.length > 0) };
   },
   alerts: UptimeRuleTypeAlertDefinition,
-  getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-    observabilityPaths.ruleDetails(rule.id),
+  getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
 });

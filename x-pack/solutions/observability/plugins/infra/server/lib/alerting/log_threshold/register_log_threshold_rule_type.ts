@@ -5,13 +5,12 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { i18n } from '@kbn/i18n';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import type {
-  GetViewInAppRelativeUrlFnOpts,
-  AlertingServerSetup,
-} from '@kbn/alerting-plugin/server';
-import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
+import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import { logThresholdParamsSchema } from '@kbn/response-ops-rule-params/log_threshold';
 import type { InfraConfig } from '../../../../common/plugin_config_types';
 import { createLogThresholdExecutor, FIRED_ACTIONS } from './log_threshold_executor';
@@ -173,7 +172,6 @@ export function registerLogThresholdRuleType(
       injectReferences,
     },
     alerts: LogsRulesTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

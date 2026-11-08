@@ -9,7 +9,7 @@ import Boom from '@hapi/boom';
 import { AlertingAuthorizationEntity, ReadOperations } from '../../../../authorization';
 import { getRuleSo } from '../../../../data/rule';
 import { RuleAuditAction, ruleAuditEvent } from '../../../../rules_client/common/audit_events';
-import type { RulesClientContext } from '../../../../rules_client/types';
+import type { RulesReadContext } from '../../../../rules_client/rules_read_context';
 import { RULE_SAVED_OBJECT_TYPE } from '../../../../saved_objects';
 import type { SanitizedRule, SanitizedRuleWithLegacyId } from '../../../../types';
 import type { RuleParams } from '../../types';
@@ -18,7 +18,7 @@ import type { GetRuleParams } from './types';
 import { transformToSanitizedRule } from './utils';
 
 export async function getRule<Params extends RuleParams = never>(
-  context: RulesClientContext,
+  context: RulesReadContext,
   params: GetRuleParams
 ): Promise<SanitizedRule<Params> | SanitizedRuleWithLegacyId<Params>> {
   try {

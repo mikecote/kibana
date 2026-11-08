@@ -16,9 +16,12 @@ import type {
   GeoContainmentExtractedRuleParams,
   GeoContainmentRuleParams,
 } from './types';
+import { extractEntityAndBoundaryReferences, injectEntityAndBoundaryIds } from './references';
 import { executor } from './executor';
 import { ActionGroupId, RecoveryActionGroupId, GEO_CONTAINMENT_ID } from './constants';
 import { STACK_ALERTS_AAD_CONFIG } from '../constants';
+
+export { extractEntityAndBoundaryReferences, injectEntityAndBoundaryIds } from './references';
 
 const actionVariables = {
   context: [
@@ -90,56 +93,6 @@ const actionVariables = {
     },
   ],
 };
-
-export function extractEntityAndBoundaryReferences(params: GeoContainmentRuleParams): {
-  params: GeoContainmentExtractedRuleParams;
-  references: SavedObjectReference[];
-} {
-  const { indexId, boundaryIndexId, ...otherParams } = params;
-
-  //  Reference names omit the `param:`-prefix. This is handled by the alerting framework already
-  const references = [
-    {
-      name: `tracked_index_${indexId}`,
-      type: 'index-pattern',
-      id: indexId as string,
-    },
-    {
-      name: `boundary_index_${boundaryIndexId}`,
-      type: 'index-pattern',
-      id: boundaryIndexId as string,
-    },
-  ];
-  return {
-    params: {
-      ...otherParams,
-      indexRefName: `tracked_index_${indexId}`,
-      boundaryIndexRefName: `boundary_index_${boundaryIndexId}`,
-    },
-    references,
-  };
-}
-
-export function injectEntityAndBoundaryIds(
-  params: GeoContainmentExtractedRuleParams,
-  references: SavedObjectReference[]
-): GeoContainmentRuleParams {
-  const { indexRefName, boundaryIndexRefName, ...otherParams } = params;
-  const { id: indexId = null } = references.find((ref) => ref.name === indexRefName) || {};
-  const { id: boundaryIndexId = null } =
-    references.find((ref) => ref.name === boundaryIndexRefName) || {};
-  if (!indexId) {
-    throw new Error(`Index "${indexId}" not found in references array`);
-  }
-  if (!boundaryIndexId) {
-    throw new Error(`Boundary index "${boundaryIndexId}" not found in references array`);
-  }
-  return {
-    ...otherParams,
-    indexId,
-    boundaryIndexId,
-  } as GeoContainmentRuleParams;
-}
 
 export function getRuleType(): GeoContainmentRuleType {
   const alertTypeName = i18n.translate('xpack.stackAlerts.geoContainment.alertTypeTitle', {

@@ -28,7 +28,7 @@ import { NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID } from './nightshift_task_process_s
 import type { NightshiftTaskProcessSettings } from './nightshift_task_process_settings';
 
 /** Registers all Nightshift workflow steps with native stores, agents, quota enforcement and Sandbox. */
-export const contribution: WorkflowStepsContribution = {
+export const contribution = {
   declares: {
     settings: [NIGHTSHIFT_TASK_PROCESS_SETTINGS_ID],
     featureFlags: { [NIGHTSHIFT_ENABLED_FLAG]: false },
@@ -105,4 +105,4 @@ export const contribution: WorkflowStepsContribution = {
       ),
     });
   },
-};
+} satisfies WorkflowStepsContribution;

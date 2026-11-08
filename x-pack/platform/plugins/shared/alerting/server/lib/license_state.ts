@@ -15,14 +15,7 @@ import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { ILicense, LicenseType } from '@kbn/licensing-types';
 import { PLUGIN } from '../../common/constants/plugin';
 import { getRuleTypeFeatureUsageName } from './get_rule_type_feature_usage_name';
-import type {
-  RuleType,
-  RuleTypeParams,
-  RuleTypeState,
-  AlertInstanceState,
-  AlertInstanceContext,
-  RuleAlertData,
-} from '../types';
+import type { RuleType } from '../types';
 import { RuleTypeDisabledError } from './errors/rule_type_disabled';
 
 export type ILicenseState = PublicMethodsOf<LicenseState>;
@@ -199,26 +192,8 @@ export class LicenseState {
     }
   }
 
-  public ensureLicenseForRuleType<
-    Params extends RuleTypeParams,
-    ExtractedParams extends RuleTypeParams,
-    State extends RuleTypeState,
-    InstanceState extends AlertInstanceState,
-    InstanceContext extends AlertInstanceContext,
-    ActionGroupIds extends string,
-    RecoveryActionGroupId extends string,
-    AlertData extends RuleAlertData
-  >(
-    ruleType: RuleType<
-      Params,
-      ExtractedParams,
-      State,
-      InstanceState,
-      InstanceContext,
-      ActionGroupIds,
-      RecoveryActionGroupId,
-      AlertData
-    >
+  public ensureLicenseForRuleType(
+    ruleType: Pick<RuleType, 'id' | 'name' | 'minimumLicenseRequired'>
   ) {
     this.notifyUsage(ruleType.name, ruleType.minimumLicenseRequired);
 

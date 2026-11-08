@@ -114,7 +114,9 @@ function fixInventoryThresholdGroupId(
   }
 }
 
-export const getMigrations800 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations800 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc: SavedObjectUnsanitizedDoc<RawRule>): doc is SavedObjectUnsanitizedDoc<RawRule> => true,
@@ -125,7 +127,9 @@ export const getMigrations800 = (encryptedSavedObjects: EncryptedSavedObjectsPlu
     )
   );
 
-export const getMigrations801 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations801 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc: SavedObjectUnsanitizedDoc<RawRule>): doc is SavedObjectUnsanitizedDoc<RawRule> => true,

@@ -143,7 +143,7 @@ function addRuleIdsToLegacyNotificationReferences(
 }
 
 export const getMigrations7160 = (
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
   isPreconfigured: (connectorId: string) => boolean
 ) =>
   createEsoMigration(

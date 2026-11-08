@@ -38,6 +38,7 @@
       "expressionLegacyMetricVis",
     ],
     "optionalPlugins": [
+      "workflowsExtensions",
       "expressionPartitionVis",
       "usageCollection",
       "taskManager",

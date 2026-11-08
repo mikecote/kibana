@@ -93,7 +93,7 @@ export interface WorkflowStepsContribution {
     savedObjectTypes?: SavedObjectsType[];
     /** Builds native saved objects with encryption setup and the dispatching plugin's configuration. */
     createSavedObjectTypes?: (
-      encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
+      encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration' | 'registerType'>,
       settings: WorkflowStepsContributionContext['settings'],
       registry: { getContributions: <T extends object>(key: string) => readonly T[] }
     ) => SavedObjectsType[];

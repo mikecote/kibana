@@ -27,7 +27,11 @@ export const contribution: WorkflowStepsContribution = {
           'Read persisted dashboard panels and validate Lens configuration through native SDKs',
         category: StepCategory.Kibana,
         inputSchema: z.object({}),
-        outputSchema: z.object({ dashboard: z.string(), lensIssues: z.number() }),
+        outputSchema: z.object({
+          dashboard: z.string(),
+          lensIssues: z.number(),
+          customMigration: z.string(),
+        }),
         handler: async (context) => {
           const embeddable = services.getService<EmbeddableStart>('embeddable');
           const client = createDashboardServerClient({ embeddable, logger: taskHost.logger });
@@ -42,7 +46,29 @@ export const contribution: WorkflowStepsContribution = {
             type: LENS_EMBEDDABLE_TYPE,
             config: { ref_id: 12 },
           });
-          return { output: { dashboard: JSON.stringify(dashboard), lensIssues: issues.length } };
+          const migrateCustom = embeddable.getAllMigrations()['8.1.0'];
+          if (!migrateCustom) throw new Error('The native custom Lens migration is missing');
+          const customMigration = migrateCustom({
+            type: 'lens',
+            attributes: {
+              title: 'Native custom visualization',
+              references: [],
+              visualizationType: 'rotatingNumber',
+              state: {
+                query: { language: 'kuery', query: '' },
+                filters: [],
+                datasourceStates: { indexpattern: { layers: {} } },
+                visualization: { column: 'native-column', layerId: 'native-layer' },
+              },
+            },
+          });
+          return {
+            output: {
+              dashboard: JSON.stringify(dashboard),
+              lensIssues: issues.length,
+              customMigration: JSON.stringify(customMigration),
+            },
+          };
         },
       })
     );

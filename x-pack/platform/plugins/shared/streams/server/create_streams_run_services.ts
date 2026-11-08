@@ -48,7 +48,7 @@ export const createStreamsRunServices = ({
     request: KibanaRequest;
     rulesClientOptions?: RulesClientCreateOptions;
   }): Promise<RouteHandlerScopedClients> => {
-    const [coreStart, pluginsStart] = await core.getStartServices();
+    const { 0: coreStart, 1: pluginsStart } = await core.getStartServices();
 
     const scopedSoClient = coreStart.savedObjects.getScopedClient(request, {
       includedHiddenTypes: canvasEnabled

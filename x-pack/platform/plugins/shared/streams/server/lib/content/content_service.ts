@@ -18,7 +18,7 @@ export class ContentService {
   ) {}
 
   async getClient(): Promise<ContentClient> {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
 
     const adapter = new StorageIndexAdapter<ContentStorageSettings, StoredContentPack>(
       coreStart.elasticsearch.client.asInternalUser,

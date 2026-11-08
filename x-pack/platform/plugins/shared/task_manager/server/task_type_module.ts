@@ -171,7 +171,7 @@ export interface TaskTypeModule extends Omit<TaskRegisterDefinition, 'createTask
   savedObjectTypes?: SavedObjectsType[];
   /** Builds native saved objects from the process's encryption setup and captured plugin settings. */
   createSavedObjectTypes?: (
-    encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
+    encryption: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration' | 'registerType'>,
     settings: NonNullable<TaskHost['settings']>
   ) => SavedObjectsType[];
   /** Data streams owned by the module; registered locally without eager initialization. */

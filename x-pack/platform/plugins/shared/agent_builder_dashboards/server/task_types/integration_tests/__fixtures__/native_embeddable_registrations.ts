@@ -19,6 +19,12 @@ const { resolveTaskContributions } = requireContribution(
   resolveTaskContributions: (module: TaskTypeModule) => Record<string, string[]>;
 };
 
-export const nativeEmbeddableContributions = resolveTaskContributions(taskType).embeddables.map(
-  (file) => (requireContribution(file) as { contribution: EmbeddableContribution }).contribution
-);
+const contributions = resolveTaskContributions(taskType);
+
+export const getNativeContributions = <T extends object>(key: string): readonly T[] =>
+  (contributions[key] ?? []).map(
+    (file) => (requireContribution(file) as { contribution: T }).contribution
+  );
+
+export const nativeEmbeddableContributions =
+  getNativeContributions<EmbeddableContribution>('embeddables');

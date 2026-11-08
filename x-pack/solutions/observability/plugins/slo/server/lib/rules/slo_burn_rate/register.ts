@@ -5,13 +5,14 @@
  * 2.0.
  */
 
-import type { GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { legacyExperimentalFieldMap } from '@kbn/alerts-as-data-utils';
 import type { IBasePath } from '@kbn/core/server';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
 import type { LicenseType } from '@kbn/licensing-types';
-import { observabilityPaths, sloFeatureId } from '@kbn/observability-plugin/common';
+import { sloFeatureId } from '@kbn/observability-plugin/common';
 import { sloBurnRateParamsSchema } from '@kbn/response-ops-rule-params/slo_burn_rate';
 import { SLO_BURN_RATE_RULE_TYPE_ID } from '@kbn/rule-data-utils';
 import { SLO_RULE_REGISTRATION_CONTEXT } from '../../../common/constants';
@@ -110,8 +111,7 @@ export function sloBurnRateRuleType(basePath: IBasePath, isCpsEnabled: boolean =
       useLegacyAlerts: true,
       shouldWrite: true,
     },
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   };
 }
 

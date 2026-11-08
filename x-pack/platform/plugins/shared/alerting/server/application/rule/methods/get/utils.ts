@@ -8,7 +8,7 @@
 import { AlertConsumers } from '@kbn/rule-data-utils';
 import type { getRuleSo } from '../../../../data/rule';
 import { formatLegacyActions } from '../../../../rules_client/lib';
-import type { RulesClientContext } from '../../../../rules_client/types';
+import type { RulesReadContext } from '../../../../rules_client/rules_read_context';
 import type { Rule as DeprecatedRule, SanitizedRule } from '../../../../types';
 import { ruleDomainSchema } from '../../schemas';
 import { transformRuleAttributesToRuleDomain, transformRuleDomainToRule } from '../../transforms';
@@ -17,7 +17,7 @@ import type { RuleParams } from '../../types';
 type RuleSo = Awaited<ReturnType<typeof getRuleSo>>;
 
 export async function transformToSanitizedRule<Params extends RuleParams = never>(
-  context: RulesClientContext,
+  context: RulesReadContext,
   ruleSo: RuleSo
 ) {
   const ruleType = context.ruleTypeRegistry.get(ruleSo.attributes.alertTypeId);

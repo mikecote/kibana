@@ -5,10 +5,11 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types';
 import type {
-  GetViewInAppRelativeUrlFnOpts,
   ActionGroupIdsOf,
   AlertInstanceContext as AlertContext,
   AlertInstanceState as AlertState,
@@ -22,7 +23,6 @@ import {
   asDuration,
   formatDurationFromTimeUnitChar,
   getAlertDetailsUrl,
-  observabilityPaths,
   ProcessorEvent,
 } from '@kbn/observability-plugin/common';
 import { getParsedFilterQuery, termQuery } from '@kbn/observability-plugin/server';
@@ -399,7 +399,6 @@ export function registerTransactionDurationRuleType({
       return { state: {} };
     },
     alerts: ApmRuleTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

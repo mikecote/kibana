@@ -89,6 +89,11 @@ dependsOn:
   - '@kbn/workflows-extensions'
   - '@kbn/agent-builder-sml-plugin'
   - '@kbn/server-http-tools'
+  - '@kbn/workflows'
+  - '@kbn/response-ops-rule-params'
+  - '@kbn/core-saved-objects-server'
+  - '@kbn/rule-data-utils'
+  - '@kbn/workflows-execution-engine'
 tags:
   - plugin
   - prod

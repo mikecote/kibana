@@ -205,7 +205,7 @@ task type hands over its own service for the same capability.
 | Declare                     | `host` gets                   | In a process                                                                                                                                              | In Kibana                               |
 | --------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | `savedObjectTypes`          | saved object types registered | Core's repository and clients; the spaces extension takes the space from the fake request                                                                 | Core                                    |
-| `createSavedObjectTypes`    | native saved object migrations | Builds definitions with genuine encryption setup and revived dispatch settings; static and created definitions are deduplicated by name                     | Already registered by the owning plugin |
+| `createSavedObjectTypes`    | native saved object migrations | Builds definitions and conditional encrypted registrations with genuine encryption setup and revived dispatch settings; static and created definitions are deduplicated by name                     | Already registered by the owning plugin |
 | `dataStreams`               | `dataStreams`                 | Core's native clients for the declared definitions, initialized lazily during execution; eager migrations are skipped                                     | Core                                    |
 | `encryptedSavedObjectTypes` | `encryptedSavedObjects`       | the real encrypted saved objects plugin, with the keys the process is sent                                                                                | `hostExtensions.encryptedSavedObjects`  |
 | `eventLog`                  | `eventLog`                    | the native event-log writer, stamped with Kibana's server UUID, flushed before each run answers                                                           | `hostExtensions.eventLog`               |
@@ -889,8 +889,8 @@ native status readers described above.
 
 Also contributing since: streams (the scoped clients of `createStreamsRunServices`: the streams client over its
 storage, the scoped Elasticsearch client, the inference client of the process, the license and the fields metadata
-service resolved from the shared metadata registry; the rules client of alerting that the attachment client uses and the
-encrypted saved objects client still throw when used; tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
+service resolved from the shared metadata registry, native authorized rule readers and encrypted saved objects;
+tool availability reads the current authorized space and applies the same solution gate as Kibana) and evals_skills (the dataset service and the
 evaluator registry of the evals plugin, built by the same classes, the model connectors of the process's inference
 service and the privileges of the security task plugin; saving and running an experiment use the shared workflow management runtime).
 
@@ -1053,6 +1053,18 @@ dispatch; workers use that execution's registry with the real Task Manager and s
 objects clients. All four worker modes cover persisted resolution-rule changes, entity linking, relationship
 reads and maintainer status without business calls to Main.
 
+Alerting exposes native scoped rule readers through the workflow service registry. They execute the same
+`get`, `find` and `bulkGetRules` domain operations as Main, with native authorization, audit logging, licensing,
+reference injection and secret sanitization. Main captures its current rule catalog at dispatch. Owning plugins
+contribute their actual reference injectors and view URL callbacks; a missing required callback fails explicitly.
+Streams uses these readers for attachments and suggestions, and registers its canvas configuration and encrypted
+attributes through the same saved object registration function as Main, with the captured canvas gate.
+
+Lens captures custom visualization migration IDs and versions at dispatch. Native contributions provide the
+actual migration functions, and the worker verifies that they match Main's enabled inventory before building
+its embeddable factory. The example visualization shares its migration factory between Main and workers.
+Dashboard saved object migrations and execution services resolve the same contributed migration registry.
+
 Agent contributions still needed: security_solution (endpoint, detections and entity analytics
 services).
 
@@ -1060,8 +1072,6 @@ services).
 
 These remaining capability gaps currently fail process execution; they must be completed for full parity:
 
-- **Streams:** native rule reads and encrypted configuration clients still require completion.
-- **Lens:** custom visualization migration registrations still require native contributions.
 - **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
   message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
   what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.

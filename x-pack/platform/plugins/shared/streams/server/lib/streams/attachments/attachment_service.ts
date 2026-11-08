@@ -8,7 +8,7 @@
 import type { Logger, SavedObjectsClientContract } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 import { StorageIndexAdapter } from '@kbn/storage-adapter';
-import type { RulesClient } from '@kbn/alerting-plugin/server';
+import type { RulesReadClient } from '@kbn/alerting-plugin/server/rules_client/create_rules_read_client';
 import type { StreamsStartServicesAccess } from '../../../start_services_access';
 import { AttachmentClient } from './attachment_client';
 import type { AttachmentStorageSettings } from './storage_settings';
@@ -26,10 +26,10 @@ export class AttachmentService {
     rulesClient,
     soClient,
   }: {
-    rulesClient: RulesClient;
+    rulesClient: RulesReadClient;
     soClient: SavedObjectsClientContract;
   }): Promise<AttachmentClient> {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
 
     const adapter = new StorageIndexAdapter<AttachmentStorageSettings, AttachmentDocument>(
       coreStart.elasticsearch.client.asInternalUser,

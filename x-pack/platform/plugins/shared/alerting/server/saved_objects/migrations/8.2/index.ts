@@ -33,7 +33,9 @@ function addMappedParams(
   return doc;
 }
 
-export const getMigrations820 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations820 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc: SavedObjectUnsanitizedDoc<RawRule>): doc is SavedObjectUnsanitizedDoc<RawRule> => true,
