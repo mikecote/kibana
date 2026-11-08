@@ -14,6 +14,9 @@ import { isRetryableError, isUnrecoverableError } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import { RemoteTaskRunner } from './remote_task_runner';
 import type { TaskProcessLease } from './remote_task_runner';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
+import { elasticsearchConfigFromEnv } from './es_config';
+import type { TaskProcessDispatchSnapshot } from './wire';
 
 const withProtocol =
   (fetchFn: typeof fetch): typeof fetch =>
@@ -43,6 +46,119 @@ describe('RemoteTaskRunner dispatch', () => {
     });
     return { runner, onDispatchFailure };
   };
+
+  it('evaluates contributed SDK flags in Main for every dispatch and forwards the same remote snapshot', async () => {
+    let enabled = false;
+    const declared = { 'sdk.enabled': false, 'sdk.mode': 'true' };
+    const snapshot: TaskProcessDispatchSnapshot = {
+      protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+      init: {
+        kibanaVersion: '9.9.9',
+        elasticsearch: elasticsearchConfigFromEnv({
+          ES_URL: 'http://es:9200',
+          ES_USERNAME: 'test',
+          ES_PASSWORD: 'test',
+        }),
+      },
+      featureFlags: { old: true },
+    };
+    const dispatched: Array<{
+      featureFlags: TaskFeatureFlagDefinitions;
+      snapshot: TaskProcessDispatchSnapshot;
+    }> = [];
+    const getFeatureFlags = jest.fn(
+      async (_type: string, defaults: TaskFeatureFlagDefinitions = {}) => ({
+        ...defaults,
+        'sdk.enabled': enabled,
+      })
+    );
+    const fetchFn = jest.fn(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (String(input).includes(TASK_PROCESS_PATHS.featureFlags)) {
+          expect(init?.headers).toEqual({ authorization: 'Bearer worker-token' });
+          return new Response(
+            JSON.stringify({ taskType: request.taskType, featureFlags: declared })
+          );
+        }
+        if (String(input).endsWith(TASK_PROCESS_PATHS.run)) {
+          dispatched.push(JSON.parse(String(init?.body)));
+        }
+        return new Response(
+          JSON.stringify({ kind: 'result', result: { state: {} }, reusable: true })
+        );
+      }
+    );
+    for (enabled of [false, true]) {
+      const { runner } = create(fetchFn, {
+        route: { url: 'http://process', token: 'worker-token' },
+        request: { ...request, snapshot },
+        getFeatureFlags,
+      });
+      await runner.run();
+    }
+    expect(getFeatureFlags.mock.calls).toEqual([
+      [request.taskType, declared],
+      [request.taskType, declared],
+    ]);
+    expect(dispatched.map(({ featureFlags }) => featureFlags)).toEqual([
+      { ...declared, 'sdk.enabled': false },
+      { ...declared, 'sdk.enabled': true },
+    ]);
+    expect(dispatched.map(({ snapshot: forwarded }) => forwarded.featureFlags)).toEqual(
+      dispatched.map(({ featureFlags }) => featureFlags)
+    );
+    expect(snapshot.featureFlags).toEqual({ old: true });
+  });
+
+  it('refuses business dispatch when Main omits a contributed SDK flag', async () => {
+    const fetchFn = jest.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ taskType: request.taskType, featureFlags: { 'sdk.enabled': false } })
+        )
+    );
+    const { runner, onDispatchFailure } = create(fetchFn, {
+      getFeatureFlags: jest.fn().mockResolvedValue({}),
+    });
+    await expect(runner.run()).rejects.toThrow('Main did not evaluate native task feature flags');
+    expect(onDispatchFailure).toHaveBeenCalledWith(
+      request.taskType,
+      'incompatible',
+      expect.stringContaining('sdk.enabled')
+    );
+    expect(fetchFn.mock.calls).toHaveLength(1);
+  });
+
+  it('stops before dispatch when cancelled while Main is evaluating SDK flags', async () => {
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<TaskFeatureFlagDefinitions>();
+    const control = new AbortController();
+    const fetchFn = jest.fn(
+      async (input: Parameters<typeof fetch>[0]) =>
+        new Response(
+          JSON.stringify(
+            String(input).includes(TASK_PROCESS_PATHS.cancel)
+              ? { outcome: 'cancelled' }
+              : { taskType: request.taskType, featureFlags: { 'sdk.enabled': false } }
+          )
+        )
+    );
+    const { runner } = create(fetchFn, {
+      signal: control.signal,
+      getFeatureFlags: async () => {
+        entered.resolve();
+        return pending.promise;
+      },
+    });
+    const running = runner.run();
+    await entered.promise;
+    control.abort();
+    await expect(running).rejects.toMatchObject({ name: 'AbortError' });
+    pending.resolve({ 'sdk.enabled': true });
+    expect(
+      fetchFn.mock.calls.some(([input]) => String(input).endsWith(TASK_PROCESS_PATHS.run))
+    ).toBe(false);
+  });
 
   it('does not dispatch after cancellation while protocol negotiation is pending', async () => {
     const health = Promise.withResolvers<Response>();

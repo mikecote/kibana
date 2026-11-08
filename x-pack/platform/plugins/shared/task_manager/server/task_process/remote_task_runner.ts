@@ -18,6 +18,11 @@ import {
 } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import {
+  parseTaskFeatureFlagDeclarations,
+  assertTaskFeatureFlagValues,
+  type TaskFeatureFlagDefinitions,
+} from './feature_flag_declarations';
+import {
   parseTaskProcessProtocol,
   TASK_PROCESS_PATHS,
   TASK_PROCESS_PROTOCOL_VERSION,
@@ -63,7 +68,10 @@ export interface TaskProcessDispatch {
   /** The Kibana version dispatching the run; a process built from another version refuses it. */
   kibanaVersion: string;
   /** The values of the feature flags a task type declares, for the run being dispatched. */
-  getFeatureFlags?: (taskType: string) => Promise<TaskProcessRunRequest['featureFlags']>;
+  getFeatureFlags?: (
+    taskType: string,
+    declarations?: TaskFeatureFlagDefinitions
+  ) => Promise<TaskProcessRunRequest['featureFlags']>;
   getSnapshot?: (taskType: string) => Promise<TaskProcessDispatchSnapshot>;
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   onTasksCreated?: (count: number) => void;
@@ -130,6 +138,7 @@ export class RemoteTaskRunner implements CancellableTask {
       /** What the task type counts in Kibana's memory of the runs a process served. */
       observer?: RemoteRunObserver;
       getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
+      getFeatureFlags?: TaskProcessDispatch['getFeatureFlags'];
       onTasksCreated?: (count: number) => void;
       onMetrics?: (metrics: ScopeMetrics[]) => void;
       fetchFn?: typeof fetch;
@@ -220,6 +229,46 @@ export class RemoteTaskRunner implements CancellableTask {
           );
         }
         parseTaskProcessProtocol(await health.text());
+        if (this.params.getFeatureFlags) {
+          const declarationsResponse = await fetchFn(
+            `${address.url}${TASK_PROCESS_PATHS.featureFlags}?taskType=${encodeURIComponent(
+              request.taskType
+            )}`,
+            { headers: authHeaders(address), signal: abort }
+          );
+          if (!declarationsResponse.ok) {
+            await declarationsResponse.body?.cancel();
+            if (declarationsResponse.status >= 500)
+              throw processUnavailable('Task worker feature flag declarations are unavailable');
+            throw new TaskProcessAcquireError(
+              declarationsResponse.status === 404 ? 'not_served' : 'incompatible',
+              `Task worker feature flag negotiation returned HTTP ${declarationsResponse.status}`
+            );
+          }
+          const declared = parseTaskFeatureFlagDeclarations(
+            await declarationsResponse.text(),
+            request.taskType
+          );
+          abort.throwIfAborted();
+          let removeAbortListener = () => {};
+          const cancelled = new Promise<never>((_resolve, reject) => {
+            const onAbort = () => reject(abort.reason);
+            abort.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => abort.removeEventListener('abort', onAbort);
+          });
+          let values: TaskProcessRunRequest['featureFlags'];
+          try {
+            values = await Promise.race([
+              this.params.getFeatureFlags(request.taskType, declared),
+              cancelled,
+            ]);
+          } finally {
+            removeAbortListener();
+          }
+          assertTaskFeatureFlagValues(values, declared);
+          request.featureFlags = values;
+          if (request.snapshot) request.snapshot = { ...request.snapshot, featureFlags: values };
+        }
         if (this.cancelled || abort.aborted) {
           throw createRetryableError(
             new Error('Task process run was cancelled before dispatch'),
@@ -242,8 +291,11 @@ export class RemoteTaskRunner implements CancellableTask {
       } catch (error) {
         // Timed out or cancelled: Task Manager's own timeout handling owns that outcome.
         if (abort.aborted || this.cancelled) throw error;
-        if (error instanceof TaskProcessAcquireError && error.reason === 'incompatible') {
-          this.params.onDispatchFailure?.(request.taskType, 'incompatible', error.message);
+        if (
+          error instanceof TaskProcessAcquireError &&
+          (error.reason === 'incompatible' || error.reason === 'not_served')
+        ) {
+          this.params.onDispatchFailure?.(request.taskType, error.reason, error.message);
           throwUnrecoverableError(error);
         }
         this.params.onDispatchFailure?.(

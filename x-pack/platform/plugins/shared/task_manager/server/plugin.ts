@@ -534,12 +534,19 @@ export class TaskManagerPlugin
           });
         },
         // The feature flags a task type declares, as Kibana's flag service answers them now.
-        getFeatureFlags: async (taskType) => {
+        getFeatureFlags: async (taskType, contributions) => {
           const registration = this.moduleRegistrations.get(taskType);
           const declared = registration?.module.featureFlags;
           const added = registration?.options?.featureFlags?.();
-          const flags = declared || added ? { ...declared, ...added } : undefined;
-          if (!flags || !this.featureFlagsService) return undefined;
+          const flags =
+            declared || added || contributions
+              ? { ...declared, ...added, ...contributions }
+              : undefined;
+          if (!flags) return undefined;
+          if (!this.featureFlagsService) {
+            if (!Object.keys(flags).length) return {};
+            throw new Error('Task Manager feature flag evaluation has not initialized');
+          }
           const service = this.featureFlagsService;
           const values = await Promise.all(
             Object.entries(flags).map(async ([name, fallback]) => {
@@ -562,7 +569,6 @@ export class TaskManagerPlugin
             elasticsearch: serializeElasticsearchConfig(this.elasticsearchConfig!),
             kibanaVersion: this.kibanaVersion,
           },
-          featureFlags: await this.taskProcessDispatch?.getFeatureFlags?.(taskType),
         }),
         getCancelGracePeriodMs: (taskType) =>
           this.moduleRegistrations.get(taskType)?.module.cancelGracePeriodMs,

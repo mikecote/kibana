@@ -107,7 +107,7 @@ export const createHostFeatureFlags = (): NonNullable<TaskHost['featureFlags']> 
     getBooleanValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
     getStringValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
     getNumberValue$: (flagName, fallbackValue) => defer(() => of(read(flagName, fallbackValue))),
-  } as NonNullable<TaskHost['featureFlags']>;
+  };
 };
 
 /**

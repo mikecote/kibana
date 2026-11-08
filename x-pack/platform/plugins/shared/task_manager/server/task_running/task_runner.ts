@@ -561,9 +561,7 @@ export class TaskManagerRunner implements TaskRunner {
                 uiamApiKeyExternal: modifiedContext.taskInstance.userScope?.uiamApiKeyExternal,
                 userProfileId,
                 userName,
-                featureFlags: snapshot
-                  ? snapshot.featureFlags
-                  : await this.taskProcessDispatch.getFeatureFlags?.(this.taskType),
+                featureFlags: snapshot?.featureFlags,
                 kibanaVersion: this.taskProcessDispatch.kibanaVersion,
               },
               timeoutMs: parseIntervalAsMillisecond(this.timeout),
@@ -573,6 +571,7 @@ export class TaskManagerRunner implements TaskRunner {
               onTasksCreated: this.taskProcessDispatch.onTasksCreated,
               onMetrics: this.taskProcessDispatch.onMetrics,
               getCurrentTasksInPool: this.taskProcessDispatch.getCurrentTasksInPool,
+              getFeatureFlags: this.taskProcessDispatch.getFeatureFlags,
               observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {

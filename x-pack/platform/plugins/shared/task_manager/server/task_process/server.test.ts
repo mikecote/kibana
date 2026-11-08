@@ -29,6 +29,7 @@ import {
 import type { CancellableTask, RunContext, TaskRunAsDefinition } from '../task';
 import { buildTaskFakeRequest } from '../task_running/fake_request_factory';
 import { startTaskProcessServer } from './server';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 import { RemoteTaskRunner } from './remote_task_runner';
 import { elasticsearchConfigFromEnv } from './es_config';
 import { TaskProcessSupervisor } from './supervisor';
@@ -52,6 +53,9 @@ describe('task process server', () => {
   let url: string;
   const cleanup = jest.fn();
   const collectGauges = jest.fn(async () => []);
+  const getFeatureFlagDefinitions = jest.fn(
+    (_type: string): TaskFeatureFlagDefinitions | undefined => ({ 'sdk.enabled': false })
+  );
   const flush = jest.fn();
   const order: string[] = [];
   let createTask: (context: RunContext) => CancellableTask;
@@ -61,6 +65,7 @@ describe('task process server', () => {
   beforeEach(async () => {
     runAsDefinition = undefined;
     collectGauges.mockClear();
+    getFeatureFlagDefinitions.mockReset().mockReturnValue({ 'sdk.enabled': false });
     enrichFakeRequest = jest.fn();
     cleanup.mockReset();
     order.length = 0;
@@ -93,6 +98,7 @@ describe('task process server', () => {
       authToken: TOKEN,
       flush,
       collectGauges,
+      getFeatureFlagDefinitions,
       enrichFakeRequest,
     });
     await new Promise<void>((resolve) => server.once('listening', () => resolve()));
@@ -168,6 +174,34 @@ describe('task process server', () => {
       await invalid.body?.cancel();
     }
     expect(collectGauges).toHaveBeenCalledTimes(1);
+  });
+
+  it('authenticates SDK flag declarations and rejects missing bundle metadata before a run', async () => {
+    const endpoint = `${url}${TASK_PROCESS_PATHS.featureFlags}`;
+    expect((await undiciFetch(`${endpoint}?taskType=${TYPE}`)).status).toBe(401);
+    expect(getFeatureFlagDefinitions).not.toHaveBeenCalled();
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const response = await undiciFetch(`${endpoint}?taskType=${TYPE}`, { headers });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      taskType: TYPE,
+      featureFlags: { 'sdk.enabled': false },
+    });
+    expect(getFeatureFlagDefinitions).toHaveBeenCalledWith(TYPE);
+    getFeatureFlagDefinitions.mockReturnValueOnce(undefined);
+    const missing = await undiciFetch(`${endpoint}?taskType=${TYPE}`, { headers });
+    expect(missing.status).toBe(422);
+    expect(await missing.text()).toContain('rebuild the bundle');
+    for (const [type, status] of [
+      ['', 400],
+      ['x'.repeat(1025), 400],
+      ['unknown', 404],
+    ] as const) {
+      const invalid = await undiciFetch(`${endpoint}?taskType=${type}`, { headers });
+      expect(invalid.status).toBe(status);
+      await invalid.body?.cancel();
+    }
+    expect(order).toEqual([]);
   });
 
   it('advertises the current dispatch contract separately from liveness', async () => {

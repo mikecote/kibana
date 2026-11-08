@@ -19,12 +19,14 @@ export const TASK_PROCESS_CAPABILITIES = [
   'created-task-counts',
   'native-prometheus-handoff',
   'live-worker-gauge-collection',
+  'native-feature-flag-declarations',
   `native-metric-format-${METRIC_SERIALIZATION_VERSION}`,
 ] as const;
 
 export const TASK_PROCESS_PATHS = {
   health: '/v3/health',
   gauges: '/v3/gauges',
+  featureFlags: '/v3/feature_flags',
   run: '/v3/run',
   cancel: '/v3/cancel/',
   metrics: '/v3/metrics/',

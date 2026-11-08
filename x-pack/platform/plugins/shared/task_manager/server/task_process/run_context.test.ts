@@ -166,6 +166,28 @@ describe('task process run context', () => {
 
       expect([first.value, second.value]).toEqual([true, false]);
     });
+
+    it('isolates SDK values across overlapping and retained executions', async () => {
+      const run = (enabled: boolean, limit: number, mode: string, delay: number) =>
+        runInRunContext(
+          async () => {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return Promise.all([
+              firstValueFrom(flags.getBooleanValue$('enabled', true)),
+              firstValueFrom(flags.getNumberValue$('limit', 10)),
+              firstValueFrom(flags.getStringValue$('mode', 'default')),
+            ]);
+          },
+          { featureFlags: { enabled, limit, mode } }
+        );
+
+      const results = await Promise.all([run(true, 2.5, '123', 20), run(false, 0, '', 1)]);
+      expect(results.map(({ value }) => value)).toEqual([
+        [true, 2.5, '123'],
+        [false, 0, ''],
+      ]);
+      expect((await run(false, 0, 'true', 0)).value).toEqual([false, 0, 'true']);
+    });
   });
 
   describe('runFlushers', () => {

@@ -10,7 +10,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-explicit-any, @kbn/eslint/require_kbn_fs */
 
 import type { Client } from '@elastic/elasticsearch';
-import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { createServer } from 'http';
 import type { IncomingHttpHeaders, Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -41,6 +41,7 @@ import { ApiKeyType } from '@kbn/task-manager-plugin/server/config';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from '@kbn/task-manager-plugin/server/constants';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
+import type { TaskFeatureFlagDefinitions } from '@kbn/task-manager-plugin/server/task_process/feature_flag_declarations';
 import { collectRemoteGaugeMetrics } from '@kbn/task-manager-plugin/server/task_process/metrics_transport';
 import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -48,6 +49,7 @@ import type { TaskProcessDispatch } from '@kbn/task-manager-plugin/server/task_p
 import { runInRunContext } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
+import type { TaskBundleManifest } from '@kbn/task-manager-plugin/server/task_process/supervisor';
 import type {
   TaskProcessInit,
   TaskProcessRunRequest,
@@ -134,13 +136,22 @@ const getWorkflowBundles = (
             (includeRunTask && name === 'workflowsExecutionEngine__workflow_run') ||
             (includeResumeTask && name === 'workflowsExecutionEngine__workflow_resume')
         );
-    const built: Array<{ name: string }> = [];
+    const prebuiltManifest =
+      prebuiltDir && existsSync(join(prebuiltDir, 'manifest.json'))
+        ? (JSON.parse(
+            readFileSync(join(prebuiltDir, 'manifest.json'), 'utf8')
+          ) as TaskBundleManifest)
+        : undefined;
+    const built: Array<{ name: string; featureFlags?: TaskFeatureFlagDefinitions }> = [];
     for (const entry of entries) {
       if (prebuiltDir) {
         if (!existsSync(join(bundleDir, `${entry.name}.mjs`))) {
           throw new Error(`Missing prebuilt workflow task bundle ${entry.name} in ${prebuiltDir}`);
         }
-        built.push({ name: entry.name });
+        built.push({
+          name: entry.name,
+          featureFlags: prebuiltManifest?.bundles[entry.name]?.featureFlags,
+        });
       } else {
         built.push(await buildTaskBundle({ entry, outDir: bundleDir, additionalContributions }));
       }
@@ -149,10 +160,11 @@ const getWorkflowBundles = (
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
         bundles: Object.fromEntries(
-          built.map(({ name }) => [
+          built.map(({ name, featureFlags }) => [
             name,
             {
               file: `${name}.mjs`,
+              featureFlags,
               taskType:
                 name === executionTask?.name
                   ? executionTask.taskType.type
@@ -206,6 +218,7 @@ export interface WorkflowProcessHarnessOptions {
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   additionalContributions?: Record<string, string[]>;
   featureFlags?: Record<string, boolean | string | number>;
+  getFeatureFlags?: TaskProcessDispatch['getFeatureFlags'];
   /** The workflows to seed (a `scheduled` trigger is added unless `triggers` is given), by id. */
   workflows: Record<
     string,
@@ -684,6 +697,7 @@ const startHarness = async (
       onTasksCreated: (count) => createdTaskCounts.push(count),
       onMetrics: options.onMetrics,
       getCurrentTasksInPool: options.getCurrentTasksInPool,
+      getFeatureFlags: options.getFeatureFlags,
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
 

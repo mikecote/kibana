@@ -13,10 +13,11 @@ import { join } from 'path';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { TaskProcessLease } from './remote_task_runner';
 import type { TaskProcessDispatchSnapshot } from './wire';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 import { TaskProcessSupervisor } from './supervisor';
 import type { TaskProcessSettings } from './supervisor';
 
-const createBundleDir = () => {
+const createBundleDir = (featureFlags?: TaskFeatureFlagDefinitions) => {
   const dir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
   writeFileSync(join(dir, 'a.js'), '');
   writeFileSync(join(dir, 'b.js'), '');
@@ -24,7 +25,7 @@ const createBundleDir = () => {
     join(dir, 'manifest.json'),
     JSON.stringify({
       bundles: {
-        a: { file: 'a.js', taskType: 'alerting_v2:cleanup' },
+        a: { file: 'a.js', taskType: 'alerting_v2:cleanup', featureFlags },
         b: { file: 'b.js', taskType: 'task_manager:nodes' },
       },
     })
@@ -80,12 +81,13 @@ describe('TaskProcessSupervisor', () => {
     });
     const acquire = (type: string) =>
       (supervisor.getRoute(type) as { acquire: () => Promise<TaskProcessLease> }).acquire();
-    const ready = (index: number, port = 4567) =>
+    const ready = (index: number, port = 4567, featureFlags?: TaskFeatureFlagDefinitions) =>
       children[index].child.emit('message', {
         kind: 'ready',
         port,
         protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         capabilities: TASK_PROCESS_CAPABILITIES,
+        featureFlags,
       });
     return { supervisor, children, forkFn, acquire, ready };
   };
@@ -96,6 +98,37 @@ describe('TaskProcessSupervisor', () => {
   });
 
   const reuse = { idleTimeoutMs: 1000, maxAgeMs: 5000, maxRuns: 3, maxIdleProcesses: 2 };
+
+  it('serves shipped SDK flag defaults and validates them against the actual worker', async () => {
+    const declarations = { 'sdk.enabled': false, 'sdk.mode': 'true' };
+    const { supervisor, acquire, ready } = setup({ bundle_dir: createBundleDir(declarations) });
+    supervisor.start();
+    expect(supervisor.getFeatureFlagDefinitions('alerting_v2:cleanup')).toEqual(declarations);
+    expect(supervisor.getFeatureFlagDefinitions('task_manager:nodes')).toBeUndefined();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0, 4567, declarations);
+    (await pending).release();
+    await supervisor.stop();
+  });
+
+  const mismatchedRuntimeFlags: TaskFeatureFlagDefinitions[] = [
+    { 'sdk.enabled': true },
+    { 'sdk.enabled': false, 'sdk.new': false },
+  ];
+  it.each(mismatchedRuntimeFlags)(
+    'refuses worker code that differs from its shipped flag metadata: %j',
+    async (runtimeFlags) => {
+      const { supervisor, acquire, ready, children } = setup({
+        bundle_dir: createBundleDir({ 'sdk.enabled': false }),
+      });
+      supervisor.start();
+      const pending = acquire('alerting_v2:cleanup');
+      ready(0, 4567, runtimeFlags);
+      await expect(pending).rejects.toMatchObject({ reason: 'incompatible' });
+      expect(children[0].child.kill).toHaveBeenCalled();
+      await supervisor.stop();
+    }
+  );
 
   it('reuses a compatible child sequentially and retires it at the run limit', async () => {
     const { supervisor, children, forkFn, acquire, ready } = setup({ reuse });

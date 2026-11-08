@@ -19,6 +19,7 @@ import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
 import type { TaskProcessParity } from './parity';
 import type { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -92,6 +93,7 @@ export interface TaskProcessReady {
   port: number;
   protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
   capabilities: readonly string[];
+  featureFlags?: TaskFeatureFlagDefinitions;
 }
 
 /** Configuration and registrations captured for one dispatch in either process mode. */

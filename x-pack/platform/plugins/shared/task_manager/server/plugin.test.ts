@@ -418,6 +418,19 @@ describe('TaskManagerPlugin', () => {
         'later.flag': true,
       });
       await expect(taskProcessDispatch.getFeatureFlags('test:unknown')).resolves.toBeUndefined();
+      values['contributed.flag'] = true;
+      await expect(
+        taskProcessDispatch.getFeatureFlags('test:flags', { 'contributed.flag': false })
+      ).resolves.toEqual({
+        'declared.flag': true,
+        'added.flag': true,
+        'later.flag': true,
+        'contributed.flag': true,
+      });
+      values['contributed.flag'] = false;
+      await expect(
+        taskProcessDispatch.getFeatureFlags('test:flags', { 'contributed.flag': false })
+      ).resolves.toMatchObject({ 'contributed.flag': false });
     });
 
     test('starts the supervisor with the Kibana Elasticsearch connection and stops it', async () => {

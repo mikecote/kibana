@@ -15,6 +15,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 import { TaskProcessMetrics } from './run_metrics';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
@@ -136,6 +137,7 @@ export const startTaskProcessServer = ({
   collectGauges,
   forwardRun,
   getTaskTypes,
+  getFeatureFlagDefinitions,
   enrichFakeRequest,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
@@ -168,6 +170,7 @@ export const startTaskProcessServer = ({
     context: Pick<RunContext, 'signal' | 'setCustomTaskRunEventFields'>
   ) => CancellableTask;
   getTaskTypes?: () => string[];
+  getFeatureFlagDefinitions?: (taskType: string) => TaskFeatureFlagDefinitions | undefined;
   enrichFakeRequest?: FakeRequestEnricher;
 }) => {
   const inFlight = new Map<string, InFlight>();
@@ -374,12 +377,34 @@ export const startTaskProcessServer = ({
         (req.method === 'GET' &&
           (req.url?.startsWith(TASK_PROCESS_PATHS.metrics) ||
             req.url === TASK_PROCESS_PATHS.gauges ||
+            req.url === TASK_PROCESS_PATHS.featureFlags ||
+            req.url?.startsWith(`${TASK_PROCESS_PATHS.featureFlags}?`) ||
             req.url?.startsWith(`${TASK_PROCESS_PATHS.gauges}?`)))
       ) {
         if (!isAuthorized) {
           sendJson(res, 401, { error: 'unauthorized' });
           return;
         }
+      }
+
+      if (
+        req.method === 'GET' &&
+        (req.url === TASK_PROCESS_PATHS.featureFlags ||
+          req.url?.startsWith(`${TASK_PROCESS_PATHS.featureFlags}?`))
+      ) {
+        const taskType = new URL(req.url, 'http://task-worker').searchParams.get('taskType');
+        if (!taskType || taskType.length > 1024)
+          throw new RefusedRun(400, 'Invalid task type for feature flag declarations');
+        if (!(getTaskTypes?.() ?? [...taskDefinitions.keys()]).includes(taskType))
+          throw new RefusedRun(404, 'Task type is not served by this worker');
+        const featureFlags = getFeatureFlagDefinitions?.(taskType);
+        if (!featureFlags)
+          throw new RefusedRun(
+            422,
+            'Task bundle lacks feature flag declarations; rebuild the bundle'
+          );
+        sendJson(res, 200, { taskType, featureFlags });
+        return;
       }
 
       if (

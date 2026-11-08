@@ -169,6 +169,15 @@ execution. `/health` remains available for liveness probes. Rebuild task bundles
 workers when upgrading this protocol. Changes to required dispatch semantics must update the protocol
 and endpoint version together. Native metric transport also negotiates its serializer format before a run starts.
 
+Workers advertise the `native-feature-flag-declarations` capability. After the health check, Main reads
+the authenticated `/v3/feature_flags?taskType=...` endpoint, evaluates every declared flag through Core,
+and sends those current values in both the run and dispatch snapshot. Bundle manifests include flags
+declared by native SDK contributions, including transitively loaded contributions. Worker readiness
+checks those declarations against the loaded module. Missing declarations, changed defaults or missing
+evaluated values reject the dispatch before business execution; rebuild and deploy matching bundles.
+Retained workers read execution-scoped values through the feature-flag SDK APIs,
+so false, zero and empty strings remain valid values and overlapping runs cannot share another run's flags.
+
 ## What a process is
 
 A task process boots Core's `TaskRoot` with a fixed set of task plugins. It shares Core's configuration,

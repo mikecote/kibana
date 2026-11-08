@@ -7,6 +7,7 @@
 
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
+import { getTaskProcessContext } from './context';
 import { TASK_PROCESS_PROTOCOL_VERSION, TASK_PROCESS_CAPABILITIES } from './protocol';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 import { createTaskProcessParentWatcher } from './parent_watch';
@@ -58,6 +59,7 @@ export const runTaskProcess = async (
       taskDefinitions: core.definitions,
       executionContext: core.host.executionContext,
       enrichFakeRequest: core.enrichFakeRequest,
+      getFeatureFlagDefinitions: () => getTaskProcessContext().module.featureFlags ?? {},
       port: Number(process.env.PORT ?? 0),
       // Only a forked process is Kibana's own; its runs carry credentials, so it is loopback only.
       host: process.send ? '127.0.0.1' : process.env.HOST || undefined,
@@ -71,6 +73,7 @@ export const runTaskProcess = async (
             port,
             protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
             capabilities: TASK_PROCESS_CAPABILITIES,
+            featureFlags: getTaskProcessContext().module.featureFlags ?? {},
           } satisfies TaskProcessReady);
         } else {
           process.stdout.write(`READY ${port}\n`);

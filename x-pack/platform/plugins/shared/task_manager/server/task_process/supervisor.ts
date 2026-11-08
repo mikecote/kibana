@@ -19,6 +19,10 @@ import type {
   TaskProcessRoute,
 } from './remote_task_runner';
 import { assertTaskProcessProtocol } from './protocol';
+import {
+  parseTaskFeatureFlagDeclarations,
+  type TaskFeatureFlagDefinitions,
+} from './feature_flag_declarations';
 import { TaskProcessAcquireError } from './acquire_error';
 import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
@@ -27,7 +31,10 @@ import type { TaskProcessInit, TaskProcessReady } from './wire';
 
 /** `manifest.json` of a task bundle directory: which task types each bundle serves. */
 export interface TaskBundleManifest {
-  bundles: Record<string, { file: string; taskType: string }>;
+  bundles: Record<
+    string,
+    { file: string; taskType: string; featureFlags?: TaskFeatureFlagDefinitions }
+  >;
 }
 
 export interface TaskProcessSettings {
@@ -82,6 +89,7 @@ interface Bundle {
   name: string;
   file: string;
   taskType: string;
+  featureFlags?: TaskFeatureFlagDefinitions;
 }
 
 interface ReusableChild {
@@ -132,11 +140,12 @@ export class TaskProcessSupervisor {
       );
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as TaskBundleManifest;
-    for (const [name, { file, taskType }] of Object.entries(manifest.bundles)) {
+    for (const [name, { file, taskType, featureFlags }] of Object.entries(manifest.bundles)) {
       this.bundleByTaskType.set(taskType, {
         name,
         file: join(settings.bundle_dir, file),
         taskType,
+        featureFlags,
       });
     }
     const required = new Set([...requiredTaskTypes, ...this.bundleByTaskType.keys()]);
@@ -168,6 +177,10 @@ export class TaskProcessSupervisor {
 
   public getTaskTypes(): string[] {
     return [...this.bundleByTaskType.keys()];
+  }
+
+  public getFeatureFlagDefinitions(taskType: string): TaskFeatureFlagDefinitions | undefined {
+    return this.bundleByTaskType.get(taskType)?.featureFlags;
   }
 
   public getStats(): TaskProcessSupervisorStats {
@@ -393,6 +406,22 @@ export class TaskProcessSupervisor {
         if (settled || message?.kind !== 'ready') return;
         try {
           assertTaskProcessProtocol(message);
+          if (bundle.featureFlags) {
+            const declared = parseTaskFeatureFlagDeclarations(
+              JSON.stringify({ taskType: bundle.taskType, featureFlags: message.featureFlags }),
+              bundle.taskType
+            );
+            const mismatches = Object.entries(declared).filter(
+              ([name, value]) => bundle.featureFlags?.[name] !== value
+            );
+            if (mismatches.length)
+              throw new TaskProcessAcquireError(
+                'incompatible',
+                `Task bundle feature flag metadata differs from its runtime: ${mismatches
+                  .map(([name]) => name)
+                  .join(', ')}; rebuild the bundle`
+              );
+          }
         } catch (error) {
           failed(error instanceof Error ? error.message : String(error), 'incompatible');
           return;

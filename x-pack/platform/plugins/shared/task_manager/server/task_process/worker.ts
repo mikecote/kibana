@@ -60,6 +60,7 @@ export const startTaskProcessWorker = ({
     logger,
     kibanaVersion: settings.kibanaVersion,
     getTaskTypes: () => supervisor.getTaskTypes(),
+    getFeatureFlagDefinitions: (taskType) => supervisor.getFeatureFlagDefinitions(taskType),
     collectGauges: (owner) => {
       if (!owner) throw new Error('A remote gauge collection requires its dispatch owner');
       return supervisor.collectGaugeMetrics(owner);

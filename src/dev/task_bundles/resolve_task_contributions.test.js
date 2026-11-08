@@ -7,9 +7,28 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-const { resolveTaskContributions } = require('./build');
+const { resolveTaskContributions, collectTaskFeatureFlags } = require('./build');
 
 describe('resolveTaskContributions', () => {
+  it('includes native SDK defaults in bundle metadata with their original primitive types', () => {
+    const taskType = { featureFlags: { 'core.enabled': false } };
+    expect(
+      collectTaskFeatureFlags(taskType, [
+        {
+          declares: {
+            featureFlags: { 'sdk.enabled': true, 'sdk.mode': 'true', 'sdk.limit': 12.5 },
+          },
+        },
+        {},
+      ])
+    ).toEqual({
+      'core.enabled': false,
+      'sdk.enabled': true,
+      'sdk.mode': 'true',
+      'sdk.limit': 12.5,
+    });
+    expect(taskType.featureFlags).toEqual({ 'core.enabled': false });
+  });
   it('discovers nested requirements, terminates cycles and includes additional contributions once', () => {
     const taskType = {
       contributions: {

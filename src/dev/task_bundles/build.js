@@ -72,6 +72,14 @@ const resolveTaskContributions = (
   return filesByKey;
 };
 
+/** Collects the flag defaults of the module and every contributed native SDK. */
+const collectTaskFeatureFlags = (taskType, contributions) =>
+  Object.assign(
+    {},
+    taskType.featureFlags,
+    ...contributions.map((item) => item.declares?.featureFlags)
+  );
+
 /** Every task type file declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`). */
 const getTaskBundleEntries = (packages = getPackages(REPO_ROOT)) =>
   packages
@@ -250,7 +258,18 @@ const buildTaskBundle = async ({
   const loaded = loadTaskType(entry.file);
   if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
   // What the module says it takes from other plugins: every plugin's file under each key.
-  const contributions = resolveTaskContributions(loaded, additionalContributions);
+  const declarations = new Map();
+  const contributions = resolveTaskContributions(
+    loaded,
+    additionalContributions,
+    getContributionFiles,
+    (file) => {
+      const contribution = createRequire(__filename)(file).contribution;
+      declarations.set(file, contribution);
+      return contribution;
+    }
+  );
+  const featureFlags = collectTaskFeatureFlags(loaded, [...declarations.values()]);
   const contributionImports = Object.values(contributions).flat();
   const result = await build({
     stdin: {
@@ -352,6 +371,7 @@ const buildTaskBundle = async ({
       0
     ),
     entry,
+    featureFlags,
     ...(metafile ? { metafile: result.metafile } : {}),
   };
 };
@@ -365,7 +385,7 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
     runtime: results[0]?.runtime,
     bundles: Object.fromEntries(
-      results.map(({ entry, name, bytes, outfile, files, startupBytes }) => [
+      results.map(({ entry, name, bytes, outfile, files, startupBytes, featureFlags }) => [
         name,
         {
           file: path.relative(outDir, outfile),
@@ -373,6 +393,7 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
           taskType: readTaskType(entry.file),
           bytes,
           startupBytes,
+          featureFlags,
         },
       ])
     ),
@@ -386,6 +407,7 @@ module.exports = {
   getTaskBundleEntries,
   getContributionFiles,
   resolveTaskContributions,
+  collectTaskFeatureFlags,
   getStartupOutputs,
   buildTaskBundle,
   writeManifest,
