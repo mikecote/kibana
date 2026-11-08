@@ -71,6 +71,10 @@ import {
   WORKFLOWS_STEP_EXECUTIONS_INDEX,
   WORKFLOWS_STEP_EXECUTIONS_INDEX_MAPPINGS,
 } from '../repositories/data_access_layer';
+import {
+  WORKFLOWS_EXECUTIONS_DATA_STREAM,
+  WORKFLOWS_STEP_EXECUTIONS_DATA_STREAM,
+} from '../repositories/data_access_layer/implementations/data_stream/constants';
 import { contribution as workflowTaskSchedulingContribution } from '../task_types/task_scheduling_contribution';
 import { taskType as scheduledTaskType } from '../task_types/workflow_scheduled.task';
 import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '../workflow_task_manager/task_scheduling_definitions';
@@ -278,6 +282,21 @@ const runSeed = async (
   if (error !== undefined) throw error;
 };
 
+const getExecutionStorage = (options: Pick<WorkflowProcessHarnessOptions, 'settings'>) => {
+  const engineConfig = engineConfigDescriptor.schema.validate(
+    options.settings?.workflowsExecutionEngine ?? {}
+  );
+  const executionsIndex =
+    engineConfig.storage.source === 'data_stream'
+      ? WORKFLOWS_EXECUTIONS_DATA_STREAM
+      : WORKFLOWS_EXECUTIONS_INDEX;
+  const stepsIndex =
+    engineConfig.storage.source === 'data_stream'
+      ? WORKFLOWS_STEP_EXECUTIONS_DATA_STREAM
+      : WORKFLOWS_STEP_EXECUTIONS_INDEX;
+  return { engineConfig, executionsIndex, stepsIndex };
+};
+
 /**
  * Real Elasticsearch, a stub of Kibana and the real `workflow:scheduled` bundle in a real task
  * process, with what Kibana would have installed (saved object and execution indices, data stream
@@ -287,7 +306,7 @@ const startHarness = async (
   options: WorkflowProcessHarnessOptions,
   cleanups: Array<() => Promise<unknown>>
 ) => {
-  const engineConfig = engineConfigDescriptor.schema.validate({});
+  const { engineConfig, executionsIndex, stepsIndex } = getExecutionStorage(options);
   const kibanaRequests: StubRequest[] = [];
   let apiKey = '';
 
@@ -327,7 +346,6 @@ const startHarness = async (
       options.claimNudge === true,
       options.middlewareIds
     ),
-    workflowsExecutionEngine: engineConfig,
     workflowsExecutionEngineCloud: { serverless: { projectId: 'project-1' } },
     security: getSecurityTaskProcessSettings({
       license: new License({
@@ -350,6 +368,7 @@ const startHarness = async (
       kibanaServerResourceURL: 'http://localhost:5601',
     }),
     ...options.settings,
+    workflowsExecutionEngine: engineConfig,
   });
 
   const initFor = () => ({
@@ -691,16 +710,18 @@ const startHarness = async (
             workflowRunId: string;
             spaceId: string;
           };
-          const execution = await es.get<{ workflowId: string; status: string }>({
-            index: WORKFLOWS_EXECUTIONS_INDEX,
-            id: params.workflowRunId,
+          await es.indices.refresh({ index: executionsIndex });
+          const { hits: executionHits } = await es.search<{ workflowId: string; status: string }>({
+            index: executionsIndex,
+            query: { ids: { values: [params.workflowRunId] } },
           });
+          const execution = executionHits.hits[0];
           const matchesWorkflow =
-            execution._source &&
+            execution?._source &&
             (typeof workflowId === 'string'
               ? execution._source.workflowId === workflowId
               : workflowId.test(execution._source.workflowId));
-          if (matchesWorkflow && execution._source?.status === 'pending')
+          if (matchesWorkflow && execution?._source?.status === 'pending')
             return { id: hit._id.replace(/^task:/, ''), params };
         }
       }
@@ -711,17 +732,17 @@ const startHarness = async (
 
   type Document = Record<string, any>;
   const executionsOf = async (workflowId: string): Promise<Document[]> => {
-    await es.indices.refresh({ index: WORKFLOWS_EXECUTIONS_INDEX });
+    await es.indices.refresh({ index: executionsIndex });
     const { hits } = await es.search<Document>({
-      index: WORKFLOWS_EXECUTIONS_INDEX,
+      index: executionsIndex,
       query: { term: { workflowId } },
     });
     return hits.hits.map((hit) => hit._source!);
   };
   const stepsOf = async (executionId: string): Promise<Document[]> => {
-    await es.indices.refresh({ index: WORKFLOWS_STEP_EXECUTIONS_INDEX });
+    await es.indices.refresh({ index: stepsIndex });
     const { hits } = await es.search<Document>({
-      index: WORKFLOWS_STEP_EXECUTIONS_INDEX,
+      index: stepsIndex,
       query: { term: { workflowRunId: executionId } },
     });
     return hits.hits.map((hit) => hit._source!);

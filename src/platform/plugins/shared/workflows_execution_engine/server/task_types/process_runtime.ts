@@ -51,6 +51,10 @@ import { assertRunnableInProcessPreflight } from '../lib/assert_runnable_in_proc
 import { createRetryingEsClient } from '../lib/create_retrying_es_client';
 import type { WorkflowMeteringCloud } from '../metering';
 import { WorkflowsMeteringService } from '../metering/metering_service';
+import {
+  WORKFLOWS_EXECUTIONS_DATA_STREAM,
+  WORKFLOWS_STEP_EXECUTIONS_DATA_STREAM,
+} from '../repositories/data_access_layer/implementations/data_stream/constants';
 import { createDataStreamDataClients } from '../repositories/data_access_layer/implementations/data_stream/data_stream_data_client_bundle';
 import { createPlainIndexDataClients } from '../repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
 import { ExecutionIdentityContexts } from '../service_account_execution';
@@ -114,6 +118,10 @@ export const createWorkflowRuntimeFromHost = async (
   // Execution storage: the clients of the indices or data streams Kibana installed.
   let dataClients: WorkflowRuntimeDataClients;
   if (config.storage.source === 'data_stream') {
+    await Promise.all([
+      dataStreams.initializeClient(WORKFLOWS_EXECUTIONS_DATA_STREAM),
+      dataStreams.initializeClient(WORKFLOWS_STEP_EXECUTIONS_DATA_STREAM),
+    ]);
     const clients = createDataStreamDataClients({ esClient, logger });
     await clients.init();
     stops.push(clients.stop);

@@ -622,7 +622,11 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   run and schedule a `workflow:resume` task; a second process finishes it.
 - **Data streams.** The engine registers its shared definitions with native Core using the current
   dispatch storage settings. Its log and trigger-event clients use Core's lazy initialization,
-  preserving native template and first-use creation behavior.
+  preserving native template and first-use creation behavior. With `storage.source: data_stream`,
+  the workflow and step execution streams are also initialized through Core before their shared
+  native data clients are built. Metadata refresh timers do not keep workers alive. The process
+  matrix parks and resumes executions across two rollovers, preserves Main updates, rejects stale
+  compare-and-set revisions and verifies fresh revisions in all four worker modes.
 - **Service accounts.** A workflow with `settings.run_as` runs in the process as in Kibana. The security task
   plugin builds the plugin's own `ServiceAccountsService` from explicit dependencies: Kibana sends
   `serviceAccounts.enabled` and `requestLifetime`, the cloud project context (organization, project and

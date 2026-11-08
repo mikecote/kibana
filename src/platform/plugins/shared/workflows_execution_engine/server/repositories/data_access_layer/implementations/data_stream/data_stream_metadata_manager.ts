@@ -133,6 +133,7 @@ export class DataStreamMetadataManager {
     this.refreshTimer = setTimeout(() => {
       void this.refreshInBackground();
     }, intervalMs);
+    this.refreshTimer.unref?.();
   }
 
   private async fetchMetadata(): Promise<DataStreamMetadata> {
