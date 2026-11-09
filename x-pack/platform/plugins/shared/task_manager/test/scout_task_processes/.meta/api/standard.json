@@ -1,0 +1,108 @@
+{
+  "sha1": "7d5952d42360522a15b23f3f76cd9a815638c247",
+  "testChannels": [
+    "ci-on-commit"
+  ],
+  "tests": [
+    {
+      "id": "21eb89f7e51fb54-45b8146d4883b8e",
+      "title": "Rules that time out in task processes a run that is cancelled ends its task process",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/cancel.spec.ts",
+        "line": 37,
+        "column": 47
+      }
+    },
+    {
+      "id": "29c8bbeb5144925-265e55c7371a336",
+      "title": "Process capacity failures with the process cap reached, extra runs retry in processes and every rule completes",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/dispatch_failures.spec.ts",
+        "line": 34,
+        "column": 11
+      }
+    },
+    {
+      "id": "6e14a9c6409e425-94f907f29ea67b4",
+      "title": "Rules in task processes of a real Kibana an es-query rule runs in a task process, its actions in Kibana, and its logs carry Kibana labels",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/rule_in_process.spec.ts",
+        "line": 47,
+        "column": 31
+      }
+    },
+    {
+      "id": "6e14a9c6409e425-cfe9ca88face6ad",
+      "title": "Rules in task processes of a real Kibana a connector with secrets is used by an action of a rule run in a task process",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/rule_in_process.spec.ts",
+        "line": 127,
+        "column": 15
+      }
+    },
+    {
+      "id": "5c951dc5b4e4580-225c9b9fd5c9c6b",
+      "title": "Workflows in native task processes resumes human input and waits for a native child using a scoped Kibana step",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic",
+        "@local-serverless-search",
+        "@local-serverless-observability_complete",
+        "@local-serverless-security_complete"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/workflow_in_process.spec.ts",
+        "line": 138,
+        "column": 5
+      }
+    },
+    {
+      "id": "5c951dc5b4e4580-490f66d3c3ceb84",
+      "title": "Workflows in native task processes runs an agent with Main registration metadata and a native Elasticsearch tool",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic",
+        "@local-serverless-search",
+        "@local-serverless-observability_complete",
+        "@local-serverless-security_complete"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/workflow_in_process.spec.ts",
+        "line": 204,
+        "column": 13
+      }
+    },
+    {
+      "id": "5c951dc5b4e4580-794d71e65031f65",
+      "title": "Workflows in native task processes cancels a parked native workflow without resuming its remaining steps",
+      "expectedStatus": "passed",
+      "tags": [
+        "@local-stateful-classic",
+        "@local-serverless-search",
+        "@local-serverless-observability_complete",
+        "@local-serverless-security_complete"
+      ],
+      "location": {
+        "file": "x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/tests/workflow_in_process.spec.ts",
+        "line": 252,
+        "column": 16
+      }
+    }
+  ]
+}
