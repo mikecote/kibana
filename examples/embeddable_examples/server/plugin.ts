@@ -16,8 +16,8 @@ import type {
 } from '@kbn/core/server';
 import type { SetupDeps, StartDeps } from './types';
 import { registerBookSavedObject, BookStorage } from './book';
-import { BOOK_CONTENT_ID, BOOK_EMBEDDABLE_TYPE, BOOK_LATEST_VERSION } from '../common';
-import { bookTransforms } from '../common/book/transforms';
+import { BOOK_CONTENT_ID, BOOK_LATEST_VERSION } from '../common';
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class EmbeddableExamplesPlugin implements Plugin<void, void, SetupDeps, StartDeps> {
   private readonly logger: Logger;
@@ -39,10 +39,7 @@ export class EmbeddableExamplesPlugin implements Plugin<void, void, SetupDeps, S
       },
     });
 
-    embeddable.registerEmbeddableServerDefinition(BOOK_EMBEDDABLE_TYPE, {
-      title: 'Book',
-      getTransforms: () => bookTransforms,
-    });
+    registerEmbeddableDefinitions(embeddable);
 
     return {};
   }

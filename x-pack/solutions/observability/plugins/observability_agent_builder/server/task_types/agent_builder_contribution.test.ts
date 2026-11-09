@@ -39,6 +39,7 @@ it('evaluates tool availability without constructing data access clients', async
       },
     },
     services: {
+      registerRunCompletion: jest.fn(),
       getService,
       getCoreStart: jest.fn(),
       getActionsStart: jest.fn(),

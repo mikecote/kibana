@@ -6,12 +6,17 @@
  */
 
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
-import { ToolResultType } from '@kbn/agent-builder-common';
+import {
+  ToolResultType,
+  AgentExecutionMode,
+  agentBuilderDefaultAgentId,
+} from '@kbn/agent-builder-common';
 import { AgentPromptType } from '@kbn/agent-builder-common/agents/prompts';
 import { StepCategory } from '@kbn/workflows';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import { z } from '@kbn/zod/v4';
+import { SECURITY_RUN_RULE_PREVIEW_TOOL_ID } from '../../../agent_builder/tools/run_rule_preview_tool';
 import { SECURITY_ENTITY_RISK_SCORE_TOOL_ID } from '../../../agent_builder/tools/entity_analytics/entity_risk_score_tool';
 import { SECURITY_BUILD_REDIRECT_URL_TOOL_ID } from '../../../agent_builder/tools/build_redirect_url_tool';
 import { SECURITY_LIST_RESOLUTION_RULES_TOOL_ID } from '../../../agent_builder/tools/entity_analytics/resolution/list_resolution_rules_tool';
@@ -34,6 +39,8 @@ export const contribution: WorkflowStepsContribution = {
           url: z.string(),
           beforeConfirmation: z.boolean(),
           ruleEnabled: z.boolean(),
+          previewId: z.string(),
+          asyncExecutionId: z.string(),
         }),
         handler: async (context) => {
           const request = context.contextManager.getFakeRequest();
@@ -116,7 +123,43 @@ export const contribution: WorkflowStepsContribution = {
           });
           if (confirmed.results?.[0]?.type !== ToolResultType.other)
             throw new Error(`Native resolution write failed: ${JSON.stringify(confirmed)}`);
-          return { output: { riskScores, url, beforeConfirmation, ruleEnabled: await readRule() } };
+          const preview = await agentBuilder.tools.execute({
+            request,
+            toolId: SECURITY_RUN_RULE_PREVIEW_TOOL_ID,
+            toolParams: {
+              command: 'query --query "*" --index native-security-preview-docs --language kuery',
+            },
+          });
+          const previewResult = preview.results?.[0];
+          if (previewResult?.type !== ToolResultType.other)
+            throw new Error(`Native rule preview failed: ${JSON.stringify(preview)}`);
+          const { previewId, logs } = z
+            .object({
+              previewId: z.string(),
+              logs: z.array(z.object({ errors: z.array(z.string()) })),
+            })
+            .parse(previewResult.data);
+          if (logs.some(({ errors }) => errors.length))
+            throw new Error(`Native preview executor failed: ${JSON.stringify(logs)}`);
+          const scheduled = await agentBuilder.execution.executeAgent({
+            request,
+            mode: AgentExecutionMode.conversation,
+            useTaskManager: true,
+            params: {
+              agentId: agentBuilderDefaultAgentId,
+              nextInput: { message: 'Queue a native agent execution' },
+            },
+          });
+          return {
+            output: {
+              riskScores,
+              url,
+              beforeConfirmation,
+              ruleEnabled: await readRule(),
+              previewId,
+              asyncExecutionId: scheduled.executionId,
+            },
+          };
         },
       })
     );

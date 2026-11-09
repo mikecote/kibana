@@ -137,7 +137,7 @@ export const findMissingWorkflowCapabilities = (
 };
 
 /**
- * Throws a {@link DeclinedRunError} (Task Manager then runs the task in Kibana) when the workflow
+ * Throws a {@link DeclinedRunError} when the workflow
  * uses a step type or trigger type the process does not have, or runs as a service account where
  * that is not available. Call it before anything is written.
  */
@@ -186,7 +186,7 @@ export interface WorkflowPreflightContext {
 
 /**
  * Called at the top of each of the three task functions, before anything is written. It may throw a
- * {@link DeclinedRunError} to have Task Manager run the task in Kibana. A no-op in Kibana.
+ * {@link DeclinedRunError} to fail the task without executing it in Kibana. A no-op in Kibana.
  */
 export type WorkflowPreflight = (context: WorkflowPreflightContext) => void | Promise<void>;
 

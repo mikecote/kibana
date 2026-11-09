@@ -132,11 +132,28 @@ export interface HttpSelfScopedClient {
   ): Promise<TResponseBody>;
 }
 
+/** The effective TLS trust and client-certificate requirements of a self HTTP target. */
+export interface HttpSelfClientSslConfig {
+  readonly verificationMode: 'full' | 'certificate' | 'none';
+  readonly certificateAuthorities: readonly string[];
+  readonly exclusiveTrust: boolean;
+  readonly clientCertificateRequired: boolean;
+}
+
+export interface HttpSelfClientDispatchConfig {
+  readonly url?: string;
+  readonly target: 'auto' | 'local';
+  readonly serverInfo: HttpServerInfo;
+  readonly basePath: string;
+  readonly publicBaseUrl?: string;
+  readonly ssl: Readonly<Record<'local' | 'public', HttpSelfClientSslConfig>>;
+}
+
 /**
  * Creates scoped clients for calling Kibana's own HTTP routes.
  *
- * Self calls do not support mTLS. Calls fail when Kibana's current
- * `server.ssl.clientAuthentication` is `optional` or `required`. Core cannot detect
+ * Self calls do not support mTLS. Local calls fail when Kibana's current
+ * `server.ssl.clientAuthentication` is `required`. Core cannot detect
  * mTLS configured only on an external proxy or public URL, so callers must not use
  * this client with such a target.
  *
@@ -144,6 +161,8 @@ export interface HttpSelfScopedClient {
  */
 export interface HttpSelfService {
   asScoped(request: KibanaRequest): HttpSelfScopedClient;
+  /** Captures the effective target and TLS trust for native execution services. */
+  getDispatchConfig(): HttpSelfClientDispatchConfig;
 }
 
 /**

@@ -9,7 +9,7 @@
 
 import { firstValueFrom } from 'rxjs';
 import type { CoreContext } from '@kbn/core-base-server-internal';
-import type { HttpServerInfo } from '@kbn/core-http-server';
+import type { HttpServerInfo, HttpSelfClientDispatchConfig } from '@kbn/core-http-server';
 import { AuthHeadersStorage } from './auth_headers_storage';
 import { BasePath } from './base_path_service';
 import { HttpConfig, type HttpConfigType } from './http_config';
@@ -36,7 +36,10 @@ export class TaskHttpService {
   private selfClient?: InternalHttpSelfService;
   private uiamAttestationGetter?: SelfClientUiamAttestationGetter;
 
-  constructor(private readonly core: CoreContext) {}
+  constructor(
+    private readonly core: CoreContext,
+    private readonly dispatch?: HttpSelfClientDispatchConfig
+  ) {}
 
   public async setup(): Promise<TaskHttpSetup> {
     const configService = this.core.configService;
@@ -55,13 +58,16 @@ export class TaskHttpService {
   public start(): TaskHttpStart {
     const config = this.config;
     if (!config) throw new Error('Task HTTP services must be set up before start.');
-    const basePath = new BasePath(config.basePath, config.publicBaseUrl);
-    const getServerInfo = (): HttpServerInfo => ({
-      name: config.name,
-      hostname: config.host,
-      port: config.port,
-      protocol: config.ssl.enabled ? 'https' : 'http',
-    });
+    const basePath = this.dispatch
+      ? new BasePath(this.dispatch.basePath, this.dispatch.publicBaseUrl)
+      : new BasePath(config.basePath, config.publicBaseUrl);
+    const getServerInfo = (): HttpServerInfo =>
+      this.dispatch?.serverInfo ?? {
+        name: config.name,
+        hostname: config.host,
+        port: config.port,
+        protocol: config.ssl.enabled ? 'https' : 'http',
+      };
     this.selfClient = createInternalHttpSelfClient({
       authRequestHeaders: this.authRequestHeaders,
       basePath,
@@ -69,7 +75,8 @@ export class TaskHttpService {
       getHttpConfig: () => config,
       kibanaVersion: this.core.env.packageInfo.version,
       log: this.core.logger.get('http', 'self-client'),
-      target: config.selfHttp.target,
+      target: this.dispatch?.target ?? config.selfHttp.target,
+      ssl: this.dispatch?.ssl,
       getUiamAttestationGetter: () => this.uiamAttestationGetter,
     });
     return {

@@ -5,19 +5,15 @@
  * 2.0.
  */
 
-import type {
-  ElasticsearchServiceStart,
-  Logger,
-  UiSettingsServiceStart,
-  SavedObjectsServiceStart,
-} from '@kbn/core/server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
+import type { Logger, UiSettingsServiceStart, SavedObjectsServiceStart } from '@kbn/core/server';
 import type { Runner } from '@kbn/agent-builder-server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import { isAllowedBuiltinTool } from '@kbn/agent-builder-server/allow_lists';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { AGENT_BUILDER_EXPERIMENTAL_FEATURES_SETTING_ID } from '@kbn/management-settings-ids';
+import type { AgentBuilderActionsStart } from '../actions_services';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { getCurrentSpaceId } from '../../utils/spaces';
 import {
   createBuiltinToolRegistry,
@@ -40,11 +36,11 @@ export interface ToolsServiceSetupDeps {
 
 export interface ToolsServiceStartDeps {
   getRunner: () => Runner;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   securityPlugin: SecurityPluginStart | undefined;
 }
 

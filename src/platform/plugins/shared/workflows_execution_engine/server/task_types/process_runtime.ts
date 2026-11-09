@@ -26,6 +26,7 @@ import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import type { SecurityTaskPluginStart } from '@kbn/security-plugin/server/task_plugin';
+import { createParityGuard } from '@kbn/task-manager-plugin/server/task_process/parity';
 import { registerRunFlusher } from '@kbn/task-manager-plugin/server/task_process/run_context';
 import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
 import { UsageReportingService } from '@kbn/usage-api-plugin/server/usage_reporting';
@@ -142,7 +143,7 @@ export const createWorkflowRuntimeFromHost = async (
     []) as RuleRunContribution[];
   const connectorAdapters = new ConnectorAdapterRegistry();
   const alertStatusChangedOptIns: AlertStatusChangedOptIn[] = [];
-  const { actionsPlugin, hasActionType, stop } = createRuleRunActions({
+  const { actionsPlugin, hasActionType, getActionTypeIds, stop } = createRuleRunActions({
     logger: logger.get('plugins', 'actions'),
     config: actionsConfig,
     getSystemIdentity: () =>
@@ -193,6 +194,22 @@ export const createWorkflowRuntimeFromHost = async (
     },
   });
   stops.push(stop);
+  const checkParity = createParityGuard({
+    taskType: 'workflow',
+    logger,
+    expected: host.parity,
+    hooks: [
+      { kind: 'connectorTypes', getIds: getActionTypeIds },
+      {
+        kind: 'workflow.steps',
+        getIds: () => workflowsExtensions.getAllStepDefinitions().map(({ id }) => id),
+      },
+      {
+        kind: 'workflow.triggers',
+        getIds: () => workflowsExtensions.getAllTriggerDefinitions().map(({ id }) => id),
+      },
+    ],
+  });
 
   // Steps: the internal ones (registered with the registry), and what the plugins contribute, which
   // may use the actions and the runtime of the engine, read when a step runs.
@@ -312,7 +329,10 @@ export const createWorkflowRuntimeFromHost = async (
       // `canRunAs` is the default: the process's security plugin serves the service accounts from the
       // same bindings and credentials as Kibana (`serviceAccounts.enabled` says whether it does).
       cloud,
-      preflight: assertRunnableInProcessPreflight,
+      preflight: async (preflightContext) => {
+        await checkParity(host);
+        await assertRunnableInProcessPreflight(preflightContext);
+      },
       checkStep: (step) => {
         for (const check of runChecks) {
           const reason = check(step);

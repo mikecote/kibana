@@ -28,7 +28,7 @@ import type { KibanaRequest } from '@kbn/core-http-server';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { ExecutionConversationAccess, RunAgentFn } from '@kbn/agent-builder-server';
 import type { ConversationOperation } from '@kbn/agent-builder-server/execution';
@@ -55,6 +55,7 @@ import type {
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
 import { ElasticGenAIAttributes, UserAttributes } from '@kbn/inference-tracing';
 import type { Span } from '@opentelemetry/api';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import type { ConversationService, ConversationClient } from '../conversation';
 import type { AgentsServiceStart } from '../agents';
 import {
@@ -100,7 +101,7 @@ export interface AgentExecutionDeps {
   savedObjects: SavedObjectsServiceStart;
   spaces?: SpacesPluginStart;
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   meteringService: MeteringService;
   trackingService?: TrackingService;
   analyticsService?: AnalyticsService;

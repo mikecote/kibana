@@ -15,10 +15,10 @@ import { getIsAlertSuppressionActive } from '../utils/get_is_alert_suppression_a
 import { mlExecutor } from './ml';
 import type { SecurityAlertType, WrapSuppressedHits } from '../types';
 import { wrapSuppressedAlerts } from '../utils/wrap_suppressed_alerts';
-import type { SetupPlugins } from '../../../../plugin';
+import type { EntityAnalyticsMlServices } from '../../../entity_analytics/ml_anomaly_detection/ml_services';
 
 export const createMlAlertType = (
-  ml: SetupPlugins['ml']
+  ml: EntityAnalyticsMlServices | undefined
 ): SecurityAlertType<MachineLearningRuleParams, { isLoggedRequestsEnabled?: boolean }> => {
   return {
     id: ML_RULE_TYPE_ID,

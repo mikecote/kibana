@@ -5,6 +5,10 @@
  * 2.0.
  */
 
+import { registerTaskDefinitions as registerAgentTaskDefinitions } from '@kbn/agent-builder-plugin/server/services/execution/task';
+import { ConfigSchema as listsConfigSchema } from '@kbn/lists-plugin/server/config';
+import { getTaskProcessSettings, TASK_PROCESS_SETTINGS_ID } from '../../config';
+import { DEFAULT_PREVIEW_INDEX } from '../../../common/constants';
 import { join } from 'path';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import { config as fleetConfig } from '@kbn/fleet-plugin/server/config';
@@ -42,22 +46,44 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         experimentalFeatures: {
           ...config.experimentalFeatures,
           entityAnalyticsEntityStoreV2: true,
+          rulePreviewAttachmentEnabled: true,
         },
       },
       productFeatures: { enabledProductFeatureKeys: [], registeredActions: [] },
       isServerless: false,
       canEncrypt: true,
       cpsAvailable: false,
-      plugins: { ml: false, security: true, osquery: false, llmTasks: false },
+      plugins: {
+        ml: false,
+        lists: true,
+        fleet: true,
+        security: true,
+        osquery: false,
+        llmTasks: false,
+      },
     };
     beforeAll(async () => {
       harness = await startWorkflowProcessHarness({
         mode,
         reuse,
         logger,
-        savedObjectTypes: [EntityResolutionRuleType, CustomResolutionRuleType],
+        registerTaskSchedulingDefinitions: (definitions) => {
+          registerAgentTaskDefinitions({
+            taskManager: definitions,
+            getTaskHandler: () => {
+              throw new Error('The fixture only schedules asynchronous agent tasks');
+            },
+          });
+        },
+        savedObjectTypes: [
+          ...(security.declares?.savedObjectTypes ?? []),
+          EntityResolutionRuleType,
+          CustomResolutionRuleType,
+        ],
         settings: {
           [SECURITY_AGENT_BUILDER_SETTINGS_ID]: snapshot,
+          [TASK_PROCESS_SETTINGS_ID]: getTaskProcessSettings(snapshot.config),
+          lists: listsConfigSchema.validate({}),
           fleetPackageMetadata: {
             config: fleetConfig.schema.validate({}),
             assets: { bundledPackages: [] },
@@ -91,13 +117,23 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         },
         seedContributions: { 'agent-builder': [security], 'workflow-steps': [contribution] },
         additionalContributions: {
-          'agent-builder': [join(__dirname, '../agent_builder_contribution.ts')],
           'workflow-steps': [join(__dirname, 'fixtures/native_security_core_tools.ts')],
         },
         workflows: {
           security: { steps: [{ name: 'tools', type: 'test.security.core_tools', with: {} }] },
         },
         seed: async ({ es }) => {
+          await es.index({
+            index: 'native-security-preview-docs',
+            id: 'native-preview-event',
+            document: {
+              '@timestamp': new Date().toISOString(),
+              event: { kind: 'event', id: 'native-preview-event' },
+              host: { name: 'native-host' },
+            },
+            refresh: 'wait_for',
+          });
+
           await es.indices.create({
             index: getLatestEntitiesIndexName('default'),
             aliases: { [getEntitiesAlias(ENTITY_LATEST, 'default')]: {} },
@@ -124,7 +160,7 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
     });
     afterAll(async () => harness?.stop());
 
-    it('reads real risk scores and builds navigation through the native Agent Builder API', async () => {
+    it('reads Security data, persists a confirmed entity change and runs the native preview executor', async () => {
       try {
         await harness.run('security');
       } catch (cause) {
@@ -140,6 +176,8 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
         url: '/app/security/alerts',
         beforeConfirmation: true,
         ruleEnabled: false,
+        previewId: expect.any(String),
+        asyncExecutionId: expect.any(String),
       });
       const stored = await harness.es.search({
         index: '.kibana',
@@ -148,6 +186,23 @@ describe.each(WORKFLOW_PROCESS_TEST_MODES)(
       expect(stored.hits.hits).toHaveLength(1);
       expect(stored.hits.hits[0]._source).toMatchObject({
         [EntityResolutionRuleType.name]: { id: 'email_exact_match', enabled: false },
+      });
+      const output = step.output.output ?? step.output;
+      await harness.es.indices.refresh({
+        index: [`${DEFAULT_PREVIEW_INDEX}-default`, '.kibana_task_manager'],
+      });
+      const alerts = await harness.es.search({
+        index: `${DEFAULT_PREVIEW_INDEX}-default`,
+        query: { term: { 'kibana.alert.rule.uuid': output.previewId } },
+      });
+      expect(alerts.hits.hits).toHaveLength(1);
+      const queued = await harness.es.search({
+        index: '.kibana_task_manager',
+        query: { term: { 'task.taskType': 'agent-builder:run-agent' } },
+      });
+      expect(queued.hits.hits).toHaveLength(1);
+      expect(queued.hits.hits[0]._source).toMatchObject({
+        task: { taskType: 'agent-builder:run-agent', status: 'idle' },
       });
       expect(harness.kibanaRequests).toEqual([]);
     });

@@ -53,6 +53,7 @@ const getAgentBuilderUiSettings = (): Array<Record<string, UiSettingsParams>> =>
  */
 export const contribution: WorkflowStepsContribution = {
   declares: {
+    schedulableTypes: [/^agent-builder:run-agent$/],
     savedObjectTypes: [agentBuilderSpaceSettingsType, createInferenceSettingsSavedObjectType()],
     settings: [AGENT_BUILDER_RUN_SETTINGS_ID, INFERENCE_FEATURES_TASK_PROCESS_SETTINGS_ID],
     uiSettings: getAgentBuilderUiSettings(),
@@ -83,7 +84,7 @@ export const contribution: WorkflowStepsContribution = {
         kibanaVersion: context.kibanaVersion,
         settings: context.settings,
       },
-      getActionsClientWithRequest: services.getActionsClientWithRequest as never,
+      getActionsClientWithRequest: services.getActionsClientWithRequest,
       actions: services.getService('actions'),
       spaces: services.getService('spaces'),
       getService: services.getService,

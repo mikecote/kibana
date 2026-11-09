@@ -16,7 +16,7 @@ import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-b
 import { RulePreviewRequestBody } from '../../../common/api/detection_engine';
 import { SecurityAgentBuilderAttachments } from '../../../common/constants';
 import { securityTool } from './constants';
-import type { RunRulePreviewDeps } from '../../lib/detection_engine/rule_preview/api/preview_rules/run_rule_preview';
+import type { RulePreviewExecutionDeps } from '../../lib/detection_engine/rule_preview/api/preview_rules/run_rule_preview';
 import { runRulePreview } from '../../lib/detection_engine/rule_preview/api/preview_rules/run_rule_preview';
 import { parseRulePreviewCommand } from './parse_rule_preview_command';
 
@@ -66,7 +66,7 @@ Help:
 );
 
 export function runRulePreviewTool(
-  deps: RunRulePreviewDeps
+  deps: RulePreviewExecutionDeps
 ): StaticToolRegistration<typeof runRulePreviewSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof runRulePreviewSchema> = {
     id: SECURITY_RUN_RULE_PREVIEW_TOOL_ID,

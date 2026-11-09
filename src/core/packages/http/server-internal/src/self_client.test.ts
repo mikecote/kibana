@@ -113,6 +113,30 @@ const okResponse = () =>
     headers: { 'content-type': 'application/json' },
   });
 
+describe('self client dispatch metadata', () => {
+  it('captures the public target with its configured trust policy', () => {
+    const { self } = createClient();
+    expect(self.getDispatchConfig()).toMatchObject({
+      url: 'https://kibana.example.com/base',
+      target: 'auto',
+      basePath: '/base',
+      ssl: {
+        public: {
+          verificationMode: 'full',
+          certificateAuthorities: [],
+          exclusiveTrust: false,
+          clientCertificateRequired: false,
+        },
+      },
+    });
+  });
+
+  it('honors an explicit local target and retains the server base path', () => {
+    const { self } = createClient({ target: 'local', serverProtocol: 'https' });
+    expect(self.getDispatchConfig().url).toBe('https://localhost:5601/base');
+  });
+});
+
 const unauthorizedResponse = ({ marked = true }: { marked?: boolean } = {}) =>
   new Response(JSON.stringify({ message: 'Unauthorized' }), {
     status: 401,

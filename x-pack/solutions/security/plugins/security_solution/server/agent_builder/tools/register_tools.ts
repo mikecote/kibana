@@ -16,12 +16,10 @@ import { getEntityTool, generateLeadsTool } from './entity_analytics';
 import { createDetectionRuleTool } from './create_detection_rule_tool';
 import { registerSiemReadinessTools } from './siem_readiness';
 import { runRulePreviewTool } from './run_rule_preview_tool';
-import type { RunRulePreviewDeps } from '../../lib/detection_engine/rule_preview/api/preview_rules/run_rule_preview';
-import type {
-  SecuritySolutionPluginCoreSetupDependencies,
-  SetupPlugins,
-} from '../../plugin_contract';
-import type { ProductFeaturesService } from '../../lib/product_features_service';
+import type { RulePreviewExecutionDeps } from '../../lib/detection_engine/rule_preview/api/preview_rules/run_rule_preview';
+import type { SecurityToolServices } from './services';
+import type { EntityAnalyticsMlServices } from '../../lib/entity_analytics/ml_anomaly_detection/ml_services';
+import type { ProductFeaturesReader } from '../../lib/product_features_service';
 import { SIEM_READINESS_AGENT_BUILDER_ENABLED } from '../siem_readiness_feature_flag';
 
 /**
@@ -33,12 +31,12 @@ import { SIEM_READINESS_AGENT_BUILDER_ENABLED } from '../siem_readiness_feature_
  */
 export const registerTools = (
   agentBuilder: AgentBuilderPluginSetup,
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
-  productFeaturesService: ProductFeaturesService,
-  ml: SetupPlugins['ml'],
-  rulePreviewDeps: RunRulePreviewDeps,
+  productFeaturesService: ProductFeaturesReader,
+  ml: EntityAnalyticsMlServices | undefined,
+  rulePreviewDeps: RulePreviewExecutionDeps,
   isServerless: boolean = false,
   kibanaVersion: string,
   hasEncryptionKey: boolean = false
@@ -69,16 +67,7 @@ export const registerTools = (
 
   if (experimentalFeatures.leadGenerationEnabled) {
     agentBuilder.tools.register(
-      generateLeadsTool(
-        core,
-        logger,
-        experimentalFeatures,
-        async () => {
-          const [coreStart, startPlugins] = await rulePreviewDeps.getStartServices();
-          return [coreStart, startPlugins];
-        },
-        ml
-      )
+      generateLeadsTool(core, logger, experimentalFeatures, core.getStartServices, ml)
     );
   }
 

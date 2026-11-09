@@ -18,7 +18,7 @@ import { resolveSmlAttachItems } from './services/sml/execute_sml_attach_items';
 
 interface StartContractDeps {
   smlService: SmlService;
-  elasticsearch: CoreStart['elasticsearch'];
+  elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser'> };
   savedObjects: CoreStart['savedObjects'];
   spaces: AgentBuilderSmlStartDependencies['spaces'];
   logger: Logger;

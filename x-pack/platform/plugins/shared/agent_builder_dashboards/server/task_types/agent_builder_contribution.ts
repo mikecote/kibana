@@ -45,14 +45,20 @@ export const contribution: AgentBuilderContribution = {
   },
   register: (agentBuilder, { logger, settings, services, registerSmlType }) => {
     if (!settings[DASHBOARDS_AGENT_BUILDER_SETTINGS_ID]) return;
-    const embeddable = services.getService<EmbeddableStart>('embeddable');
-    const client = createDashboardServerClient({ embeddable, logger: logger.get('dashboard') });
+    let client: ReturnType<typeof createDashboardServerClient> | undefined;
     registerDashboardsAgentBuilder(
       { agentBuilder, agentBuilderSml: { registerType: registerSmlType } },
       {
         logger,
-        getDashboardClient: async () => client,
-        getDashboardValidator: async () => createDashboardAppStateValidator(embeddable),
+        getDashboardClient: async () => {
+          client ??= createDashboardServerClient({
+            embeddable: services.getService<EmbeddableStart>('embeddable'),
+            logger: logger.get('dashboard'),
+          });
+          return client;
+        },
+        getDashboardValidator: async () =>
+          createDashboardAppStateValidator(services.getService<EmbeddableStart>('embeddable')),
       }
     );
   },

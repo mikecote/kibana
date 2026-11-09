@@ -109,7 +109,7 @@ import type { ITelemetryReceiver } from './lib/telemetry/receiver';
 import { TelemetryReceiver } from './lib/telemetry/receiver';
 import { licenseService } from './lib/license';
 import { PolicyWatcher } from './endpoint/lib/policy/license_watch';
-import previewPolicy from './lib/detection_engine/routes/index/preview_policy.json';
+import { createPreviewRuleDataClient } from './lib/detection_engine/rule_preview/create_preview_rule_data_client';
 import type { IRuleMonitoringService } from './lib/detection_engine/rule_monitoring';
 import { createRuleMonitoringService } from './lib/detection_engine/rule_monitoring';
 // eslint-disable-next-line no-restricted-imports
@@ -118,10 +118,7 @@ import {
   legacyRulesNotificationRuleType,
 } from './lib/detection_engine/rule_actions_legacy';
 import { createSecurityRuleTypeWrapper } from './lib/detection_engine/rule_types/create_security_rule_type_wrapper';
-import {
-  createSecurityRuleRunServices,
-  getSecurityRuleDataServiceOptions,
-} from './lib/detection_engine/rule_types/create_security_rule_run_services';
+import { createSecurityRuleRunServices } from './lib/detection_engine/rule_types/create_security_rule_run_services';
 import { getRuleRunTelemetrySettings } from './lib/telemetry/rule_run_events_sender';
 import type { CreateSecurityRuleTypeWrapperProps } from './lib/detection_engine/rule_types/types';
 import { calculateRulesAuthz } from './lib/detection_engine/rule_management/authz';
@@ -335,6 +332,7 @@ export class Plugin implements ISecuritySolutionPlugin {
           cpsAvailable: Boolean(plugins.cps),
           plugins: {
             ml: Boolean(plugins.ml),
+            lists: Boolean(plugins.lists),
             security: Boolean(plugins.security),
             osquery: Boolean(plugins.osquery),
             llmTasks: Boolean(startPlugins.llmTasks),
@@ -632,14 +630,7 @@ export class Plugin implements ISecuritySolutionPlugin {
     const { ruleDataService } = plugins.ruleRegistry;
     let previewRuleDataClient: IRuleDataClient | null = null;
 
-    const previewIlmPolicy = previewPolicy.policy;
-
-    previewRuleDataClient = ruleDataService.initializeIndex({
-      ...getSecurityRuleDataServiceOptions(config),
-      additionalPrefix: '.preview',
-      ilmPolicy: previewIlmPolicy,
-      secondaryAlias: undefined,
-    });
+    previewRuleDataClient = createPreviewRuleDataClient(ruleDataService, config);
 
     const osquery = plugins.osquery;
     const getOsqueryResponseActionsAuthzChecker: CreateSecurityRuleTypeWrapperProps['getOsqueryResponseActionsAuthzChecker'] =

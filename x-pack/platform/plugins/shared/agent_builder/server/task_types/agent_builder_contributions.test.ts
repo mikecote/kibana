@@ -20,20 +20,10 @@ import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
  * process too (the `agent-builder` contributions in `kibana.jsonc`), or the process differs from Kibana
  * and the runs that read the registries are declined. The ids are checked in: a plugin that registers
  * a new one changes the list, and a plugin that registers with agent builder without a contribution
- * fails the second test unless it is listed below. Regenerate the list with
+ * fails the coverage test. Regenerate the list with
  * `UPDATE_AGENT_BUILDER_CONTRIBUTION_IDS=1 node scripts/jest --config <agent builder jest config> <this file>`.
  */
 const IDS_FILE = join(__dirname, 'agent_builder_contribution_ids.json');
-
-/**
- * The plugins that register with agent builder and do not contribute yet, with what each needs in a
- * process. Move a plugin out of this list when it gets a contribution.
- */
-const NOT_YET_CONTRIBUTED: Record<string, string> = {
-  // Hard: services that only exist in Kibana, or many registrations that read them.
-  'x-pack/solutions/security/plugins/security_solution':
-    'endpoint, detections and entity analytics services',
-};
 
 const git = (args: string) => execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8' });
 
@@ -90,18 +80,11 @@ describe('the agent-builder contributions', () => {
     );
   });
 
-  it('is implemented by every plugin that registers with agent builder, or the plugin is listed as not yet', () => {
+  it('is implemented by every plugin that registers with agent builder', () => {
     const contributing = new Set(getContributionFiles().map(({ plugin }) => plugin));
     const registering = getRegisteringPlugins().filter(
       (plugin) => plugin !== 'x-pack/platform/plugins/shared/agent_builder'
     );
-
-    expect(
-      registering.filter((plugin) => !contributing.has(plugin) && !(plugin in NOT_YET_CONTRIBUTED))
-    ).toEqual([]);
-    // A plugin that got its contribution leaves the list.
-    expect(Object.keys(NOT_YET_CONTRIBUTED).filter((plugin) => contributing.has(plugin))).toEqual(
-      []
-    );
+    expect(registering.filter((plugin) => !contributing.has(plugin))).toEqual([]);
   });
 });

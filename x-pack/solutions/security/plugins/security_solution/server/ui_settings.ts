@@ -141,7 +141,7 @@ const orderSettings = (settings: SettingsConfig): SettingsConfig => {
 };
 
 export const initUiSettings = (
-  uiSettings: CoreSetup['uiSettings'],
+  uiSettings: Pick<CoreSetup['uiSettings'], 'register'>,
   experimentalFeatures: ExperimentalFeatures,
   validationsEnabled: boolean
 ) => {
@@ -991,14 +991,17 @@ export const getDefaultValueReportSettings = (): SettingsConfig => ({
  * defaults do not depend on the configuration; only validations and experimental features, which a
  * rule run does not read, change which ones exist.
  */
-export const getSecurityRuleRunUiSettings = (): Array<Record<string, UiSettingsParams>> => {
+export const getSecurityRuleRunUiSettings = (
+  experimentalFeatures: ExperimentalFeatures = parseExperimentalConfigValue([]).features,
+  validationsEnabled: boolean = false
+): Array<Record<string, UiSettingsParams>> => {
   const registered: Array<Record<string, UiSettingsParams>> = [];
   initUiSettings(
     {
       register: (settings: Record<string, UiSettingsParams>) => registered.push(settings),
-    } as never,
-    parseExperimentalConfigValue([]).features,
-    false
+    },
+    experimentalFeatures,
+    validationsEnabled
   );
   return registered;
 };

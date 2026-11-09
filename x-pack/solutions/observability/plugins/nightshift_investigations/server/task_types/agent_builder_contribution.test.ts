@@ -21,6 +21,7 @@ const createContext = (
   isServerless: false,
   registerSmlType: jest.fn(),
   services: {
+    registerRunCompletion: jest.fn(),
     getService: jest.fn(),
     getCoreStart: jest.fn(),
     getActionsStart: jest.fn(),

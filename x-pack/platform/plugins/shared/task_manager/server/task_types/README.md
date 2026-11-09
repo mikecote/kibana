@@ -623,6 +623,10 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
 
 - **Calls to Kibana.** `host.http` is Core's self client aimed at the Kibana that dispatched the run:
   Kibana sends the address where a process reaches it (`kibanaUrl`) and `server.basePath` in `init`.
+  Core captures its selected target, server metadata and both local and public TLS profiles for each
+  dispatch. Workers restore the same client with those profiles, including CA contents, exclusive
+  listener-certificate trust and local mTLS restrictions. Explicit local calls and public calls retain
+  their respective targets and verification behavior.
   `callKibanaApi` and `kibana.*` steps use it with the credential of the run. Links (the `kibanaUrl`
   template variable, execution and approval links, rule URLs) are built from Kibana's own
   `server.publicBaseUrl`, which a process gets raw, so they are what Kibana builds.
@@ -832,8 +836,8 @@ plugin that contributes but is disabled in this Kibana). The steps that read the
 warning that names the ids, and the task fails; every other step is served as before. This is not
 `TaskTypeModule.parity`, which declines every run of the process: most workflows do not use agents, and they keep
 running in a process while contributions are still being added. The parity is `host.parity`, compared with
-`findMissingParity`. In Kibana today `ai.agent` is still declined, until the plugins listed below as not yet
-contribute.
+`findMissingParity`. Every plugin that registers Agent Builder extensions contributes its native
+registrations; an inventory mismatch fails explicitly before an agent step executes.
 
 **The workflows management API.** The hooks that run an agent's workflows, the `workflow` tool type and the tools of
 the plugins that run workflows read `workflowsManagement.management`. The process uses the same
@@ -863,7 +867,7 @@ and create them lazily: the contribution registers (also with the stub host of `
 services can be built from the host.
 
 A checked-in list of the ids the contributions register (`agent_builder_contribution_ids.json`) and a test that
-every plugin that takes `AgentBuilderPluginSetup` either contributes or is listed as not yet (with what it needs)
+every plugin that takes `AgentBuilderPluginSetup` contributes its registrations
 fail when a plugin registers something new without a contribution. Test a contribution with
 `collectRegisteredIds`, and a registration end to end with
 `workflow_agent_builder_process.test.ts` (a real bundle, Elasticsearch and a stub LLM behind a `.gen-ai`
@@ -875,7 +879,7 @@ proposals (the services over the plugin's storage, and agent builder's attachmen
 (the AI index services, the signals and improvements stores), cases (the cases client of `createCasesRunServices`,
 with the events of the tools bridged to the workflow triggers) and ml (the anomaly detection skill; the
 capabilities of a request are resolved from its `ui:ml/*` privileges through the native Spaces and ML
-license switchers). Remaining differences are documented by each contribution.
+license switchers).
 Agent Builder Dashboards uses `createDashboardServerClient` with native embeddable transforms,
 schemas and persisted-state migrations. Main captures the factories, definitions and drilldowns it
 actually registered. Workers restore that inventory through `embeddables` contributions from Controls,
@@ -1076,25 +1080,29 @@ share the Endpoint CPS resolver and the product-feature reader. The four-mode pr
 24 searches and authorization checks while changing feature gates and telemetry opt-in, verifies reuse
 within unchanged settings and replacement after settings change, and asserts no business calls to Main.
 
-Security's Agent Builder contribution is under validation and is not enabled in its manifest yet.
-It shares Main's complete skill registrar, attachment registrations, analytical tools, rule draft
-generation, entity clients and watchlist source tools. Managed MITRE clients use the owning population
+Security's enabled Agent Builder contribution shares Main's complete tool and skill registrars,
+attachment registrations, rule draft generation, entity clients and watchlist source tools, with
+the dispatch's feature gates and plugin availability. Managed MITRE clients use the owning population
 and retry lifecycle. Background watchlist sync and lead generation register completion callbacks so
-the worker finishes their writes before disposing execution services. Rule preview remains to be
-composed before enabling the contribution and closing the registration inventory gap.
+the worker finishes their writes before disposing execution services. Rule preview uses the shared
+preview executor, alert schema, preview data client and native Alerts Service. Its four-mode process
+test verifies persisted preview alerts, confirmed entity changes and asynchronous Agent Builder task
+scheduling without business calls to Main.
 
-### Remaining workflow parity gaps
+### Workflow registration coverage
 
-These remaining capability gaps currently fail process execution; they must be completed for full parity:
+Every plugin that registers with Agent Builder contributes its native registrations. The contribution
+coverage test has no plugin exemptions, and checks the enabled inventory against the checked-in tool,
+skill, attachment and other registry IDs. Native execution checks that inventory against the snapshot
+Main sends for each dispatch. Missing registrations fail explicitly; execution never falls back to Main.
 
-- **agent_builder:** `ai.agent`, `ai.conversation.*` (create, metadata read and patch, add event, add user
-  message) and `ai.attachment.*` (add, update, delete, read, list) are served only when the process registered
-  what Kibana did with agent builder (see above); until the plugins that do not contribute yet do, those runs fail. `ai.rerank` and the triggers run.
+`ai.agent`, `ai.conversation.*` and `ai.attachment.*` use the shared Agent Builder runtime and native
+services. Asynchronous Agent Builder execution schedules its owned `agent-builder:run-agent` task
+through the scoped Task Manager capability; workflow agent steps retain Main's synchronous execution
+semantics. Shared UI defaults are registered once across all contributed SDKs, including defaults
+derived from the dispatch's configuration.
 
 Inference features are sent as the `inferenceFeatures` settings snapshot at each dispatch, including parent
 relationships, model policies and the current recommended endpoints. Both AI steps and Agent Builder restore
 that registry, so features registered by other plugins and templated `connector-id-by-feature` values resolve
 as they do in Kibana. A missing or invalid snapshot fails execution explicitly.
-
-The common cause is the registries. Agent builder's have a contribution mechanism now; the plugins above that
-register with it move into processes as they contribute.

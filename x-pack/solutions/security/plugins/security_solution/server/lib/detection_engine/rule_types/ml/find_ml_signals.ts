@@ -7,8 +7,8 @@
 
 import dateMath from '@kbn/datemath';
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { Filter } from '@kbn/es-query';
+import type { EntityAnalyticsMlServices } from '../../../entity_analytics/ml_anomaly_detection/ml_services';
 import type { AnomalyResults } from '../../../machine_learning';
 import { getAnomalies, buildAnomalyQuery } from '../../../machine_learning';
 import type { RulePreviewLoggedRequest } from '../../../../../common/api/detection_engine/rule_preview/rule_preview.gen';
@@ -28,7 +28,7 @@ export const findMlSignals = async ({
   additionalFilters,
   isLoggedRequestsEnabled,
 }: {
-  ml: MlPluginSetup;
+  ml: Pick<EntityAnalyticsMlServices, 'mlSystemProvider'>;
   request: KibanaRequest;
   savedObjectsClient: SavedObjectsClientContract;
   jobIds: string[];

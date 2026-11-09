@@ -70,7 +70,7 @@ export const createRuleRunTelemetrySender = ({
   logger: Logger;
   settings: RuleRunTelemetrySettings;
   usageCounter?: IUsageCounter;
-  analytics?: AnalyticsServiceSetup;
+  analytics?: Pick<AnalyticsServiceSetup, 'reportEvent'>;
 }): { sender: RuleRunTelemetrySender; flush: () => Promise<void>; stop: () => Promise<void> } => {
   const async = new AsyncTelemetryEventsSender(logger);
   // What the async sender reads of the receiver; the snapshot has it from Kibana's.

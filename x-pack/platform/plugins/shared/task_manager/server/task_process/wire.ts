@@ -11,6 +11,7 @@
  */
 
 import type { TelemetryFileMaterial } from '@kbn/apm-config-loader';
+import type { HttpSelfClientDispatchConfig } from '@kbn/core-http-server';
 import type { TaskRunTrace } from '../task_running/task_tracing';
 import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
@@ -77,6 +78,7 @@ export interface TaskProcessServerInfo {
    * the process's Core, which a run never reads for links: those use `publicBaseUrl` above).
    */
   kibanaUrl?: string;
+  selfHttp?: HttpSelfClientDispatchConfig;
   isServerless: boolean;
   /**
    * Kibana's `server.basePath`, which the self client prefixes to every path and which Core requires

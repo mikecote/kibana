@@ -241,11 +241,37 @@ const getStartupOutputs = (metafile, outfile) => {
   return [...loaded];
 };
 
-/**
- * Bundles a task type and its process entry, leaving asynchronous imports in separate chunks.
- */
-const buildTaskBundle = async ({
-  entry,
+/** Lists the complete reachable code and source maps belonging to one native task entry. */
+const getBundleOutputs = (metafile, outfile) => {
+  const outputs = new Map(
+    Object.entries(metafile.outputs).map(([file, metadata]) => [
+      path.resolve(REPO_ROOT, file),
+      metadata,
+    ])
+  );
+  const files = new Set();
+  const visit = (file) => {
+    if (files.has(file) || !outputs.has(file)) return;
+    files.add(file);
+    if (outputs.has(`${file}.map`)) files.add(`${file}.map`);
+    for (const dependency of outputs.get(file).imports ?? []) {
+      if (!dependency.external) visit(path.resolve(REPO_ROOT, dependency.path));
+    }
+  };
+  visit(path.resolve(outfile));
+  return [...files];
+};
+
+// Syntax minification drops cross-entry imports backing namespace getters in the pinned esbuild.
+const TASK_BUNDLE_OPTIMIZATION = {
+  minifyWhitespace: true,
+  minifySyntax: false,
+  keepNames: true,
+};
+
+/** Builds native task entries in one graph, sharing their common runtime chunks. */
+const buildTaskBundles = async ({
+  entries,
   outDir = OUT_DIR,
   kibanaVersion,
   sourcemap = true,
@@ -253,26 +279,27 @@ const buildTaskBundle = async ({
   additionalContributions = {},
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
-  const outfile = path.join(outDir, `${entry.name}.mjs`);
   const runtime = copyTaskRuntimeDependencies(outDir);
-  const loaded = loadTaskType(entry.file);
-  if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
-  // What the module says it takes from other plugins: every plugin's file under each key.
-  const declarations = new Map();
-  const contributions = resolveTaskContributions(
-    loaded,
-    additionalContributions,
-    getContributionFiles,
-    (file) => {
-      const contribution = createRequire(__filename)(file).contribution;
-      declarations.set(file, contribution);
-      return contribution;
-    }
-  );
-  const featureFlags = collectTaskFeatureFlags(loaded, [...declarations.values()]);
-  const contributionImports = Object.values(contributions).flat();
-  const result = await build({
-    stdin: {
+  const prepared = entries.map((entry) => {
+    const loaded = loadTaskType(entry.file);
+    if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
+    // What the module says it takes from other plugins: every plugin's file under each key.
+    const declarations = new Map();
+    const contributions = resolveTaskContributions(
+      loaded,
+      additionalContributions,
+      getContributionFiles,
+      (file) => {
+        const contribution = createRequire(__filename)(file).contribution;
+        declarations.set(file, contribution);
+        return contribution;
+      }
+    );
+    const featureFlags = collectTaskFeatureFlags(loaded, [...declarations.values()]);
+    const contributionImports = Object.values(contributions).flat();
+    return {
+      entry,
+      featureFlags,
       contents: [
         `import { bootstrapTaskProcess } from ${JSON.stringify(
           path.join(path.dirname(RUNTIME_ENTRY), 'bootstrap')
@@ -294,13 +321,31 @@ const buildTaskBundle = async ({
         }),
         `} });`,
       ].join('\n'),
-      resolveDir: REPO_ROOT,
-      sourcefile: `${entry.name}.entry.ts`,
-      loader: 'ts',
+    };
+  });
+  const sources = new Map(prepared.map((item) => [`${item.entry.name}.entry.ts`, item.contents]));
+  const taskEntriesPlugin = {
+    name: 'native-task-entries',
+    setup(buildApi) {
+      buildApi.onResolve({ filter: /^task-entry:/ }, ({ path: file }) => ({
+        path: file.slice('task-entry:'.length),
+        namespace: 'task-entry',
+      }));
+      buildApi.onLoad({ filter: /.*/, namespace: 'task-entry' }, ({ path: file }) => ({
+        contents: sources.get(file),
+        resolveDir: REPO_ROOT,
+        loader: 'ts',
+      }));
     },
+  };
+  const result = await build({
+    entryPoints: prepared.map(({ entry }) => ({
+      in: `task-entry:${entry.name}.entry.ts`,
+      out: entry.name,
+    })),
     outdir: outDir,
-    entryNames: entry.name,
-    chunkNames: `chunks/${entry.name}/[name]-[hash]`,
+    entryNames: '[name]',
+    chunkNames: `chunks/${entries.length === 1 ? entries[0].name : 'shared'}/[name]-[hash]`,
     outExtension: { '.js': '.mjs' },
     bundle: true,
     platform: 'node',
@@ -312,9 +357,7 @@ const buildTaskBundle = async ({
     logLevel: 'silent',
     logLimit: 0,
     metafile: true,
-    minifyWhitespace: true,
-    minifySyntax: true,
-    keepNames: true,
+    ...TASK_BUNDLE_OPTIMIZATION,
     sourcemap: sourcemap ? 'linked' : false,
     sourcesContent: false,
     external: EXTERNALS,
@@ -345,6 +388,7 @@ const buildTaskBundle = async ({
       '.node': 'empty',
     },
     plugins: [
+      taskEntriesPlugin,
       uiSharedDepsStubPlugin,
       nativeApmAgentPlugin,
       pureWorkspacePlugin,
@@ -358,22 +402,32 @@ const buildTaskBundle = async ({
     // V8 retains each loaded chunk's source; keep every chunk at one byte per character.
     fs.writeFileSync(file, escapeNonLatin1(fs.readFileSync(file, 'utf8')));
   }
-  return {
-    name: entry.name,
-    runtime,
-    outfile,
-    bytes: files
-      .filter((file) => file.endsWith('.mjs'))
-      .reduce((total, file) => total + fs.statSync(file).size, 0),
-    files,
-    startupBytes: getStartupOutputs(result.metafile, outfile).reduce(
-      (total, file) => total + fs.statSync(file).size,
-      0
-    ),
-    entry,
-    featureFlags,
-    ...(metafile ? { metafile: result.metafile } : {}),
-  };
+  return prepared.map(({ entry, featureFlags }) => {
+    const outfile = path.join(outDir, `${entry.name}.mjs`);
+    const bundleFiles = getBundleOutputs(result.metafile, outfile);
+    return {
+      name: entry.name,
+      runtime,
+      outfile,
+      bytes: bundleFiles
+        .filter((file) => file.endsWith('.mjs'))
+        .reduce((total, file) => total + fs.statSync(file).size, 0),
+      files: bundleFiles,
+      startupBytes: getStartupOutputs(result.metafile, outfile).reduce(
+        (total, file) => total + fs.statSync(file).size,
+        0
+      ),
+      entry,
+      featureFlags,
+      ...(metafile ? { metafile: result.metafile } : {}),
+    };
+  });
+};
+
+/** Builds one task entry with the same graph and metadata as a complete package. */
+const buildTaskBundle = async ({ entry, ...options }) => {
+  const [result] = await buildTaskBundles({ entries: [entry], ...options });
+  return result;
 };
 
 /** The task type a file exports as `taskType`; loads it, so it needs the transpiler. */
@@ -403,6 +457,7 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
 };
 
 module.exports = {
+  TASK_BUNDLE_OPTIMIZATION,
   OUT_DIR,
   getTaskBundleEntries,
   getContributionFiles,
@@ -410,5 +465,7 @@ module.exports = {
   collectTaskFeatureFlags,
   getStartupOutputs,
   buildTaskBundle,
+  buildTaskBundles,
+  getBundleOutputs,
   writeManifest,
 };

@@ -11,6 +11,7 @@ import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
+import type { AgentBuilderElasticsearch } from '../services/runtime_ports';
 import type { InternalStartServices } from '../services';
 import { createAttachmentPublicClient } from '../services/attachments';
 import { createConversationPublicClient } from '../services/conversation/conversation_public_client';
@@ -33,7 +34,9 @@ export const createAgentBuilderStartContract = ({
   onSkillRegistered,
 }: {
   startServices: InternalStartServices;
-  coreStart: Pick<CoreStart, 'elasticsearch' | 'security' | 'savedObjects'>;
+  coreStart: Pick<CoreStart, 'security' | 'savedObjects'> & {
+    elasticsearch: AgentBuilderElasticsearch;
+  };
   spaces?: SpacesPluginStart;
   inference: InferenceServerStart;
   searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;

@@ -13,6 +13,7 @@ import {
 } from '@kbn/actions-plugin/server/constants/event_log';
 import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
 import { getRuleRunDeclarations } from '@kbn/alerting-plugin/server/task_types/rule_run_saved_object_types';
+import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
 import { kibanaPackageJson } from '@kbn/repo-info';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
@@ -155,7 +156,29 @@ export const defineWorkflowTaskType = (
       ),
     registerUiSettings: declared.some((declaration) => declaration.registerUiSettings)
       ? (registry, settings) => {
-          for (const declaration of declared) declaration.registerUiSettings?.(registry, settings);
+          const seen = new Set(
+            declared.flatMap(({ uiSettings }) => uiSettings?.flatMap(Object.keys) ?? [])
+          );
+          const globalSeen = new Set(
+            declared.flatMap(({ globalUiSettings }) => globalUiSettings?.flatMap(Object.keys) ?? [])
+          );
+          const register = (defaults: Record<string, UiSettingsParams>, global: boolean): void => {
+            const keys = global ? globalSeen : seen;
+            const unique = Object.fromEntries(
+              Object.entries(defaults).filter(([key]) => !keys.has(key) && keys.add(key))
+            );
+            if (Object.keys(unique).length > 0) {
+              if (global) registry.registerGlobal(unique);
+              else registry.register(unique);
+            }
+          };
+          const deduplicated = {
+            register: (defaults: Record<string, UiSettingsParams>) => register(defaults, false),
+            registerGlobal: (defaults: Record<string, UiSettingsParams>) =>
+              register(defaults, true),
+          };
+          for (const declaration of declared)
+            declaration.registerUiSettings?.(deduplicated, settings);
         }
       : undefined,
     registerAnalyticsEventTypes: (analytics) => {
@@ -196,7 +219,8 @@ export const defineWorkflowTaskType = (
     },
     // Only when contributions declare some: it gives the runner `host.uiSettings`.
     ...(declared.some(
-      ({ uiSettings, globalUiSettings }) => uiSettings?.length || globalUiSettings?.length
+      ({ uiSettings, globalUiSettings, registerUiSettings }) =>
+        uiSettings?.length || globalUiSettings?.length || registerUiSettings
     )
       ? {
           uiSettings: {

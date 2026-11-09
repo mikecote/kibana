@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { firstValueFrom, of, Subject } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import { AsyncLocalStorage } from 'async_hooks';
 import type { Logger } from '@kbn/core/server';
 import type { UiSettingsServiceStart } from '@kbn/core/server';
@@ -24,8 +24,7 @@ import {
   type ActionsTaskProcessSettings,
 } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
-import { AlertsService } from '../../alerts_service/alerts_service';
-import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
+import { createTaskProcessAlertsService } from './create_task_process_alerts_service';
 import type { AlertingConfig } from '../../config';
 import { ConnectorAdapterRegistry } from '../../connector_adapters/connector_adapter_registry';
 import type { ConnectorAdapter } from '../../connector_adapters/types';
@@ -102,7 +101,7 @@ export const createStandaloneRuleRunRuntime = ({
   const config = settings.alerting as AlertingConfig;
   const actionsConfig = settings.actions as ActionsConfig;
   const logger: Logger = host.logger.get('plugins', 'alerting');
-  const { isServerless, publicBaseUrl, version: kibanaVersion, uuid: serverUuid } = host.server;
+  const { isServerless, publicBaseUrl, version: kibanaVersion } = host.server;
   const savedObjects = host.savedObjects;
   const uiSettings = host.uiSettings as UiSettingsServiceStart;
 
@@ -157,19 +156,7 @@ export const createStandaloneRuleRunRuntime = ({
   // Kibana installs the alerts resources and keeps them up to date; the process only needs the
   // service to hand out an alerts client once they exist. No cross-node lock: one process serves
   // one run, and installing a resource is idempotent.
-  const alertsService = config.enableFrameworkAlerts
-    ? new AlertsService({
-        logger,
-        pluginStop$: new Subject<void>(),
-        kibanaVersion,
-        serverUuid,
-        dataStreamAdapter: getDataStreamAdapter({ useDataStreamForAlerts: isServerless }),
-        elasticsearchClientPromise: Promise.resolve(host.elasticsearch.asInternalUser),
-        elasticsearchAndSOAvailability$: of(true),
-        isServerless,
-        totalFieldsLimit: config.alertsService.totalFieldsLimit,
-      })
-    : null;
+  const alertsService = createTaskProcessAlertsService(host, config, logger);
 
   const connectorAdapterRegistry = new ConnectorAdapterRegistry();
   connectorAdapters.forEach((adapter) => connectorAdapterRegistry.register(adapter));

@@ -12,6 +12,7 @@
       "server/task_types/slo_burn_rate.task.ts"
     ],
     "taskTypeContributions": {
+      "embeddables": ["server/embeddable_contribution.ts"],
       "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
       "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
     },

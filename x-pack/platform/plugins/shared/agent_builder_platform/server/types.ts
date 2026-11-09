@@ -60,7 +60,13 @@ export interface AgentBuilderPlatformPluginStart {
 export interface AgentBuilderPlatformCoreSetup {
   getStartServices: () => Promise<
     [
-      Pick<CoreStart, 'elasticsearch' | 'savedObjects' | 'uiSettings'>,
+      {
+        elasticsearch: {
+          client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser'>;
+        };
+        savedObjects: CoreStart['savedObjects'];
+        uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
+      },
       Pick<PluginStartDependencies, 'agentBuilder' | 'actions' | 'files' | 'llmTasks'>,
       unknown
     ]

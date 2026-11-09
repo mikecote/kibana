@@ -9,6 +9,7 @@
 
 import { firstValueFrom } from 'rxjs';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
+import { schema } from '@kbn/config-schema';
 import { coreMock } from '@kbn/core/server/mocks';
 import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
 import { encryptedSavedObjectsMock } from '@kbn/encrypted-saved-objects-plugin/server/mocks';
@@ -371,11 +372,32 @@ describe('workflow native encrypted migration factories', () => {
 });
 
 describe('workflow native UI registration hooks', () => {
-  it('passes the actual UI registry and dispatch configuration to every contributing hook', () => {
-    const first = jest.fn();
-    const second = jest.fn();
+  it('registers shared defaults once and gives every hook the dispatch configuration', () => {
+    const shared = { value: true, schema: schema.boolean() };
+    const firstDefault = { value: 1, schema: schema.number() };
+    const secondDefault = { value: 2, schema: schema.number() };
+    const globalDefault = { value: false, schema: schema.boolean() };
+    const first = jest.fn<
+      void,
+      Parameters<
+        NonNullable<NonNullable<WorkflowStepsContribution['declares']>['registerUiSettings']>
+      >
+    >((registry) => registry.register({ shared, first: firstDefault }));
+    const second = jest.fn<
+      void,
+      Parameters<
+        NonNullable<NonNullable<WorkflowStepsContribution['declares']>['registerUiSettings']>
+      >
+    >((registry) => {
+      registry.register({ first: firstDefault, second: secondDefault });
+      registry.registerGlobal({ shared: globalDefault });
+      registry.registerGlobal({ shared: globalDefault });
+    });
     const steps: WorkflowStepsContribution[] = [
-      { declares: { registerUiSettings: first }, register: () => {} },
+      {
+        declares: { uiSettings: [{ shared }], registerUiSettings: first },
+        register: () => {},
+      },
       { declares: { registerUiSettings: second }, register: () => {} },
     ];
     const applied = runTaskType.contributions?.apply?.({ 'workflow-steps': steps });
@@ -383,7 +405,13 @@ describe('workflow native UI registration hooks', () => {
     const settings = { nativeUi: { enabled: false } };
     if (!applied?.registerUiSettings) throw new Error('The native UI hooks were lost');
     applied.registerUiSettings(uiSettings, settings);
-    expect(first).toHaveBeenCalledWith(uiSettings, settings);
-    expect(second).toHaveBeenCalledWith(uiSettings, settings);
+    expect(first.mock.calls[0][1]).toBe(settings);
+    expect(second.mock.calls[0][1]).toBe(settings);
+    expect(uiSettings.register.mock.calls).toEqual([
+      [{ first: firstDefault }],
+      [{ second: secondDefault }],
+    ]);
+    expect(uiSettings.registerGlobal).toHaveBeenCalledTimes(1);
+    expect(uiSettings.registerGlobal).toHaveBeenCalledWith({ shared: globalDefault });
   });
 });

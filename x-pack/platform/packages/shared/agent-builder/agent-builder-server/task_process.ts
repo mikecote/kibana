@@ -10,6 +10,7 @@ import type { CoreStart } from '@kbn/core-lifecycle-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
 import type { DataStreamsSetup } from '@kbn/core-data-streams-server';
+import type { UiSettingsServiceSetup } from '@kbn/core-ui-settings-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import type { Logger } from '@kbn/logging';
 import type { AgentBuilderPluginSetup, AgentBuilderPluginStart } from './plugin_contract';
@@ -39,6 +40,11 @@ export interface AgentBuilderContributionDeclares {
   settings?: string[];
   /** Ui settings the registrations read, as `core.uiSettings.register` takes them. */
   uiSettings?: Array<Record<string, UiSettingsParams>>;
+  /** Registers native UI defaults using the dispatch's actual configuration. */
+  registerUiSettings?: (
+    uiSettings: Pick<UiSettingsServiceSetup, 'register' | 'registerGlobal'>,
+    settings: AgentBuilderContributionContext['settings']
+  ) => void;
   /** Global ui settings the registrations read, as `registerGlobal` takes them (`host.uiSettings.globalAsScopedToClient`). */
   globalUiSettings?: Array<Record<string, UiSettingsParams>>;
   /** Feature flags the registrations read, with their fallbacks. */
@@ -64,10 +70,15 @@ export interface AgentBuilderContributionServices {
   /** Resolves a contributed service for this execution. */
   getService: <T extends object>(id: string) => T;
   /** What a tool reads of Core: the Elasticsearch client, saved objects, ui settings and the base path. */
-  getCoreStart: () => Promise<
-    Pick<CoreStart, 'elasticsearch' | 'savedObjects' | 'uiSettings' | 'http'>
-  >;
-  /** The actions plugin as far as a run uses it (the actions client of a request); cast it to `ActionsPluginStart`. */
+  getCoreStart: () => Promise<{
+    elasticsearch: {
+      client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser' | 'asScoped'>;
+    };
+    savedObjects: CoreStart['savedObjects'];
+    uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient' | 'globalAsScopedToClient'>;
+    http: Pick<CoreStart['http'], 'basePath' | 'selfClient' | 'getServerInfo'>;
+  }>;
+  /** Native Actions start ports, including the scoped client and relay used by tools. */
   getActionsStart: () => Promise<unknown>;
   /** The inference plugin's start contract as a process has it (cast it to `InferenceServerStart`): chat models and clients built from the run's connectors. */
   getInferenceStart: () => unknown;

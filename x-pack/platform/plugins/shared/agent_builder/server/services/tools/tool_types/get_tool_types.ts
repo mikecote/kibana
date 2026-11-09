@@ -5,9 +5,9 @@
  * 2.0.
  */
 
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
+import type { AgentBuilderActionsStart } from '../../actions_services';
 import type { AnyToolTypeDefinition } from './definitions';
 import { getEsqlToolType } from './esql';
 import { getIndexSearchToolType, type IndexSearchToolTypeDeps } from './index_search';
@@ -23,7 +23,7 @@ export const getToolTypeDefinitions = ({
 }: {
   workflowsManagement?: WorkflowsServerPluginSetup;
   security: SecurityPluginStart | undefined;
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   indexSearchDeps: IndexSearchToolTypeDeps;
 }): AnyToolTypeDefinition[] => {
   const toolTypes: AnyToolTypeDefinition<any, any, any>[] = [

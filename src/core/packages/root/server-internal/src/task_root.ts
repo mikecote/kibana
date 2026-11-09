@@ -28,6 +28,7 @@ import { ExecutionContextService } from '@kbn/core-execution-context-server-inte
 import { DocLinksService } from '@kbn/core-doc-links-server-internal';
 import { StatusService } from '@kbn/core-status-server-internal';
 import { TaskHttpService } from '@kbn/core-http-server-internal';
+import type { HttpSelfClientDispatchConfig } from '@kbn/core-http-server';
 import {
   PluginsService,
   type TaskStaticPlugin,
@@ -64,7 +65,8 @@ export class TaskRoot {
   constructor(
     rawConfigProvider: RawConfigurationProvider,
     env: Env,
-    staticPlugins: readonly TaskStaticPlugin[]
+    staticPlugins: readonly TaskStaticPlugin[],
+    options: { httpSelfClient?: HttpSelfClientDispatchConfig } = {}
   ) {
     this.loggingSystem.setGlobalContext({
       service: {
@@ -96,7 +98,7 @@ export class TaskRoot {
     this.executionContext = new ExecutionContextService(core);
     this.docLinks = new DocLinksService(core);
     this.status = new StatusService(core);
-    this.http = new TaskHttpService(core);
+    this.http = new TaskHttpService(core, options.httpSelfClient);
     this.plugins = new PluginsService(core, { staticPlugins });
   }
 

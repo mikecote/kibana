@@ -6,7 +6,7 @@
  */
 
 import pRetry, { AbortError } from 'p-retry';
-import type { PluginSetupContract as ActionsPluginSetup } from '@kbn/actions-plugin/server';
+import type { AgentBuilderActionsSetup } from '../../actions_services';
 import type { ChatCallbackResponse } from '../../../../common/http_api/chat_callback';
 
 const callbackRetryOptions = {
@@ -22,9 +22,9 @@ export type CallbackTransport = (
 ) => Promise<{ status: number }>;
 
 export class CallbackDeliveryService {
-  private readonly actions: ActionsPluginSetup;
+  private readonly actions: AgentBuilderActionsSetup;
 
-  constructor({ actions }: { actions: ActionsPluginSetup }) {
+  constructor({ actions }: { actions: AgentBuilderActionsSetup }) {
     this.actions = actions;
   }
 

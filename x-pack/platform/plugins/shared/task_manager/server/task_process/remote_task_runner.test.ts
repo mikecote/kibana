@@ -10,7 +10,7 @@ import {
   TASK_PROCESS_PROTOCOL_VERSION,
   TASK_PROCESS_PATHS,
 } from './protocol';
-import { isRetryableError, isUnrecoverableError } from '../task_running/errors';
+import { isDeclinedRunError, isRetryableError, isUnrecoverableError } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import { RemoteTaskRunner } from './remote_task_runner';
 import type { TaskProcessLease } from './remote_task_runner';
@@ -275,6 +275,7 @@ describe('RemoteTaskRunner dispatch', () => {
     const error = await runner.run().catch((failure: Error) => failure);
     expect(error).toBeInstanceOf(Error);
     expect(isUnrecoverableError(error as Error)).toBe(true);
+    expect(isDeclinedRunError(error)).toBe(true);
     expect(error).toHaveProperty('message', expect.stringContaining('lacks connectorTypes [.x]'));
     expect(onDispatchFailure).toHaveBeenCalledWith(
       'alerting:test',

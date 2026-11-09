@@ -5,15 +5,11 @@
  * 2.0.
  */
 
+import type { RuleRunActionsStart } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import { firstValueFrom } from 'rxjs';
 import type { KibanaRequest } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
-import type { HttpServiceStart } from '@kbn/core-http-server';
-import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import type { PluginSetupContract as ActionsPluginSetup } from '@kbn/actions-plugin/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { createInferenceTaskProcessServices } from '@kbn/inference-plugin/server/task_process_services';
 import {
@@ -105,9 +101,13 @@ export const createAgentBuilderProcessServices = async ({
   // Agent builder is disabled in Kibana: nothing registers with it, and no step reads it.
   if (!runSettings) return undefined;
 
-  const { elasticsearch, savedObjects, uiSettings, licensing } = host;
+  const { elasticsearch, savedObjects, uiSettings, licensing, featureFlags } = host;
   if (!uiSettings) throw new Error('The workflows task module did not get ui settings');
   if (!licensing) throw new Error('The workflows task module did not get the license');
+  if (!featureFlags) throw new Error('Native Agent Builder execution requires feature flags');
+
+  const taskManager = host.taskManager;
+  if (!taskManager) throw new Error('Native Agent Builder execution requires Task Manager');
 
   const config = toAgentBuilderConfig(runSettings.config);
   const workflowsManagement = getWorkflowsManagement();
@@ -132,24 +132,19 @@ export const createAgentBuilderProcessServices = async ({
     logger: logger.get('searchInferenceEndpoints'),
   });
 
-  const actionsStart = {
-    getActionsClientWithRequest,
-    getActionsConfigurationUtilities: actions.getActionsConfigurationUtilities,
-    getRelayClient: actions.getRelayClient,
-  } as unknown as ActionsPluginStart;
+  const actionsStart = getService<RuleRunActionsStart>('actions');
 
-  const getCoreStart = async () =>
-    ({
-      elasticsearch: { client: elasticsearch },
-      savedObjects,
-      uiSettings,
-      http: host.http,
-      security: host.security,
-      userProfile: host.userProfile,
-      featureFlags: host.featureFlags,
-      analytics: host.analytics,
-      executionContext: host.executionContext,
-    } as unknown as Awaited<ReturnType<AgentBuilderContributionServices['getCoreStart']>>);
+  const getCoreStart: AgentBuilderContributionServices['getCoreStart'] = async () => ({
+    elasticsearch: { client: elasticsearch },
+    savedObjects,
+    uiSettings,
+    http: host.http,
+    security: host.security,
+    userProfile: host.userProfile,
+    featureFlags: host.featureFlags,
+    analytics: host.analytics,
+    executionContext: host.executionContext,
+  });
 
   const usageCounter = host.usageCounters?.getUsageCounter(AGENTBUILDER_USAGE_DOMAIN);
   const trackingService = usageCounter
@@ -183,7 +178,7 @@ export const createAgentBuilderProcessServices = async ({
     actions: {
       getActionsConfigurationUtilities: actions.getActionsConfigurationUtilities,
       getRelayClient: actions.getRelayClient,
-    } as unknown as ActionsPluginSetup,
+    },
     getActionsStart: async () => actionsStart,
     getInferenceStart: async () => inference,
     getCoreStart,
@@ -222,27 +217,27 @@ export const createAgentBuilderProcessServices = async ({
   const conversationEventBus = createConversationEventBus();
   const startServices = run.serviceManager.startServices({
     logger: logger.get('services'),
-    security: host.security as SecurityServiceStart,
-    elasticsearch: { client: elasticsearch } as unknown as ElasticsearchServiceStart,
+    security: host.security,
+    elasticsearch: { client: elasticsearch },
     http: {
       selfClient: host.http.selfClient,
       basePath: host.http.basePath,
       getServerInfo: host.http.getServerInfo,
-    } as unknown as HttpServiceStart,
+    },
     inference,
     spaces,
     actions: actionsStart,
-    uiSettings: uiSettings as never,
-    savedObjects: savedObjects as never,
-    featureFlags: host.featureFlags as never,
-    taskManager: host.taskManager as never,
+    uiSettings,
+    savedObjects,
+    featureFlags,
+    taskManager,
     securityPlugin: undefined,
     trackingService,
     analyticsService,
     searchInferenceEndpoints,
     licensing: {
       getLicense: () => firstValueFrom(licensing.license$),
-    } as unknown as LicensingPluginStart,
+    },
     deploymentInfo: runSettings.deploymentInfo,
     deductiveRegister: config.deductive?.register ?? false,
     conversationEventBus,
@@ -255,8 +250,8 @@ export const createAgentBuilderProcessServices = async ({
       securityAuthz: (host.plugins?.security as { authz?: AuthorizationServiceSetup } | undefined)
         ?.authz,
     }),
-    elasticsearch: { client: elasticsearch } as unknown as ElasticsearchServiceStart,
-    savedObjects: savedObjects as never,
+    elasticsearch: { client: elasticsearch },
+    savedObjects,
     spaces,
     logger: logger.get('sml'),
   });
@@ -267,7 +262,7 @@ export const createAgentBuilderProcessServices = async ({
       elasticsearch: { client: elasticsearch },
       security: host.security,
       savedObjects,
-    } as never,
+    },
     spaces,
     inference,
     searchInferenceEndpoints,

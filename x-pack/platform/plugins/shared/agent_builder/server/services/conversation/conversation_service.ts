@@ -5,14 +5,10 @@
  * 2.0.
  */
 
-import type {
-  KibanaRequest,
-  Logger,
-  SecurityServiceStart,
-  ElasticsearchServiceStart,
-} from '@kbn/core/server';
+import type { KibanaRequest, Logger, SecurityServiceStart } from '@kbn/core/server';
 import type { CurrentUser } from '@kbn/agent-builder-common';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { getUserFromRequest } from '../utils';
 import { getCurrentSpaceId } from '../../utils/spaces';
 import type { AgentsServiceStart } from '../agents';
@@ -35,7 +31,7 @@ export interface ConversationService {
 interface ConversationServiceDeps {
   logger: Logger;
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
   agents: AgentsServiceStart;
   eventBus?: ConversationEventBus;
@@ -47,7 +43,7 @@ interface ConversationServiceDeps {
 export class ConversationServiceImpl implements ConversationService {
   private readonly logger: Logger;
   private readonly security: SecurityServiceStart;
-  private readonly elasticsearch: ElasticsearchServiceStart;
+  private readonly elasticsearch: AgentBuilderElasticsearch;
   private readonly spaces?: SpacesPluginStart;
   private readonly agents: AgentsServiceStart;
   private readonly eventBus?: ConversationEventBus;

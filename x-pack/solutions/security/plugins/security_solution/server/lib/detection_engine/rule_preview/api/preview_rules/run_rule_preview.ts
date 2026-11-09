@@ -8,10 +8,10 @@ import moment from 'moment';
 import { v4 as uuidv4 } from 'uuid';
 import type {
   Logger,
-  StartServicesAccessor,
   KibanaRequest,
   SavedObjectsClientContract,
   IUiSettingsClient,
+  CoreStart,
 } from '@kbn/core/server';
 import type { ActionsClient } from '@kbn/actions-plugin/server';
 import type { ILicense } from '@kbn/licensing-types';
@@ -35,7 +35,8 @@ import type {
 } from '../../../../../../common/api/detection_engine';
 import type { RulePreviewLoggedRequest } from '../../../../../../common/api/detection_engine/rule_preview/rule_preview.gen';
 
-import type { StartPlugins, SetupPlugins } from '../../../../../plugin';
+import type { EntityAnalyticsMlServices } from '../../../../entity_analytics/ml_anomaly_detection/ml_services';
+import type { RulePreviewServices } from '../../rule_preview_services';
 import type { RuleParams } from '../../../rule_schema';
 import { createPreviewRuleExecutionLogger } from './preview_rule_execution_logger';
 import { parseInterval } from '../../../rule_types/utils/utils';
@@ -43,10 +44,7 @@ import { buildMlAuthz } from '../../../../machine_learning/authz';
 import { throwAuthzError } from '../../../../machine_learning/validation';
 import type { ConfigType } from '../../../../../config';
 import { alertInstanceFactoryStub } from './alert_instance_factory_stub';
-import type {
-  CreateSecurityRuleTypeWrapperProps,
-  SecurityAlertType,
-} from '../../../rule_types/types';
+import type { SecurityAlertType } from '../../../rule_types/types';
 import {
   createEqlAlertType,
   createEsqlAlertType,
@@ -56,7 +54,8 @@ import {
   createThresholdAlertType,
   createNewTermsAlertType,
 } from '../../../rule_types';
-import { createSecurityRuleTypeWrapper } from '../../../rule_types/create_security_rule_type_wrapper';
+import { createSecurityPreviewRuleTypeWrapper } from '../../../rule_types/create_security_rule_type_wrapper';
+import type { SecurityPreviewRuleTypeOptions } from '../../../rule_types/create_security_rule_type_wrapper';
 import { assertUnreachable } from '../../../../../../common/utility_types';
 import { wrapScopedClusterClient } from './wrap_scoped_cluster_client';
 import { wrapSearchSourceClient } from './wrap_search_source_client';
@@ -73,14 +72,26 @@ export const PREVIEW_TIMEOUT_SECONDS = 60;
  */
 export interface RunRulePreviewDeps {
   config: ConfigType;
-  ml: SetupPlugins['ml'];
-  security: SetupPlugins['security'];
-  securityRuleTypeOptions: CreateSecurityRuleTypeWrapperProps;
+  ml: EntityAnalyticsMlServices | undefined;
+  security: { authc: Pick<CoreStart['security']['authc'], 'getCurrentUser'> } | undefined;
+  securityRuleTypeOptions: Omit<
+    SecurityPreviewRuleTypeOptions,
+    'ruleExecutionLoggerFactory' | 'ruleDataClient' | 'isPreview'
+  >;
   previewRuleDataClient: IRuleDataClient;
-  getStartServices: StartServicesAccessor<StartPlugins>;
+  getStartServices: RulePreviewServices['getStartServices'];
   logger: Logger;
   isServerless: boolean;
 }
+
+export interface LazyRunRulePreviewDeps
+  extends Omit<RunRulePreviewDeps, 'securityRuleTypeOptions' | 'previewRuleDataClient'> {
+  getPreviewRunServices: () => Promise<
+    Pick<RunRulePreviewDeps, 'securityRuleTypeOptions' | 'previewRuleDataClient'>
+  >;
+}
+
+export type RulePreviewExecutionDeps = RunRulePreviewDeps | LazyRunRulePreviewDeps;
 
 /**
  * Per-request inputs for running a rule preview. Callers are responsible for
@@ -107,7 +118,7 @@ export interface RunRulePreviewParams {
  * handler. Any change here affects the public rule preview API.
  */
 export const runRulePreview = async (
-  deps: RunRulePreviewDeps,
+  deps: RulePreviewExecutionDeps,
   {
     body,
     enableLoggedRequests,
@@ -119,16 +130,10 @@ export const runRulePreview = async (
     uiSettingsClient,
   }: RunRulePreviewParams
 ): Promise<RulePreviewResponse> => {
-  const {
-    config,
-    ml,
-    security,
-    securityRuleTypeOptions,
-    previewRuleDataClient,
-    getStartServices,
-    logger,
-    isServerless,
-  } = deps;
+  const { config, ml, security, getStartServices, logger, isServerless } = deps;
+
+  const { securityRuleTypeOptions, previewRuleDataClient } =
+    'getPreviewRunServices' in deps ? await deps.getPreviewRunServices() : deps;
 
   const [coreStart, { data, security: securityService, share, dataViews }] =
     await getStartServices();
@@ -206,7 +211,7 @@ export const runRulePreview = async (
     logger.warn(`Failed to bootstrap preview index for space "${spaceId}": ${err.message}`);
   }
 
-  const previewRuleTypeWrapper = createSecurityRuleTypeWrapper({
+  const previewRuleTypeWrapper = createSecurityPreviewRuleTypeWrapper({
     ...securityRuleTypeOptions,
     ruleDataClient: previewRuleDataClient,
     ruleExecutionLoggerFactory: previewRuleExecutionLogger.factory,

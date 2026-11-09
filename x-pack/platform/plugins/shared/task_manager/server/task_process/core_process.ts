@@ -138,7 +138,8 @@ export const startTaskProcessCore = async ({
   const root = new TaskRoot(
     { getConfig$: () => new BehaviorSubject(settings) },
     env,
-    getStaticPlugins(applied, init.kibanaVersion)
+    getStaticPlugins(applied, init.kibanaVersion),
+    { httpSelfClient: init.server?.selfHttp }
   );
   try {
     await root.preboot();

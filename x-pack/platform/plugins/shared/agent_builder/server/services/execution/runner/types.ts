@@ -6,18 +6,22 @@
  */
 
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
-import type { HttpServiceStart } from '@kbn/core-http-server';
+
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+
 import type { Runner, HooksServiceStart } from '@kbn/agent-builder-server';
 import type { AgentExecutionService } from '@kbn/agent-builder-server/execution';
+import type { AgentBuilderActionsStart } from '../../actions_services';
+import type {
+  AgentBuilderElasticsearch,
+  AgentBuilderHttp,
+  AgentBuilderLicensing,
+} from '../../runtime_ports';
 import type { ToolsServiceStart } from '../../tools';
 import type { AgentsServiceStart } from '../../agents';
 import type { ConversationService } from '../../conversation';
@@ -33,16 +37,16 @@ import type { DeploymentInfo } from '../../../utils/deployment_info';
 export interface RunnerFactoryDeps {
   // core services
   logger: Logger;
-  elasticsearch: ElasticsearchServiceStart;
-  http: HttpServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
+  http: AgentBuilderHttp;
   security: SecurityServiceStart;
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
   // plugin deps
   inference: InferenceServerStart;
   spaces: SpacesPluginStart | undefined;
-  actions: ActionsPluginStart;
-  licensing: LicensingPluginStart;
+  actions: AgentBuilderActionsStart;
+  licensing: AgentBuilderLicensing;
   // internal service deps
   toolsService: ToolsServiceStart;
   agentsService: AgentsServiceStart;

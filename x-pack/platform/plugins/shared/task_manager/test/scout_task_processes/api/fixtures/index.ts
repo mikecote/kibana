@@ -87,7 +87,7 @@ export const getChildLines = (taskType: string, since: string) =>
 /** Observation only: the pids whose command line runs a bundle of this run's directory. */
 export const getBundleProcesses = (): number[] => {
   try {
-    return execFileSync('pgrep', ['-f', `node .*${BUNDLE_DIR}/[^ ]+\\.js`], { encoding: 'utf8' })
+    return execFileSync('pgrep', ['-f', `node .*${BUNDLE_DIR}/[^ ]+\\.m?js`], { encoding: 'utf8' })
       .split('\n')
       .filter(Boolean)
       .map(Number);

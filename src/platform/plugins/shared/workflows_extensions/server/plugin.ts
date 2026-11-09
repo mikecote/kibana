@@ -166,7 +166,11 @@ export class WorkflowsExtensionsServerPlugin
         );
       },
       getTaskProcessSettings: () => this.taskProcessSettings,
-      getTaskProcessParity: () => this.taskProcessParity,
+      getTaskProcessParity: () => ({
+        ...this.taskProcessParity,
+        'workflow.steps': () => this.stepRegistry.getAll().map(({ id }) => id),
+        'workflow.triggers': () => this.triggerRegistry.list().map(({ id }) => id),
+      }),
       getManagedWorkflowPluginIds: () => Array.from(this.managedWorkflowPluginIds),
     };
   }

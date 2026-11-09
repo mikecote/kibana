@@ -231,7 +231,6 @@ export class TaskManagerPlugin
   /** Process dispatch failures since this Kibana instance started. */
   private readonly taskProcessDispatchFailures: TaskProcessDispatchFailureCounter;
   private publicBaseUrl?: string;
-  private getKibanaAddress?: () => string | undefined;
   private serverBasePath?: string;
   private usageCollectionSetup?: UsageCollectionSetup;
   private elasticsearchConfig?: IElasticsearchConfig;
@@ -307,16 +306,6 @@ export class TaskManagerPlugin
       this.elasticsearchConfig = config;
     });
     this.publicBaseUrl = core.http.basePath.publicBaseUrl;
-    // How a process reaches this Kibana: the public URL, or the address it listens on.
-    this.getKibanaAddress = () => {
-      if (this.publicBaseUrl) return this.publicBaseUrl;
-      const { protocol, hostname, port } = core.http.getServerInfo();
-      if (protocol === 'socket') return undefined;
-      const host = hostname === '0.0.0.0' || hostname === '::' ? 'localhost' : hostname;
-      return `${protocol}://${host.includes(':') ? `[${host}]` : host}:${port}${
-        core.http.basePath.serverBasePath
-      }`;
-    };
     this.serverBasePath = core.http.basePath.serverBasePath;
     const getServerInfo = (publicBaseUrl?: string): TaskHost['server'] => ({
       uuid: this.initContext.env.instanceUuid,
@@ -417,6 +406,8 @@ export class TaskManagerPlugin
         throw new Error(
           'Native task scheduling metadata is not available before Task Manager starts'
         );
+      const [coreStart] = await core.getStartServices();
+      const selfHttp = coreStart.http.selfClient.getDispatchConfig();
       const init: Pick<
         TaskProcessInit,
         | 'server'
@@ -431,7 +422,8 @@ export class TaskManagerPlugin
         executionContext: core.executionContext.getConfig(),
         server: {
           ...getServerInfo(this.publicBaseUrl),
-          kibanaUrl: this.getKibanaAddress?.(),
+          kibanaUrl: selfHttp.url,
+          selfHttp,
           ...(this.serverBasePath ? { basePath: this.serverBasePath } : {}),
           isDev: this.initContext.env.mode.dev,
         } as TaskProcessInit['server'],

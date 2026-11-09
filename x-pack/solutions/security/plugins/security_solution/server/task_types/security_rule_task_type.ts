@@ -38,7 +38,6 @@ import {
 import type { AlertingConfig } from '@kbn/alerting-plugin/server/config';
 import { FLEET_PACKAGE_METADATA_SETTINGS_ID } from '@kbn/fleet-plugin/server/package_metadata_task_process_settings';
 import { RuleExecutionEventType } from '../../common/api/detection_engine/rule_monitoring';
-import { APP_ID } from '../../common/constants';
 import { TASK_PROCESS_SETTINGS_ID } from '../config';
 import type { SecurityRuleRunConfig } from '../config';
 import { getEndpointResponseActionsRunSavedObjectTypes } from '../endpoint/run_time/saved_objects';
@@ -47,8 +46,7 @@ import { createSecurityRuleTypeWrapper } from '../lib/detection_engine/rule_type
 import type { CreateSecurityRuleTypeWrapperProps } from '../lib/detection_engine/rule_types/types';
 import { RULE_EXECUTION_LOG_PROVIDER } from '../lib/detection_engine/rule_monitoring/logic/event_log/event_log_constants';
 import { createRuleExecutionLogClientForExecutorsFactory } from '../lib/detection_engine/rule_monitoring/logic/service';
-import { createRuleRunTelemetrySender } from '../lib/telemetry/rule_run_events_sender';
-import type { RuleRunTelemetrySender } from '../lib/telemetry/rule_run_events_sender';
+import { createRunEventsTelemetry } from './create_run_events_telemetry';
 import { events as securityEventTypes } from '../lib/telemetry/event_based/events';
 import { getSecurityRuleRunUiSettings } from '../ui_settings';
 import { getResponseActionsServices } from './response_actions_services';
@@ -73,35 +71,6 @@ const SAVED_OBJECT_TYPES: SavedObjectsType[] = [
 ];
 
 export type SecurityRuleTypeWrapper = ReturnType<typeof createSecurityRuleTypeWrapper>;
-
-/**
- * The sender of the events of a run, which is one per process: it queues what runs send, and the
- * process flushes the queue before it answers each run. Built when the first run sends, from what
- * Kibana said of its telemetry; without it (no telemetry plugin) nothing is sent, as in Kibana.
- */
-const createRunEventsTelemetry = (
-  host: RuleTypeModuleDeps['host'],
-  config: SecurityRuleRunConfig,
-  logger: RuleTypeModuleDeps['logger']
-): RuleRunTelemetrySender | undefined => {
-  if (!config.ruleRunTelemetry) return undefined;
-  const settings = config.ruleRunTelemetry;
-  let created: ReturnType<typeof createRuleRunTelemetrySender> | undefined;
-  return {
-    sendAsync: (channel, events) => {
-      if (!created) {
-        created = createRuleRunTelemetrySender({
-          logger,
-          settings,
-          usageCounter: host.usageCounters?.getUsageCounter(APP_ID),
-          analytics: host.analytics as never,
-        });
-        host.onRunEnd?.(created.flush);
-      }
-      created.sender.sendAsync(channel, events);
-    },
-  };
-};
 
 const kibanaOnly = (what: string) => () => {
   throw new Error(`${what} is only available in Kibana, not in a task process`);

@@ -21,6 +21,7 @@ export interface SecurityAgentBuilderSettings {
   cpsAvailable: boolean;
   plugins: {
     ml: boolean;
+    lists?: boolean;
     security: boolean;
     osquery: boolean;
     llmTasks?: boolean;

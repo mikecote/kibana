@@ -13,6 +13,7 @@ import type { TaskExecutionPool } from '../task_scheduling';
 import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
 import {
   createRetryableError,
+  DeclinedRunError,
   deserializeTaskRunError,
   throwUnrecoverableError,
 } from '../task_running/errors';
@@ -340,6 +341,9 @@ export class RemoteTaskRunner implements CancellableTask {
               : 'not_served',
             reason ?? message
           );
+          if (response.status === DECLINED_STATUS && !incompatible) {
+            throwUnrecoverableError(new DeclinedRunError(message));
+          }
           throwUnrecoverableError(new Error(message));
         }
         this.params.onDispatchFailure?.(request.taskType, 'unavailable', message);

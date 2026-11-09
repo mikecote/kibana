@@ -100,7 +100,15 @@ describe('agent builder tools of the hard tier served from the workflow:schedule
         },
       },
       settings,
-      seedContributions: { 'agent-builder': contributions },
+      seedContributions: {
+        'agent-builder': contributions,
+        embeddables: getContributionFiles('embeddables').map(
+          (file: string) => jest.requireActual<{ contribution: object }>(file).contribution
+        ),
+        'lens-visualization-migrations': getContributionFiles('lens-visualization-migrations').map(
+          (file: string) => jest.requireActual<{ contribution: object }>(file).contribution
+        ),
+      },
       parity: Object.entries(registered).map(([kind, ids]) => ({
         kind: `agentBuilder.${kind}`,
         ids,

@@ -9,7 +9,7 @@
 
 import { rootCertificates } from 'node:tls';
 import { Agent, getGlobalDispatcher, type Dispatcher } from 'undici';
-import type { IBasePath } from '@kbn/core-http-server';
+import type { IBasePath, HttpSelfClientSslConfig } from '@kbn/core-http-server';
 import type { HttpConfig } from './http_config';
 
 type VerificationMode = HttpConfig['selfHttp']['ssl']['verificationMode'];
@@ -20,6 +20,7 @@ interface SelfHttpDispatcherProviderParams {
   readonly basePath: IBasePath;
   readonly getHttpConfig: () => HttpConfig;
   readonly target: 'auto' | 'local';
+  readonly ssl?: Readonly<Record<'local' | 'public', HttpSelfClientSslConfig>>;
 }
 
 const PEM_CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/;
@@ -30,7 +31,7 @@ const extractLeafCertificate = (certificate: string): string => {
 
 const buildConnectOptions = (
   verificationMode: VerificationMode,
-  certificateAuthorities: string[],
+  certificateAuthorities: readonly string[],
   { exclusiveTrust = false }: { exclusiveTrust?: boolean } = {}
 ): ConnectOptions => {
   // Omitting `ca` keeps Node's default trust store, which includes NODE_EXTRA_CA_CERTS.
@@ -39,7 +40,7 @@ const buildConnectOptions = (
   // Exclusive trust still needs partial-chain: a CA-issued leaf is not a
   // self-signed root, but it is the only acceptable trust endpoint.
   const connect: ConnectOptions = exclusiveTrust
-    ? { ca: certificateAuthorities, allowPartialTrustChain: true }
+    ? { ca: [...certificateAuthorities], allowPartialTrustChain: true }
     : certificateAuthorities.length === 0
     ? {}
     : { ca: [...rootCertificates, ...certificateAuthorities], allowPartialTrustChain: true };
@@ -92,11 +93,14 @@ export class SelfHttpDispatcherProvider {
     await Promise.all(dispatchers.map(({ agent }) => agent?.close()));
   }
 
-  private getBaseDispatcher(url: URL, target: 'local' | 'public'): Dispatcher | undefined {
-    if (url.protocol !== 'https:') {
-      return undefined;
+  public getSslConfig(target: 'local' | 'public'): HttpSelfClientSslConfig {
+    if (this.params.ssl) {
+      const ssl = this.params.ssl[target];
+      return {
+        ...ssl,
+        certificateAuthorities: [...ssl.certificateAuthorities],
+      };
     }
-
     const config = this.params.getHttpConfig();
     const usesLocalTarget = target === 'local';
     const configuredMode = config.selfHttp.ssl.verificationMode;
@@ -116,6 +120,21 @@ export class SelfHttpDispatcherProvider {
       (certificate): certificate is string => certificate !== undefined
     );
     const verificationMode = pinLocalLeaf ? 'certificate' : configuredMode;
+    return {
+      verificationMode,
+      certificateAuthorities,
+      exclusiveTrust: pinLocalLeaf,
+      clientCertificateRequired:
+        usesLocalTarget &&
+        config.ssl.enabled &&
+        config.ssl.requestCert &&
+        config.ssl.rejectUnauthorized,
+    };
+  }
+
+  private getBaseDispatcher(url: URL, target: 'local' | 'public'): Dispatcher | undefined {
+    if (url.protocol !== 'https:') return undefined;
+    const { verificationMode, certificateAuthorities, exclusiveTrust } = this.getSslConfig(target);
 
     // Node's global dispatcher already verifies fully, so it only stays usable in `full` mode.
     if (certificateAuthorities.length === 0 && verificationMode === 'full') {
@@ -124,7 +143,7 @@ export class SelfHttpDispatcherProvider {
     }
 
     const trustKey = `${target}:${verificationMode}:${
-      pinLocalLeaf ? 'pin' : 'ca'
+      exclusiveTrust ? 'pin' : 'ca'
     }:${certificateAuthorities.join('\n')}`;
     const profile = this.dispatchers.get(target) ?? {};
     if (profile.agent && profile.trustKey === trustKey) {
@@ -135,7 +154,7 @@ export class SelfHttpDispatcherProvider {
       target,
       new Agent({
         connect: buildConnectOptions(verificationMode, certificateAuthorities, {
-          exclusiveTrust: pinLocalLeaf,
+          exclusiveTrust,
         }),
       }),
       trustKey

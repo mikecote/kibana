@@ -7,9 +7,10 @@
 
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { WorkspaceFileContent } from '@kbn/agent-builder-common';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { getCurrentSpaceId } from '../../utils/spaces';
 import type { ConversationService } from '../conversation';
 import { WorkspaceClient } from './client/workspace_client';
@@ -29,7 +30,7 @@ export interface WorkspaceService {
 
 export interface WorkspaceServiceDeps {
   logger: Logger;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
   conversations: ConversationService;
 }

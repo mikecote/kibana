@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/logging';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { EffortLevels } from '@kbn/agent-builder-common/model_provider';
 import type {
@@ -31,6 +31,7 @@ import {
   AGENT_BUILDER_FAST_INFERENCE_FEATURE_ID,
   AGENT_BUILDER_INFERENCE_FEATURE_ID,
 } from '@kbn/agent-builder-common/constants';
+import type { AgentBuilderElasticsearch } from '../../runtime_ports';
 import type { TrackingService } from '../../../telemetry';
 import { MODEL_TELEMETRY_METADATA } from '../../../telemetry';
 import { getCurrentTraceId } from '../../../tracing';
@@ -49,7 +50,7 @@ export interface CreateModelProviderOpts {
   reasoningLevel?: ChatCompletionReasoningEffort;
   spaces?: SpacesPluginStart;
   security?: SecurityServiceStart;
-  elasticsearch?: ElasticsearchServiceStart;
+  elasticsearch?: AgentBuilderElasticsearch;
 }
 
 export type CreateModelProviderFactoryFn = (

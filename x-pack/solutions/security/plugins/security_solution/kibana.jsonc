@@ -22,6 +22,7 @@
       "server/task_types/notifications.task.ts"
     ],
     "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
       "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
       "cases-client": ["server/task_types/cases_client_contribution.ts"],
       "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"],

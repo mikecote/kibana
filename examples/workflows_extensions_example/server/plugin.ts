@@ -26,6 +26,7 @@ import { registerManagedServiceAccountRoutes } from './routes/managed_service_ac
 import { registerEmitLoopRoute } from './routes/emit_loop';
 import { registerStepDefinitions } from './step_types';
 import { registerTriggers } from './triggers';
+import { WORKFLOW_EXAMPLE_SETTINGS_ID } from './task_types/constants';
 import {
   EXAMPLE_MANAGED_WORKFLOW_ID,
   EXAMPLE_MANAGED_WORKFLOW_PLUGIN_ID,
@@ -70,6 +71,10 @@ export class WorkflowsExtensionsExamplePlugin
   ): WorkflowsExtensionsExamplePluginSetup {
     registerStepDefinitions(plugins.workflowsExtensions);
     registerTriggers(plugins.workflowsExtensions);
+    plugins.workflowsExtensions.registerTaskProcessSettings(
+      WORKFLOW_EXAMPLE_SETTINGS_ID,
+      () => ({})
+    );
 
     plugins.workflowsExtensions.registerManagedWorkflowOwner(EXAMPLE_MANAGED_WORKFLOW_PLUGIN_ID);
 

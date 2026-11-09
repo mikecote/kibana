@@ -129,6 +129,26 @@ const createAuthHeaderStorageMock = () => {
 
 const createSelfClientMock = (): SelfClientMocked =>
   lazyObject({
+    getDispatchConfig: jest.fn().mockReturnValue({
+      url: 'http://localhost:5601',
+      target: 'auto',
+      serverInfo: { name: 'kibana', hostname: 'localhost', port: 5601, protocol: 'http' },
+      basePath: '',
+      ssl: {
+        local: {
+          verificationMode: 'full',
+          certificateAuthorities: [],
+          exclusiveTrust: false,
+          clientCertificateRequired: false,
+        },
+        public: {
+          verificationMode: 'full',
+          certificateAuthorities: [],
+          exclusiveTrust: false,
+          clientCertificateRequired: false,
+        },
+      },
+    }),
     asScoped: jest.fn().mockReturnValue({
       fetch: jest.fn(),
     }),

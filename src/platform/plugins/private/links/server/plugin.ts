@@ -17,11 +17,9 @@ import type {
 } from '@kbn/core/server';
 import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
 import type { UsageCollectionSetup, UsageCounter } from '@kbn/usage-collection-plugin/server';
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
-import { LINKS_EMBEDDABLE_TYPE } from '../common';
-import { transforms } from '../common/embeddable/transforms/transforms';
 import { registerRoutes } from './api';
-import { linksEmbeddableSchema } from './api/schemas';
 import { linksSavedObjectDefinition } from './links_saved_object';
 import type { LinksByValueState } from './types';
 
@@ -42,11 +40,7 @@ export class LinksServerPlugin implements Plugin<object, object> {
     }
   ) {
     core.savedObjects.registerType<LinksByValueState>(linksSavedObjectDefinition);
-    plugins.embeddable.registerEmbeddableServerDefinition(LINKS_EMBEDDABLE_TYPE, {
-      title: 'Links',
-      getTransforms: () => transforms,
-      getSchema: () => linksEmbeddableSchema,
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     if (plugins.usageCollection) {
       this.apiUsageCounter = plugins.usageCollection.createUsageCounter('links_api');

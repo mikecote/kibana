@@ -8,9 +8,10 @@
 import { connectable, from, switchMap } from 'rxjs';
 import type { Logger } from '@kbn/logging';
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { AgentExecution } from '@kbn/agent-builder-server/execution';
 import { ExecutionStatus, isRequestAbortedError } from '@kbn/agent-builder-common';
+import type { AgentBuilderElasticsearch } from '../../runtime_ports';
 import { createAgentExecutionClient, type AgentExecutionClient } from '../persistence';
 import {
   handleAgentExecution,
@@ -24,7 +25,7 @@ import type { SurfacesService } from '../../surfaces';
 import { deliverCallbackEvents, type CallbackDeliveryService } from '../callback';
 
 export interface TaskHandlerDeps extends AgentExecutionDeps {
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   callbackDeliveryService: CallbackDeliveryService;
   surfacesService: SurfacesService;
 }

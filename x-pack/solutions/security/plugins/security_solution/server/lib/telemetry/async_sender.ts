@@ -58,7 +58,7 @@ export class AsyncTelemetryEventsSender implements IAsyncTelemetryEventsSender {
   private telemetryUsageCounter?: IUsageCounter;
   private senderUtils: SenderUtils | undefined;
 
-  private analytics: Nullable<AnalyticsServiceSetup>;
+  private analytics: Nullable<Pick<AnalyticsServiceSetup, 'reportEvent'>>;
 
   constructor(logger: Logger) {
     this.logger = newTelemetryLogger(logger.get('telemetry_events.async_sender'));
@@ -70,7 +70,7 @@ export class AsyncTelemetryEventsSender implements IAsyncTelemetryEventsSender {
     telemetryReceiver: ITelemetryReceiver,
     telemetrySetup?: TelemetryPluginSetup,
     telemetryUsageCounter?: IUsageCounter,
-    analytics?: AnalyticsServiceSetup
+    analytics?: Pick<AnalyticsServiceSetup, 'reportEvent'>
   ): void {
     this.logger.debug('Setting up service');
 

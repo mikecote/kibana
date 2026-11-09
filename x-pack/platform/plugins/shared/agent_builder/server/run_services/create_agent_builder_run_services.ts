@@ -10,10 +10,6 @@ import type { UiSettingsServiceSetup } from '@kbn/core-ui-settings-server';
 import type { Logger } from '@kbn/logging';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { UsageApiSetup } from '@kbn/usage-api-plugin/server';
-import type {
-  PluginSetupContract as ActionsPluginSetup,
-  PluginStartContract as ActionsPluginStart,
-} from '@kbn/actions-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { AgentBuilderSmlPluginStart } from '@kbn/agent-builder-sml-plugin/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
@@ -22,6 +18,10 @@ import type {
   ConversationUpdatedOptIn,
   TaskProcessSetup,
 } from '@kbn/agent-builder-server';
+import type {
+  AgentBuilderActionsSetup,
+  AgentBuilderActionsStart,
+} from '../services/actions_services';
 import type { AgentBuilderConfig } from '../config';
 import { ServiceManager } from '../services';
 import type { InternalSetupServices, InternalStartServices } from '../services';
@@ -54,8 +54,8 @@ export interface AgentBuilderRunServicesDeps {
   cloud?: CloudSetup;
   usageApi?: UsageApiSetup;
   /** The part of the actions plugin that delivers the callbacks of an asynchronous execution. */
-  actions: ActionsPluginSetup;
-  getActionsStart: () => Promise<ActionsPluginStart>;
+  actions: AgentBuilderActionsSetup;
+  getActionsStart: () => Promise<AgentBuilderActionsStart>;
   getInferenceStart: () => Promise<InferenceServerStart>;
   /**
    * The SML start contract used by the tools in Kibana and task processes.

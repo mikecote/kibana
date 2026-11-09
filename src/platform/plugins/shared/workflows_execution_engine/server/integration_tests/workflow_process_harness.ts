@@ -26,6 +26,7 @@ import type { SavedObjectsType } from '@kbn/core-saved-objects-server';
 import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import { FieldsMetadataService } from '@kbn/fields-metadata-plugin/server/services/fields_metadata/fields_metadata_service';
 import { License } from '@kbn/licensing-plugin/common/license';
 import { featureUsageSavedObjectType } from '@kbn/licensing-plugin/server/services/feature_usage_store';
 import type { MetricResourceSnapshot } from '@kbn/metrics';
@@ -348,6 +349,9 @@ const startHarness = async (
   );
   const licenseExpiryDate = Date.now() + 86400000;
   const settings = () => ({
+    fieldsMetadataRuntime: new FieldsMetadataService(
+      loggingSystemMock.createLogger()
+    ).getTaskProcessSettings(),
     evalsTaskProviders: { names: ['inference', 'agentBuilder.converse'] },
     spacesRuntime: {
       config: spacesConfigSchema.validate({}, { offering: 'traditional' }),

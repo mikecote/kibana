@@ -20,6 +20,7 @@ export const TASK_PROCESS_CAPABILITIES = [
   'native-prometheus-handoff',
   'live-worker-gauge-collection',
   'native-feature-flag-declarations',
+  'native-self-http-transport',
   `native-metric-format-${METRIC_SERIALIZATION_VERSION}`,
 ] as const;
 

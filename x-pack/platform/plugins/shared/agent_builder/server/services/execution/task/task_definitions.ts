@@ -24,7 +24,7 @@ export const registerTaskDefinitions = ({
   taskManager,
   getTaskHandler,
 }: {
-  taskManager: TaskManagerSetupContract;
+  taskManager: Pick<TaskManagerSetupContract, 'registerTaskDefinitions'>;
   getTaskHandler: () => TaskHandler;
 }) => {
   taskManager.registerTaskDefinitions({

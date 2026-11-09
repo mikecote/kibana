@@ -28,8 +28,10 @@ export const RULE_REGISTRY_TASK_PROCESS_SETTINGS_ID = 'ruleRegistry';
  * installed and write nothing when Kibana has already installed them.
  */
 export const createRuleDataTaskProcessService = (
-  deps: Pick<RuleTypeModuleDeps, 'host' | 'runtime' | 'settings' | 'logger' | 'kibanaVersion'> &
-    Pick<RuleTypeModuleDeps, 'isServerless'>
+  deps: Pick<RuleTypeModuleDeps, 'host' | 'settings' | 'logger' | 'kibanaVersion'> &
+    Pick<RuleTypeModuleDeps, 'isServerless'> & {
+      runtime?: Pick<RuleTypeModuleDeps['runtime'], 'alertsService'>;
+    }
 ) => {
   const { host, settings } = deps;
   const alertingConfig = settings.alerting as AlertingConfig;

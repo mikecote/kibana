@@ -5,8 +5,35 @@
  * 2.0.
  */
 
+import { join } from 'path';
+import { REPO_ROOT } from '@kbn/repo-info';
 import { platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
+
+const CASES_EXAMPLE = {
+  workflows: {
+    config: {
+      analyticsV2: { enabled: true },
+      attachments: { enabled: true },
+      templates: { enabled: true },
+      assigneeIdentity: { enabled: true },
+    },
+    spacesEnabled: true,
+    featureCaseOwners: [{ id: 'securitySolutionCasesV3', cases: ['securitySolution'] }],
+    isEmailServiceAvailable: false,
+    hasAlertStatusChangedListeners: false,
+    closeReasonOwners: [],
+    attachmentTypeIds: [
+      'file',
+      'lens',
+      'comment',
+      'stack.alert',
+      'dashboard',
+      'map',
+      'discoverSession',
+    ],
+  },
+};
 
 /**
  * Settings of the contributions that need more than "the plugin is enabled", for the tests that send
@@ -116,30 +143,7 @@ const EXAMPLES: Record<string, unknown> = {
   },
   alertingV2Runtime: { agentBuilderEnabled: true, smlEnabled: true },
   contextEngineManagedAiIndices: { registrations: [] },
-  casesAgentBuilder: {
-    workflows: {
-      config: {
-        analyticsV2: { enabled: true },
-        attachments: { enabled: true },
-        templates: { enabled: true },
-        assigneeIdentity: { enabled: true },
-      },
-      spacesEnabled: true,
-      featureCaseOwners: [{ id: 'securitySolutionCasesV3', cases: ['securitySolution'] }],
-      isEmailServiceAvailable: false,
-      hasAlertStatusChangedListeners: false,
-      closeReasonOwners: [],
-      attachmentTypeIds: [
-        'file',
-        'lens',
-        'comment',
-        'stack.alert',
-        'dashboard',
-        'map',
-        'discoverSession',
-      ],
-    },
-  },
+  casesAgentBuilder: CASES_EXAMPLE,
   streamsAgentBuilder: {
     isDev: false,
     canvasEnabled: false,
@@ -158,9 +162,73 @@ const EXAMPLES: Record<string, unknown> = {
 
 export const getExampleContributionSettings = (
   contributions: Array<Pick<AgentBuilderContribution, 'declares'>>
-): Record<string, unknown> =>
-  Object.fromEntries(
+): Record<string, unknown> => {
+  const settings = Object.fromEntries(
     contributions.flatMap(({ declares }) =>
       (declares?.settings ?? []).map((id) => [id, EXAMPLES[id] ?? {}])
     )
   );
+  if ('casesAgentBuilder' in settings) {
+    const { getRuleReadSettings } = jest.requireActual<{
+      getRuleReadSettings: (registry: { list: () => Map<string, never> }) => object;
+    }>(
+      join(
+        REPO_ROOT,
+        'x-pack/platform/plugins/shared/alerting/server/task_types/rule_read_contribution'
+      )
+    );
+    settings.alertingRuleRead = getRuleReadSettings({ list: () => new Map<string, never>() });
+    const { getAlertingAuthorizationTaskProcessSettings } = jest.requireActual<{
+      getAlertingAuthorizationTaskProcessSettings: (options: {
+        ruleTypeRegistry: { list: () => Map<string, { id: string }> };
+        features: { getKibanaFeatures: () => [] };
+        spacesEnabled: boolean;
+        securityEnabled: boolean;
+      }) => object;
+    }>(
+      join(
+        REPO_ROOT,
+        'x-pack/platform/plugins/shared/alerting/server/task_types/alerting_authorization_task_process_settings'
+      )
+    );
+    settings.alertingAuthorizationRuntime = getAlertingAuthorizationTaskProcessSettings({
+      ruleTypeRegistry: { list: () => new Map() },
+      features: { getKibanaFeatures: () => [] },
+      spacesEnabled: true,
+      securityEnabled: true,
+    });
+    const { ConfigSchema } = jest.requireActual<{
+      ConfigSchema: { validate: (value: object) => object };
+    }>(join(REPO_ROOT, 'x-pack/platform/plugins/shared/cases/server/config'));
+    settings.casesAgentBuilder = {
+      workflows: {
+        ...CASES_EXAMPLE.workflows,
+        config: ConfigSchema.validate(CASES_EXAMPLE.workflows.config),
+      },
+    };
+  }
+  if ('embeddableRuntime' in settings) {
+    const { createEmbeddableExampleSettings } = jest.requireActual<{
+      createEmbeddableExampleSettings: () => Record<string, object>;
+    }>(
+      join(
+        REPO_ROOT,
+        'src/platform/plugins/shared/embeddable/server/task_process/example_settings.mock'
+      )
+    );
+    Object.assign(settings, createEmbeddableExampleSettings());
+  }
+  if ('securitySolutionAgentBuilder' in settings) {
+    // Load the owning fixture dynamically to keep a platform-to-solution project cycle out of production.
+    const { createSecurityAgentBuilderExampleSettings } = jest.requireActual<{
+      createSecurityAgentBuilderExampleSettings: () => Record<string, object>;
+    }>(
+      join(
+        REPO_ROOT,
+        'x-pack/solutions/security/plugins/security_solution/server/task_types/agent_builder_example_settings.mock'
+      )
+    );
+    Object.assign(settings, createSecurityAgentBuilderExampleSettings());
+  }
+  return settings;
+};

@@ -97,6 +97,17 @@ describe('SamlSessionManager', () => {
       expect(credentials).toEqual({ Cookie: `${cookieInstance.cookieString()}` });
     });
 
+    test('preserves the base path when creating a local SAML session', async () => {
+      const manager = new SamlSessionManager({
+        ...samlSessionManagerOptions,
+        hostOptions: { ...hostOptions, pathname: '/task-processes' },
+      });
+      await manager.getApiCredentialsForRole(roleViewer);
+      expect(createLocalSAMLSessionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ kbnHost: 'http://localhost:5620/task-processes' })
+      );
+    });
+
     test(`'getSessionCookieForRole' should call 'createLocalSAMLSession' only once for the same role`, async () => {
       const samlSessionManager = new SamlSessionManager(samlSessionManagerOptions);
       await samlSessionManager.getInteractiveUserSessionCookieWithRoleScope(roleViewer);
