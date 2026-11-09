@@ -631,6 +631,13 @@ run. Only the language model is stubbed. Worker PIDs and dispatch failures prove
 `task_processes` also inherits the standard serverless Search, Observability Complete and Security Complete
 configurations, including Elasticsearch service-account credentials and UIAM. Workflow tests target all three.
 
+Local stateful Scout runs and native process integration tests establish the current validation baseline.
+The integration tests exercise Elasticsearch service-account credentials across fresh and reused child and
+remote workers; the security tests also cover UIAM workload credential exchange with portable mTLS material.
+Live serverless runs are deferred because they require Elastic's private UIAM image. The serverless
+configurations remain available for subsequent validation; that deferral does not change the native
+execution path or permit execution to fall back to Main.
+
 Killing Kibana while a process is running is covered by supervisor tests rather than Scout.
 
 The distributable builds the bundles into `task_bundles/`.
