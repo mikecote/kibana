@@ -121,8 +121,9 @@ xpack.task_manager.task_execution:
 - **Logs.** A process writes Kibana's JSON layout (the same ECS records as `logging.appenders` with
   `layout: json`) at the lowest level Kibana's Task Manager logger writes. Kibana reads each line from the
   process's stdout and logs it again with its own logger (`plugins.taskManager.task_process`), so the
-  configured layout, appenders and level filters apply, and labels each line with `task_type`, `run_id` (the
-  execution id) and `child_logger` (the context inside the process, such as `plugins.alerting`). A line that
+  configured layout, appenders and level filters apply, and labels records with `task_type` and
+  `child_logger` (the context inside the process, such as `plugins.alerting`). Execution records also carry
+  `run_id`; the supervisor clears it when the lease ends so idle and shutdown logs have their own scope. A line that
   is not a record (a crash, `stderr`) is logged as is, with the same labels. This needs no new channel and no
   copy of Kibana's logging configuration, which a process cannot see; the cost is one parse per line.
 - **Counters.** `getTaskProcessStats()` on Task Manager's start contract returns `dispatchFailures` by task type
@@ -311,11 +312,14 @@ its bearer token on execution and cancellation requests and validates the dispat
 and the module. Workspace source is treated as free of import-time side effects, so a barrel costs only
 what is used from it. Two traps: import leaf files (a cycle through an `export *` barrel leaves names
 undefined in a bundle), and a module that reaches a plugin class through a barrel still pays for it.
-Each entry is an ESM `.mjs` file with chunks under `chunks/<entry>/`. Connector definitions retain
+Each entry is an ESM `.mjs` file. A complete build bundles all entries in one graph with shared
+chunks under `chunks/shared/`; a single-entry build uses `chunks/<entry>/`. Connector definitions retain
 metadata, schemas and validation at startup; services and SDKs load asynchronously when execution
 needs them. Response-action implementations use the same boundary. Code splitting keeps those
 implementations out of the enqueue-only startup graph. CommonJS dependencies use Node's
 `createRequire` compatibility bridge. Every generated JavaScript file receives the Latin-1 transform.
+Syntax minification is disabled because the pinned esbuild drops imports backing namespace getters
+across shared entries. An executable regression checks this with the real APM field constants.
 
 ### Distributable
 
@@ -353,7 +357,8 @@ requires every selected entry to exist; without the setting it builds the entrie
   directory, so a bundle never walks up to find a repository; a task process does not read the paths
   `@kbn/utils` derives from it. Libraries read their own packaged runtime assets, including the native
   APM instrumentation files, pino workers and source-map assets.
-- **Cost.** Entries share chunks within a task type; Core is still duplicated between task types.
+- **Cost.** Complete builds share Core and SDK chunks between task entries on disk. Each worker
+  still loads its own runtime into memory.
   Artifact size includes deferred code and must be measured separately from startup memory.
 - **Not covered here.** The full archive build (`node scripts/build`), and Windows.
 
@@ -382,6 +387,21 @@ The bundles and their chunks ran in the containers without the repository or `no
 `node scripts/task_bundle_bench --json <file>` also records heap capacity and external memory.
 Pass `--settings <settings.json>` for validated plugin settings and `--run <request.json>` for the
 first task's wire request. The benchmark's memory probe is not included in distributable bundles.
+
+Workflow startup measured on 2026-11-08 on macOS ARM64 with Node 24.21.0 and
+`--max-semi-space-size=2`, using three samples per entry:
+
+| Task | Median startup (ms) | Idle RSS (MiB) | Idle heap used (MiB) |
+| --- | ---: | ---: | ---: |
+| `workflow:run` | 1366 | 557 | 358 |
+| `workflow:resume` | 1374 | 566 | 366 |
+| `workflow:scheduled` | 1368 | 555 | 354 |
+
+These are startup-only baselines with validated engine, Actions and Security settings, the three
+native workflow scheduling definitions, and optional plugin services disabled. They do not measure
+a workflow or agent execution. Each entry reaches approximately 71 MiB of generated JavaScript,
+including deferred code, with 55.8 MiB loaded before readiness. The complete 52-entry graph shares
+approximately 73 MiB of generated JavaScript on disk; per-entry sizes must not be added together.
 
 ### Contributions
 
@@ -587,9 +607,9 @@ successful `execute` event, and equals the same rule run in the test process (`r
 
 ### Running in a real Kibana (Scout)
 
-The jest tests above do not boot the Kibana plugins. Three Scout config sets (stateful, API tests only) do,
+The jest tests above do not boot the Kibana plugins. Three Scout config sets (API tests only) do,
 with `xpack.task_manager.task_execution.mode: child_process`, `bundle_dir` set to bundles built when the config
-loads (only `es_query` and `index_threshold`, about 35 s each; `TASK_PROCESSES_REBUILD=true` builds them again)
+loads (every declared task module in one shared graph; `TASK_PROCESSES_REBUILD=true` builds them again)
 and `max_concurrent_processes: 2`. Kibana's log goes also to `target/task_processes_scout/kibana.log` as JSON
 records, with Task Manager at debug, so the tests can see where each run happened.
 
@@ -604,9 +624,14 @@ node scripts/scout.js start-server --arch stateful --domain classic --serverConf
 node scripts/playwright test --config x-pack/platform/plugins/shared/task_manager/test/scout_task_processes/api/playwright.config.ts --project local
 ```
 
-Not covered: a service account token to Elasticsearch (`elasticsearch.serviceAccountToken`; the token has to
-exist before Kibana starts), serverless (no serverless config set for it yet), and a Kibana that is killed while a
-process is running (the jest tests of the supervisor cover it).
+The workflow suite uses HTTPS with a server base path and an isolated space. It parks and resumes human
+input, waits for a synchronous child, reads that space's data views through Core's verified self client,
+executes an Agent Builder Elasticsearch tool using Main's live registration snapshot, and cancels a parked
+run. Only the language model is stubbed. Worker PIDs and dispatch failures prove process routing.
+`task_processes` also inherits the standard serverless Search, Observability Complete and Security Complete
+configurations, including Elasticsearch service-account credentials and UIAM. Workflow tests target all three.
+
+Killing Kibana while a process is running is covered by supervisor tests rather than Scout.
 
 The distributable builds the bundles into `task_bundles/`.
 
@@ -696,6 +721,8 @@ What a workflow run needs beyond a rule run, and where it comes from in a proces
   read and decrypted in the process) and UIAM (the process exchanges the account for a token itself). Without
   the encrypted saved objects plugin or with `serviceAccounts.enabled: false`, `canRunAs()` is false and the
   workflow is declined.
+  A separate four-mode proof uses a real `elastic/kibana` Elasticsearch service-account token for
+  internal persistence while the workflow's Elasticsearch step retains its scoped user API key.
 - **Metering.** The process reports the usage record itself. Kibana sends the Usage API connection (URL
   and TLS, setting `workflowsUsageApi`, only when it reports metering), the process builds the same
   `WorkflowsMeteringService` over the usage API's own `UsageReportingService` (the same retries, the same
@@ -821,6 +848,10 @@ function `setup()` calls (`registerXAgentBuilder(setup, services)`), so there is
   Security Labs uses the native package client, including persisted installation state and update detection
   against the configured artifact repository. Product Docs captures its repository URL, proxy and inference
   ID on every dispatch; enabling LLM tasks without that configuration fails explicitly.
+  The documentation retrieval matrix executes the real platform tool against indexed `semantic_text`
+  documents and a real inference endpoint in all four worker modes. Only embedding and language-model
+  responses are stubbed; installation metadata, search, token processing and returned references use
+  the native SDKs, with no Main business requests.
 - SML types (`agentBuilderSml.registerType`) are registered with `context.registerSmlType`, which takes the place of
   the SML plugin's setup contract (`{ registerType: context.registerSmlType }`). The process owns an SML service
   (`createSmlService`, started with the privileges of the security task plugin) and an SML start contract

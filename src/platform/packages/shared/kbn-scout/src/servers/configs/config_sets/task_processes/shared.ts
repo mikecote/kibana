@@ -79,21 +79,24 @@ const loggers = [
  * Task Manager runs the rule types that are task type modules in a process of their own
  * (`xpack.task_manager.task_execution.mode: child_process`), so the tests prove it in a real Kibana.
  */
-export const createTaskProcessesServers = (extraServerArgs: string[] = []): ScoutServerConfig => ({
-  ...defaultConfig,
+export const createTaskProcessesServers = (
+  extraServerArgs: string[] = [],
+  baseConfig: ScoutServerConfig = defaultConfig
+): ScoutServerConfig => ({
+  ...baseConfig,
   http2: true,
   servers: {
-    elasticsearch: { ...defaultConfig.servers.elasticsearch, port: ES_PORT },
-    kibana: { ...defaultConfig.servers.kibana, port: KBN_PORT, pathname: '/task-processes' },
+    elasticsearch: { ...baseConfig.servers.elasticsearch, port: ES_PORT },
+    kibana: { ...baseConfig.servers.kibana, port: KBN_PORT, pathname: '/task-processes' },
   },
   kbnTestServer: {
-    ...defaultConfig.kbnTestServer,
+    ...baseConfig.kbnTestServer,
     env: {
-      ...defaultConfig.kbnTestServer.env,
+      ...baseConfig.kbnTestServer.env,
       NODE_TLS_REJECT_UNAUTHORIZED: '1',
     },
     serverArgs: [
-      ...defaultConfig.kbnTestServer.serverArgs.map(withPorts),
+      ...baseConfig.kbnTestServer.serverArgs.map(withPorts),
       '--server.basePath=/task-processes',
       '--server.rewriteBasePath=true',
       `--server.publicBaseUrl=https://localhost:${KBN_PORT}/task-processes`,

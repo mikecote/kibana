@@ -205,6 +205,7 @@ export interface WorkflowProcessHarnessOptions {
   mode?: 'child_process' | 'remote';
   serverUuid?: string;
   reuse?: boolean;
+  useElasticsearchServiceAccount?: boolean;
   maxIdleProcesses?: number;
   includeRunTask?: boolean;
   includeResumeTask?: boolean;
@@ -363,6 +364,7 @@ const startHarness = async (
     inferenceFeatures: { features: [] },
     contextEngineManagedAiIndices: { registrations: [] },
     actions: actionsConfigSchema.validate({ allowedHosts: ['*'], enableFooterInEmail: false }),
+    actionsConnectors: { inMemoryConnectors: [] },
     alerting: alertingConfigSchema.validate({}),
     ruleRegistry: ruleRegistryConfig.schema.validate({}),
     taskManager: createTaskManagerSettings(
@@ -418,12 +420,28 @@ const startHarness = async (
   const esServer: TestElasticsearchUtils = await startES();
   cleanups.push(() => esServer.stop());
   const es: Client = esServer.es.getClient();
-  const esConfig = () =>
-    elasticsearchConfigFromEnv({
+  const serviceAccountToken = options.useElasticsearchServiceAccount
+    ? (
+        await es.security.createServiceToken({
+          namespace: 'elastic',
+          service: 'kibana',
+          name: 'native-workflow-process',
+        })
+      ).token.value
+    : undefined;
+  const esConfig = () => {
+    const connection = elasticsearchConfigFromEnv({
       ES_URL: esServer.hosts[0],
       ES_USERNAME: esServer.username,
       ES_PASSWORD: esServer.password,
     });
+    if (serviceAccountToken) {
+      delete connection.username;
+      delete connection.password;
+      connection.serviceAccountToken = serviceAccountToken;
+    }
+    return connection;
+  };
 
   // The saved object indices Kibana has: what the module declares, `config` and `task`.
   const indexMappings = new Map<string, Record<string, unknown>>();

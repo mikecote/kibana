@@ -21,10 +21,12 @@ describe('extendRuleTaskRequirements', () => {
     const rule = createModule('alerting:test');
     rule.taskManager = { schedulableTypes: [/^actions:/] };
     rule.settings = ['actions'];
+    rule.contributions = { keys: ['rules'], apply: jest.fn() };
     const native = createModule('workflow:run');
     native.taskManager = { schedulableTypes: [/^workflow:/] };
     native.settings = ['actions', 'workflowsExecutionEngine'];
     native.featureFlags = { 'workflows.native': false };
+    native.contributions = { keys: ['rules', 'embeddables'] };
     native.licensing = true;
     native.usageCounters = true;
     native.createDataStreams = jest.fn().mockReturnValue([]);
@@ -32,6 +34,8 @@ describe('extendRuleTaskRequirements', () => {
     const combined = extendRuleTaskRequirements(rule, native);
     expect(combined.type).toBe(rule.type);
     expect(combined.createTaskRunner).toBe(rule.createTaskRunner);
+    expect(combined.contributions?.keys).toEqual(['rules', 'embeddables']);
+    expect(combined.contributions?.apply).toBe(rule.contributions.apply);
     expect(combined.settings).toEqual(['actions', 'workflowsExecutionEngine']);
     expect(combined.taskManager).toEqual({ schedulableTypes: [/^actions:/, /^workflow:/] });
     expect(combined.licensing).toBe(true);

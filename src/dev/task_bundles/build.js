@@ -63,6 +63,8 @@ const resolveTaskContributions = (
       contributions[key] = files.map((file) => {
         const contribution = loadContribution(file);
         if (!contribution) throw new Error(`Task contribution ${file} has no contribution export`);
+        for (const dependency of contribution.declares?.contributionKeys ?? [])
+          keys.add(dependency);
         return contribution;
       });
     }

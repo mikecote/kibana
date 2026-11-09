@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { apiTest } from '@kbn/scout';
+import { apiTest, tags } from '@kbn/scout';
 import type { ApiClientFixture } from '@kbn/scout';
 import { expect } from '@kbn/scout/api';
 import {
@@ -14,7 +14,9 @@ import {
   getDispatchFailures,
   getStartedProcesses,
   uniqueName,
+  waitFor,
 } from '../fixtures';
+import { startWorkflowLlmStub } from '../fixtures/workflow_llm_stub';
 
 const EXECUTION_TIMEOUT_MS = 120_000;
 const STEP_VISIBILITY_TIMEOUT_MS = 30_000;
@@ -22,18 +24,31 @@ const STEP_VISIBILITY_TIMEOUT_MS = 30_000;
 interface Execution {
   id: string;
   status: string;
+  error?: object;
   stepExecutions?: Array<{ id: string; stepId: string; status: string; output?: object }>;
 }
 
-apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-classic'] }, () => {
+const WORKFLOW_TAGS = [
+  ...tags.stateful.classic,
+  ...tags.serverless.search,
+  ...tags.serverless.observability.complete,
+  ...tags.serverless.security.complete,
+].filter((tag) => tag.startsWith('@local-'));
+
+apiTest.describe('Workflows in native task processes', { tag: WORKFLOW_TAGS }, () => {
   let client: ApiClientFixture;
   let headers: Record<string, string>;
   const spaceId = uniqueName('native-workflows');
   const prefix = `s/${spaceId}`;
   const workflowIds: string[] = [];
+  const connectorIds: string[] = [];
 
   const createWorkflow = async (steps: string): Promise<string> => {
-    const response = await client.post<{ id: string }>(`${prefix}/api/workflows/workflow`, {
+    const response = await client.post<{
+      id: string;
+      valid: boolean;
+      validationErrors?: string[];
+    }>(`${prefix}/api/workflows/workflow`, {
       headers,
       body: {
         yaml: `name: ${uniqueName(
@@ -43,6 +58,8 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
     });
     expect(response).toHaveStatusCode(200);
     workflowIds.push(response.body.id);
+    expect(response.body.validationErrors ?? []).toStrictEqual([]);
+    expect(response.body.valid).toBe(true);
     return response.body.id;
   };
   const run = async (id: string): Promise<string> => {
@@ -62,9 +79,18 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
     return response.body;
   };
   const waitForStatus = async (id: string, status: string): Promise<Execution> => {
-    await expect
-      .poll(async () => (await execution(id)).status, { timeout: EXECUTION_TIMEOUT_MS })
-      .toBe(status);
+    await waitFor(
+      async () => {
+        const current = await execution(id);
+        if (['failed', 'cancelled'].includes(current.status) && current.status !== status) {
+          throw new Error(
+            `Execution ${id} ${current.status}: ${JSON.stringify(current.error ?? {})}`
+          );
+        }
+        return current.status === status;
+      },
+      { timeoutMs: EXECUTION_TIMEOUT_MS, message: `execution ${id} to become ${status}` }
+    );
     return execution(id);
   };
   const expectNativeDispatch = (since: string, taskTypes: string[]): void => {
@@ -89,7 +115,8 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
     expect(space).toHaveStatusCode(200);
   });
 
-  apiTest.afterAll(async () => {
+  apiTest.afterAll(async ({ esClient }) => {
+    await esClient.indices.refresh({ index: '.workflows-executions*' });
     for (const id of workflowIds) {
       const response = await client.delete(
         `${prefix}/api/workflows/workflow/${id}?force=true&acknowledgeAclLoss=true`,
@@ -98,6 +125,11 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
         }
       );
       expect(response).toHaveStatusCode(200);
+    }
+    for (const id of connectorIds) {
+      expect(
+        await client.delete(`${prefix}/api/actions/connector/${id}`, { headers })
+      ).toHaveStatusCode(204);
     }
     expect(await client.delete(`api/spaces/space/${spaceId}`, { headers })).toHaveStatusCode(204);
   });
@@ -118,9 +150,8 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
       const child = await createWorkflow(`  - name: read_space
     type: kibana.request
     with:
-      request:
-        method: GET
-        path: /api/data_views
+      method: GET
+      path: /s/${spaceId}/api/data_views
 `);
       const parent = await createWorkflow(`  - name: ask
     type: waitForInput
@@ -174,6 +205,56 @@ apiTest.describe('Workflows in native task processes', { tag: ['@local-stateful-
       expect(childExecution.status).toBe('completed');
       expect(JSON.stringify(childExecution.stepExecutions)).toContain(dataView.body.data_view.id);
       expectNativeDispatch(since, ['workflow:run', 'workflow:resume']);
+    }
+  );
+
+  apiTest(
+    'runs an agent with Main registration metadata and a native Elasticsearch tool',
+    async ({ apiClient, esClient }) => {
+      apiTest.setTimeout(TEST_TIMEOUT_MS);
+      const index = uniqueName('native-agent-indices');
+      const answer = 'Native tool completed.';
+      const llm = await startWorkflowLlmStub(index, answer);
+      try {
+        await esClient.index({
+          index,
+          document: { message: 'native tool proof' },
+          refresh: true,
+        });
+        const connector = await apiClient.post<{ id: string }>(`${prefix}/api/actions/connector`, {
+          headers,
+          body: {
+            name: uniqueName('native-agent-connector'),
+            connector_type_id: '.gen-ai',
+            config: {
+              apiProvider: 'OpenAI',
+              apiUrl: `${llm.url}/v1/chat/completions`,
+              defaultModel: 'gpt-4',
+            },
+            secrets: { apiKey: 'native-test-key' },
+          },
+        });
+        expect(connector).toHaveStatusCode(200);
+        connectorIds.push(connector.body.id);
+        const workflow = await createWorkflow(`  - name: agent
+    type: ai.agent
+    connector-id: ${connector.body.id}
+    with:
+      message: List the Elasticsearch indices matching ${index}
+`);
+        const since = new Date().toISOString();
+        const id = await run(workflow);
+        const completed = await waitForStatus(id, 'completed');
+        expect(JSON.stringify(completed.stepExecutions)).toContain(answer);
+        const toolResults = llm.requests.flatMap(({ messages }) =>
+          messages.filter(({ role }) => role === 'tool')
+        );
+        expect(JSON.stringify(toolResults)).toContain(index);
+        expectNativeDispatch(since, ['workflow:run']);
+      } finally {
+        await llm.stop();
+        await esClient.indices.delete({ index, ignore_unavailable: true });
+      }
     }
   );
 

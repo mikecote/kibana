@@ -40,6 +40,10 @@ export const extendRuleTaskRequirements = (
   }
   return {
     ...rule,
+    contributions: {
+      ...rule.contributions,
+      keys: [...new Set(modules.flatMap((module) => module.contributions?.keys ?? []))],
+    },
     savedObjectTypes: modules.flatMap((module) => module.savedObjectTypes ?? []),
     createSavedObjectTypes: (encryption, settings) =>
       modules.flatMap((module) => module.createSavedObjectTypes?.(encryption, settings) ?? []),

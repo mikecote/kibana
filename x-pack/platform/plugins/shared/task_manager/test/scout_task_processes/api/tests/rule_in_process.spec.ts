@@ -84,7 +84,10 @@ apiTest.describe(
 
         // It ran in a process: Kibana started one for the task type and logged the lines it wrote.
         expect(getStartedProcesses(TASK_TYPE, since).length).toBeGreaterThan(0);
-        const childLines = getChildLines(TASK_TYPE, since);
+        // Idle and shutdown records have no active execution; verify the execution's scoped logs.
+        const childLines = getChildLines(TASK_TYPE, since).filter(
+          ({ labels }) => labels?.run_id !== undefined
+        );
         expect(childLines.length).toBeGreaterThan(0);
         // Logged with Kibana's layout (ECS records) and the labels of the run
         for (const line of childLines) {

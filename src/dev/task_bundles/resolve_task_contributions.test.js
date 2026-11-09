@@ -10,6 +10,29 @@
 const { resolveTaskContributions, collectTaskFeatureFlags } = require('./build');
 
 describe('resolveTaskContributions', () => {
+  it('includes declared SDK dependencies even when the runtime is disabled during the build', () => {
+    const taskType = {
+      contributions: { keys: ['tools'], apply: () => ({ contributions: { keys: ['tools'] } }) },
+    };
+    const declarations = {
+      'tools.ts': { declares: { contributionKeys: ['embeddables'] } },
+      'embeddables.ts': { declares: { contributionKeys: ['migrations'] } },
+      'migrations.ts': {},
+    };
+    expect(
+      resolveTaskContributions(
+        taskType,
+        {},
+        (key) => [`${key}.ts`],
+        (file) => declarations[file]
+      )
+    ).toEqual({
+      tools: ['tools.ts'],
+      embeddables: ['embeddables.ts'],
+      migrations: ['migrations.ts'],
+    });
+  });
+
   it('includes native SDK defaults in bundle metadata with their original primitive types', () => {
     const taskType = { featureFlags: { 'core.enabled': false } };
     expect(

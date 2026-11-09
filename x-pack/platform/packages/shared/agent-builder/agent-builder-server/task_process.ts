@@ -26,6 +26,8 @@ export const AGENT_BUILDER_CONTRIBUTIONS_KEY = 'agent-builder';
  * be told. Merged by the workflow task types into what a task process registers.
  */
 export interface AgentBuilderContributionDeclares {
+  /** Native SDK registries required by these registrations and migration factories. */
+  contributionKeys?: string[];
   /** Saved object types the registrations (tools, attachment types ...) read or write. */
   savedObjectTypes?: SavedObjectsType[];
   /** Builds types whose native migrations depend on contributed SDK registrations. */

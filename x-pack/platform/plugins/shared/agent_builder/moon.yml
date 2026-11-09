@@ -24,6 +24,8 @@ dependsOn:
   - '@kbn/logging'
   - '@kbn/config-schema'
   - '@kbn/inference-plugin'
+  - '@kbn/product-doc-base-plugin'
+  - '@kbn/product-doc-common'
   - '@kbn/agent-builder-server'
   - '@kbn/isomer'
   - '@kbn/agent-builder-skill-loader'

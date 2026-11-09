@@ -27,6 +27,7 @@ export const DASHBOARDS_AGENT_BUILDER_SETTINGS_ID = 'agentBuilderDashboards';
 /** Registers dashboard tools against the native dashboard and embeddable SDKs. */
 export const contribution: AgentBuilderContribution = {
   declares: {
+    contributionKeys: [EMBEDDABLE_CONTRIBUTIONS_KEY],
     settings: [DASHBOARDS_AGENT_BUILDER_SETTINGS_ID, EMBEDDABLE_RUNTIME_SETTINGS_ID],
     createSavedObjectTypes: (_encryption, settings, registry) => {
       if (!settings[DASHBOARDS_AGENT_BUILDER_SETTINGS_ID]) return [];
