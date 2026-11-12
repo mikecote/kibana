@@ -31,6 +31,7 @@ import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
+import type { InitializationSource } from './initialization_api';
 import { CoordinatorCapabilities } from './coordinator_capabilities';
 import type { CoordinatorCallbacks } from './coordinator_capabilities';
 import type { WorkerCapabilities } from './worker_capabilities';
@@ -64,6 +65,7 @@ export interface TaskProcessSettings {
     maxRuns: number;
     maxIdleProcesses: number;
   };
+  getInitializationFor?: (taskType: string) => InitializationSource;
   getInitFor?: (
     taskType: string
   ) =>
@@ -99,6 +101,7 @@ interface Bundle {
 }
 
 interface ReusableChild {
+  coordinatorCapabilities: CoordinatorCapabilities;
   session: IpcSession<WorkerCapabilities>;
   featureFlags?: TaskFeatureFlagDefinitions;
   coordinator?: { executionUuid: string; callbacks: CoordinatorCallbacks };
@@ -331,15 +334,14 @@ export class TaskProcessSupervisor {
     // Boot session: only boot capabilities are exposed before ready.
     // Validated ready gates the leased session view; run controls belong to that view.
     // One session survives reuse and dies with this same orphan-prevention IPC channel.
-    const session = openIpcSession<WorkerCapabilities>(
-      child,
-      expose(
-        new CoordinatorCapabilities((executionUuid) => {
-          const coordinator = this.managed.get(child)?.coordinator;
-          return coordinator?.executionUuid === executionUuid ? coordinator.callbacks : undefined;
-        })
-      )
+    const coordinatorCapabilities = new CoordinatorCapabilities(
+      (executionUuid) => {
+        const coordinator = this.managed.get(child)?.coordinator;
+        return coordinator?.executionUuid === executionUuid ? coordinator.callbacks : undefined;
+      },
+      init?.localAuthority ? settings.getInitializationFor?.(bundle.taskType) : undefined
     );
+    const session = openIpcSession<WorkerCapabilities>(child, expose(coordinatorCapabilities));
     this.stats.spawned++;
     // An unhandled error event would take Kibana down.
     child.on('error', (error) =>
@@ -351,6 +353,7 @@ export class TaskProcessSupervisor {
       ...(context?.executionUuid ? { run_id: context.executionUuid } : {}),
     };
     const managed: ReusableChild = {
+      coordinatorCapabilities,
       session,
       child,
       bundle,
@@ -506,6 +509,13 @@ export class TaskProcessSupervisor {
       token: this.token,
       session: process.session,
       featureFlags: process.featureFlags ? { ...process.featureFlags } : undefined,
+      assertRegistrations: () => {
+        try {
+          process.coordinatorCapabilities.assertRegistrations();
+        } catch (error) {
+          throw new TaskProcessAcquireError('not_served', (error as Error).message);
+        }
+      },
       bindCoordinator: (callbacks) => {
         if (released || !context?.executionUuid) throw new Error('No leased task execution');
         process.coordinator = { executionUuid: context.executionUuid, callbacks };

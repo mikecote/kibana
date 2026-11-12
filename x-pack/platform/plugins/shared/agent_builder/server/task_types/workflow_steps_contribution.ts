@@ -17,6 +17,7 @@ import { registerUISettings } from '../ui_settings';
 import { registerAgentBuilderProcessWorkflowDefinitions } from '../workflows';
 import { registerAgentBuilderWorkflowSteps } from '../workflows/register_workflow_steps';
 import { registerConversationWorkflowEventBridge } from '../workflows/triggers/event_bridge';
+import { REGISTRATION_KINDS, getParityKind } from '../run_services/registration_recorder';
 import { describeAgentBuilderParityGap } from '../run_services/parity';
 import { AGENT_BUILDER_RUN_SETTINGS_ID } from '../run_services/run_settings';
 import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
@@ -127,7 +128,14 @@ export const contribution: WorkflowStepsContribution = {
     );
     services.registerRunCompletion(completeConversationEvents);
 
-    let gap: string | undefined | null = null;
+    const nativeIds = processServices.registrations.ids();
+    let gap: string | undefined | null = host.validateRegistrations
+      ? (await host.validateRegistrations(
+          Object.fromEntries(
+            REGISTRATION_KINDS.map((kind) => [getParityKind(kind), nativeIds[kind]])
+          )
+        )) ?? undefined
+      : null;
     const getGap = () => {
       if (gap === null) {
         gap = describeAgentBuilderParityGap(host.parity, processServices.registrations.ids());

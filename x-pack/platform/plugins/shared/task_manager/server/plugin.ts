@@ -41,6 +41,8 @@ import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
 import { resolveSettingsByPlugin, serializeSettings } from './task_process/settings';
+import { prepareLocalInit } from './task_process/init_inventory';
+import type { InitializationSource } from './task_process/initialization_api';
 import { deduplicateSettings } from './task_process/shared_settings';
 import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
 import { TaskProcessAcquireError } from './task_process/acquire_error';
@@ -224,6 +226,7 @@ export class TaskManagerPlugin
     string,
     { module: TaskTypeModule; options?: TaskTypeRegistrationOptions }
   >();
+  private getTaskProcessInitialization?: (taskType: string) => InitializationSource;
   private getTaskProcessInit?: (
     taskType: string
   ) => Promise<
@@ -398,7 +401,7 @@ export class TaskManagerPlugin
         uiSettingsOverrides = undefined;
         throw error;
       }));
-    this.getTaskProcessInit = async (taskType) => {
+    const readTaskProcessInit: NonNullable<typeof this.getTaskProcessInit> = async (taskType) => {
       const registration = this.moduleRegistrations.get(taskType);
       if (!registration) return undefined;
       const { options, module } = registration;
@@ -490,6 +493,20 @@ export class TaskManagerPlugin
       };
       Object.assign(init, deduplicateSettings(init.settings));
       return init;
+    };
+
+    this.getTaskProcessInitialization = (taskType) => ({
+      read: async () => prepareLocalInit((await readTaskProcessInit(taskType)) ?? {}),
+      getParity: () =>
+        Object.entries(this.moduleRegistrations.get(taskType)?.options?.parity ?? {}).map(
+          ([kind, getIds]) => ({ kind, ids: getIds() })
+        ),
+    });
+    this.getTaskProcessInit = async (taskType) => {
+      const init = await readTaskProcessInit(taskType);
+      return init && this.config.task_execution?.mode === 'child_process'
+        ? prepareLocalInit(init).init
+        : init;
     };
 
     const { mode = 'in_process', remote } = this.config.task_execution ?? {};
@@ -986,6 +1003,7 @@ export class TaskManagerPlugin
               }
             : undefined,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
+          getInitializationFor: (taskType) => this.getTaskProcessInitialization!(taskType),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },
         logger: this.logger,

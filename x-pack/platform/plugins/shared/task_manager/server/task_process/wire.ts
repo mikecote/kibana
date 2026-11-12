@@ -35,6 +35,8 @@ export const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 export interface TaskProcessInit {
   kind: 'init';
+  /** Local-only live registry authority; revision preserves reuse invalidation. */
+  localAuthority?: { registrationRevision: string };
   executionContext?: { enabled: boolean };
   instrumentation?: {
     files: readonly TelemetryFileMaterial[];

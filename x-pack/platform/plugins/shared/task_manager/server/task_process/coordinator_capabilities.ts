@@ -9,6 +9,8 @@ import { createToken, defineCapability } from '@kbn/core-remote-common';
 import { composeCapabilities } from '@kbn/core-remote-server-internal';
 import { TaskPoolApi } from './task_pool_api';
 import { RunProgressApi } from './run_progress_api';
+import { InitializationApi } from './initialization_api';
+import type { InitializationSource } from './initialization_api';
 import { RunCoordinator } from './run_coordinator';
 
 export interface CoordinatorCallbacks {
@@ -18,13 +20,39 @@ export interface CoordinatorCallbacks {
 
 export const TaskPoolToken = createToken<TaskPoolApi>('taskManager.TaskPoolApi');
 export const RunProgressToken = createToken<RunProgressApi>('taskManager.RunProgressApi');
+const InitializationToken = createToken<InitializationApi>('taskManager.InitializationApi');
 const RunCoordinatorToken = createToken<RunCoordinator>('taskManager.RunCoordinator');
 
 /** Exposes only the coordinator callbacks owned by a currently leased execution. */
 export class CoordinatorCapabilities {
+  private readonly initializationApi?: InitializationApi;
   constructor(
-    private readonly getRun: (executionUuid: string) => CoordinatorCallbacks | undefined
-  ) {}
+    private readonly getRun: (executionUuid: string) => CoordinatorCallbacks | undefined,
+    initialization?: InitializationSource
+  ) {
+    if (initialization)
+      this.initializationApi = composeCapabilities(
+        [
+          defineCapability({
+            token: InitializationToken,
+            placement: 'coordinator',
+            scope: 'worker',
+            needs: [] as const,
+            create: () => new InitializationApi(initialization),
+          }),
+        ],
+        'coordinator'
+      ).worker.get(InitializationToken);
+  }
+
+  initialization(): InitializationApi {
+    if (!this.initializationApi) throw new Error('No local initialization authority');
+    return this.initializationApi;
+  }
+
+  assertRegistrations(): void {
+    this.initializationApi?.assertCurrent();
+  }
 
   forRun(executionUuid: string): RunCoordinator {
     const active = (): CoordinatorCallbacks => {

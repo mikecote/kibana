@@ -38,3 +38,14 @@ it('rejects missing dispatched files instead of consulting local assets', async 
   );
   await expect(files.read('toString')).rejects.toThrow('ML module asset was not dispatched');
 });
+
+it('defers digest fetch until use and shares the parsed module files across reads', async () => {
+  const reference = { __kind: 'content' as const, digest: 'installed', size: 20 };
+  const readContent = jest.fn(async () => JSON.stringify({ 'module/file': 'installed' }));
+  const files = createSnapshotModuleFiles(reference, readContent);
+  expect(readContent).not.toHaveBeenCalled();
+  expect(await files.listDirectories()).toEqual(['module']);
+  expect(await files.read('module/file')).toBe('installed');
+  expect(readContent).toHaveBeenCalledTimes(1);
+  expect(readContent).toHaveBeenCalledWith(reference);
+});

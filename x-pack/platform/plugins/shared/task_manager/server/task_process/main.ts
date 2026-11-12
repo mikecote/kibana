@@ -7,6 +7,7 @@
 
 import { expose } from '@kbn/core-remote-common';
 import { openIpcSession } from '@kbn/core-remote-server-internal';
+import { prepareWorkerInitialization } from './worker_initialization';
 import { openWorkerRunControl } from './worker_run_control';
 import type { CoordinatorCapabilities } from './coordinator_capabilities';
 import { WorkerCapabilities } from './worker_capabilities';
@@ -56,7 +57,9 @@ export const runTaskProcess = async (
           expose(new WorkerCapabilities((executionUuid) => getRunCancellation(executionUuid)))
         )
       : undefined;
-    const core = await startTaskProcessCore({ init, module, contributions });
+    const initialization =
+      session && init.localAuthority ? await prepareWorkerInitialization(session, init) : undefined;
+    const core = await startTaskProcessCore({ init, module, contributions, initialization });
     const stop = async (): Promise<void> => {
       try {
         await core.stop();

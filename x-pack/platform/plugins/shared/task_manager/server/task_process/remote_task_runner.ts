@@ -53,6 +53,7 @@ export interface TaskProcessLease extends TaskProcessAddress {
   /** Available only after a local child has passed readiness validation. */
   readonly session?: IpcSession<WorkerCapabilities>;
   readonly featureFlags?: TaskFeatureFlagDefinitions;
+  assertRegistrations?(): void;
   bindCoordinator?(callbacks: CoordinatorCallbacks): void;
   release(options?: { force?: boolean; reusable?: boolean }): void;
 }
@@ -227,6 +228,7 @@ export class RemoteTaskRunner implements CancellableTask {
     try {
       let response: Response;
       try {
+        lease?.assertRegistrations?.();
         const health = await fetchFn(`${address.url}${TASK_PROCESS_PATHS.health}`, {
           headers: authHeaders(address),
           signal: abort,

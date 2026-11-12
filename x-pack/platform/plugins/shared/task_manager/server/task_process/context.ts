@@ -17,6 +17,7 @@ import type { TaskProcessInit } from './wire';
  */
 export interface TaskProcessContext {
   init: TaskProcessInit;
+  initialization?: Pick<TaskHost, 'validateRegistrations' | 'readContent'>;
   module: TaskTypeModule;
   /** What plugins contribute, by key; see `TaskTypeModule.contributions`. */
   contributions: Record<string, unknown[]>;

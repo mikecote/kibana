@@ -205,6 +205,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         },
         logger,
         parity: init.parity,
+        ...context.initialization,
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,
