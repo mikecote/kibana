@@ -1550,6 +1550,12 @@ importers:
       '@kbn/core-provider-plugin':
         specifier: workspace:*
         version: link:src/platform/test/plugin_functional/plugins/core_provider_plugin
+      '@kbn/core-remote-common':
+        specifier: workspace:*
+        version: link:src/core/packages/remote/common
+      '@kbn/core-remote-server-internal':
+        specifier: workspace:*
+        version: link:src/core/packages/remote/server-internal
       '@kbn/core-rendering-browser':
         specifier: workspace:*
         version: link:src/core/packages/rendering/browser
@@ -4433,6 +4439,9 @@ importers:
       canvg:
         specifier: 4.0.3
         version: 4.0.3
+      capnweb:
+        specifier: 0.12.0
+        version: 0.12.0
       chalk:
         specifier: 4.1.2
         version: 4.1.2
@@ -7467,6 +7476,10 @@ importers:
   src/core/packages/pricing/server-internal: {}
 
   src/core/packages/pricing/server-mocks: {}
+
+  src/core/packages/remote/common: {}
+
+  src/core/packages/remote/server-internal: {}
 
   src/core/packages/rendering/browser: {}
 
@@ -14538,6 +14551,9 @@ packages:
   '@smithy/core@3.35.1':
     resolution: {integrity: sha512-i4YPS4B6ts7bjn7UwLnGjiZdprOvHvgGobFZsYK3GIY3E5hIqtj0rReU69BcTpGp+fvtraSNXeG1l+jtJvF55w==}
     engines: {node: '>=18.0.0'}
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -16997,6 +17013,9 @@ packages:
   canvg@4.0.3:
     resolution: {integrity: sha512-fKzMoMBwus3CWo1Uy8XJc4tqqn98RoRrGV6CsIkaNiQT5lOeHuMh4fOt+LXLzn2Wqtr4p/c2TOLz4xtu4oBlFA==}
     engines: {node: '>=12.0.0'}
+
+  capnweb@0.12.0:
+    resolution: {integrity: sha512-jgZ/LMtMVTi+RVlooIslH78Gg23XbDTdvcLghWx3oz17D6u5GuJARt+uhZk/wcTo+f81eeabfnow4d3zLBj+JQ==}
 
   case-sensitive-paths-webpack-plugin@2.4.0:
     resolution: {integrity: sha512-roIFONhcxog0JSSWbvVAh3OocukmSgpqOH6YpMkCvav/ySIV3JKg4Dc8vYtQjYi/UxpNE36r/9v+VqTQqgkYmw==}
@@ -19741,6 +19760,7 @@ packages:
   http-call@5.3.0:
     resolution: {integrity: sha512-ahwimsC23ICE4kPl9xTBjKB4inbRaeLyZeRunC/1Jy/Z6X8tv22MEAjK+KBOMSVLaqXPTTmd8638waVIKLGx2w==}
     engines: {node: '>=8.0.0'}
+    deprecated: Renamed to @heroku/http-call — please install @heroku/http-call instead.
 
   http-deceiver@1.2.7:
     resolution: {integrity: sha512-LmpOGxTfbpgtGVxJrj5k7asXHCgNZp5nLfp+hWc8QQRqtb7fUy6kRY3BO1h9ddF6yIPYUARgxGOwB42DnxIaNw==}
@@ -21897,6 +21917,7 @@ packages:
 
   node-abort-controller@3.1.1:
     resolution: {integrity: sha512-AGK2yQKIjRuqnc6VkX2Xj5d+QW8xZ87pa1UK6yA6ouUyuxfHuMP6umE5QK7UmTeOAymo+Zx1Fxiuw9rVx8taHQ==}
+    deprecated: This package is no longer needed on supported Node.js versions. Node.js 16+ includes AbortController and AbortSignal as built-in globals. All Node.js versions requiring this polyfill are end-of-life. Use the built-in globals instead.
 
   node-addon-api@6.1.0:
     resolution: {integrity: sha512-+eawOlIgy680F0kBzPUNFhMZGtJ1YmqM6l4+Crf4IkImjYrO/mqPwRMh352g23uIaQKFItcQ64I7KMaJxHgAVA==}
@@ -34560,6 +34581,8 @@ snapshots:
       rgbcolor: 1.0.1
       stackblur-canvas: 2.7.0
       svg-pathdata: 6.0.3
+
+  capnweb@0.12.0: {}
 
   case-sensitive-paths-webpack-plugin@2.4.0: {}
 
