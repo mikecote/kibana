@@ -7,6 +7,8 @@
 
 import type { MetricResourceSnapshot } from '@kbn/metrics';
 import { fork } from 'child_process';
+import { openIpcSession } from '@kbn/core-remote-server-internal';
+import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { ChildProcess } from 'child_process';
 import { createHash, randomBytes } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
@@ -93,6 +95,7 @@ interface Bundle {
 }
 
 interface ReusableChild {
+  session: IpcSession;
   child: ChildProcess;
   bundle: Bundle;
   fingerprint: string;
@@ -319,6 +322,10 @@ export class TaskProcessSupervisor {
       // stdout and stderr are read here; the fork channel carries the settings and readiness.
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
+    // Boot session: only boot capabilities are exposed before ready (none yet).
+    // Validated ready gates the leased session view; run controls belong to that view.
+    // One session survives reuse and dies with this same orphan-prevention IPC channel.
+    const session = openIpcSession(child);
     this.stats.spawned++;
     // An unhandled error event would take Kibana down.
     child.on('error', (error) =>
@@ -330,6 +337,7 @@ export class TaskProcessSupervisor {
       ...(context?.executionUuid ? { run_id: context.executionUuid } : {}),
     };
     const managed: ReusableChild = {
+      session,
       child,
       bundle,
       fingerprint,
@@ -353,6 +361,7 @@ export class TaskProcessSupervisor {
         }),
     ];
     child.once('exit', () => {
+      session.close();
       this.children.delete(child);
       this.managed.delete(child);
       clearTimeout(managed.idleTimer);
@@ -479,6 +488,7 @@ export class TaskProcessSupervisor {
     return {
       url: `http://127.0.0.1:${process.port}`,
       token: this.token,
+      session: process.session,
       release: ({ force = false, reusable = false } = {}) => {
         if (released) return;
         released = true;

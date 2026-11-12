@@ -9,3 +9,7 @@
 
 export { composeCapabilities } from './src/compose_capabilities';
 export type { CapabilityResolver, CapabilityComposition } from './src/compose_capabilities';
+export { IpcTransport } from './src/ipc_transport';
+export type { IpcChannel } from './src/ipc_transport';
+export { openIpcSession } from './src/ipc_session';
+export type { IpcSession } from './src/ipc_session';

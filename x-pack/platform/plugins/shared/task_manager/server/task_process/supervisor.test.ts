@@ -130,6 +130,22 @@ describe('TaskProcessSupervisor', () => {
     }
   );
 
+  it('keeps one IPC session across sequential leases and removes its listeners on exit', async () => {
+    const { supervisor, children, acquire, ready } = setup({ reuse });
+    supervisor.start();
+    const pending = acquire('alerting_v2:cleanup');
+    ready(0);
+    const first = await pending;
+    expect(first.session).toBeDefined();
+    const listeners = children[0].child.listenerCount('message');
+    first.release({ reusable: true });
+    const second = await acquire('alerting_v2:cleanup');
+    expect(second.session).toBe(first.session);
+    second.release({ force: true });
+    expect(children[0].child.listenerCount('message')).toBe(listeners - 1);
+    expect(children[0].child.listenerCount('disconnect')).toBe(0);
+  });
+
   it('reuses a compatible child sequentially and retires it at the run limit', async () => {
     const { supervisor, children, forkFn, acquire, ready } = setup({ reuse });
     supervisor.start();

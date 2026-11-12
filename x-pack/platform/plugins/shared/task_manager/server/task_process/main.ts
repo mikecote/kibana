@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { openIpcSession } from '@kbn/core-remote-server-internal';
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
 import { getTaskProcessContext } from './context';
@@ -39,11 +40,19 @@ export const runTaskProcess = async (
   const onCoreStarted = registerStop ?? createTaskProcessParentWatcher();
   try {
     const init = providedInit ?? (await readTaskProcessInit());
+    const session = process.send
+      ? openIpcSession({
+          send: process.send.bind(process),
+          on: process.on.bind(process),
+          off: process.off.bind(process),
+        })
+      : undefined;
     const core = await startTaskProcessCore({ init, module, contributions });
     const stop = async (): Promise<void> => {
       try {
         await core.stop();
       } finally {
+        session?.close();
         await instrumentation?.shutdown();
       }
     };

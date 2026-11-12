@@ -7,6 +7,7 @@
 
 import { Agent } from 'undici';
 import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
+import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { ScopeMetrics } from '@kbn/metrics';
 import { captureTaskRunTrace } from '../task_running/task_tracing';
 import type { TaskExecutionPool } from '../task_scheduling';
@@ -46,6 +47,8 @@ export interface TaskProcessAddress {
 
 /** An address held for one run; releasing it retires the child or returns it to the idle pool. */
 export interface TaskProcessLease extends TaskProcessAddress {
+  /** Available only after a local child has passed readiness validation. */
+  readonly session?: IpcSession;
   release(options?: { force?: boolean; reusable?: boolean }): void;
 }
 
