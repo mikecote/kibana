@@ -371,6 +371,7 @@ describe('task types served from bundles', () => {
       expect(body).toEqual({
         kind: 'declined',
         reason: expect.stringContaining(`${PLUMBING_PARITY_KIND} [registered-later]`),
+        createdTaskCount: 0,
       });
     });
   });

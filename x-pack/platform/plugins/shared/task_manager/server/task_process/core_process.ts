@@ -94,7 +94,10 @@ export const startTaskProcessCore = async ({
   const definitions = new Map<string, TaskRegisterDefinition>();
   // The module with what plugins contributed to it declared: saved object types and the like.
   const applied =
-    module.contributions?.apply?.(contributions, reviveSettingsByPlugin(init.settings)) ?? module;
+    module.contributions?.apply?.(
+      contributions,
+      reviveSettingsByPlugin(init.settings, init.sharedSettings)
+    ) ?? module;
   const context: TaskProcessContext = {
     init,
     module: applied,

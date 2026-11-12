@@ -41,6 +41,7 @@ import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
 import { resolveSettingsByPlugin, serializeSettings } from './task_process/settings';
+import { deduplicateSettings } from './task_process/shared_settings';
 import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
 import { TaskProcessAcquireError } from './task_process/acquire_error';
 import type { TaskProcessInit } from './task_process/wire';
@@ -415,6 +416,7 @@ export class TaskManagerPlugin
         | 'executionContext'
         | 'encryptedSavedObjects'
         | 'settings'
+        | 'sharedSettings'
         | 'parity'
         | 'uiSettingsOverrides'
         | 'uiSettingsGlobalOverrides'
@@ -485,7 +487,8 @@ export class TaskManagerPlugin
               : undefined,
           },
         } satisfies TaskManagerTaskProcessSettings),
-      } as TaskProcessInit['settings'];
+      };
+      Object.assign(init, deduplicateSettings(init.settings));
       return init;
     };
 

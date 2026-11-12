@@ -23,6 +23,7 @@ export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessIn
     ? (JSON.parse(readFileSync(env.TASK_PROCESS_SETTINGS, 'utf8')) as Pick<
         TaskProcessInit,
         | 'settings'
+        | 'sharedSettings'
         | 'uiSettingsOverrides'
         | 'uiSettingsGlobalOverrides'
         | 'parity'
@@ -56,6 +57,7 @@ export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessIn
     instrumentation: file.instrumentation,
     executionContext: file.executionContext,
     settings: file.settings,
+    sharedSettings: file.sharedSettings,
     uiSettingsOverrides: file.uiSettingsOverrides,
     uiSettingsGlobalOverrides: file.uiSettingsGlobalOverrides,
     parity: file.parity,

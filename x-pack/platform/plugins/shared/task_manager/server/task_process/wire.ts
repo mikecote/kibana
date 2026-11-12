@@ -62,6 +62,8 @@ export interface TaskProcessInit {
   parity?: TaskProcessParity;
   /** Plugin configs by plugin id in `serializeSettings` format; only the ids the module declares. */
   settings?: Record<string, SerializedValue>;
+  /** Repeated feature inventories and module files, resolved before plugin config validation. */
+  sharedSettings?: Record<string, SerializedValue>;
 }
 
 export interface TaskProcessServerInfo {
