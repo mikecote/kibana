@@ -13,6 +13,7 @@ export const TASK_PROCESS_PROTOCOL_VERSION = 3;
 export const TASK_PROCESS_CAPABILITIES = [
   'shared-init-settings',
   'live-init-authority',
+  'placed-coordinator-capabilities',
   'session-push-cancel',
   'typed-pool-progress',
   'native-task-scheduling',

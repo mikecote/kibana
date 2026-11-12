@@ -59,7 +59,7 @@
         "server/task_types/rule_run_contribution.ts"
       ],
       "workflow-steps": [
-        "server/task_types/workflow_steps_contribution.ts"
+        "server/task_types/coordinator_workflow_steps_contribution.ts"
       ]
     }
   }

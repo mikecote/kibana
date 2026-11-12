@@ -5,13 +5,21 @@
  * 2.0.
  */
 
-import { createToken, defineCapability } from '@kbn/core-remote-common';
+import { createToken, defineCapability, remoteTokenId } from '@kbn/core-remote-common';
+import type { CapabilityDefinition } from '@kbn/core-remote-common';
 import { composeCapabilities } from '@kbn/core-remote-server-internal';
+import type { CoordinatorRequestFactory } from './coordinator_request';
+import { CoordinatorRequestToken } from './coordinator_request';
 import { TaskPoolApi } from './task_pool_api';
 import { RunProgressApi } from './run_progress_api';
 import { InitializationApi } from './initialization_api';
 import type { InitializationSource } from './initialization_api';
 import { RunCoordinator } from './run_coordinator';
+
+export interface CoordinatorPlacement {
+  manifest: readonly CapabilityDefinition[];
+  requests: CoordinatorRequestFactory;
+}
 
 export interface CoordinatorCallbacks {
   getCurrentTasksInPool?: () => Promise<readonly string[]> | readonly string[];
@@ -28,7 +36,8 @@ export class CoordinatorCapabilities {
   private readonly initializationApi?: InitializationApi;
   constructor(
     private readonly getRun: (executionUuid: string) => CoordinatorCallbacks | undefined,
-    initialization?: InitializationSource
+    initialization?: InitializationSource,
+    private readonly placement?: CoordinatorPlacement
   ) {
     if (initialization)
       this.initializationApi = composeCapabilities(
@@ -61,7 +70,21 @@ export class CoordinatorCapabilities {
       return callbacks;
     };
     active();
-    const manifest = [
+    const manifest: CapabilityDefinition[] = [
+      defineCapability({
+        token: CoordinatorRequestToken,
+        placement: 'coordinator',
+        scope: 'run',
+        needs: [] as const,
+        create: () => ({
+          create: (identity) => {
+            active();
+            if (!this.placement) throw new Error('No coordinator request factory');
+            return this.placement.requests.create(identity);
+          },
+        }),
+      }),
+      ...(this.placement?.manifest ?? []),
       defineCapability({
         token: TaskPoolToken,
         placement: 'coordinator',
@@ -87,9 +110,18 @@ export class CoordinatorCapabilities {
         placement: 'coordinator',
         scope: 'run',
         needs: [TaskPoolToken, RunProgressToken] as const,
-        create: ([pool, progress]) => new RunCoordinator(pool, progress),
+        create: ([pool, progress]): RunCoordinator =>
+          new RunCoordinator(pool, progress, (tokenId) => {
+            active();
+            const definition = this.placement?.manifest.find(
+              ({ token }) => remoteTokenId(token) === tokenId
+            );
+            if (!definition) throw new Error(`Undeclared coordinator capability: ${tokenId}`);
+            return run.get(definition.token);
+          }),
       }),
     ];
-    return composeCapabilities(manifest, 'coordinator').createRun().get(RunCoordinatorToken);
+    const run = composeCapabilities(manifest, 'coordinator').createRun();
+    return run.get(RunCoordinatorToken);
   }
 }

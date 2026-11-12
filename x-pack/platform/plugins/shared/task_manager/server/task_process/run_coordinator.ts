@@ -10,7 +10,16 @@ import type { TaskPoolApi } from './task_pool_api';
 import type { RunProgressApi } from './run_progress_api';
 
 export class RunCoordinator {
-  constructor(private readonly pool: TaskPoolApi, private readonly progress: RunProgressApi) {}
+  constructor(
+    private readonly pool: TaskPoolApi,
+    private readonly progress: RunProgressApi,
+    private readonly getCapability?: (tokenId: string) => object
+  ) {}
+
+  capability(tokenId: string): object {
+    if (!this.getCapability) throw new Error('No placed coordinator capabilities');
+    return this.getCapability(tokenId);
+  }
 
   getCurrentTasksInPool(): Promise<readonly string[]> {
     return this.pool.getCurrentTasksInPool();

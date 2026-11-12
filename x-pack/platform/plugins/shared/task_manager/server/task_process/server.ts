@@ -354,6 +354,7 @@ export const startTaskProcessServer = ({
               : undefined,
           adHocTaskCounter,
           prometheusMetrics: metrics,
+          withCoordinatorCapability: runControl?.withCoordinatorCapability,
           getCurrentTasksInPool:
             runControl?.getCurrentTasksInPool ?? activeTaskPool.getCurrentTasksInPool,
         }

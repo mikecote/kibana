@@ -33,6 +33,7 @@ import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 import type { InitializationSource } from './initialization_api';
 import { CoordinatorCapabilities } from './coordinator_capabilities';
+import type { CoordinatorPlacement } from './coordinator_capabilities';
 import type { CoordinatorCallbacks } from './coordinator_capabilities';
 import type { WorkerCapabilities } from './worker_capabilities';
 
@@ -65,6 +66,7 @@ export interface TaskProcessSettings {
     maxRuns: number;
     maxIdleProcesses: number;
   };
+  coordinatorPlacement?: CoordinatorPlacement;
   getInitializationFor?: (taskType: string) => InitializationSource;
   getInitFor?: (
     taskType: string
@@ -339,7 +341,8 @@ export class TaskProcessSupervisor {
         const coordinator = this.managed.get(child)?.coordinator;
         return coordinator?.executionUuid === executionUuid ? coordinator.callbacks : undefined;
       },
-      init?.localAuthority ? settings.getInitializationFor?.(bundle.taskType) : undefined
+      init?.localAuthority ? settings.getInitializationFor?.(bundle.taskType) : undefined,
+      settings.coordinatorPlacement
     );
     const session = openIpcSession<WorkerCapabilities>(child, expose(coordinatorCapabilities));
     this.stats.spawned++;

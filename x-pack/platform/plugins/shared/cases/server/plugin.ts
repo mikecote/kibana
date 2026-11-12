@@ -76,6 +76,7 @@ import {
   V2_NOOP_WRITER,
 } from './cases_analytics_v2';
 import { CasesEventBus } from './events/event_bus';
+import { defineCasesOperations } from './task_types/cases_operations';
 import { registerCaseWorkflowSteps } from './workflows';
 import { CASES_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import type { CasesAgentBuilderSettings } from './task_types/agent_builder_contribution';
@@ -329,6 +330,10 @@ export class CasePlugin
     });
     plugins.alerting.registerTaskProcessSettings('cases', getTaskProcessSettings);
     plugins.workflowsExtensions?.registerTaskProcessSettings('cases', getTaskProcessSettings);
+
+    plugins.taskManager?.registerCoordinatorCapability(
+      defineCasesOperations(getCasesClient('workflow'))
+    );
 
     registerCaseWorkflowSteps(plugins.workflowsExtensions, {
       getCasesClient: getCasesClient('workflow'),

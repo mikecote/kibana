@@ -53,6 +53,7 @@ import type { StandaloneUsageCounters } from './host_capabilities/usage_counters
 import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
+import { withTaskCoordinatorCapability } from './run_context';
 import { createHostFeatureFlags } from './run_context';
 import { registerTaskAnalyticsEventTypes } from './host_capabilities/analytics';
 import { createParityGuard } from './parity';
@@ -206,6 +207,9 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         logger,
         parity: init.parity,
         ...context.initialization,
+        ...(init.localAuthority
+          ? { withCoordinatorCapability: withTaskCoordinatorCapability }
+          : {}),
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,

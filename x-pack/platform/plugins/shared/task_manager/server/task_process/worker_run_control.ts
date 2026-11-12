@@ -6,11 +6,15 @@
  */
 
 import { setTimeout as delay } from 'node:timers/promises';
+import { remoteTokenId } from '@kbn/core-remote-common';
+import type { CapabilityToken, RemoteCapability } from '@kbn/core-remote-common';
 import type { IpcSession } from '@kbn/core-remote-server-internal';
+import type { TaskHost } from '../task_type_module';
 import type { CoordinatorCapabilities } from './coordinator_capabilities';
 import type { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 
 export interface WorkerRunControl {
+  withCoordinatorCapability?: TaskHost['withCoordinatorCapability'];
   getCurrentTasksInPool(): Promise<readonly string[]>;
   dispose(): Promise<void>;
 }
@@ -23,6 +27,7 @@ export const openWorkerRunControl = async (
   signal: AbortSignal
 ): Promise<WorkerRunControl> => {
   const coordinator = await session.remote.forRun(executionUuid);
+  const capabilities = new Map<string, Promise<object & Disposable>>();
   let publishedCount = counter.count;
   let pending: Promise<void> | undefined;
   const bounded = async <Result>(
@@ -64,12 +69,35 @@ export const openWorkerRunControl = async (
   }, 1000);
   timer.unref?.();
   return {
+    withCoordinatorCapability: async <Capability extends object, Result>(
+      token: CapabilityToken<Capability>,
+      use: (capability: RemoteCapability<Capability>) => Promise<Result>
+    ): Promise<Result> => {
+      const id = remoteTokenId(token);
+      let capability = capabilities.get(id);
+      if (!capability) {
+        capability = (async () => {
+          const request = coordinator.capability(id);
+          try {
+            return (await request.dup()) as object & Disposable;
+          } finally {
+            request[Symbol.dispose]();
+          }
+        })();
+        capabilities.set(id, capability);
+      }
+      return use((await capability) as RemoteCapability<Capability>);
+    },
     getCurrentTasksInPool: async () => [
       ...(await bounded(coordinator.getCurrentTasksInPool(), 5000)),
     ],
     dispose: async () => {
       clearInterval(timer);
       await pending;
+      for (const capability of capabilities.values()) {
+        const stub = await capability.catch(() => undefined);
+        stub?.[Symbol.dispose]();
+      }
       coordinator[Symbol.dispose]();
     },
   };

@@ -19,3 +19,5 @@ export type {
   CapabilityPlacement,
   CapabilityScope,
 } from './src/capability';
+
+export type { RpcStub as RemoteCapability } from 'capnweb';
