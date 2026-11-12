@@ -14,6 +14,7 @@ import { createHash, randomBytes } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { Logger } from '@kbn/core/server';
+import { expose } from '@kbn/core-remote-common';
 import { collectRemoteGaugeMetrics } from './metrics_transport';
 import type {
   TaskProcessAcquireContext,
@@ -30,6 +31,8 @@ import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
+import { CoordinatorCapabilities } from './coordinator_capabilities';
+import type { CoordinatorCallbacks } from './coordinator_capabilities';
 import type { WorkerCapabilities } from './worker_capabilities';
 
 /** `manifest.json` of a task bundle directory: which task types each bundle serves. */
@@ -97,6 +100,8 @@ interface Bundle {
 
 interface ReusableChild {
   session: IpcSession<WorkerCapabilities>;
+  featureFlags?: TaskFeatureFlagDefinitions;
+  coordinator?: { executionUuid: string; callbacks: CoordinatorCallbacks };
   child: ChildProcess;
   bundle: Bundle;
   fingerprint: string;
@@ -302,7 +307,7 @@ export class TaskProcessSupervisor {
       logger.info(`Reusing process ${process.child.pid} for task ${bundle.taskType}`, {
         labels: process.labels,
       });
-      return this.lease(process);
+      return this.lease(process, context);
     }
     const { execArgv, nodeOptions } = getChildNodeOptions({
       maxOldSpaceMb: settings.childMaxOldSpaceMb,
@@ -326,7 +331,15 @@ export class TaskProcessSupervisor {
     // Boot session: only boot capabilities are exposed before ready.
     // Validated ready gates the leased session view; run controls belong to that view.
     // One session survives reuse and dies with this same orphan-prevention IPC channel.
-    const session = openIpcSession<WorkerCapabilities>(child);
+    const session = openIpcSession<WorkerCapabilities>(
+      child,
+      expose(
+        new CoordinatorCapabilities((executionUuid) => {
+          const coordinator = this.managed.get(child)?.coordinator;
+          return coordinator?.executionUuid === executionUuid ? coordinator.callbacks : undefined;
+        })
+      )
+    );
     this.stats.spawned++;
     // An unhandled error event would take Kibana down.
     child.on('error', (error) =>
@@ -416,11 +429,12 @@ export class TaskProcessSupervisor {
         if (settled || message?.kind !== 'ready') return;
         try {
           assertTaskProcessProtocol(message);
+          const declared = parseTaskFeatureFlagDeclarations(
+            JSON.stringify({ taskType: bundle.taskType, featureFlags: message.featureFlags ?? {} }),
+            bundle.taskType
+          );
+          managed.featureFlags = declared;
           if (bundle.featureFlags) {
-            const declared = parseTaskFeatureFlagDeclarations(
-              JSON.stringify({ taskType: bundle.taskType, featureFlags: message.featureFlags }),
-              bundle.taskType
-            );
             const mismatches = Object.entries(declared).filter(
               ([name, value]) => bundle.featureFlags?.[name] !== value
             );
@@ -454,7 +468,7 @@ export class TaskProcessSupervisor {
     });
 
     managed.port = port;
-    return this.lease(managed);
+    return this.lease(managed, context);
   }
 
   /** Collects gauges from this node's live execution processes, including retained idle workers. */
@@ -483,16 +497,23 @@ export class TaskProcessSupervisor {
     return collected.flat();
   }
 
-  private lease(process: ReusableChild): TaskProcessLease {
+  private lease(process: ReusableChild, context?: TaskProcessAcquireContext): TaskProcessLease {
     process.runs++;
+    process.coordinator = undefined;
     let released = false;
     return {
       url: `http://127.0.0.1:${process.port}`,
       token: this.token,
       session: process.session,
+      featureFlags: process.featureFlags ? { ...process.featureFlags } : undefined,
+      bindCoordinator: (callbacks) => {
+        if (released || !context?.executionUuid) throw new Error('No leased task execution');
+        process.coordinator = { executionUuid: context.executionUuid, callbacks };
+      },
       release: ({ force = false, reusable = false } = {}) => {
         if (released) return;
         released = true;
+        process.coordinator = undefined;
         process.giveBack();
         delete process.labels.run_id;
         const { child } = process;

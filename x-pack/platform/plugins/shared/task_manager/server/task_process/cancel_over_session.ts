@@ -7,16 +7,16 @@
 
 import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { WorkerCapabilities } from './worker_capabilities';
-import type { TaskProcessRunMetrics } from './wire';
+import type { TaskProcessCancellationAck } from './run_cancellation';
 
 /** Pushes cancellation within the existing grace bound, disposing the run capability after ack. */
 export const cancelOverSession = async (
   session: IpcSession<WorkerCapabilities>,
   executionUuid: string,
   gracePeriodMs: number
-): Promise<TaskProcessRunMetrics> => {
+): Promise<TaskProcessCancellationAck> => {
   let timer: NodeJS.Timeout | undefined;
-  const cancel = async (): Promise<TaskProcessRunMetrics> => {
+  const cancel = async (): Promise<TaskProcessCancellationAck> => {
     const capability = await session.remote.forRun(executionUuid);
     try {
       return await capability.cancel();

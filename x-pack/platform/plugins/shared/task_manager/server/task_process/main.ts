@@ -7,6 +7,8 @@
 
 import { expose } from '@kbn/core-remote-common';
 import { openIpcSession } from '@kbn/core-remote-server-internal';
+import { openWorkerRunControl } from './worker_run_control';
+import type { CoordinatorCapabilities } from './coordinator_capabilities';
 import { WorkerCapabilities } from './worker_capabilities';
 import type { GetRunCancellation } from './worker_capabilities';
 import { startTaskProcessServer } from './server';
@@ -45,7 +47,7 @@ export const runTaskProcess = async (
     const init = providedInit ?? (await readTaskProcessInit());
     let getRunCancellation: GetRunCancellation = () => undefined;
     const session = process.send
-      ? openIpcSession(
+      ? openIpcSession<CoordinatorCapabilities>(
           {
             send: process.send.bind(process),
             on: process.on.bind(process),
@@ -73,6 +75,10 @@ export const runTaskProcess = async (
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      prepareRunControl: session
+        ? (executionUuid, counter, signal) =>
+            openWorkerRunControl(session, executionUuid, counter, signal)
+        : undefined,
       registerRunCancellation: session
         ? (getCancellation) => {
             getRunCancellation = getCancellation;

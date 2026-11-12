@@ -8,12 +8,15 @@
 import { remotable } from '@kbn/core-remote-common';
 import type { TaskProcessRunMetrics } from './wire';
 
+export type TaskProcessCancellationAck = Pick<TaskProcessRunMetrics, 'createdTaskCount'>;
+
 /** Run-scoped cancellation acknowledges only after the task has finished and cleaned up. */
 export class RunCancellation {
   constructor(private readonly cancelRun: () => Promise<TaskProcessRunMetrics>) {}
 
-  cancel(): Promise<TaskProcessRunMetrics> {
-    return this.cancelRun();
+  async cancel(): Promise<TaskProcessCancellationAck> {
+    const { createdTaskCount } = await this.cancelRun();
+    return { createdTaskCount };
   }
 }
 remotable(RunCancellation);

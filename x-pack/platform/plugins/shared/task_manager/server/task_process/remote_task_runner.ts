@@ -9,6 +9,8 @@ import { Agent } from 'undici';
 import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
 import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { ScopeMetrics } from '@kbn/metrics';
+import { readRemoteFlagDeclarations } from './read_remote_flag_declarations';
+import type { CoordinatorCallbacks } from './coordinator_capabilities';
 import { cancelOverSession } from './cancel_over_session';
 import type { WorkerCapabilities } from './worker_capabilities';
 import { captureTaskRunTrace } from '../task_running/task_tracing';
@@ -22,7 +24,6 @@ import {
 } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
 import {
-  parseTaskFeatureFlagDeclarations,
   assertTaskFeatureFlagValues,
   type TaskFeatureFlagDefinitions,
 } from './feature_flag_declarations';
@@ -51,6 +52,8 @@ export interface TaskProcessAddress {
 export interface TaskProcessLease extends TaskProcessAddress {
   /** Available only after a local child has passed readiness validation. */
   readonly session?: IpcSession<WorkerCapabilities>;
+  readonly featureFlags?: TaskFeatureFlagDefinitions;
+  bindCoordinator?(callbacks: CoordinatorCallbacks): void;
   release(options?: { force?: boolean; reusable?: boolean }): void;
 }
 
@@ -198,6 +201,10 @@ export class RemoteTaskRunner implements CancellableTask {
         }
         throw processUnavailable(`Task process could not be started: ${(error as Error).message}`);
       }
+      lease.bindCoordinator?.({
+        getCurrentTasksInPool: this.params.getCurrentTasksInPool,
+        reportProgress: (createdTaskCount) => this.reportCreatedTasks(createdTaskCount),
+      });
       address = lease;
     } else {
       address = route;
@@ -236,25 +243,16 @@ export class RemoteTaskRunner implements CancellableTask {
         }
         parseTaskProcessProtocol(await health.text());
         if (this.params.getFeatureFlags) {
-          const declarationsResponse = await fetchFn(
-            `${address.url}${TASK_PROCESS_PATHS.featureFlags}?taskType=${encodeURIComponent(
-              request.taskType
-            )}`,
-            { headers: authHeaders(address), signal: abort }
-          );
-          if (!declarationsResponse.ok) {
-            await declarationsResponse.body?.cancel();
-            if (declarationsResponse.status >= 500)
-              throw processUnavailable('Task worker feature flag declarations are unavailable');
-            throw new TaskProcessAcquireError(
-              declarationsResponse.status === 404 ? 'not_served' : 'incompatible',
-              `Task worker feature flag negotiation returned HTTP ${declarationsResponse.status}`
-            );
-          }
-          const declared = parseTaskFeatureFlagDeclarations(
-            await declarationsResponse.text(),
-            request.taskType
-          );
+          // Child-ready already carries declarations; remote HTTP supervisors keep the old preflight.
+          const declared = lease?.session
+            ? lease.featureFlags ?? {}
+            : await readRemoteFlagDeclarations({
+                fetchFn,
+                address,
+                request,
+                abort,
+                processUnavailable,
+              });
           abort.throwIfAborted();
           let removeAbortListener = () => {};
           const cancelled = new Promise<never>((_resolve, reject) => {
@@ -281,7 +279,7 @@ export class RemoteTaskRunner implements CancellableTask {
             false
           );
         }
-        stopControl = this.startControlPolling(address);
+        stopControl = this.startMetricsPolling(address);
         response = await fetchFn(`${address.url}${TASK_PROCESS_PATHS.run}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...authHeaders(address) },
@@ -412,7 +410,10 @@ export class RemoteTaskRunner implements CancellableTask {
     this.params.onTasksCreated?.(delta);
   }
 
-  private startControlPolling(address: TaskProcessAddress): () => void {
+  private startMetricsPolling(address: TaskProcessAddress): () => void {
+    const localSession = 'session' in address && address.session;
+    // Local HTTP carries native telemetry only; remote supervisors keep their legacy mixed replies.
+    if (localSession && !this.params.onMetrics) return () => {};
     if (!this.params.onTasksCreated && !this.params.getCurrentTasksInPool && !this.params.onMetrics)
       return () => {};
     const controller = new AbortController();
@@ -433,6 +434,10 @@ export class RemoteTaskRunner implements CancellableTask {
           return;
         }
         const metrics = (await response.json()) as TaskProcessRunMetrics;
+        if (localSession) {
+          this.reportMetrics(metrics.prometheus);
+          return;
+        }
         this.reportCreatedTasks(metrics.createdTaskCount);
         this.reportMetrics(metrics.prometheus);
         const getPool = this.params.getCurrentTasksInPool;
@@ -496,13 +501,27 @@ export class RemoteTaskRunner implements CancellableTask {
     const fetchFn = this.params.fetchFn ?? fetch;
     try {
       if ('release' in address && address.session) {
-        const metrics = await cancelOverSession(
-          address.session,
-          request.executionUuid,
-          request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS
-        );
-        this.reportCreatedTasks(metrics.createdTaskCount);
-        this.reportMetrics(metrics.prometheus);
+        const gracePeriodMs = request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS;
+        const { signal, dispose } = abortAfter(gracePeriodMs);
+        try {
+          const ack = await cancelOverSession(
+            address.session,
+            request.executionUuid,
+            gracePeriodMs
+          );
+          this.reportCreatedTasks(ack.createdTaskCount);
+          if (this.params.onMetrics) {
+            const response = await fetchFn(
+              `${address.url}${TASK_PROCESS_PATHS.metrics}${request.executionUuid}`,
+              { headers: authHeaders(address), signal }
+            );
+            if (response.ok)
+              this.reportMetrics(((await response.json()) as TaskProcessRunMetrics).prometheus);
+            else await response.body?.cancel();
+          }
+        } finally {
+          dispose();
+        }
         return;
       }
       // Remote HTTP supervisors retain their control endpoint when no local session exists.

@@ -25,6 +25,7 @@ import {
   TASK_PROCESS_PATHS,
 } from './protocol';
 import { withTaskProcessTrace } from './task_tracing';
+import type { WorkerRunControl } from './worker_run_control';
 import type { GetRunCancellation } from './worker_capabilities';
 import { ActiveTaskPoolRequests } from './active_task_pool_requests';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
@@ -143,6 +144,7 @@ export const startTaskProcessServer = ({
   getFeatureFlagDefinitions,
   enrichFakeRequest,
   registerRunCancellation,
+  prepareRunControl,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   executionContext?: Pick<ExecutionContextSetup, 'withContext'>;
@@ -177,9 +179,18 @@ export const startTaskProcessServer = ({
   getFeatureFlagDefinitions?: (taskType: string) => TaskFeatureFlagDefinitions | undefined;
   enrichFakeRequest?: FakeRequestEnricher;
   registerRunCancellation?: (getCancellation: GetRunCancellation) => void;
+  prepareRunControl?: (
+    executionUuid: string,
+    counter: AdHocTaskCounter,
+    signal: AbortSignal
+  ) => Promise<WorkerRunControl>;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
+  // One cancelled-run snapshot survives completion so its acknowledgement need not carry telemetry.
+  let completedMetrics:
+    | { executionUuid: string; prometheus?: TaskProcessMetricSnapshot }
+    | undefined;
 
   const handleRun = async (
     body: TaskProcessRunRequest
@@ -263,6 +274,7 @@ export const startTaskProcessServer = ({
     });
     const flushers: Array<() => Promise<void>> = [];
     let flushed = true;
+    let runControl: WorkerRunControl | undefined;
     let cleanupSucceeded = true;
     const cleanupTask = async (): Promise<void> => {
       try {
@@ -282,6 +294,11 @@ export const startTaskProcessServer = ({
       }
     };
     try {
+      runControl = await prepareRunControl?.(
+        body.executionUuid,
+        adHocTaskCounter,
+        abortController.signal
+      );
       const { value, error } = await runInRunContext(
         async () => {
           const runTask = async () => {
@@ -337,7 +354,8 @@ export const startTaskProcessServer = ({
               : undefined,
           adHocTaskCounter,
           prometheusMetrics: metrics,
-          getCurrentTasksInPool: activeTaskPool.getCurrentTasksInPool,
+          getCurrentTasksInPool:
+            runControl?.getCurrentTasksInPool ?? activeTaskPool.getCurrentTasksInPool,
         }
       );
       const prometheus = await metrics.collect(true).catch((metricError: Error) => {
@@ -372,6 +390,12 @@ export const startTaskProcessServer = ({
       } as TaskProcessRunResponse;
       return response;
     } finally {
+      await runControl?.dispose();
+      if (prepareRunControl) {
+        completedMetrics = abortController.signal.aborted
+          ? { executionUuid: body.executionUuid, prometheus: metrics.snapshot() }
+          : undefined;
+      }
       clearTimeout(deadlineTimer);
       activeTaskPool.dispose();
       inFlight.delete(body.executionUuid);
@@ -431,6 +455,7 @@ export const startTaskProcessServer = ({
       }
 
       if (
+        !prepareRunControl &&
         req.method === 'GET' &&
         (req.url === TASK_PROCESS_PATHS.featureFlags ||
           req.url?.startsWith(`${TASK_PROCESS_PATHS.featureFlags}?`))
@@ -466,15 +491,22 @@ export const startTaskProcessServer = ({
       }
 
       if (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics)) {
-        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.metrics.length));
+        const executionUuid = req.url.slice(TASK_PROCESS_PATHS.metrics.length);
+        const entry = inFlight.get(executionUuid);
+        const completed =
+          prepareRunControl && completedMetrics?.executionUuid === executionUuid
+            ? completedMetrics
+            : undefined;
         const prometheus = await entry?.metrics.collect().catch((error: Error) => {
           logger.warn(`Native metric progress collection failed: ${error.message}`);
           return entry.metrics.snapshot();
         });
         sendJson(
           res,
-          entry ? 200 : 404,
-          entry
+          entry || completed ? 200 : 404,
+          prepareRunControl && (entry || completed)
+            ? { prometheus: prometheus ?? completed?.prometheus }
+            : entry
             ? {
                 prometheus,
                 createdTaskCount: entry.adHocTaskCounter.count,
@@ -485,7 +517,11 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.activePool)) {
+      if (
+        !prepareRunControl &&
+        req.method === 'POST' &&
+        req.url?.startsWith(TASK_PROCESS_PATHS.activePool)
+      ) {
         const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.activePool.length));
         const reply = await readActivePoolReply(req);
         if (!entry?.activeTaskPool.completeRequest(reply.requestId, reply.executionIds)) {
