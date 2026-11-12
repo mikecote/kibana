@@ -14,6 +14,12 @@ interface IpcEnvelope {
   payload: string | null;
 }
 
+export interface IpcTraffic {
+  readonly calls: number;
+  readonly bytes: number;
+  readonly messages: number;
+}
+
 export interface IpcChannel {
   send(message: IpcEnvelope, callback: (error: Error | null) => void): boolean;
   on(event: 'message', listener: (message: unknown) => void): void;
@@ -25,6 +31,18 @@ export interface IpcChannel {
 /** Multiplexes JSON-string RPC frames without consuming init, ready or other fork messages. */
 export class IpcTransport implements RpcTransport {
   readonly encodingLevel = 'string' as const;
+  private traffic = { calls: 0, bytes: 0, messages: 0 };
+
+  getTraffic(): IpcTraffic {
+    return { ...this.traffic };
+  }
+
+  private record(payload: string): void {
+    // Capn Web 0.12 encodes call expressions as push frames; count envelope + JSON IPC newline.
+    if (payload.startsWith('["push",')) this.traffic.calls++;
+    this.traffic.bytes += Buffer.byteLength(JSON.stringify({ kind: 'remote-seam', payload })) + 1;
+    this.traffic.messages++;
+  }
   private readonly queue: string[] = [];
   private pending?: { resolve: (message: string) => void; reject: (error: Error) => void };
   private error?: Error;
@@ -46,6 +64,7 @@ export class IpcTransport implements RpcTransport {
       this.abort(new Error('Remote IPC session closed or sent an invalid frame'));
       return;
     }
+    this.record(message.payload);
     if (this.pending) {
       const { resolve } = this.pending;
       this.pending = undefined;
@@ -58,6 +77,7 @@ export class IpcTransport implements RpcTransport {
 
   send(payload: string): Promise<void> {
     if (this.error) return Promise.reject(this.error);
+    this.record(payload);
     return new Promise((resolve, reject) => {
       this.channel.send({ kind: 'remote-seam', payload }, (error) =>
         error ? reject(error) : resolve()

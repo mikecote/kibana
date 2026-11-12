@@ -25,6 +25,7 @@ import {
   TASK_PROCESS_PATHS,
 } from './protocol';
 import { withTaskProcessTrace } from './task_tracing';
+import type { GetRunCancellation } from './worker_capabilities';
 import { ActiveTaskPoolRequests } from './active_task_pool_requests';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import {
@@ -141,6 +142,7 @@ export const startTaskProcessServer = ({
   getTaskTypes,
   getFeatureFlagDefinitions,
   enrichFakeRequest,
+  registerRunCancellation,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   executionContext?: Pick<ExecutionContextSetup, 'withContext'>;
@@ -174,6 +176,7 @@ export const startTaskProcessServer = ({
   getTaskTypes?: () => string[];
   getFeatureFlagDefinitions?: (taskType: string) => TaskFeatureFlagDefinitions | undefined;
   enrichFakeRequest?: FakeRequestEnricher;
+  registerRunCancellation?: (getCancellation: GetRunCancellation) => void;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
@@ -376,6 +379,21 @@ export const startTaskProcessServer = ({
     }
   };
 
+  const getCancellation: GetRunCancellation = (executionUuid) => {
+    const entry = inFlight.get(executionUuid);
+    if (!entry) return undefined;
+    return async () => {
+      entry.abortController.abort();
+      await entry.task.cancel?.();
+      await entry.finished;
+      return {
+        prometheus: entry.metrics.snapshot(),
+        createdTaskCount: entry.adHocTaskCounter.count,
+      };
+    };
+  };
+  registerRunCancellation?.(getCancellation);
+
   const server = createServer(async (req, res) => {
     try {
       if (
@@ -493,20 +511,17 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.cancel)) {
-        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.cancel.length));
-        if (!entry) {
+      if (
+        !registerRunCancellation &&
+        req.method === 'POST' &&
+        req.url?.startsWith(TASK_PROCESS_PATHS.cancel)
+      ) {
+        const cancel = getCancellation(req.url.slice(TASK_PROCESS_PATHS.cancel.length));
+        if (!cancel) {
           sendJson(res, 404, { error: 'no such in-flight run' });
           return;
         }
-        entry.abortController.abort();
-        await entry.task.cancel?.();
-        await entry.finished;
-        sendJson(res, 200, {
-          outcome: 'cancelled',
-          prometheus: entry.metrics.snapshot(),
-          createdTaskCount: entry.adHocTaskCounter.count,
-        });
+        sendJson(res, 200, { outcome: 'cancelled', ...(await cancel()) });
         return;
       }
 

@@ -10,12 +10,13 @@
 import { RpcSession } from 'capnweb';
 import type { RpcCompatible, RpcStub } from 'capnweb';
 import { IpcTransport } from './ipc_transport';
-import type { IpcChannel } from './ipc_transport';
+import type { IpcTraffic, IpcChannel } from './ipc_transport';
 
 export interface IpcSession<Remote extends RpcCompatible<Remote> = undefined> {
   readonly remote: RpcStub<Remote>;
   getStats(): { imports: number; exports: number };
   drain(): Promise<void>;
+  getTraffic(): IpcTraffic;
   close(): void;
 }
 
@@ -30,6 +31,7 @@ export const openIpcSession = <Remote extends RpcCompatible<Remote> = undefined>
     remote: session.getRemoteMain(),
     getStats: () => session.getStats(),
     drain: () => session.drain(),
+    getTraffic: () => transport.getTraffic(),
     close: () => transport.abort(new Error('Remote IPC session ended')),
   };
 };

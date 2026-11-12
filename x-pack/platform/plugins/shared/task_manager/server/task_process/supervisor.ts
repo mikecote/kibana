@@ -30,6 +30,7 @@ import { getChildNodeOptions } from './child_node_options';
 import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
+import type { WorkerCapabilities } from './worker_capabilities';
 
 /** `manifest.json` of a task bundle directory: which task types each bundle serves. */
 export interface TaskBundleManifest {
@@ -95,7 +96,7 @@ interface Bundle {
 }
 
 interface ReusableChild {
-  session: IpcSession;
+  session: IpcSession<WorkerCapabilities>;
   child: ChildProcess;
   bundle: Bundle;
   fingerprint: string;
@@ -322,10 +323,10 @@ export class TaskProcessSupervisor {
       // stdout and stderr are read here; the fork channel carries the settings and readiness.
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
-    // Boot session: only boot capabilities are exposed before ready (none yet).
+    // Boot session: only boot capabilities are exposed before ready.
     // Validated ready gates the leased session view; run controls belong to that view.
     // One session survives reuse and dies with this same orphan-prevention IPC channel.
-    const session = openIpcSession(child);
+    const session = openIpcSession<WorkerCapabilities>(child);
     this.stats.spawned++;
     // An unhandled error event would take Kibana down.
     child.on('error', (error) =>

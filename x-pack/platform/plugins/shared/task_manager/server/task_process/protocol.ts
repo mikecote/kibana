@@ -12,6 +12,7 @@ import { TaskProcessAcquireError } from './acquire_error';
 export const TASK_PROCESS_PROTOCOL_VERSION = 3;
 export const TASK_PROCESS_CAPABILITIES = [
   'shared-init-settings',
+  'session-push-cancel',
   'native-task-scheduling',
   'ordered-task-middleware',
   'live-dispatch-pool',

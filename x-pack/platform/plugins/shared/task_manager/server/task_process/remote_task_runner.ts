@@ -9,6 +9,8 @@ import { Agent } from 'undici';
 import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
 import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { ScopeMetrics } from '@kbn/metrics';
+import { cancelOverSession } from './cancel_over_session';
+import type { WorkerCapabilities } from './worker_capabilities';
 import { captureTaskRunTrace } from '../task_running/task_tracing';
 import type { TaskExecutionPool } from '../task_scheduling';
 import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
@@ -48,7 +50,7 @@ export interface TaskProcessAddress {
 /** An address held for one run; releasing it retires the child or returns it to the idle pool. */
 export interface TaskProcessLease extends TaskProcessAddress {
   /** Available only after a local child has passed readiness validation. */
-  readonly session?: IpcSession;
+  readonly session?: IpcSession<WorkerCapabilities>;
   release(options?: { force?: boolean; reusable?: boolean }): void;
 }
 
@@ -482,7 +484,7 @@ export class RemoteTaskRunner implements CancellableTask {
     if (!wasCancelled) {
       this.observe((observer) => observer.onCancel?.());
     }
-    if ('release' in address && !request.cancelGracePeriodMs) {
+    if ('release' in address && !request.cancelGracePeriodMs && !address.session) {
       address.release({ force: true });
       return;
     }
@@ -493,6 +495,17 @@ export class RemoteTaskRunner implements CancellableTask {
     const { request } = this.params;
     const fetchFn = this.params.fetchFn ?? fetch;
     try {
+      if ('release' in address && address.session) {
+        const metrics = await cancelOverSession(
+          address.session,
+          request.executionUuid,
+          request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS
+        );
+        this.reportCreatedTasks(metrics.createdTaskCount);
+        this.reportMetrics(metrics.prometheus);
+        return;
+      }
+      // Remote HTTP supervisors retain their control endpoint when no local session exists.
       const { signal, dispose } = abortAfter(request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS);
       try {
         const response = await fetchFn(

@@ -5,7 +5,10 @@
  * 2.0.
  */
 
+import { expose } from '@kbn/core-remote-common';
 import { openIpcSession } from '@kbn/core-remote-server-internal';
+import { WorkerCapabilities } from './worker_capabilities';
+import type { GetRunCancellation } from './worker_capabilities';
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
 import { getTaskProcessContext } from './context';
@@ -40,12 +43,16 @@ export const runTaskProcess = async (
   const onCoreStarted = registerStop ?? createTaskProcessParentWatcher();
   try {
     const init = providedInit ?? (await readTaskProcessInit());
+    let getRunCancellation: GetRunCancellation = () => undefined;
     const session = process.send
-      ? openIpcSession({
-          send: process.send.bind(process),
-          on: process.on.bind(process),
-          off: process.off.bind(process),
-        })
+      ? openIpcSession(
+          {
+            send: process.send.bind(process),
+            on: process.on.bind(process),
+            off: process.off.bind(process),
+          },
+          expose(new WorkerCapabilities((executionUuid) => getRunCancellation(executionUuid)))
+        )
       : undefined;
     const core = await startTaskProcessCore({ init, module, contributions });
     const stop = async (): Promise<void> => {
@@ -66,6 +73,11 @@ export const runTaskProcess = async (
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      registerRunCancellation: session
+        ? (getCancellation) => {
+            getRunCancellation = getCancellation;
+          }
+        : undefined,
       executionContext: core.host.executionContext,
       enrichFakeRequest: core.enrichFakeRequest,
       getFeatureFlagDefinitions: () => getTaskProcessContext().module.featureFlags ?? {},
