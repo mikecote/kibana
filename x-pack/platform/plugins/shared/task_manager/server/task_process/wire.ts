@@ -157,7 +157,6 @@ export interface TaskProcessMetricSnapshot {
 export interface TaskProcessRunMetrics {
   prometheus?: TaskProcessMetricSnapshot;
   createdTaskCount?: number;
-  activePoolRequestIds?: string[];
 }
 
 export type TaskProcessRunResponse = (

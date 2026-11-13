@@ -15,6 +15,7 @@ import {
 import { throwUnrecoverableError } from '../task_running/errors';
 import { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
 import { RemoteTaskRunner } from './remote_task_runner';
+import { RemoteWorkerSessions } from './remote_worker_sessions';
 import { startTaskProcessServer } from './server';
 import { TaskProcessSupervisor } from './supervisor';
 import type { TaskProcessSettings } from './supervisor';
@@ -52,7 +53,16 @@ export const startTaskProcessWorker = ({
     logger,
   });
   supervisor.start();
+  // TLS terminates in front of the worker, as for dispatch and telemetry in the deployment model.
+  const sessions = new RemoteWorkerSessions(
+    authToken,
+    (taskType) => supervisor.getFeatureFlagDefinitions(taskType),
+    logger
+  );
   const server = startTaskProcessServer({
+    registerRunCancellation: (getCancellation) => sessions.registerCancellation(getCancellation),
+    prepareRunControl: (executionUuid, counter, signal, sessionId) =>
+      sessions.prepareRun(sessionId, executionUuid, counter, signal),
     taskDefinitions: new Map(),
     port,
     host,
@@ -86,13 +96,18 @@ export const startTaskProcessWorker = ({
         getCurrentTasksInPool: requestDispatchTaskPool,
       });
     },
-    onShutdown: () => supervisor.stop(),
+    onShutdown: async () => {
+      await sessions.stop();
+      await supervisor.stop();
+    },
   });
+  sessions.attach(server);
   return {
     server,
     supervisor,
     getStats: () => supervisor.getStats(),
     stop: async () => {
+      await sessions.stop();
       server.close();
       await supervisor.stop();
       server.closeAllConnections();

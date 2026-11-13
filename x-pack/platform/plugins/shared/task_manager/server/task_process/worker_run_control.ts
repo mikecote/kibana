@@ -26,7 +26,27 @@ export const openWorkerRunControl = async (
   counter: AdHocTaskCounter,
   signal: AbortSignal
 ): Promise<WorkerRunControl> => {
-  const coordinator = await session.remote.forRun(executionUuid);
+  const acquisition = session.remote.forRun(executionUuid);
+  const acquired = new AbortController();
+  let coordinator: Awaited<typeof acquisition>;
+  try {
+    signal.throwIfAborted();
+    coordinator = await Promise.race([
+      acquisition,
+      delay(5000, undefined, {
+        signal: AbortSignal.any([signal, acquired.signal]),
+        ref: false,
+      }).then(() => {
+        throw new Error('Task process control acquisition timed out');
+      }),
+    ]);
+  } catch (error) {
+    acquisition[Symbol.dispose]();
+    throw error;
+  } finally {
+    // On success the returned coordinator owns the reference until run disposal.
+    acquired.abort();
+  }
   const capabilities = new Map<string, Promise<object & Disposable>>();
   let publishedCount = counter.count;
   let pending: Promise<void> | undefined;

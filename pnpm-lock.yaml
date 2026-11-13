@@ -5015,6 +5015,9 @@ importers:
       wellknown:
         specifier: 0.5.0
         version: 0.5.0
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
       xml-formatter:
         specifier: 3.6.7
         version: 3.6.7
@@ -6408,6 +6411,9 @@ importers:
       '@types/vinyl-fs':
         specifier: 3.0.8
         version: 3.0.8
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       '@types/xml2js':
         specifier: 0.4.14
         version: 0.4.14

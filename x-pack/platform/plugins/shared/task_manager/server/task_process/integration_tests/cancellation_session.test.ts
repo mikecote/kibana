@@ -165,7 +165,7 @@ describe('task process cancellation session', () => {
           progressCallBytes = afterProgress.bytes - beforeProgress.bytes;
           expect(collectMetrics).not.toHaveBeenCalled();
           const activeTelemetry = await fetch(
-            `${url}${TASK_PROCESS_PATHS.metrics}${executionUuid}`
+            `${url}${TASK_PROCESS_PATHS.metrics}/${executionUuid}`
           );
           expect(activeTelemetry.status).toBe(200);
           expect(Object.keys((await activeTelemetry.json()) as object)).toEqual(['prometheus']);
@@ -173,8 +173,9 @@ describe('task process cancellation session', () => {
           expect(mainSession.getTraffic().calls).toBe(afterProgress.calls);
           expect(collectMetrics).toHaveBeenCalledTimes(1);
           for (const [method, path] of [
-            ['GET', `${TASK_PROCESS_PATHS.featureFlags}?taskType=test`],
-            ['POST', `${TASK_PROCESS_PATHS.activePool}${executionUuid}`],
+            ['GET', '/v3/feature_flags?taskType=test'],
+            ['GET', '/v3/gauges?owner=node'],
+            ['POST', `/v3/active_pool/${executionUuid}`],
           ]) {
             const retired = await fetch(`${url}${path}`, { method });
             expect(retired.status).toBe(404);
@@ -187,7 +188,7 @@ describe('task process cancellation session', () => {
         expect(order.slice(-2)).toEqual(['cancel', 'cleanup']);
         expect((await response).status).toBe(200);
         await (await response).body?.cancel();
-        const telemetry = await fetch(`${url}${TASK_PROCESS_PATHS.metrics}${executionUuid}`);
+        const telemetry = await fetch(`${url}${TASK_PROCESS_PATHS.metrics}/${executionUuid}`);
         expect(telemetry.status).toBe(200);
         const nativeBody = await telemetry.text();
         expect(Object.keys(JSON.parse(nativeBody))).toEqual(['prometheus']);
@@ -221,7 +222,7 @@ describe('task process cancellation session', () => {
         expect(after.calls - before.calls).toBeLessThanOrEqual(SEAM_BUDGET.calls);
         expect(after.bytes - before.bytes).toBeLessThanOrEqual(SEAM_BUDGET.bytes);
       }
-      const retired = await fetch(`${url}${TASK_PROCESS_PATHS.cancel}run-0`, { method: 'POST' });
+      const retired = await fetch(`${url}/v3/cancel/run-0`, { method: 'POST' });
       expect(retired.status).toBe(404);
       await retired.body?.cancel();
       await expect(mainSession.remote.forRun('not-active')).rejects.toThrow(

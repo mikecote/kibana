@@ -13,3 +13,5 @@ export { IpcTransport } from './src/ipc_transport';
 export type { IpcChannel, IpcTraffic } from './src/ipc_transport';
 export { openIpcSession } from './src/ipc_session';
 export type { IpcSession } from './src/ipc_session';
+
+export { openWebSocketSession } from './src/web_socket_session';

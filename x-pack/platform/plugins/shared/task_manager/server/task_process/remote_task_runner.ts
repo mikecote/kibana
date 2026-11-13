@@ -9,7 +9,8 @@ import { Agent } from 'undici';
 import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
 import type { IpcSession } from '@kbn/core-remote-server-internal';
 import type { ScopeMetrics } from '@kbn/metrics';
-import { readRemoteFlagDeclarations } from './read_remote_flag_declarations';
+import { TASK_PROCESS_SESSION_HEADER } from './session_protocol';
+import { acquireRemoteSession } from './remote_supervisor_session';
 import type { CoordinatorCallbacks } from './coordinator_capabilities';
 import { cancelOverSession } from './cancel_over_session';
 import type { WorkerCapabilities } from './worker_capabilities';
@@ -50,9 +51,11 @@ export interface TaskProcessAddress {
 
 /** An address held for one run; releasing it retires the child or returns it to the idle pool. */
 export interface TaskProcessLease extends TaskProcessAddress {
-  /** Available only after a local child has passed readiness validation. */
+  /** Available after local readiness or an authenticated remote session upgrade. */
   readonly session?: IpcSession<WorkerCapabilities>;
   readonly featureFlags?: TaskFeatureFlagDefinitions;
+  readonly sessionId?: string;
+  readonly disconnected?: AbortSignal;
   assertRegistrations?(): void;
   bindCoordinator?(callbacks: CoordinatorCallbacks): void;
   release(options?: { force?: boolean; reusable?: boolean }): void;
@@ -95,8 +98,12 @@ export interface TaskProcessDispatch {
   ) => void;
 }
 
-const authHeaders = (address: TaskProcessAddress): Record<string, string> =>
-  address.token ? { authorization: `Bearer ${address.token}` } : {};
+const authHeaders = (address: TaskProcessAddress): Record<string, string> => ({
+  ...(address.token ? { authorization: `Bearer ${address.token}` } : {}),
+  ...('sessionId' in address && typeof address.sessionId === 'string'
+    ? { [TASK_PROCESS_SESSION_HEADER]: address.sessionId }
+    : {}),
+});
 
 /** How long Kibana waits past a task's timeout for the process to answer before giving up. */
 const DEADLINE_GRACE_MS = 5000;
@@ -182,46 +189,61 @@ export class RemoteTaskRunner implements CancellableTask {
 
     let lease: TaskProcessLease | undefined;
     let address: TaskProcessAddress;
-    if ('acquire' in route) {
-      try {
+    const acquisition = abortAfter(timeoutMs + DEADLINE_GRACE_MS, signal);
+    try {
+      if ('acquire' in route) {
         lease = await route.acquire({
           executionUuid: request.executionUuid,
           snapshot: request.snapshot,
         });
-      } catch (error) {
-        this.params.onDispatchFailure?.(
+      } else {
+        await this.assertHealth(route, acquisition.signal);
+        lease = await acquireRemoteSession(
+          route,
           request.taskType,
-          error instanceof TaskProcessAcquireError ? error.reason : 'unavailable',
-          `the process could not be started: ${(error as Error).message}`
+          request.executionUuid,
+          acquisition.signal
         );
-        if (
-          error instanceof TaskProcessAcquireError &&
-          (error.reason === 'not_served' || error.reason === 'incompatible')
-        ) {
-          throwUnrecoverableError(error);
-        }
-        throw processUnavailable(`Task process could not be started: ${(error as Error).message}`);
       }
       lease.bindCoordinator?.({
         getCurrentTasksInPool: this.params.getCurrentTasksInPool,
         reportProgress: (createdTaskCount) => this.reportCreatedTasks(createdTaskCount),
       });
       address = lease;
-    } else {
-      address = route;
+    } catch (error) {
+      lease?.release({ force: true });
+      this.params.onDispatchFailure?.(
+        request.taskType,
+        error instanceof TaskProcessAcquireError ? error.reason : 'unavailable',
+        `the process could not be started: ${(error as Error).message}`
+      );
+      if (
+        error instanceof TaskProcessAcquireError &&
+        (error.reason === 'not_served' || error.reason === 'incompatible')
+      )
+        throwUnrecoverableError(error);
+      throw processUnavailable(`Task process could not be started: ${(error as Error).message}`);
+    } finally {
+      acquisition.dispose();
     }
     if (this.cancelled || signal?.aborted || deadline.getTime() <= Date.now()) {
       lease?.release({ force: true });
       signal?.throwIfAborted();
       throw createRetryableError(
-        new Error('Task process run was cancelled or timed out before dispatch'),
+        new Error(
+          'acquire' in route
+            ? 'Task process run was cancelled or timed out before dispatch'
+            : 'Task process run was cancelled before dispatch'
+        ),
         false
       );
     }
     this.target = address;
     const { signal: abort, dispose } = abortAfter(
       deadline.getTime() - Date.now() + DEADLINE_GRACE_MS,
-      signal
+      lease?.disconnected
+        ? AbortSignal.any([lease.disconnected, ...(signal ? [signal] : [])])
+        : signal
     );
     let reusable = false;
     let stopControl = (): void => {};
@@ -229,32 +251,9 @@ export class RemoteTaskRunner implements CancellableTask {
       let response: Response;
       try {
         lease?.assertRegistrations?.();
-        const health = await fetchFn(`${address.url}${TASK_PROCESS_PATHS.health}`, {
-          headers: authHeaders(address),
-          signal: abort,
-        });
-        if (!health.ok) {
-          await health.body?.cancel();
-          if (health.status === 503) {
-            throw processUnavailable('Task worker is unavailable for protocol negotiation');
-          }
-          throw new TaskProcessAcquireError(
-            'incompatible',
-            `Task worker protocol negotiation returned HTTP ${health.status}`
-          );
-        }
-        parseTaskProcessProtocol(await health.text());
+        if ('acquire' in route) await this.assertHealth(address, abort);
         if (this.params.getFeatureFlags) {
-          // Child-ready already carries declarations; remote HTTP supervisors keep the old preflight.
-          const declared = lease?.session
-            ? lease.featureFlags ?? {}
-            : await readRemoteFlagDeclarations({
-                fetchFn,
-                address,
-                request,
-                abort,
-                processUnavailable,
-              });
+          const declared = lease?.featureFlags ?? {};
           abort.throwIfAborted();
           let removeAbortListener = () => {};
           const cancelled = new Promise<never>((_resolve, reject) => {
@@ -372,6 +371,16 @@ export class RemoteTaskRunner implements CancellableTask {
       // A run Kibana cancelled is not counted as run, as when Kibana runs it itself.
       if (!this.cancelled) this.observe((observer) => observer.onResult?.(result));
       return result;
+    } catch (error) {
+      if (lease?.disconnected?.aborted && !this.cancelled && !signal?.aborted) {
+        this.params.onDispatchFailure?.(
+          request.taskType,
+          'unavailable',
+          'Task control session disconnected'
+        );
+        throw processUnavailable('Task control session disconnected');
+      }
+      throw error;
     } finally {
       stopControl();
       dispose();
@@ -400,6 +409,27 @@ export class RemoteTaskRunner implements CancellableTask {
     this.reportedMetrics = snapshot;
   }
 
+  private async assertHealth(address: TaskProcessAddress, abort: AbortSignal): Promise<void> {
+    const health = await (this.params.fetchFn ?? fetch)(
+      `${address.url}${TASK_PROCESS_PATHS.health}`,
+      {
+        headers: authHeaders(address),
+        signal: abort,
+      }
+    );
+    if (!health.ok) {
+      await health.body?.cancel();
+      if (health.status === 503) {
+        throw processUnavailable('Task worker is unavailable for protocol negotiation');
+      }
+      throw new TaskProcessAcquireError(
+        'incompatible',
+        `Task worker protocol negotiation returned HTTP ${health.status}`
+      );
+    }
+    parseTaskProcessProtocol(await health.text());
+  }
+
   private reportCreatedTasks(count: number | undefined): void {
     if (
       !Number.isSafeInteger(count) ||
@@ -413,11 +443,8 @@ export class RemoteTaskRunner implements CancellableTask {
   }
 
   private startMetricsPolling(address: TaskProcessAddress): () => void {
-    const localSession = 'session' in address && address.session;
-    // Local HTTP carries native telemetry only; remote supervisors keep their legacy mixed replies.
-    if (localSession && !this.params.onMetrics) return () => {};
-    if (!this.params.onTasksCreated && !this.params.getCurrentTasksInPool && !this.params.onMetrics)
-      return () => {};
+    // Bulk native telemetry is deliberately outside the budgeted control session.
+    if (!this.params.onMetrics) return () => {};
     const controller = new AbortController();
     let pending = false;
     const timer = setInterval(async () => {
@@ -425,7 +452,7 @@ export class RemoteTaskRunner implements CancellableTask {
       pending = true;
       try {
         const response = await (this.params.fetchFn ?? fetch)(
-          `${address.url}${TASK_PROCESS_PATHS.metrics}${this.params.request.executionUuid}`,
+          `${address.url}${TASK_PROCESS_PATHS.metrics}/${this.params.request.executionUuid}`,
           {
             headers: authHeaders(address),
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(1000)]),
@@ -436,31 +463,9 @@ export class RemoteTaskRunner implements CancellableTask {
           return;
         }
         const metrics = (await response.json()) as TaskProcessRunMetrics;
-        if (localSession) {
-          this.reportMetrics(metrics.prometheus);
-          return;
-        }
-        this.reportCreatedTasks(metrics.createdTaskCount);
         this.reportMetrics(metrics.prometheus);
-        const getPool = this.params.getCurrentTasksInPool;
-        if (getPool) {
-          for (const requestId of metrics.activePoolRequestIds ?? []) {
-            const executionIds = await getPool();
-            controller.signal.throwIfAborted();
-            const reply = await (this.params.fetchFn ?? fetch)(
-              `${address.url}${TASK_PROCESS_PATHS.activePool}${this.params.request.executionUuid}`,
-              {
-                method: 'POST',
-                headers: { ...authHeaders(address), 'content-type': 'application/json' },
-                body: JSON.stringify({ requestId, executionIds }),
-                signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
-              }
-            );
-            await reply.body?.cancel();
-          }
-        }
       } catch {
-        // Counts are reconciled by the final response; unanswered pool requests fail in the worker.
+        // Telemetry is best effort; the final native response reconciles the last snapshot.
       } finally {
         pending = false;
       }
@@ -514,7 +519,7 @@ export class RemoteTaskRunner implements CancellableTask {
           this.reportCreatedTasks(ack.createdTaskCount);
           if (this.params.onMetrics) {
             const response = await fetchFn(
-              `${address.url}${TASK_PROCESS_PATHS.metrics}${request.executionUuid}`,
+              `${address.url}${TASK_PROCESS_PATHS.metrics}/${request.executionUuid}`,
               { headers: authHeaders(address), signal }
             );
             if (response.ok)
@@ -525,25 +530,6 @@ export class RemoteTaskRunner implements CancellableTask {
           dispose();
         }
         return;
-      }
-      // Remote HTTP supervisors retain their control endpoint when no local session exists.
-      const { signal, dispose } = abortAfter(request.cancelGracePeriodMs ?? DEADLINE_GRACE_MS);
-      try {
-        const response = await fetchFn(
-          `${address.url}${TASK_PROCESS_PATHS.cancel}${request.executionUuid}`,
-          {
-            method: 'POST',
-            headers: authHeaders(address),
-            signal,
-          }
-        );
-        if (response.ok) {
-          const metrics = (await response.json()) as TaskProcessRunMetrics;
-          this.reportCreatedTasks(metrics.createdTaskCount);
-          this.reportMetrics(metrics.prometheus);
-        } else await response.body?.cancel();
-      } finally {
-        dispose();
       }
     } catch {
       // The process may be gone; Task Manager's own timeout handling already owns the outcome.

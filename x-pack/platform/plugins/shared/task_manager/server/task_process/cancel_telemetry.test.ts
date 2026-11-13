@@ -40,7 +40,7 @@ it('receives cancellation telemetry over native HTTP rather than the control cap
             capabilities: TASK_PROCESS_CAPABILITIES,
           })
         );
-      if (url.endsWith(`${TASK_PROCESS_PATHS.metrics}native-cancel`))
+      if (url.endsWith(`${TASK_PROCESS_PATHS.metrics}/native-cancel`))
         return new Response(JSON.stringify({ prometheus }));
       if (url.endsWith(TASK_PROCESS_PATHS.run)) {
         started.resolve();
@@ -80,7 +80,7 @@ it('receives cancellation telemetry over native HTTP rather than the control cap
     expect(fetchFn.mock.calls.map(([url]) => url)).toEqual([
       `http://worker${TASK_PROCESS_PATHS.health}`,
       `http://worker${TASK_PROCESS_PATHS.run}`,
-      `http://worker${TASK_PROCESS_PATHS.metrics}native-cancel`,
+      `http://worker${TASK_PROCESS_PATHS.metrics}/native-cancel`,
     ]);
     expect(mainSession.getTraffic().calls).toBe(2);
   } finally {

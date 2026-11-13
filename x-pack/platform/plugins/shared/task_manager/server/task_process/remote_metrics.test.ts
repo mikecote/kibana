@@ -5,16 +5,30 @@
  * 2.0.
  */
 
+import { expose } from '@kbn/core-remote-common';
+import { openIpcSession } from '@kbn/core-remote-server-internal';
+import { sessionChannelPair } from './testing/session_channel';
+import { WorkerCapabilities } from './worker_capabilities';
 import { MeterProvider, DataPointType } from '@opentelemetry/sdk-metrics';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { PrometheusExporter, encodeMetricScopes, combineMetricCollections } from '@kbn/metrics';
 import type { ScopeMetrics } from '@kbn/metrics';
+import { acquireRemoteSession } from './remote_supervisor_session';
+jest.mock('./remote_supervisor_session');
 import { RemoteTaskRunner } from './remote_task_runner';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
   TASK_PROCESS_CAPABILITIES,
   TASK_PROCESS_PATHS,
 } from './protocol';
+
+beforeEach(() => {
+  jest.mocked(acquireRemoteSession).mockImplementation(async (address) => ({
+    ...address,
+    featureFlags: {},
+    release: jest.fn(),
+  }));
+});
 
 const response = (body: object, status = 200): Response =>
   new Response(JSON.stringify(body), { status });
@@ -110,14 +124,27 @@ it.each(['thrown', 'declined'] as const)(
   }
 );
 
-it('counts the cancellation acknowledgement and final native reply only once', async () => {
+it('counts the native post-cancel handoff and final native reply only once after a count-only RPC acknowledgement', async () => {
+  const [mainChannel, childChannel] = sessionChannelPair();
+  const child = openIpcSession(
+    childChannel,
+    expose(new WorkerCapabilities(() => async () => ({ createdTaskCount: 0 })))
+  );
+  const main = openIpcSession<WorkerCapabilities>(mainChannel);
   const completed = Promise.withResolvers<Response>();
   let captured: ScopeMetrics[] = [];
+  jest.mocked(acquireRemoteSession).mockImplementation(async (address) => ({
+    ...address,
+    session: main,
+    featureFlags: {},
+    release: jest.fn(),
+  }));
   const fetchFn: typeof fetch = async (input) => {
     const url = String(input);
     if (url.endsWith(TASK_PROCESS_PATHS.health)) return health();
     if (url.endsWith(TASK_PROCESS_PATHS.run)) return completed.promise;
-    return response({ outcome: 'cancelled', prometheus: { sequence: 2, encoded: current } });
+    expect(url).toContain(TASK_PROCESS_PATHS.metrics);
+    return response({ prometheus: { sequence: 2, encoded: current } });
   };
   const runner = new RemoteTaskRunner({
     route: { url: 'http://worker' },
@@ -129,11 +156,16 @@ it('counts the cancellation acknowledgement and final native reply only once', a
       captured = combineMetricCollections(captured, delta);
     },
   });
-  const running = runner.run();
-  await new Promise((resolve) => setImmediate(resolve));
-  await runner.cancel();
-  expect(total(captured)).toBe(5);
-  completed.resolve(response({ kind: 'result', prometheus: { sequence: 2, encoded: current } }));
-  await running;
-  expect(total(captured)).toBe(5);
+  try {
+    const running = runner.run();
+    await new Promise((resolve) => setImmediate(resolve));
+    await runner.cancel();
+    expect(total(captured)).toBe(5);
+    completed.resolve(response({ kind: 'result', prometheus: { sequence: 2, encoded: current } }));
+    await running;
+    expect(total(captured)).toBe(5);
+  } finally {
+    main.close();
+    child.close();
+  }
 });
