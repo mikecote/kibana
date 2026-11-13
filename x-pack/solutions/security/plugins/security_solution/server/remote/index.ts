@@ -7,18 +7,18 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/eql.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/esql.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/eql.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/esql.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/indicator_match.task.ts'),
+      modulePath: require.resolve('../task_types/indicator_match.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/ml.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/new_terms.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/query.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/saved_query.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/threshold.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/notifications.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/ml.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/new_terms.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/query.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/saved_query.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/threshold.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/notifications.task'), exportName: 'taskType' },
   ],
   contributions: {
     'agent-builder': [

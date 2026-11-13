@@ -27,6 +27,8 @@ ruleTester.run('@kbn/imports/uniform_imports', rules.uniform_imports, {
     { filename, code: `import { report } from '../helpers/report';` },
     { filename, code: `import { REPO_ROOT } from '@kbn/repo-info';` },
     { filename, code: `import Path from 'path';` },
+    { filename, code: `require.resolve('./uniform_imports.test');` },
+    { filename, code: `require.resolve('./uniform_imports.test.ts');` },
     {
       filename,
       options: [{ preserveFileExtensions: true }],

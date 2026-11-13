@@ -7,14 +7,14 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/monitor_status.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/monitor_status.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/tls_certificate.task.ts'),
+      modulePath: require.resolve('../task_types/tls_certificate.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/tls_legacy.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/tls_legacy.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/duration_anomaly.task.ts'),
+      modulePath: require.resolve('../task_types/duration_anomaly.task'),
       exportName: 'taskType',
     },
   ],

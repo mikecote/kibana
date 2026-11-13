@@ -7,8 +7,8 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/monitor_status.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/tls.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/monitor_status.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/tls.task'), exportName: 'taskType' },
   ],
   contributions: {
     embeddables: [

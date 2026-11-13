@@ -8,7 +8,7 @@
 export const remote = {
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/custom_threshold.task.ts'),
+      modulePath: require.resolve('../task_types/custom_threshold.task'),
       exportName: 'taskType',
     },
   ],

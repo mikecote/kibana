@@ -7,16 +7,16 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/error_count.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/error_count.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/transaction_error_rate.task.ts'),
+      modulePath: require.resolve('../task_types/transaction_error_rate.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/transaction_duration.task.ts'),
+      modulePath: require.resolve('../task_types/transaction_duration.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/anomaly.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/anomaly.task'), exportName: 'taskType' },
   ],
   contributions: {
     embeddables: [

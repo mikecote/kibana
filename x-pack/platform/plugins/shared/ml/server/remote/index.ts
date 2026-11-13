@@ -8,11 +8,11 @@
 export const remote = {
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/anomaly_detection_alert.task.ts'),
+      modulePath: require.resolve('../task_types/anomaly_detection_alert.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/anomaly_detection_jobs_health.task.ts'),
+      modulePath: require.resolve('../task_types/anomaly_detection_jobs_health.task'),
       exportName: 'taskType',
     },
   ],

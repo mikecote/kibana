@@ -7,13 +7,13 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/es_query.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/es_query.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/index_threshold.task.ts'),
+      modulePath: require.resolve('../task_types/index_threshold.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/geo_containment.task.ts'),
+      modulePath: require.resolve('../task_types/geo_containment.task'),
       exportName: 'taskType',
     },
   ],

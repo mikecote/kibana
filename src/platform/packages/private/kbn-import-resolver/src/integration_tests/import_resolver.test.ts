@@ -168,6 +168,40 @@ describe('#getAbsolutePackageDir()', () => {
 });
 
 describe('getRelativeImportReq()', () => {
+  it.each(['task', 'test'])(
+    'keeps dotted .%s code basenames extension-agnostic for require.resolve',
+    (suffix) => {
+      expect(
+        getRelativeImportReq({
+          dirname: '/repo/server/remote',
+          absolute: `/repo/server/task_types/example.${suffix}.ts`,
+          original: `../task_types/example.${suffix}`,
+          type: 'require-resolve',
+        })
+      ).toBe(`../task_types/example.${suffix}`);
+    }
+  );
+
+  it('preserves explicitly requested source extensions and native ESM filenames', () => {
+    expect(
+      getRelativeImportReq({
+        dirname: '/repo',
+        absolute: '/repo/example.task.ts',
+        original: './example.task.ts',
+        type: 'require-resolve',
+      })
+    ).toBe('./example.task.ts');
+    expect(
+      getRelativeImportReq({
+        dirname: '/repo',
+        absolute: '/repo/example.task.js',
+        original: './example.task',
+        sourcePath: '/repo/index.mjs',
+        type: 'esm',
+      })
+    ).toBe('./example.task.js');
+  });
+
   it('prefixes requests into dot-prefixed directories with ./', () => {
     expect(
       getRelativeImportReq({

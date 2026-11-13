@@ -7,45 +7,45 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/cluster_health.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/cluster_health.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/license_expiration.task.ts'),
+      modulePath: require.resolve('../task_types/license_expiration.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/cpu_usage.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/cpu_usage.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/missing_monitoring_data.task.ts'),
+      modulePath: require.resolve('../task_types/missing_monitoring_data.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/disk_usage.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/disk_usage.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/thread_pool_search_rejections.task.ts'),
-      exportName: 'taskType',
-    },
-    {
-      modulePath: require.resolve('../task_types/thread_pool_write_rejections.task.ts'),
-      exportName: 'taskType',
-    },
-    { modulePath: require.resolve('../task_types/memory_usage.task.ts'), exportName: 'taskType' },
-    { modulePath: require.resolve('../task_types/nodes_changed.task.ts'), exportName: 'taskType' },
-    {
-      modulePath: require.resolve('../task_types/logstash_version_mismatch.task.ts'),
+      modulePath: require.resolve('../task_types/thread_pool_search_rejections.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/kibana_version_mismatch.task.ts'),
+      modulePath: require.resolve('../task_types/thread_pool_write_rejections.task'),
+      exportName: 'taskType',
+    },
+    { modulePath: require.resolve('../task_types/memory_usage.task'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/nodes_changed.task'), exportName: 'taskType' },
+    {
+      modulePath: require.resolve('../task_types/logstash_version_mismatch.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/elasticsearch_version_mismatch.task.ts'),
+      modulePath: require.resolve('../task_types/kibana_version_mismatch.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/ccr_read_exceptions.task.ts'),
+      modulePath: require.resolve('../task_types/elasticsearch_version_mismatch.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/large_shard_size.task.ts'),
+      modulePath: require.resolve('../task_types/ccr_read_exceptions.task'),
+      exportName: 'taskType',
+    },
+    {
+      modulePath: require.resolve('../task_types/large_shard_size.task'),
       exportName: 'taskType',
     },
   ],

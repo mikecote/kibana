@@ -7,7 +7,7 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/slo_burn_rate.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/slo_burn_rate.task'), exportName: 'taskType' },
   ],
   contributions: {
     embeddables: [

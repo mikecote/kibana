@@ -58,11 +58,11 @@ export const remote = {
   },
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/delete_inactive_nodes.task.ts'),
+      modulePath: require.resolve('../task_types/delete_inactive_nodes.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/mark_removed_tasks_as_unrecognized.task.ts'),
+      modulePath: require.resolve('../task_types/mark_removed_tasks_as_unrecognized.task'),
       exportName: 'taskType',
     },
   ],

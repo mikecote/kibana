@@ -7,6 +7,6 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/degraded_docs.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/degraded_docs.task'), exportName: 'taskType' },
   ],
 } as const;

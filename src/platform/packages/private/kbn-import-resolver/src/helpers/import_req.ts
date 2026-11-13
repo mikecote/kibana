@@ -32,11 +32,18 @@ export function reduceImportRequest(
   sourceExt?: string
 ) {
   let reduced = req;
+  // A dotted code basename in require.resolve() does not explicitly request a source extension.
+  const extensionlessRequireResolve =
+    type === 'require-resolve' &&
+    original !== undefined &&
+    EXT_RE.test(req) &&
+    Path.basename(original) === Path.basename(req.replace(EXT_RE, ''));
 
   if (
     original &&
     (type === 'require-resolve' || sourceExt === '.mjs') &&
-    original.match(INCLUDES_FILENAME_RE)
+    original.match(INCLUDES_FILENAME_RE) &&
+    !extensionlessRequireResolve
   ) {
     // require.resolve() can be a complicated, it's often used in config files and
     // sometimes we don't have babel to help resolve .ts to .js, so we try to rely

@@ -9,13 +9,13 @@
 
 export const remote = {
   taskTypes: [
-    { modulePath: require.resolve('../task_types/workflow_run.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/workflow_run.task'), exportName: 'taskType' },
     {
-      modulePath: require.resolve('../task_types/workflow_resume.task.ts'),
+      modulePath: require.resolve('../task_types/workflow_resume.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/workflow_scheduled.task.ts'),
+      modulePath: require.resolve('../task_types/workflow_scheduled.task'),
       exportName: 'taskType',
     },
   ],

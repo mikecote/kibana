@@ -8,11 +8,11 @@
 export const remote = {
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/attack_discovery.task.ts'),
+      modulePath: require.resolve('../task_types/attack_discovery.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/attack_discovery_data_generator.task.ts'),
+      modulePath: require.resolve('../task_types/attack_discovery_data_generator.task'),
       exportName: 'taskType',
     },
   ],

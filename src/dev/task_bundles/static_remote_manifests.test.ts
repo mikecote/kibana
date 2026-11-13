@@ -8,9 +8,14 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import { transformSync } from '@swc/core';
+import { getNodeSwcConfig } from '@kbn/swc-config/node';
+import { REPO_ROOT } from '@kbn/repo-info';
+import { getRemoteManifestPaths } from '@kbn/repo-packages';
+import { interpretRemoteManifest } from '@kbn/import-locator';
 import { build } from 'esbuild';
 import { staticRemoteManifestsPlugin } from './build';
 
@@ -52,3 +57,47 @@ it('bundles remote manifests as resolved data without executing their referenced
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+it.each(getRemoteManifestPaths(REPO_ROOT))(
+  'loads $pluginId remote manifest after distributable transpilation with JS-only targets',
+  ({ path: file }) => {
+    const directory = mkdtempSync(join(tmpdir(), 'distributed-remote-manifest-'));
+    try {
+      const remote = interpretRemoteManifest(file);
+      const modules = [
+        ...(remote.taskTypes ?? []),
+        ...Object.values(remote.capabilities ?? {}),
+        ...Object.values(remote.contributions ?? {}).flat(),
+      ];
+      for (const { modulePath } of modules) {
+        const destination = join(
+          directory,
+          relative(REPO_ROOT, modulePath).replace(/\.ts$/, '.js')
+        );
+        mkdirSync(dirname(destination), { recursive: true });
+        writeFileSync(
+          destination,
+          'throw new Error("Manifest resolution must not execute implementations");'
+        );
+      }
+      // Identical transformation/options to build_packages_task.ts; target stubs are JS-only.
+      const { code } = transformSync(
+        readFileSync(file, 'utf8'),
+        getNodeSwcConfig(file, { production: true })
+      );
+      const compiled = join(directory, relative(REPO_ROOT, file).replace(/\.ts$/, '.js'));
+      mkdirSync(dirname(compiled), { recursive: true });
+      writeFileSync(compiled, code);
+      const output = execFileSync(
+        process.execPath,
+        ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(compiled)}).remote))`],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
+      expect(JSON.parse(output)).toEqual(expect.any(Object));
+      expect(output).not.toContain('.ts"');
+      expect(output).toContain('.js"');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+);

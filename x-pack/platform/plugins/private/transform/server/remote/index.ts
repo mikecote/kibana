@@ -8,7 +8,7 @@
 export const remote = {
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/transform_health.task.ts'),
+      modulePath: require.resolve('../task_types/transform_health.task'),
       exportName: 'taskType',
     },
   ],

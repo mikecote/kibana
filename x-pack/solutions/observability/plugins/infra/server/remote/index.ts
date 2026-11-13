@@ -8,14 +8,14 @@
 export const remote = {
   taskTypes: [
     {
-      modulePath: require.resolve('../task_types/metric_threshold.task.ts'),
+      modulePath: require.resolve('../task_types/metric_threshold.task'),
       exportName: 'taskType',
     },
     {
-      modulePath: require.resolve('../task_types/inventory_metric_threshold.task.ts'),
+      modulePath: require.resolve('../task_types/inventory_metric_threshold.task'),
       exportName: 'taskType',
     },
-    { modulePath: require.resolve('../task_types/log_threshold.task.ts'), exportName: 'taskType' },
+    { modulePath: require.resolve('../task_types/log_threshold.task'), exportName: 'taskType' },
   ],
   contributions: {
     'alerting-rule-read': [
