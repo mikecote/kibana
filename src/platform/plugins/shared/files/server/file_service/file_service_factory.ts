@@ -55,14 +55,25 @@ export interface FileServiceFactory {
   asInternal(): FileServiceStart;
 }
 
+/** Configures the native counters shared by file and file-share clients. */
+export const configureFilesUsageCounter = (
+  counter: Pick<UsageCounter, 'incrementCounter'>
+): void => {
+  FileClientImpl.configureUsageCounter(counter);
+  InternalFileShareService.configureUsageCounter(counter);
+};
+
 /**
  * Factory for creating {@link FileServiceStart} instances.
  */
 export class FileServiceFactoryImpl implements FileServiceFactory {
   constructor(
-    private readonly savedObjectsService: SavedObjectsServiceStart,
+    private readonly savedObjectsService: Pick<
+      SavedObjectsServiceStart,
+      'getScopedClient' | 'createInternalRepository'
+    >,
     private readonly blobStorageService: BlobStorageService,
-    private readonly security: undefined | SecurityPluginSetup,
+    private readonly security: undefined | Pick<SecurityPluginSetup, 'audit'>,
     private readonly fileKindRegistry: FileKindsRegistry,
     private readonly logger: Logger,
     private readonly analytics?: FileAnalytics
@@ -170,8 +181,7 @@ export class FileServiceFactoryImpl implements FileServiceFactory {
     savedObjectsSetup.registerType<FileMetadata<{}>>(fileObjectType);
     savedObjectsSetup.registerType(fileShareObjectType);
     if (usageCounter) {
-      FileClientImpl.configureUsageCounter(usageCounter);
-      InternalFileShareService.configureUsageCounter(usageCounter);
+      configureFilesUsageCounter(usageCounter);
     }
   }
 }

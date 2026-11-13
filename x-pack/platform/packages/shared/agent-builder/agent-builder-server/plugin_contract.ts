@@ -332,6 +332,25 @@ export interface AgentBuilderPluginSetup {
    * Exposed so that dependent plugins can pass these values to search utilities.
    */
   topSnippets: TopSnippetsConfig;
+  /**
+   * What a plugin tells a task process (the process that runs workflows outside Kibana) about its
+   * registrations. In a process this is a no-op, because the settings were sent by Kibana: a
+   * registration reads them from `context.settings`.
+   */
+  taskProcess?: TaskProcessSetup;
+}
+
+/**
+ * Lets a plugin send what its registrations in `setup()` depend on (configuration, the project type,
+ * a feature flag) to the task process, which has to register exactly what Kibana registered.
+ */
+export interface TaskProcessSetup {
+  /**
+   * Registers the config a plugin's `agent-builder` contribution reads as `settings[pluginId]`,
+   * listed in the `declares.settings` of the contribution. The getter runs each time a run is
+   * dispatched to a process. Send only plain values (durations, byte sizes and dates are fine).
+   */
+  registerSettings(pluginId: string, getSettings: () => unknown): void;
 }
 
 /**

@@ -28,7 +28,7 @@ export interface ConnectorCredentialEnv {
 export type ConnectorCredentialResolution = ConnectorCredentialEnv | { errorMessage: string };
 
 export interface ConnectorCredentialDeps {
-  actions?: ActionsPluginStart;
+  actions?: Pick<ActionsPluginStart, 'getActionsClientWithRequest'>;
 }
 
 export type ResolveConnectorCredentials = (

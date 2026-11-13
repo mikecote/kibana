@@ -6,9 +6,62 @@
  */
 
 import { firstValueFrom } from 'rxjs';
-import { createHostFeatureFlags, runFlushers, runInRunContext } from './run_context';
+import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
+import {
+  createHostFeatureFlags,
+  getActiveTaskExecutions,
+  incrementCreatedTaskCount,
+  requestDispatchTaskPool,
+  registerRunFlusher,
+  runFlushers,
+  runInRunContext,
+} from './run_context';
 
 describe('task process run context', () => {
+  it('registers completion callbacks only for executions, not setup contexts', async () => {
+    const callback = jest.fn().mockResolvedValue(undefined);
+    expect(registerRunFlusher(callback)).toBe(false);
+    const setup = await runInRunContext(async () => registerRunFlusher(callback));
+    expect(setup).toEqual({ value: false });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('isolates completion callbacks for overlapping executions and later retained runs', async () => {
+    const firstCallback = jest.fn().mockResolvedValue(undefined);
+    const secondCallback = jest.fn().mockResolvedValue(undefined);
+    const gate = Promise.withResolvers<void>();
+    const firstFlushers: Array<() => Promise<void>> = [];
+    const secondFlushers: Array<() => Promise<void>> = [];
+    const first = runInRunContext(
+      async () => {
+        expect(registerRunFlusher(firstCallback)).toBe(true);
+        await gate.promise;
+        await runFlushers(firstFlushers, { warn: jest.fn() });
+      },
+      { executionId: 'first', flushers: firstFlushers }
+    );
+    const second = await runInRunContext(
+      async () => {
+        expect(registerRunFlusher(secondCallback)).toBe(true);
+        await runFlushers(secondFlushers, { warn: jest.fn() });
+      },
+      { executionId: 'second', flushers: secondFlushers }
+    );
+    expect(second).toEqual({ value: undefined });
+    expect(secondCallback).toHaveBeenCalledTimes(1);
+    expect(firstCallback).not.toHaveBeenCalled();
+    gate.resolve();
+    expect(await first).toEqual({ value: undefined });
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    const laterFlushers: Array<() => Promise<void>> = [];
+    await runInRunContext(async () => runFlushers(laterFlushers, { warn: jest.fn() }), {
+      executionId: 'later',
+      flushers: laterFlushers,
+    });
+    expect(firstCallback).toHaveBeenCalledTimes(1);
+    expect(secondCallback).toHaveBeenCalledTimes(1);
+  });
+
   it('returns the value of the run, or the error it threw', async () => {
     const failure = new Error('boom');
 
@@ -20,6 +73,59 @@ describe('task process run context', () => {
         })
       ).error
     ).toBe(failure);
+  });
+
+  it('isolates task counts and tracks concurrent executions through success and failure', async () => {
+    const firstCounter = new AdHocTaskCounter();
+    const secondCounter = new AdHocTaskCounter();
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = runInRunContext(
+      async () => {
+        incrementCreatedTaskCount(2);
+        await gate;
+        incrementCreatedTaskCount();
+      },
+      { executionId: 'first::execution', adHocTaskCounter: firstCounter }
+    );
+    const failure = new Error('second failed');
+    const second = await runInRunContext(
+      async () => {
+        expect(getActiveTaskExecutions().sort()).toEqual(['first::execution', 'second::execution']);
+        incrementCreatedTaskCount(5);
+        throw failure;
+      },
+      { executionId: 'second::execution', adHocTaskCounter: secondCounter }
+    );
+    expect(second.error).toBe(failure);
+    expect(getActiveTaskExecutions()).toEqual(['first::execution']);
+    releaseFirst();
+    await first;
+    expect(getActiveTaskExecutions()).toEqual([]);
+    expect([firstCounter.count, secondCounter.count]).toEqual([3, 5]);
+    expect(() => incrementCreatedTaskCount()).toThrow('require an active task execution');
+  });
+
+  it('uses the active dispatch pool provider and never substitutes worker-local executions', async () => {
+    await expect(requestDispatchTaskPool()).rejects.toThrow('no dispatch-pool control channel');
+    const missing = await runInRunContext(requestDispatchTaskPool, {
+      executionId: 'worker-task::run',
+    });
+    expect(missing.error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('no dispatch-pool control channel'),
+      })
+    );
+    const first = await runInRunContext(requestDispatchTaskPool, {
+      getCurrentTasksInPool: () => ['main-task::run'],
+    });
+    expect(first.value).toEqual(['main-task::run']);
+    const second = await runInRunContext(requestDispatchTaskPool, {
+      getCurrentTasksInPool: async () => ['later-task::run'],
+    });
+    expect(second.value).toEqual(['later-task::run']);
   });
 
   describe('feature flags', () => {
@@ -60,6 +166,28 @@ describe('task process run context', () => {
 
       expect([first.value, second.value]).toEqual([true, false]);
     });
+
+    it('isolates SDK values across overlapping and retained executions', async () => {
+      const run = (enabled: boolean, limit: number, mode: string, delay: number) =>
+        runInRunContext(
+          async () => {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return Promise.all([
+              firstValueFrom(flags.getBooleanValue$('enabled', true)),
+              firstValueFrom(flags.getNumberValue$('limit', 10)),
+              firstValueFrom(flags.getStringValue$('mode', 'default')),
+            ]);
+          },
+          { featureFlags: { enabled, limit, mode } }
+        );
+
+      const results = await Promise.all([run(true, 2.5, '123', 20), run(false, 0, '', 1)]);
+      expect(results.map(({ value }) => value)).toEqual([
+        [true, 2.5, '123'],
+        [false, 0, ''],
+      ]);
+      expect((await run(false, 0, 'true', 0)).value).toEqual([false, 0, 'true']);
+    });
   });
 
   describe('runFlushers', () => {
@@ -92,6 +220,15 @@ describe('task process run context', () => {
 
       expect(other).toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith('Flush failed: endpoint down');
+    });
+
+    it('identifies only the callbacks still pending at the deadline', async () => {
+      const blocked = () => new Promise<void>(() => {});
+      const completed = async () => {};
+
+      await expect(runFlushers([blocked, completed], logger, 20)).resolves.toBe(false);
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('pending: blocked;'));
     });
 
     it('gives up after the timeout, with a warning', async () => {

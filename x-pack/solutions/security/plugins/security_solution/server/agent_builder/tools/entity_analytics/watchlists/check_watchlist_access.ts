@@ -25,7 +25,7 @@ export const checkWatchlistAccess = async ({
   action,
 }: {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   spaceId: string;
   type: 'read' | 'write';
   action: string;

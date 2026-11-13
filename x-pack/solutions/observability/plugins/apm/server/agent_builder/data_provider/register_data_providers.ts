@@ -5,9 +5,10 @@
  * 2.0.
  */
 
-import type { CoreSetup, Logger } from '@kbn/core/server';
+import type { CoreSetup, Logger, KibanaRequest } from '@kbn/core/server';
 import { getRollupIntervalForTimeRange } from '@kbn/apm-data-access-plugin/server/utils';
 import type { TraceMetrics } from '@kbn/observability-agent-builder-plugin/server/data_registry/data_registry_types';
+import type { ObservabilityAgentBuilderPluginSetup } from '@kbn/observability-agent-builder-plugin/server';
 import type { APMConfig } from '../..';
 import { getErrorSampleDetails } from '../../routes/errors/get_error_groups/get_error_sample_details';
 import { parseDatemath } from '../utils/time';
@@ -26,6 +27,7 @@ import { getSeverity, isNoAnomalyScore } from '../../../common/anomaly_detection
 import { ApmDocumentType } from '../../../common/document_type';
 import { ENVIRONMENT_ALL } from '../../../common/environment_filter_values';
 import { getExitSpanChangePoints, getServiceChangePoints } from './get_change_points';
+import type { ApmToolResources } from '../utils/build_apm_tool_resources';
 import { buildApmToolResources } from '../utils/build_apm_tool_resources';
 import type { APMPluginSetupDependencies, APMPluginStartDependencies } from '../../types';
 import { getTransaction } from '../../routes/transactions/get_transaction';
@@ -47,14 +49,31 @@ export function registerDataProviders({
     return;
   }
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerNativeApmDataProviders({
+    registerDataProvider: (id, provider) =>
+      observabilityAgentBuilder.registerDataProvider(id, provider, { owner: 'apm' }),
+    getResources: (request) => buildApmToolResources({ core, plugins, request }),
+    config,
+    logger,
+  });
+}
+
+/** Registers the shared APM data providers over a native per-request resource factory. */
+export function registerNativeApmDataProviders({
+  registerDataProvider,
+  getResources,
+  config,
+  logger,
+}: {
+  registerDataProvider: ObservabilityAgentBuilderPluginSetup['registerDataProvider'];
+  getResources: (request: KibanaRequest) => Promise<ApmToolResources>;
+  config: APMConfig;
+  logger: Logger;
+}): void {
+  registerDataProvider(
     'apmServiceSummary',
     async ({ request, serviceName, serviceEnvironment, start, end, transactionType }) => {
-      const { apmEventClient, apmAlertsClient, mlClient, esClient } = await buildApmToolResources({
-        core,
-        plugins,
-        request,
-      });
+      const { apmEventClient, apmAlertsClient, mlClient, esClient } = await getResources(request);
 
       return getApmServiceSummary({
         apmEventClient,
@@ -73,10 +92,10 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerDataProvider(
     'apmExitSpanChangePoints',
     async ({ request, serviceName, serviceEnvironment, start, end }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+      const { apmEventClient } = await getResources(request);
 
       return getExitSpanChangePoints({
         apmEventClient,
@@ -88,7 +107,7 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerDataProvider(
     'apmServiceChangePoints',
     async ({
       request,
@@ -99,7 +118,7 @@ export function registerDataProviders({
       start,
       end,
     }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+      const { apmEventClient } = await getResources(request);
 
       return getServiceChangePoints({
         apmEventClient,
@@ -113,10 +132,10 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerDataProvider(
     'apmErrorDetails',
     async ({ request, errorId, serviceName, serviceEnvironment, start, end, kuery = '' }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+      const { apmEventClient } = await getResources(request);
 
       return getErrorSampleDetails({
         apmEventClient,
@@ -130,11 +149,12 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerDataProvider(
     'servicesItems',
     async ({ request, environment, kuery, start, end, searchQuery }) => {
-      const { apmEventClient, randomSamplerSeed, mlClient, apmAlertsClient } =
-        await buildApmToolResources({ core, plugins, request });
+      const { apmEventClient, randomSamplerSeed, mlClient, apmAlertsClient } = await getResources(
+        request
+      );
 
       const startMs = parseDatemath(start);
       const endMs = parseDatemath(end);
@@ -158,118 +178,102 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
-    'apmTraceSampleIds',
-    async ({ request, serviceName, start, end }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+  registerDataProvider('apmTraceSampleIds', async ({ request, serviceName, start, end }) => {
+    const { apmEventClient } = await getResources(request);
 
-      return getTraceSampleIds({
-        config,
-        apmEventClient,
-        serviceName,
-        environment: ENVIRONMENT_ALL.value,
-        start,
-        end,
-      });
-    }
-  );
+    return getTraceSampleIds({
+      config,
+      apmEventClient,
+      serviceName,
+      environment: ENVIRONMENT_ALL.value,
+      start,
+      end,
+    });
+  });
 
-  observabilityAgentBuilder.registerDataProvider(
-    'apmExitSpanSamples',
-    async ({ request, traceIds, start, end }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+  registerDataProvider('apmExitSpanSamples', async ({ request, traceIds, start, end }) => {
+    const { apmEventClient } = await getResources(request);
 
-      return fetchExitSpanSamplesFromTraceIds({
-        apmEventClient,
-        traceIds,
-        start,
-        end,
-      });
-    }
-  );
+    return fetchExitSpanSamplesFromTraceIds({
+      apmEventClient,
+      traceIds,
+      start,
+      end,
+    });
+  });
 
-  observabilityAgentBuilder.registerDataProvider(
-    'apmConnectionStatsItems',
-    async ({ request, start, end, filter }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+  registerDataProvider('apmConnectionStatsItems', async ({ request, start, end, filter }) => {
+    const { apmEventClient } = await getResources(request);
 
-      const items = await getConnectionStatsItems({
-        apmEventClient,
-        start,
-        end,
-        filter,
-        numBuckets: 1, // not used when withTimeseries: false, but required param
-        withTimeseries: false,
-      });
+    const items = await getConnectionStatsItems({
+      apmEventClient,
+      start,
+      end,
+      filter,
+      numBuckets: 1, // not used when withTimeseries: false, but required param
+      withTimeseries: false,
+    });
 
-      return items.map((item) => ({
-        from: { serviceName: item.from.serviceName },
-        to: {
-          dependencyName: item.to.dependencyName,
-          spanType: item.to.spanType,
-          spanSubtype: item.to.spanSubtype,
-        },
-        value: item.value,
-      }));
-    }
-  );
+    return items.map((item) => ({
+      from: { serviceName: item.from.serviceName },
+      to: {
+        dependencyName: item.to.dependencyName,
+        spanType: item.to.spanType,
+        spanSubtype: item.to.spanSubtype,
+      },
+      value: item.value,
+    }));
+  });
 
-  observabilityAgentBuilder.registerDataProvider(
-    'apmConnectionStats',
-    async ({ request, start, end, filter }) => {
-      const { apmEventClient, randomSamplerSeed } = await buildApmToolResources({
-        core,
-        plugins,
-        request,
-      });
+  registerDataProvider('apmConnectionStats', async ({ request, start, end, filter }) => {
+    const { apmEventClient, randomSamplerSeed } = await getResources(request);
 
-      const { statsItems } = await getConnectionStats({
-        apmEventClient,
-        start,
-        end,
-        filter,
-        collapseBy: 'downstream',
+    const { statsItems } = await getConnectionStats({
+      apmEventClient,
+      start,
+      end,
+      filter,
+      collapseBy: 'downstream',
 
-        // getDestinationMap (called by getConnectionStats) computes its own dynamic
-        // probability internally. probability: 1 here is only used as a fallback
-        // for small datasets (<20M docs) where sampling is unnecessary.
-        randomSampler: { seed: randomSamplerSeed, probability: 1 },
-        numBuckets: 1, // not used when withTimeseries: false, but required param
-        withTimeseries: false,
-      });
+      // getDestinationMap (called by getConnectionStats) computes its own dynamic
+      // probability internally. probability: 1 here is only used as a fallback
+      // for small datasets (<20M docs) where sampling is unnecessary.
+      randomSampler: { seed: randomSamplerSeed, probability: 1 },
+      numBuckets: 1, // not used when withTimeseries: false, but required param
+      withTimeseries: false,
+    });
 
-      return statsItems.map((item) => {
-        const { location, stats } = item;
-        const metrics: TraceMetrics = {
-          latencyUs: stats.latency.value,
-          throughputPerMin: stats.throughput.value,
-          errorRate: stats.errorRate.value,
-        };
+    return statsItems.map((item) => {
+      const { location, stats } = item;
+      const metrics: TraceMetrics = {
+        latencyUs: stats.latency.value,
+        throughputPerMin: stats.throughput.value,
+        errorRate: stats.errorRate.value,
+      };
 
-        if ('serviceName' in location) {
-          return {
-            type: 'service' as const,
-            serviceName: location.serviceName,
-            agentName: location.agentName,
-            metrics,
-          };
-        }
-
+      if ('serviceName' in location) {
         return {
-          type: 'dependency' as const,
-          dependencyName: location.dependencyName,
-          spanType: location.spanType,
-          spanSubtype: location.spanSubtype,
+          type: 'service' as const,
+          serviceName: location.serviceName,
+          agentName: location.agentName,
           metrics,
         };
-      });
-    }
-  );
+      }
 
-  observabilityAgentBuilder.registerDataProvider(
+      return {
+        type: 'dependency' as const,
+        dependencyName: location.dependencyName,
+        spanType: location.spanType,
+        spanSubtype: location.spanSubtype,
+        metrics,
+      };
+    });
+  });
+
+  registerDataProvider(
     'apmTransactionDetails',
     async ({ request, serviceName, transactionName, transactionId, traceId, start, end }) => {
-      const { apmEventClient } = await buildApmToolResources({ core, plugins, request });
+      const { apmEventClient } = await getResources(request);
 
       const startMs = parseDatemath(start);
       const endMs = parseDatemath(end, { roundUp: true });
@@ -318,14 +322,10 @@ export function registerDataProviders({
     }
   );
 
-  observabilityAgentBuilder.registerDataProvider(
+  registerDataProvider(
     'servicesAlertsAndSlo',
     async ({ request, serviceNames, environment, kuery, start, end }) => {
-      const { apmAlertsClient, sloClient, mlClient } = await buildApmToolResources({
-        core,
-        plugins,
-        request,
-      });
+      const { apmAlertsClient, sloClient, mlClient } = await getResources(request);
 
       const startMs = parseDatemath(start);
       const endMs = parseDatemath(end);

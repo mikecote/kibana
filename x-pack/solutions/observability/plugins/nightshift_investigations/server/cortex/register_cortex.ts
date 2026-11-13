@@ -88,7 +88,7 @@ export const hydrateCortexWorkspace = async ({
   esClient: ElasticsearchClient;
   spaceId: string;
   signal?: AbortSignal;
-  analytics: AnalyticsServiceSetup;
+  analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>;
   conversationId?: string;
   logger: Logger;
 }): Promise<void> => {
@@ -141,14 +141,14 @@ export const runCortexOptimize = async ({
   interactionId: string;
   signal?: AbortSignal;
   getAgentBuilder: () => AgentBuilderPluginStart | undefined;
-  analytics: AnalyticsServiceSetup;
+  analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>;
   conversationId?: string;
   roundId?: string;
   requestedConnectorId?: string;
   roundConnectorId?: string;
   getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
   logger: Logger;
 }): Promise<void> => {
   // Only the Nightshift investigator writes to Cortex: it is the one agent whose post-execution

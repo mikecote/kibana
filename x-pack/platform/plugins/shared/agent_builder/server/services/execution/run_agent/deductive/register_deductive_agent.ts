@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { CoreSetup } from '@kbn/core/server';
+import type { CoreStart } from '@kbn/core/server';
 import type { UiSettingsServiceSetup } from '@kbn/core-ui-settings-server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { schema } from '@kbn/config-schema';
@@ -16,7 +16,6 @@ import {
   AGENT_BUILDER_DEDUCTIVE_API_KEY_SETTING_ID,
 } from '@kbn/management-settings-ids';
 import type { AgentsServiceSetup } from '../../../agents';
-import type { AgentBuilderPluginStart, AgentBuilderStartDependencies } from '../../../../types';
 import { DEDUCTIVE_AGENT_ID, DEDUCTIVE_AVATAR_ICON } from './config';
 
 /**
@@ -27,7 +26,7 @@ import { DEDUCTIVE_AGENT_ID, DEDUCTIVE_AVATAR_ICON } from './config';
  * `deductiveEnabled` is the runtime kill switch; `deductiveEndpoint` / `deductiveApiKey`
  * are per-deployment configuration.
  */
-const DEDUCTIVE_UI_SETTINGS: Record<string, UiSettingsParams> = {
+export const DEDUCTIVE_UI_SETTINGS: Record<string, UiSettingsParams> = {
   [AGENT_BUILDER_DEDUCTIVE_ENABLED_SETTING_ID]: {
     description: i18n.translate('xpack.agentBuilder.uiSettings.deductiveEnabled.description', {
       defaultMessage:
@@ -81,13 +80,15 @@ const DEDUCTIVE_UI_SETTINGS: Record<string, UiSettingsParams> = {
  * Setting, which acts as the runtime kill switch.
  */
 export const registerDeductiveAgent = ({
-  coreSetup,
+  getCoreStart,
   uiSettings,
   agents,
   register,
 }: {
-  coreSetup: CoreSetup<AgentBuilderStartDependencies, AgentBuilderPluginStart>;
-  uiSettings: UiSettingsServiceSetup;
+  /** Core's start services, resolved when the availability of the agent is read. */
+  getCoreStart: () => Promise<Pick<CoreStart, 'uiSettings' | 'savedObjects'>>;
+  /** Kibana registers the global settings; a task process has them registered by Core's module. */
+  uiSettings?: UiSettingsServiceSetup;
   agents: AgentsServiceSetup;
   register: boolean;
 }) => {
@@ -95,7 +96,7 @@ export const registerDeductiveAgent = ({
     return;
   }
 
-  uiSettings.registerGlobal(DEDUCTIVE_UI_SETTINGS);
+  uiSettings?.registerGlobal(DEDUCTIVE_UI_SETTINGS);
 
   agents.register({
     id: DEDUCTIVE_AGENT_ID,
@@ -111,7 +112,7 @@ export const registerDeductiveAgent = ({
       handler: async ({ request }) => {
         // Availability follows the GLOBAL (deployment-wide) `agentBuilder:deductiveEnabled`
         // setting, so the kill switch hides the agent from every user immediately.
-        const [coreStart] = await coreSetup.getStartServices().catch(() => [undefined]);
+        const coreStart = await getCoreStart().catch(() => undefined);
         const globalClient = coreStart?.uiSettings?.globalAsScopedToClient(
           coreStart.savedObjects.getScopedClient(request)
         );

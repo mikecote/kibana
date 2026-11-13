@@ -10,6 +10,7 @@ import type {
   KibanaRequest,
   Logger,
   SavedObjectsClientContract,
+  CoreStart,
   StartServicesAccessor,
 } from '@kbn/core/server';
 import { isSavedObjectErrorResult } from '@kbn/core-saved-objects-server';
@@ -23,7 +24,6 @@ import type {
   ListWatchlistEntitySourcesRequestQuery,
   ListWatchlistEntitySourcesResponse,
 } from '../../../../../../common/api/entity_analytics/watchlists/data_source/list.gen';
-import type { StartPlugins } from '../../../../../plugin';
 import { watchlistEntitySourceTypeName } from './entity_source_type';
 import {
   grantEntitySourceApiKey,
@@ -31,12 +31,22 @@ import {
   validateIndexPermissions,
 } from '../entity_source_api_key';
 
+export interface EntitySourceSecurityServices {
+  getStartServices: () => Promise<
+    [
+      Pick<CoreStart, 'security'>,
+      object,
+      pluginStart?: Awaited<ReturnType<StartServicesAccessor>>[2]
+    ]
+  >;
+}
+
 export interface WatchlistEntitySourceClientDependencies {
   soClient: SavedObjectsClientContract;
   namespace: string;
   // user's scoped client (`core.elasticsearch.client.asCurrentUser`) - used to validate index read privileges
   esClient: ElasticsearchClient;
-  getStartServices: StartServicesAccessor<StartPlugins>;
+  getStartServices: EntitySourceSecurityServices['getStartServices'];
   logger: Logger;
   hasEncryptionKey: boolean;
 }

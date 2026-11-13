@@ -6,13 +6,13 @@
  */
 
 import { z } from '@kbn/zod/v4';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { type as detectionRuleType } from '@kbn/securitysolution-io-ts-alerting-types';
 import type { Type } from '@kbn/securitysolution-io-ts-alerting-types';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
+import type { SecuritySkillServices } from '../services';
 import { prepareKQLStringParam } from '../../../../common/utils/kql';
 import {
   convertRulesFilterToKQL,
@@ -25,7 +25,6 @@ import {
   TAGS_FIELD,
 } from '../../../../common/detection_engine/rule_management/rule_fields';
 import { findRules } from '../../../lib/detection_engine/rule_management/logic/search/find_rules';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 
 export const FIND_RULES_INLINE_TOOL_ID = 'security.find_rules';
 
@@ -199,7 +198,7 @@ export function buildToolFilter(params: FilterInput): string | undefined {
 // ---- Tool handler ----
 
 interface FindRulesToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
 }
 

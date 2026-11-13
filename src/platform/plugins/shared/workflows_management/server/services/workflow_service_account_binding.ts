@@ -9,19 +9,20 @@
 
 import Boom from '@hapi/boom';
 import isEqual from 'lodash/isEqual';
-import type { CoreStart, KibanaRequest, Logger } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { GLOBAL_WORKFLOW_SPACE_ID } from '@kbn/workflows/server';
 import type { WorkflowsExecutionEnginePluginStart } from '@kbn/workflows-execution-engine/server';
 
 import type { IndexWorkflowDocumentOptions, ManagedWorkflowOrphan } from './workflow_occ_types';
 import { mutateWorkflowToDisabled } from '../api/lib/workflow_disable_all';
 import { applyWorkflowVersion } from '../lib/workflow_version';
+import type { WorkflowManagementCore } from '../runtime/dependencies';
 import type { WorkflowProperties } from '../storage/workflow_storage';
 
 type Bindings = WorkflowsExecutionEnginePluginStart['serviceAccountBindings'];
 
 export const ensureWorkflowServiceAccountMutationAuthorized = async (
-  core: CoreStart,
+  core: WorkflowManagementCore,
   request?: KibanaRequest
 ): Promise<KibanaRequest> => {
   if (!request)
@@ -52,7 +53,7 @@ export const withWorkflowBindingChange = async <T>({
 }: {
   bindings: Bindings;
   getSpaceId: (request: KibanaRequest) => string;
-  core: CoreStart;
+  core: WorkflowManagementCore;
   logger: Logger;
   workflowId: string;
   spaceId: string;

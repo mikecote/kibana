@@ -222,8 +222,8 @@ export const configSchema = schema.object(
      * - in_process: in this process (default).
      * - child_process: in a process Kibana starts for each run, from the bundles built by
      *   `node scripts/task_bundle` (or the distributable's `task_bundles`).
-     * - remote: in the task process at `remote.url`, started from the same bundles. A task type it does not
-     *   serve runs in this process.
+     * - remote: in the task process at `remote.url`, started from the same bundles.
+     * Module tasks never fall back to Kibana when the worker cannot serve them.
      * Kibana claims, validates and reschedules every task whatever the mode.
      */
     task_execution: schema.maybe(
@@ -241,10 +241,19 @@ export const configSchema = schema.object(
           bundle_dir: schema.maybe(schema.string()),
           /*
            * child_process: the most processes alive for runs at once. A run that finds the cap reached
-           * runs in Kibana (counted as a `capacity` fallback). Defaults to `max_workers`, which is the
-           * most runs Kibana has in flight, so only a lower value makes runs fall back.
+           * is retried without running in Kibana. Defaults to `max_workers`, which is the most runs
+           * Kibana has in flight.
            */
           max_concurrent_processes: schema.maybe(schema.number({ min: 1, max: 1000 })),
+          reuse: schema.maybe(
+            schema.object({
+              enabled: schema.boolean({ defaultValue: false }),
+              idle_timeout_ms: schema.number({ min: 1, max: 3_600_000, defaultValue: 30_000 }),
+              max_age_ms: schema.number({ min: 1, max: 86_400_000, defaultValue: 300_000 }),
+              max_runs: schema.number({ min: 1, max: 100_000, defaultValue: 100 }),
+              max_idle_processes: schema.number({ min: 1, max: 1000, defaultValue: 10 }),
+            })
+          ),
           /*
            * child_process: `--max-old-space-size` of each process, in MB. Unset, a process does not
            * inherit the heap flags Kibana was started with, and Node picks the heap size.

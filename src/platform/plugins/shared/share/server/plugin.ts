@@ -27,15 +27,9 @@ import {
   scheduleUnusedUrlsCleanupTask,
 } from './unused_urls_task';
 import { CSV_SEPARATOR_SETTING, CSV_QUOTE_VALUES_SETTING } from '../common/constants';
-import { UrlService } from '../common/url_service';
+import { createServerUrlService } from './url_service/create_server_url_service';
 import type { ServerUrlService } from './url_service';
-import {
-  ServerShortUrlClientFactory,
-  registerUrlServiceRoutes,
-  registerUrlServiceSavedObjectType,
-} from './url_service';
-import { LegacyShortUrlLocatorDefinition } from '../common/url_service/locators/legacy_short_url_locator';
-import { ShortUrlRedirectLocatorDefinition } from '../common/url_service/locators/short_url_redirect_locator';
+import { registerUrlServiceRoutes, registerUrlServiceSavedObjectType } from './url_service';
 import type { ConfigSchema } from './config';
 
 /** @public */
@@ -70,30 +64,17 @@ export class SharePlugin
   private readonly logger: Logger;
   private readonly config: ConfigSchema;
 
-  constructor(private readonly initializerContext: PluginInitializerContext) {
+  constructor(initializerContext: PluginInitializerContext) {
     this.version = initializerContext.env.packageInfo.version;
     this.logger = initializerContext.logger.get();
     this.config = initializerContext.config.get<ConfigSchema>();
   }
 
   public setup(core: CoreSetup, { taskManager }: SharePublicSetupDependencies) {
-    this.url = new UrlService({
+    this.url = createServerUrlService({
       baseUrl: core.http.basePath.publicBaseUrl || core.http.basePath.serverBasePath,
-      version: this.initializerContext.env.packageInfo.version,
-      navigate: async () => {
-        throw new Error('Locator .navigate() is not supported on the server.');
-      },
-      getUrl: async () => {
-        throw new Error('Locator .getUrl() currently is not supported on the server.');
-      },
-      shortUrls: ({ locators }) =>
-        new ServerShortUrlClientFactory({
-          currentVersion: this.version,
-          locators,
-        }),
+      version: this.version,
     });
-    this.url.locators.create(new LegacyShortUrlLocatorDefinition());
-    this.url.locators.create(new ShortUrlRedirectLocatorDefinition());
 
     registerUrlServiceSavedObjectType(core.savedObjects, this.url);
     registerUrlServiceRoutes(core, core.http.createRouter(), this.url);

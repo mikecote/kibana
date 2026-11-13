@@ -6,13 +6,14 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
+
 import {
   ML_JOB_SAVED_OBJECT_TYPE,
   ML_TRAINED_MODEL_SAVED_OBJECT_TYPE,
 } from '@kbn/ml-common-types/saved_objects';
+import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
 
-export function authorizationProvider(authorization: SecurityPluginSetup['authz']) {
+export function authorizationProvider(authorization: MlAuthorizationService) {
   async function authorizationCheck(request: KibanaRequest) {
     const shouldAuthorizeRequest = authorization?.mode.useRbacForRequest(request) ?? false;
 

@@ -90,6 +90,7 @@ describe('NightshiftInvestigationsPlugin setup', () => {
       workflowsManagement: {},
       workflowsExtensions: {
         registerManagedWorkflowOwner: jest.fn(),
+        registerTaskProcessSettings: jest.fn(),
         registerTriggerDefinition: jest.fn(),
         registerStepDefinition,
       },

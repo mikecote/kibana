@@ -17,7 +17,7 @@ import { isWorkflowGraphSetupError } from './workflow_graph_setup_error';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import { emitWorkflowExecutionFailedEventIfFailed } from '../lib/emit_workflow_execution_failed_event';
 import { emitWorkflowIdentityFailureEvent } from '../lib/emit_workflow_identity_failure_event';
-import type { WorkflowsMeteringService } from '../metering';
+import type { WorkflowsMeteringReporter } from '../metering';
 import type { StepExecutionRepository } from '../repositories/step_execution_repository';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 import {
@@ -58,7 +58,7 @@ async function resumeWorkflowWithRequest({
   fakeRequest: KibanaRequest;
   dependencies: ContextDependencies;
   workflowsExecutionEngine: WorkflowsExecutionEnginePluginStart;
-  meteringService?: WorkflowsMeteringService;
+  meteringService?: WorkflowsMeteringReporter;
   internalResumeWorkflowExecution?: InternalResumeWorkflowExecution;
   workflowExecutionRepository: WorkflowExecutionRepository;
   stepExecutionRepository: StepExecutionRepository;
@@ -155,6 +155,7 @@ async function resumeWorkflowWithRequest({
     esClient,
     fakeRequest,
     coreStart: dependencies.coreStart,
+    hitlLifecycle: dependencies.hitlLifecycle,
     signal,
     workflowTaskManager,
   };
@@ -201,7 +202,10 @@ export const resumeWorkflow = async (
   if (isTerminalStatus(execution.status)) {
     await completeIdentityFailureCleanup(execution, {
       ...params,
-      workflowTaskManager: new WorkflowTaskManager(params.dependencies.taskManager),
+      workflowTaskManager: new WorkflowTaskManager(
+        params.dependencies.taskManager,
+        params.dependencies.identityContexts
+      ),
       cloudSetup: params.dependencies.cloudSetup,
     });
     return {};
@@ -215,7 +219,8 @@ export const resumeWorkflow = async (
       (fakeRequest) => {
         enteredExecution = true;
         return resumeWorkflowWithRequest({ ...params, fakeRequest });
-      }
+      },
+      params.dependencies.identityContexts
     );
   } catch (error) {
     if (!enteredExecution && getExecutionServiceAccountId(execution)) {
@@ -235,11 +240,15 @@ export const resumeWorkflow = async (
           emitEvent: params.workflowsExecutionEngine.triggerEvents.emitEvent,
           logger: params.logger,
           maxEventChainDepth: params.config.eventDriven.maxChainDepth,
+          eventChainContext: params.dependencies.eventChainContext,
         });
       }
       await completeIdentityFailureCleanup(failedExecution, {
         ...params,
-        workflowTaskManager: new WorkflowTaskManager(params.dependencies.taskManager),
+        workflowTaskManager: new WorkflowTaskManager(
+          params.dependencies.taskManager,
+          params.dependencies.identityContexts
+        ),
         cloudSetup: params.dependencies.cloudSetup,
       });
     }

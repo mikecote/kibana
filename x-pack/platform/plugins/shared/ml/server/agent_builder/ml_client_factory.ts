@@ -11,8 +11,9 @@ import type {
   IScopedClusterClient,
   CoreAuditService,
 } from '@kbn/core/server';
-import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
-import type { PluginStart as DataViewsPluginStart } from '@kbn/data-views-plugin/server';
+import type { MlAuthorizationService } from '../lib/capabilities/check_capabilities';
+
+import type { MlDataViews } from '../shared_services/shared_services';
 import type { MlLicense } from '../../common/license';
 import type { CompatibleModule } from '../../common/constants/app';
 import type { ServerlessInfo } from '../types';
@@ -20,6 +21,7 @@ import type { MlClient } from '../lib/ml_client';
 import { getMlClient } from '../lib/ml_client';
 import { MlAuditLogger } from '../lib/ml_client/ml_audit_logger';
 import { mlSavedObjectServiceFactory } from '../saved_objects/service';
+import type { DataRecognizerModuleFiles } from '../models/data_recognizer/module_files';
 import type { DataRecognizer } from '../models/data_recognizer/data_recognizer';
 import { dataRecognizerFactory } from '../models/data_recognizer/data_recognizer';
 import { getDataViewsServiceFactory } from '../lib/data_views_utils';
@@ -28,14 +30,15 @@ export interface MlClientFactoryDeps {
   getInternalSavedObjectsClient: () => SavedObjectsClientContract | null;
   getAuditService: () => CoreAuditService | null;
   spacesEnabled: boolean;
-  authorization?: SecurityPluginSetup['authz'];
+  authorization?: MlAuthorizationService;
   mlLicense: MlLicense;
   serverless: ServerlessInfo;
   isMlReady: () => Promise<void>;
   /** Optional — required for recognize_modules / get_module operations. */
-  getDataViews?: () => DataViewsPluginStart | null;
+  getDataViews?: () => MlDataViews | null;
   /** Optional — filters modules by solution type when provided. */
   compatibleModuleType?: CompatibleModule | null;
+  moduleFiles?: DataRecognizerModuleFiles;
 }
 
 export type BuildMlClientFn = (
@@ -151,7 +154,8 @@ export function createDataRecognizerFactory(
       mlSavedObjectService,
       request,
       deps.compatibleModuleType ?? null,
-      deps.serverless
+      deps.serverless,
+      deps.moduleFiles
     );
   };
 }

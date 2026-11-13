@@ -5,8 +5,8 @@
  * 2.0.
  */
 
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
+import type { AgentBuilderActionsStart } from '../../../actions_services';
 
 /**
  * Options for creating connector tools.
@@ -15,7 +15,7 @@ import type { InferenceServerStart } from '@kbn/inference-plugin/server';
  */
 export interface ConnectorToolsOptions {
   /** Lazy getter for the Actions plugin start contract (resolved at handler invocation time). */
-  getActions: () => Promise<ActionsPluginStart>;
+  getActions: () => Promise<AgentBuilderActionsStart>;
   /** Lazy getter for the Inference plugin start contract (resolved at handler invocation time). */
   getInference: () => Promise<InferenceServerStart>;
 }

@@ -17,6 +17,7 @@ project:
   owner: '@elastic/response-ops'
   sourceRoot: x-pack/platform/plugins/shared/task_manager
 dependsOn:
+  - '@kbn/core-data-streams-server'
   - '@kbn/core'
   - '@kbn/tracing-utils'
   - '@kbn/usage-collection-plugin'
@@ -81,6 +82,13 @@ dependsOn:
   - '@kbn/core-ui-settings-server'
   - '@kbn/core-ui-settings-server-internal'
   - '@kbn/encrypted-saved-objects-plugin'
+  - '@kbn/apm-config-loader'
+  - '@kbn/metrics-config'
+  - '@kbn/metrics'
+  - '@kbn/core-http-router-server-internal'
+  - '@kbn/telemetry-config'
+  - '@kbn/fs'
+  - '@kbn/telemetry'
 tags:
   - plugin
   - prod

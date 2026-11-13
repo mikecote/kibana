@@ -5,13 +5,12 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { i18n } from '@kbn/i18n';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import type {
-  GetViewInAppRelativeUrlFnOpts,
-  AlertingServerSetup,
-} from '@kbn/alerting-plugin/server';
-import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
+import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import { metricInventoryThresholdRuleParamsSchema } from '@kbn/response-ops-rule-params/metric_inventory_threshold';
 import type { InfraConfig } from '../../../../common/plugin_config_types';
 import { METRIC_INVENTORY_THRESHOLD_ALERT_TYPE_ID } from '../../../../common/alerting/metrics';
@@ -127,7 +126,6 @@ export function registerInventoryThresholdRuleType(
       ],
     },
     alerts: MetricsRulesTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

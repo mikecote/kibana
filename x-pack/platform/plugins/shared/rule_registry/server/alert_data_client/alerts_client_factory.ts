@@ -7,11 +7,11 @@
 
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
-import type { RuleTypeRegistry } from '@kbn/alerting-plugin/server/types';
 import type { AlertingAuthorization, AlertingServerStart } from '@kbn/alerting-plugin/server';
 import type { SecurityPluginSetup } from '@kbn/security-plugin/server';
 import type { IRuleDataService } from '../rule_data_plugin_service';
 import { AlertsClient } from './alerts_client';
+import type { AlertsRuleTypeList } from './alerts_client';
 
 export interface AlertsClientFactoryProps {
   logger: Logger;
@@ -20,10 +20,9 @@ export interface AlertsClientFactoryProps {
   getAlertingAuthorization: (
     request: KibanaRequest
   ) => Promise<PublicMethodsOf<AlertingAuthorization>>;
-  securityPluginSetup: SecurityPluginSetup | undefined;
+  securityPluginSetup: { audit: Pick<SecurityPluginSetup['audit'], 'asScoped'> } | undefined;
   ruleDataService: IRuleDataService | null;
-  getRuleType: RuleTypeRegistry['get'];
-  getRuleList: RuleTypeRegistry['list'];
+  getRuleList: AlertsRuleTypeList;
   getAlertIndicesAlias: AlertingServerStart['getAlertIndicesAlias'];
 }
 
@@ -35,10 +34,9 @@ export class AlertsClientFactory {
   private getAlertingAuthorization!: (
     request: KibanaRequest
   ) => Promise<PublicMethodsOf<AlertingAuthorization>>;
-  private securityPluginSetup!: SecurityPluginSetup | undefined;
+  private securityPluginSetup!: AlertsClientFactoryProps['securityPluginSetup'];
   private ruleDataService!: IRuleDataService | null;
-  private getRuleType!: RuleTypeRegistry['get'];
-  private getRuleList!: RuleTypeRegistry['list'];
+  private getRuleList!: AlertsRuleTypeList;
   private getAlertIndicesAlias!: AlertingServerStart['getAlertIndicesAlias'];
 
   public initialize(options: AlertsClientFactoryProps) {
@@ -56,7 +54,6 @@ export class AlertsClientFactory {
     this.getEsClientScoped = options.getEsClientScoped;
     this.securityPluginSetup = options.securityPluginSetup;
     this.ruleDataService = options.ruleDataService;
-    this.getRuleType = options.getRuleType;
     this.getRuleList = options.getRuleList;
     this.getAlertIndicesAlias = options.getAlertIndicesAlias;
   }
@@ -73,7 +70,6 @@ export class AlertsClientFactory {
       esClient: this.esClient,
       esClientScoped,
       ruleDataService: this.ruleDataService!,
-      getRuleType: this.getRuleType,
       getRuleList: this.getRuleList,
       getAlertIndicesAlias: this.getAlertIndicesAlias,
     });

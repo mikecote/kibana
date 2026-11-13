@@ -5,20 +5,20 @@
  * 2.0.
  */
 
-import type { CoreSetup, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import { StorageIndexAdapter } from '@kbn/storage-adapter';
-import type { StreamsPluginStartDependencies } from '../../types';
+import type { StreamsStartServicesAccess } from '../../start_services_access';
 import type { ContentStorageSettings, StoredContentPack } from './content_client';
 import { ContentClient, contentStorageSettings } from './content_client';
 
 export class ContentService {
   constructor(
-    private readonly coreSetup: CoreSetup<StreamsPluginStartDependencies>,
+    private readonly coreSetup: StreamsStartServicesAccess,
     private readonly logger: Logger
   ) {}
 
   async getClient(): Promise<ContentClient> {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
 
     const adapter = new StorageIndexAdapter<ContentStorageSettings, StoredContentPack>(
       coreStart.elasticsearch.client.asInternalUser,

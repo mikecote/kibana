@@ -7,7 +7,7 @@
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
 import type { APMEventClient } from '@kbn/apm-data-access-plugin/server';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type { ConnectionWithKey } from './types';
 import { buildConnectionsFromSpans } from './build_connections_from_spans';
 import { getTraceIdsFromExitSpansTargetingDependency } from './get_trace_ids_from_exit_spans';
@@ -35,7 +35,7 @@ export async function expandMessagingConnections({
   endMs,
 }: {
   apmEventClient: APMEventClient;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   logger: Logger;
   messagingDeps: string[];

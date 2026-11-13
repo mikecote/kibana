@@ -32,3 +32,5 @@ export type {
 } from './types';
 
 export { APMEventClient } from './lib/helpers';
+
+export { createApmDataAccessServices } from './create_apm_data_access_services';

@@ -13,6 +13,10 @@
     ],
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"],
+      "workflow-steps": ["server/task_types/fields_metadata_runtime_contribution.ts", "server/task_types/workflow_services_contribution.ts"]
+    },
     "requiredPlugins": [
       "actions",
       "alerting",

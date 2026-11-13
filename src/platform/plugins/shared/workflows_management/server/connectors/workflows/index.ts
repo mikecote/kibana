@@ -38,6 +38,10 @@ import { buildAlertEvent } from '../../../common/utils/build_alert_event';
 import type { WorkflowsManagementApi } from '../../api/workflows_management_api';
 
 const supportedSubActions: string[] = ['run'];
+export type WorkflowConnectorManagement = Pick<
+  WorkflowsManagementApi,
+  'getWorkflow' | 'runWorkflow' | 'scheduleWorkflow'
+>;
 export type ActionParamsType = WorkflowsActionParamsType;
 export const ConnectorTypeId = '.workflows';
 
@@ -59,14 +63,18 @@ export interface GetWorkflowsConnectorTypeArgs {
 
 // connector type definition
 export function getConnectorType(
-  workflowsManagementApi: WorkflowsManagementApi
+  workflowsManagementApi: WorkflowConnectorManagement | (() => WorkflowConnectorManagement)
 ): ConnectorType<
   Record<string, unknown>,
   Record<string, unknown>,
   ExecutorParams,
   WorkflowsExecutorResultData
 > {
-  const args = getWorkflowsConnectorTypeArgs(workflowsManagementApi);
+  const args = getWorkflowsConnectorTypeArgs(
+    typeof workflowsManagementApi === 'function'
+      ? workflowsManagementApi
+      : () => workflowsManagementApi
+  );
   return {
     id: ConnectorTypeId,
     minimumLicenseRequired: 'gold',
@@ -90,12 +98,13 @@ export function getConnectorType(
 }
 
 function getWorkflowsConnectorTypeArgs(
-  workflowsManagementApi: WorkflowsManagementApi
+  getWorkflowsManagementApi: () => WorkflowConnectorManagement
 ): GetWorkflowsConnectorTypeArgs {
   // Create workflows service function for the connector
   const getWorkflowsService = async (request: KibanaRequest) => {
     // Return a function that will be called by the connector
     return async (workflowId: string, spaceId: string, inputs: Record<string, unknown>) => {
+      const workflowsManagementApi = getWorkflowsManagementApi();
       // Get the workflow and validate it is in a runnable state
       const workflow = await workflowsManagementApi.getWorkflow(workflowId, spaceId, request);
       validateWorkflowForExecution(workflow, workflowId);
@@ -115,9 +124,7 @@ function getWorkflowsConnectorTypeArgs(
       inputs: Record<string, unknown>,
       triggeredBy: TriggerType
     ) => {
-      if (!workflowsManagementApi) {
-        throw new Error('Workflows management API not initialized');
-      }
+      const workflowsManagementApi = getWorkflowsManagementApi();
 
       // Get the workflow and validate it is in a runnable state
       const workflow = await workflowsManagementApi.getWorkflow(workflowId, spaceId, request);

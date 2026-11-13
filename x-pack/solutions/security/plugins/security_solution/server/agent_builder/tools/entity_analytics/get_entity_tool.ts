@@ -21,10 +21,8 @@ import type { EntityRiskScoreRecord } from '../../../../common/api/entity_analyt
 import { IdentifierType } from '../../../../common/api/entity_analytics/common/common.gen';
 import { EntityType } from '../../../../common/entity_analytics/types';
 import { getRiskScoreTimeSeriesIndex } from '../../../../common/entity_analytics/risk_engine/indices';
-import type {
-  SecuritySolutionPluginCoreSetupDependencies,
-  SetupPlugins,
-} from '../../../plugin_contract';
+import type { SecurityEntityEnrichmentServices } from './entity_services';
+import type { EntityAnalyticsMlServices } from '../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
 import { securityTool } from '../constants';
 import { buildRenderAttachmentTag } from './attachment_utils';
 import { getEntityAnalyticsToolAvailability } from './entity_analytics_availability';
@@ -472,9 +470,9 @@ const enrichEntityResult = async ({
 };
 
 export const getEntityTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityEnrichmentServices,
   logger: Logger,
-  ml: SetupPlugins['ml'],
+  ml: EntityAnalyticsMlServices | undefined,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {
   return {

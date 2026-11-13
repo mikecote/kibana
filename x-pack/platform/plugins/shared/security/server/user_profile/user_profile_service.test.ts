@@ -80,6 +80,24 @@ describe('UserProfileService', () => {
     `);
   });
 
+  it('resolves a task profile without HTTP session services', async () => {
+    mockStartParams.getCurrentUser.mockReturnValue(
+      securityMock.createMockAuthenticatedUser({ profile_uid: 'task-profile' })
+    );
+    const service = userProfileService.start({
+      clusterClient: mockStartParams.clusterClient,
+      getCurrentUser: mockStartParams.getCurrentUser,
+    });
+    await expect(
+      service.getCurrentProfileId({
+        request: httpServerMock.createFakeKibanaRequest({}),
+      })
+    ).resolves.toBe('task-profile');
+    expect(
+      mockStartParams.clusterClient.asInternalUser.security.getUserProfile
+    ).not.toHaveBeenCalled();
+  });
+
   describe('#getCurrent', () => {
     let mockUserProfile: UserProfileWithSecurity;
     let mockRequest: ReturnType<typeof httpServerMock.createKibanaRequest>;

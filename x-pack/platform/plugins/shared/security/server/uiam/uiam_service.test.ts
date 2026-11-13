@@ -24,6 +24,7 @@ import {
   type GrantUiamApiKeyResponse,
   type OAuthClientResponse,
   type OAuthConnectionResponse,
+  readUiamTlsMaterial,
   UiamService,
 } from './uiam_service';
 import { ES_CLIENT_AUTHENTICATION_HEADER } from '../../common/constants';
@@ -203,6 +204,57 @@ describe('UiamService', () => {
           allowPartialTrustChain: true,
           rejectUnauthorized: true,
         },
+      });
+    });
+
+    it('uses the TLS contents it is given instead of reading files', () => {
+      agentSpy.mockClear();
+      readFileSyncSpy.mockClear();
+      new UiamService(
+        loggingSystemMock.createLogger(),
+        {
+          enabled: true,
+          url: 'https://uiam.service',
+          sharedSecret: 'secret',
+          ssl: { verificationMode: 'full' },
+        },
+        {
+          kibanaServerResourceURL: 'https://kibana.test',
+          kibanaVersion: '9.0.0',
+          tls: { certificate: 'CERT', key: 'KEY', certificateAuthorities: ['CA1', 'CA2'] },
+        }
+      );
+      expect(readFileSyncSpy).not.toHaveBeenCalled();
+      expect(agentSpy).toHaveBeenCalledWith({
+        connect: {
+          ca: ['CA1', 'CA2'],
+          cert: 'CERT',
+          key: 'KEY',
+          allowPartialTrustChain: true,
+          rejectUnauthorized: true,
+        },
+      });
+    });
+
+    it('reads the TLS material the config names, for a process that cannot read the files', () => {
+      expect(
+        readUiamTlsMaterial({
+          certificate: '/c.pem',
+          key: '/k.pem',
+          certificateAuthorities: ['/ca1.pem', '/ca2.pem'],
+        })
+      ).toEqual({
+        certificate: 'mocked file content for /c.pem',
+        key: 'mocked file content for /k.pem',
+        certificateAuthorities: [
+          'mocked file content for /ca1.pem',
+          'mocked file content for /ca2.pem',
+        ],
+      });
+      expect(readUiamTlsMaterial({})).toEqual({
+        certificate: undefined,
+        key: undefined,
+        certificateAuthorities: undefined,
       });
     });
 

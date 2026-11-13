@@ -10,6 +10,7 @@
  * 2.0.
  */
 
+import { TASK_PROCESS_PATHS, TASK_PROCESS_PROTOCOL_VERSION } from '../task_process/protocol';
 import { createServer } from 'http';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
@@ -169,10 +170,11 @@ describe('side effects of a run in a task process', () => {
     let response: Awaited<ReturnType<typeof undiciFetch>>;
     let body: TaskProcessRunResponse;
     try {
-      response = await undiciFetch(`${lease.url}/run`, {
+      response = await undiciFetch(`${lease.url}${TASK_PROCESS_PATHS.run}`, {
         method: 'POST',
         headers: { authorization: `Bearer ${lease.token}` },
         body: JSON.stringify({
+          protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
           taskType: SIDE_EFFECTS_TASK_TYPE,
           taskInstance: {
             id: 'side-effects',

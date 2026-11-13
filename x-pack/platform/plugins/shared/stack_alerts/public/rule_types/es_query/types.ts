@@ -23,6 +23,10 @@ export interface SourceField {
 }
 
 export interface CommonRuleParams {
+  processIsolationDemo?: {
+    blockEventLoopSeconds: number;
+    memoryMb: number;
+  };
   size: number;
   thresholdComparator?: string;
   threshold: number[];

@@ -5,26 +5,26 @@
  * 2.0.
  */
 
-import type { CoreSetup } from '@kbn/core/server';
 import { ExecutionError } from '@kbn/workflows/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import { CONTEXT_ENGINE_ENABLED_SETTING_ID } from '@kbn/management-settings-ids';
 import { VerifyKiStepCommonDefinition } from '../../common/step_types/verify_ki_step';
 import { omitNullKiAttributes } from '../../common/step_types/ki';
-import { isContextEngineEnabledInSpace } from '../utils/is_context_engine_enabled_in_space';
 import type { VerifyKi } from './verify_ki';
 
-export const createVerifyKiStepDefinition = (coreSetup: CoreSetup, verifyKi: VerifyKi) =>
+/**
+ * The verify KI step. Whether the Context Engine is on in a space is read through
+ * `isContextEngineEnabled`, which Kibana builds from its start contracts and a task process from its host.
+ */
+export const createVerifyKiStepDefinition = (
+  isContextEngineEnabled: (spaceId: string) => Promise<boolean>,
+  verifyKi: VerifyKi
+) =>
   createServerStepDefinition({
     ...VerifyKiStepCommonDefinition,
     handler: async (context) => {
-      const [coreStart] = await coreSetup.getStartServices();
       const { spaceId } = context.contextManager.getContext().workflow;
-      const isEnabled = await isContextEngineEnabledInSpace({
-        savedObjects: coreStart.savedObjects,
-        uiSettings: coreStart.uiSettings,
-        spaceId,
-      });
+      const isEnabled = await isContextEngineEnabled(spaceId);
       if (!isEnabled) {
         throw new ExecutionError({
           type: 'FeatureDisabledError',

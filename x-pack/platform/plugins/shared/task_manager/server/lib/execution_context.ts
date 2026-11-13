@@ -9,7 +9,7 @@ import type { KibanaExecutionContext } from '@kbn/core-execution-context-common'
 import type { ExecutionContextSetup } from '@kbn/core/server';
 
 export interface CreateExecutionContextArgs {
-  contextSetup: ExecutionContextSetup;
+  contextSetup: Pick<ExecutionContextSetup, 'withContext'>;
   baseContext: KibanaExecutionContext;
 }
 
@@ -17,7 +17,7 @@ export interface ExecutionContextRunner {
   run<T>(fn: () => Promise<T>, context?: KibanaExecutionContext): Promise<T>;
 }
 export class ExecutionContextRunnerImpl implements ExecutionContextRunner {
-  private contextSetup: ExecutionContextSetup;
+  private contextSetup: Pick<ExecutionContextSetup, 'withContext'>;
   private baseContext: KibanaExecutionContext;
 
   constructor(args: CreateExecutionContextArgs) {
@@ -33,7 +33,7 @@ export class ExecutionContextRunnerImpl implements ExecutionContextRunner {
 }
 
 export function getExecutionContextRunner(
-  contextSetup: ExecutionContextSetup,
+  contextSetup: Pick<ExecutionContextSetup, 'withContext'>,
   baseContext: KibanaExecutionContext = {}
 ): ExecutionContextRunner {
   return new ExecutionContextRunnerImpl({ contextSetup, baseContext });

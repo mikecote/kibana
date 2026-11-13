@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/logging';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
@@ -21,6 +21,7 @@ import { getSupportedReasoningEffortLevels } from '@kbn/inference-common';
 import type { AgentConfiguration } from '@kbn/agent-builder-common';
 import { createAgentNotFoundError, isAgentNotFoundError } from '@kbn/agent-builder-common';
 import type { ModelProvider } from '@kbn/agent-builder-server/runner';
+import type { AgentBuilderElasticsearch } from '../../runtime_ports';
 import type { AgentRegistry, AgentsServiceStart } from '../../agents';
 import { createModelProvider } from '../runner/model_provider';
 import { resolveExecutionConnectorId } from './resolve_execution_connector_id';
@@ -130,7 +131,7 @@ export const resolveServices = async ({
   searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;
   spaces?: SpacesPluginStart;
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
 }): Promise<ResolvedServices> => {
   const agentRegistry = await agentService.getRegistry({ request });
   const { inference_feature_id: agentInferenceFeatureId, reasoning_level: agentReasoningLevel } =

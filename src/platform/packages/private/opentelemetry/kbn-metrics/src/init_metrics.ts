@@ -31,6 +31,8 @@ import { PrometheusExporter } from './prometheus_exporter';
  * Options to the initMetrics method
  */
 export interface InitMetricsOptions {
+  prometheusReader?: IMetricReader;
+  additionalReaders?: IMetricReader[];
   /**
    * The OpenTelemetry resource information
    */
@@ -49,13 +51,16 @@ export interface InitMetricsOptions {
  * Initialize the OpenTelemetry meter provider
  * @param initMetricsOptions {@link InitMetricsOptions}
  */
-export function initMetrics(initMetricsOptions: InitMetricsOptions) {
+export function initMetrics(initMetricsOptions: InitMetricsOptions): {
+  forceFlush: () => Promise<void>;
+  shutdown: () => Promise<void>;
+} {
   const { resource, metricsConfig, monitoringCollectionConfig } = initMetricsOptions;
 
   const globalExportIntervalMillis = metricsConfig.interval.asMilliseconds();
   const globalExportTimeoutMillis = metricsConfig.timeout?.asMilliseconds();
 
-  const readers: IMetricReader[] = [];
+  const readers: IMetricReader[] = [...(initMetricsOptions.additionalReaders ?? [])];
 
   // OTel requires all readers to be initialized when initializing the SDK.
   // If the monitoring collection plugin requires the prometheus exporter, we need to initialize it now.
@@ -63,7 +68,7 @@ export function initMetrics(initMetricsOptions: InitMetricsOptions) {
     monitoringCollectionConfig.enabled &&
     monitoringCollectionConfig.opentelemetry.metrics.prometheus.enabled
   ) {
-    readers.push(PrometheusExporter.get());
+    readers.push(initMetricsOptions.prometheusReader ?? PrometheusExporter.get());
   }
 
   const exporters = metricsConfig.enabled ? castArray(metricsConfig.exporters) : [];
@@ -168,5 +173,8 @@ export function initMetrics(initMetricsOptions: InitMetricsOptions) {
 
   metricsApi.setGlobalMeterProvider(meterProvider);
 
-  cleanupBeforeExit(() => meterProvider.shutdown());
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => (shutdownPromise ??= meterProvider.shutdown());
+  cleanupBeforeExit(shutdown);
+  return { forceFlush: () => meterProvider.forceFlush(), shutdown };
 }

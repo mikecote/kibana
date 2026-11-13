@@ -30,7 +30,8 @@ import {
   getRulesV4Feature,
   getAlertsFeature,
 } from '@kbn/security-solution-features/product_features';
-import { API_ACTION_PREFIX } from '@kbn/security-solution-features/actions';
+import { createProductFeaturesReader } from './product_features_reader';
+import type { ProductFeaturesRuntimeSnapshot } from './product_features_reader';
 import type { ExperimentalFeatures } from '../../../common';
 import { ProductFeatures } from './product_features';
 import { casesProductFeatureParams } from './cases_product_feature_params';
@@ -58,6 +59,10 @@ export class ProductFeaturesService {
   public readonly logger: Logger;
   private productFeaturesRegistry: ProductFeatures;
   private enabledProductFeatures?: Set<ProductFeatureKeyType>;
+  private readonly reader = createProductFeaturesReader({
+    getEnabledFeatures: () => this.enabledProductFeatures,
+    isActionRegistered: (action) => this.productFeaturesRegistry.isActionRegistered(action),
+  });
 
   constructor(loggerFactory: Logger, experimentalFeatures: ExperimentalFeatures) {
     this.logger = loggerFactory.get('productFeaturesService');
@@ -130,17 +135,24 @@ export class ProductFeaturesService {
 
   /** Function to check if a specific product feature key is enabled */
   public isEnabled(productFeatureKey: ProductFeatureKeyType): boolean {
-    if (!this.enabledProductFeatures) {
-      throw new Error('ProductFeatures has not yet been configured');
-    }
-    return this.enabledProductFeatures.has(productFeatureKey);
+    return this.reader.isEnabled(productFeatureKey);
   }
 
   /** Function to check if a specific privilege action has been registered in the Kibana features */
   public isActionRegistered(action: string) {
-    return this.productFeaturesRegistry.isActionRegistered(action);
+    return this.reader.isActionRegistered(action);
   }
 
   /** Function to get the correct API action name for a specific api privilege */
-  public getApiActionName = (apiPrivilege: string) => `api:${API_ACTION_PREFIX}${apiPrivilege}`;
+  public getApiActionName = this.reader.getApiActionName;
+
+  /** Captures the currently configured native product feature and privilege gates. */
+  public getRuntimeSnapshot(): ProductFeaturesRuntimeSnapshot {
+    if (!this.enabledProductFeatures)
+      throw new Error('ProductFeatures has not yet been configured');
+    return {
+      enabledProductFeatureKeys: [...this.enabledProductFeatures],
+      registeredActions: this.productFeaturesRegistry.getRegisteredActions(),
+    };
+  }
 }

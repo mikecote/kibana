@@ -7,9 +7,9 @@
 
 import type { KibanaRequest, Logger, SavedObjectsClientContract } from '@kbn/core/server';
 import type { MlDetector, QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { MitreAttackDataClient } from '@kbn/mitre-attack-plugin/server';
 import { parseDuration } from '@kbn/alerting-plugin/common/parse_duration';
+import type { EntityAnalyticsMlServices } from './ml_services';
 import { resolveMitreBuckets } from '../../detection_engine/mitre/resolve_mitre_buckets';
 
 export interface JobConfig {
@@ -32,7 +32,7 @@ interface JobCustomSettings {
 interface GetJobConfigOpts {
   jobIds: string[];
   logger: Logger;
-  ml: MlPluginSetup;
+  ml: EntityAnalyticsMlServices;
   request: KibanaRequest;
   soClient: SavedObjectsClientContract;
   mitreDataClient?: MitreAttackDataClient;

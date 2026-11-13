@@ -9,7 +9,6 @@
 
 import agent from 'elastic-apm-node';
 import { addTransactionLabels } from '@kbn/apm-utils';
-import type { CoreStart } from '@kbn/core/server';
 import type { EsWorkflowExecution, SerializedError, StackFrame } from '@kbn/workflows';
 import {
   ExecutionStatus,
@@ -35,6 +34,7 @@ import type { WorkflowRuntimeGraph } from './workflow_runtime_graph';
 import type { ScopeData } from './workflow_scope_stack';
 import { WorkflowScopeStack } from './workflow_scope_stack';
 import type { WorkflowExecutionTelemetryClient } from '../lib/telemetry/workflow_execution_telemetry_client';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 import type { IWorkflowEventLogger } from '../workflow_event_logger';
 
 interface WorkflowExecutionRuntimeManagerInit {
@@ -44,7 +44,7 @@ interface WorkflowExecutionRuntimeManagerInit {
   workflowExecutionGraph: WorkflowRuntimeGraph;
   workflowExecutionCursor: WorkflowExecutionCursor;
   workflowLogger: IWorkflowEventLogger;
-  coreStart?: CoreStart;
+  coreStart?: WorkflowCoreStart;
   dependencies?: ContextDependencies;
   telemetryClient?: WorkflowExecutionTelemetryClient;
 }
@@ -78,7 +78,7 @@ export class WorkflowExecutionRuntimeManager {
   private entryTransactionId?: string;
   private workflowTransaction?: agent.Transaction; // APM transaction instance
   private workflowGraph: WorkflowRuntimeGraph;
-  private coreStart?: CoreStart;
+  private coreStart?: WorkflowCoreStart;
   private dependencies?: ContextDependencies;
   private telemetryClient?: WorkflowExecutionTelemetryClient;
   private telemetryReported: boolean = false;

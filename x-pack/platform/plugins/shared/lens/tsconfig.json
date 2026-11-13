@@ -163,7 +163,8 @@
     "@kbn/zod",
     "@kbn/app-header",
     "@kbn/managed-content-badge",
-    "@kbn/core-http-common"
+    "@kbn/core-http-common",
+    "@kbn/workflows-extensions"
   ],
   "exclude": ["target/**/*"]
 }

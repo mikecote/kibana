@@ -30,11 +30,11 @@ interface MlModuleAttributes {
 /** The saved object types ML registers, for a task process, which registers the ones it reads. */
 export function getMlSavedObjectTypes(): SavedObjectsType[] {
   const types: SavedObjectsType[] = [];
-  setupSavedObjects({ registerType: (type: SavedObjectsType) => types.push(type) } as never);
+  setupSavedObjects({ registerType: (type: SavedObjectsType) => types.push(type) });
   return types;
 }
 
-export function setupSavedObjects(savedObjects: SavedObjectsServiceSetup) {
+export function setupSavedObjects(savedObjects: Pick<SavedObjectsServiceSetup, 'registerType'>) {
   savedObjects.registerType({
     name: ML_JOB_SAVED_OBJECT_TYPE,
     hidden: false,

@@ -34,25 +34,46 @@ export type HitlLifecycleEvent =
 
 export type HitlLifecycleAuditor = (event: HitlLifecycleEvent) => void;
 
-let hitlLifecycleAuditor: HitlLifecycleAuditor | undefined;
+/**
+ * Holds the late-bound auditor. One lives in each workflow runtime; the default instance is the one
+ * {@link registerHitlLifecycleAuditor} registers on, so in Kibana the runtime uses it and
+ * workflows_management reaches it through the public `registerHitlLifecycleAuditor`.
+ */
+export class HitlLifecycleAuditRegistry {
+  private auditor: HitlLifecycleAuditor | undefined;
+
+  /**
+   * Registers the late-bound HITL lifecycle auditor. Returns a disposer that
+   * clears the registration only if this auditor is still the active one.
+   */
+  register(auditor: HitlLifecycleAuditor): () => void {
+    this.auditor = auditor;
+    return () => {
+      if (this.auditor === auditor) {
+        this.auditor = undefined;
+      }
+    };
+  }
+
+  emit(event: HitlLifecycleEvent): void {
+    try {
+      this.auditor?.(event);
+    } catch {
+      // Best-effort: never let audit affect workflow execution.
+    }
+  }
+}
+
+export const defaultHitlLifecycleAuditRegistry = new HitlLifecycleAuditRegistry();
 
 /**
- * Registers the late-bound HITL lifecycle auditor. Returns a disposer that
+ * Registers the late-bound HITL lifecycle auditor on the default registry. Returns a disposer that
  * clears the registration only if this auditor is still the active one.
  */
-export const registerHitlLifecycleAuditor = (auditor: HitlLifecycleAuditor): (() => void) => {
-  hitlLifecycleAuditor = auditor;
-  return () => {
-    if (hitlLifecycleAuditor === auditor) {
-      hitlLifecycleAuditor = undefined;
-    }
-  };
-};
+export const registerHitlLifecycleAuditor = (auditor: HitlLifecycleAuditor): (() => void) =>
+  defaultHitlLifecycleAuditRegistry.register(auditor);
 
-export const emitHitlLifecycle = (event: HitlLifecycleEvent): void => {
-  try {
-    hitlLifecycleAuditor?.(event);
-  } catch {
-    // Best-effort: never let audit affect workflow execution.
-  }
-};
+export const emitHitlLifecycle = (
+  event: HitlLifecycleEvent,
+  registry: Pick<HitlLifecycleAuditRegistry, 'emit'> = defaultHitlLifecycleAuditRegistry
+): void => registry.emit(event);

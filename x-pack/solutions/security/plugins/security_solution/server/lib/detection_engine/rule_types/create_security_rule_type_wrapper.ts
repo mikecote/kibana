@@ -15,10 +15,12 @@ import { createPersistenceRuleTypeWrapper } from '@kbn/rule-registry-plugin/serv
 import { buildExceptionFilter } from '@kbn/lists-plugin/server/services/exception_lists/build_exception_filter';
 import { technicalRuleFieldMap } from '@kbn/rule-registry-plugin/common/assets/field_maps/technical_rule_field_map';
 import type { FieldMap } from '@kbn/alerts-as-data-utils';
-import { parseScheduleDates } from '@kbn/securitysolution-io-ts-utils';
 import { getIndexListFromEsqlQuery } from '@kbn/securitysolution-utils';
+import type { IRuleTypeAlerts } from '@kbn/alerting-plugin/server';
 import type { FormatAlert } from '@kbn/alerting-plugin/server/types';
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
+import type { SecurityRuleRunConfig } from '../../../config';
+import { getSecurityRuleViewUrl } from './get_rule_view_url';
 import {
   getExceptions,
   getRuleRangeTuples,
@@ -28,10 +30,8 @@ import {
 } from './utils/utils';
 import { runExecutionValidation } from './validation';
 import { DEFAULT_MAX_SIGNALS, DEFAULT_SEARCH_AFTER_PAGE_SIZE } from '../../../../common/constants';
-import type { CreateSecurityRuleTypeWrapper } from './types';
+import type { CreateSecurityRuleTypeWrapper, CreateSecurityRuleTypeWrapperProps } from './types';
 import { getListClient } from './utils/get_list_client';
-// eslint-disable-next-line no-restricted-imports
-import { getNotificationResultsLink } from '../rule_actions_legacy';
 // eslint-disable-next-line no-restricted-imports
 import { formatAlertForNotificationActions } from '../rule_actions_legacy/logic/notifications/schedule_notification_actions';
 import { createResultObject } from './utils';
@@ -90,8 +90,31 @@ export const securityRuleTypeFieldMap = {
   ...aliasesFieldMap,
 };
 
+/** Returns the shared alert context registered by every Security detection rule type. */
+export const getSecurityRuleAlerts = (
+  config: Pick<SecurityRuleRunConfig, 'signalsIndex'>
+): IRuleTypeAlerts => ({
+  context: 'security',
+  mappings: {
+    dynamic: false,
+    fieldMap: securityRuleTypeFieldMap,
+  },
+  useEcs: true,
+  useLegacyAlerts: true,
+  isSpaceAware: true,
+  secondaryAlias: config.signalsIndex,
+  formatAlert: formatAlertForNotificationActions as unknown as FormatAlert<never>,
+});
+
 /* eslint-disable complexity */
-export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
+const createSecurityRuleTypeWrapperInternal: (
+  options: Omit<
+    CreateSecurityRuleTypeWrapperProps,
+    'getRulesAuthz' | 'getOsqueryResponseActionsAuthzChecker'
+  > & {
+    authorize?: { params: ReturnType<typeof createSecurityRuleParamsAuthorizer> };
+  }
+) => ReturnType<CreateSecurityRuleTypeWrapper> =
   ({
     lists,
     actions,
@@ -111,8 +134,7 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
     scheduleNotificationResponseActionsService,
     endpointAppContextService,
     getEntityStore,
-    getRulesAuthz,
-    getOsqueryResponseActionsAuthzChecker,
+    authorize,
   }) =>
   (type) => {
     const { alertIgnoreFields: ignoreFields, alertMergeStrategy: mergeStrategy } = config;
@@ -125,15 +147,7 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
 
     return persistenceRuleType({
       ...type,
-      // Authorize privileged params on every rule write path, including the generic
-      // Alerting APIs.
-      authorize: {
-        params: createSecurityRuleParamsAuthorizer({
-          endpointAppContextService,
-          getRulesAuthz,
-          getOsqueryResponseActionsAuthzChecker,
-        }),
-      },
+      authorize,
       cancelAlertsOnRuleTimeout: false,
       useSavedObjectReferences: {
         extractReferences: (params) => extractReferences({ logger, params }),
@@ -141,30 +155,7 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
           injectReferences({ logger, params, savedObjectReferences }),
       },
       autoRecoverAlerts: false,
-      getViewInAppRelativeUrl: ({ rule, start, end }) => {
-        let startTime = null;
-        let endTime = null;
-
-        if (start && end) {
-          startTime = new Date(start).toISOString();
-          endTime = new Date(end).toISOString();
-        } else if (rule.schedule?.interval) {
-          startTime = `now-${rule.schedule?.interval}`;
-          endTime = 'now';
-        }
-        if (!startTime || !endTime) {
-          return '';
-        }
-
-        const fromInMs = parseScheduleDates(startTime)?.format('x');
-        const toInMs = parseScheduleDates(endTime)?.format('x');
-
-        return getNotificationResultsLink({
-          from: fromInMs,
-          to: toInMs,
-          id: rule.id,
-        });
-      },
+      getViewInAppRelativeUrl: getSecurityRuleViewUrl,
       async executor(options) {
         agent.setTransactionName(`${options.rule.ruleTypeId} execution`);
         return withSecuritySpan('securityRuleTypeExecutor', async () => {
@@ -588,17 +579,30 @@ export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper =
           };
         });
       },
-      alerts: {
-        context: 'security',
-        mappings: {
-          dynamic: false,
-          fieldMap: securityRuleTypeFieldMap,
-        },
-        useEcs: true,
-        useLegacyAlerts: true,
-        isSpaceAware: true,
-        secondaryAlias: config.signalsIndex,
-        formatAlert: formatAlertForNotificationActions as unknown as FormatAlert<never>,
-      },
+      alerts: getSecurityRuleAlerts(config),
     });
   };
+
+/** Wraps saved detection rules with their write authorization and execution services. */
+export const createSecurityRuleTypeWrapper: CreateSecurityRuleTypeWrapper = (options) =>
+  createSecurityRuleTypeWrapperInternal({
+    ...options,
+    authorize: {
+      params: createSecurityRuleParamsAuthorizer({
+        endpointAppContextService: options.endpointAppContextService,
+        getRulesAuthz: options.getRulesAuthz,
+        getOsqueryResponseActionsAuthzChecker: options.getOsqueryResponseActionsAuthzChecker,
+      }),
+    },
+  });
+
+export type SecurityPreviewRuleTypeOptions = Omit<
+  CreateSecurityRuleTypeWrapperProps,
+  'getRulesAuthz' | 'getOsqueryResponseActionsAuthzChecker'
+>;
+
+/** Wraps transient previews with the shared executor and no saved-rule write surface. */
+export const createSecurityPreviewRuleTypeWrapper = (
+  options: SecurityPreviewRuleTypeOptions
+): ReturnType<CreateSecurityRuleTypeWrapper> =>
+  createSecurityRuleTypeWrapperInternal({ ...options, isPreview: true });

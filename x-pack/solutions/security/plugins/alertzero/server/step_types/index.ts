@@ -6,12 +6,13 @@
  */
 
 import type { ElasticsearchClient, Logger } from '@kbn/core/server';
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { ActionsService } from '../services/actions/actions_service';
 import type { HuntServices } from '../services/watches/hunt/types';
 import {
+  type AlertTriageStepDependencies,
   getTriageHeadroomStepDefinition,
   getTriageLoadAlertsStepDefinition,
   getTriagePlanSweepStepDefinition,
@@ -25,6 +26,31 @@ import type { PackageReportStepDependencies } from './package_report/package_rep
 import type { ReportWorkerOutcomeStepDeps } from './report_worker_outcome/report_worker_outcome_step';
 import { getReportWorkerOutcomeStepDefinition } from './report_worker_outcome/report_worker_outcome_step';
 
+/**
+ * Registers alert triage steps with native task aggregation and execution reads: Kibana and the task process of the workflow task types register them with this function.
+ */
+export const registerTriageStepDefinitions = ({
+  workflowsExtensions,
+  getTaskManager,
+  getWorkflowExecutionReader,
+  getTriageAlertsClient,
+}: {
+  workflowsExtensions: WorkflowStepsRegistry;
+  getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
+  getTriageAlertsClient: AlertTriageStepDependencies['getTriageAlertsClient'];
+}) => {
+  workflowsExtensions.registerStepDefinition(
+    getTriageHeadroomStepDefinition({ getTaskManager, getWorkflowExecutionReader })
+  );
+  workflowsExtensions.registerStepDefinition(
+    getTriagePlanSweepStepDefinition({ getWorkflowExecutionReader, getTriageAlertsClient })
+  );
+  workflowsExtensions.registerStepDefinition(
+    getTriageLoadAlertsStepDefinition({ getTriageAlertsClient })
+  );
+};
+
 export const registerStepDefinitions = ({
   workflowsExtensions,
   getActionsService,
@@ -36,9 +62,11 @@ export const registerStepDefinitions = ({
   isContextEngineEnabled,
   getInternalEsClient,
   getTaskManager,
+  getWorkflowExecutionReader,
+  getTriageAlertsClient,
   logger,
 }: {
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
   getActionsService: () => ActionsService;
   getConversations: () => AgentBuilderPluginStart['conversations'];
   getExecution: SummarizeInvestigationStepDependencies['executeAgent'];
@@ -48,6 +76,8 @@ export const registerStepDefinitions = ({
   isContextEngineEnabled: PackageReportStepDependencies['isContextEngineEnabled'];
   getInternalEsClient?: () => ElasticsearchClient;
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: AlertTriageStepDependencies['getWorkflowExecutionReader'];
+  getTriageAlertsClient: AlertTriageStepDependencies['getTriageAlertsClient'];
   logger?: Logger;
 }) => {
   workflowsExtensions.registerStepDefinition(
@@ -68,9 +98,12 @@ export const registerStepDefinitions = ({
       resolveConnectorId,
     })
   );
-  workflowsExtensions.registerStepDefinition(getTriageHeadroomStepDefinition({ getTaskManager }));
-  workflowsExtensions.registerStepDefinition(getTriagePlanSweepStepDefinition());
-  workflowsExtensions.registerStepDefinition(getTriageLoadAlertsStepDefinition());
+  registerTriageStepDefinitions({
+    workflowsExtensions,
+    getTaskManager,
+    getWorkflowExecutionReader,
+    getTriageAlertsClient,
+  });
 };
 
 export { getPackageReportStepDefinition } from './package_report';
@@ -82,7 +115,7 @@ export const registerAlertZeroStepDefinitions = ({
   workflowsExtensions,
   ...deps
 }: ReportWorkerOutcomeStepDeps & {
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup;
+  workflowsExtensions: WorkflowStepsRegistry;
 }): void => {
   workflowsExtensions.registerStepDefinition(getReportWorkerOutcomeStepDefinition(deps));
 };

@@ -263,6 +263,21 @@ export type TaskRunCreatorFunction = (
  */
 const TASK_IDENTITY_WORKLOAD_TYPE = 'task_identity';
 
+export const taskRunAsWorkloadTypesSchema = schema.arrayOf(
+  schema.string({
+    maxLength: SERVICE_ACCOUNT_WORKLOAD_TYPE_MAX_LENGTH,
+    validate(workloadType) {
+      if (!SERVICE_ACCOUNT_WORKLOAD_TYPE_REGEX.test(workloadType)) {
+        return `Invalid workload type "${workloadType}". Workload types must match ${SERVICE_ACCOUNT_WORKLOAD_TYPE_REGEX}.`;
+      }
+      if (workloadType === TASK_IDENTITY_WORKLOAD_TYPE) {
+        return `The workload type "${TASK_IDENTITY_WORKLOAD_TYPE}" is reserved for Task Manager.`;
+      }
+    },
+  }),
+  { minSize: 1 }
+);
+
 export const taskDefinitionSchema = schema.object(
   {
     /**
@@ -344,20 +359,7 @@ export const taskDefinitionSchema = schema.object(
     runAs: schema.maybe(
       schema.object({
         // codeql[js/kibana/unbounded-array-in-schema] Task type registration at plugin setup, not HTTP input
-        workloadTypes: schema.arrayOf(
-          schema.string({
-            maxLength: SERVICE_ACCOUNT_WORKLOAD_TYPE_MAX_LENGTH,
-            validate(workloadType) {
-              if (!SERVICE_ACCOUNT_WORKLOAD_TYPE_REGEX.test(workloadType)) {
-                return `Invalid workload type "${workloadType}". Workload types must match ${SERVICE_ACCOUNT_WORKLOAD_TYPE_REGEX}.`;
-              }
-              if (workloadType === TASK_IDENTITY_WORKLOAD_TYPE) {
-                return `The workload type "${TASK_IDENTITY_WORKLOAD_TYPE}" is reserved for Task Manager.`;
-              }
-            },
-          }),
-          { minSize: 1 }
-        ),
+        workloadTypes: taskRunAsWorkloadTypesSchema,
         withScopedRequest: schema.any({
           validate(withScopedRequest) {
             if (typeof withScopedRequest !== 'function') {

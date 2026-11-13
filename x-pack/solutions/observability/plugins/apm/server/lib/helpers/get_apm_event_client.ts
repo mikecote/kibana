@@ -9,9 +9,10 @@ import { UI_SETTINGS } from '@kbn/data-plugin/common';
 import type { DataTier } from '@kbn/observability-shared-plugin/common';
 import { searchExcludedDataTiers } from '@kbn/observability-plugin/common/ui_settings_keys';
 import { getProjectRoutingFromRequest } from '@kbn/observability-utils-server/es/get_project_routing_from_request';
+import type { CoreStart, IUiSettingsClient, KibanaRequest } from '@kbn/core/server';
+import type { APMIndices } from '@kbn/apm-sources-access-plugin/server';
 import { APMEventClient } from './create_es_client/create_apm_event_client';
 import { withApmSpan } from '../../utils/with_apm_span';
-import type { MinimalAPMRouteHandlerResources } from '../../routes/apm_routes/register_apm_server_routes';
 import { inspectableEsQueriesMap } from '../../routes/apm_routes/register_apm_server_routes';
 
 export async function getApmEventClient({
@@ -20,10 +21,17 @@ export async function getApmEventClient({
   params,
   getApmIndices,
   request,
-}: Pick<
-  MinimalAPMRouteHandlerResources,
-  'context' | 'core' | 'params' | 'getApmIndices' | 'request'
->): Promise<APMEventClient> {
+}: {
+  context: { core: Promise<{ uiSettings: { client: Pick<IUiSettingsClient, 'get'> } }> };
+  core: {
+    start: () => Promise<{
+      elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asScoped'> };
+    }>;
+  };
+  params: { query: { _inspect: boolean } };
+  getApmIndices: () => Promise<APMIndices>;
+  request: KibanaRequest;
+}): Promise<APMEventClient> {
   return withApmSpan('get_apm_event_client', async () => {
     const coreContext = await context.core;
     const [indices, uiSettings, coreStart] = await Promise.all([

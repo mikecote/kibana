@@ -10,6 +10,100 @@ page_description: |
   Task Manager runs background tasks by polling for work on an interval. You can configure its behavior to tune for performance and throughput.
 
 groups:
+  - group: Task process execution
+    id: task-process-execution
+    settings:
+      - setting: xpack.task_manager.task_execution.mode
+        description: |
+          Selects where tasks registered as task type modules execute: `in_process`, `child_process`, or `remote`. {{kib}} continues to claim tasks and handle results, retries, and rescheduling. Tasks assigned to a child or remote process never fall back to execution inside {{kib}} when a worker is unavailable, at capacity, or missing a required capability. Tasks without a task type module continue to execute inside {{kib}}.
+        datatype: string
+        default: in_process
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.bundle_dir
+        description: |
+          Directory containing the native task bundles and their `manifest.json` in `child_process` mode. Defaults to `task_bundles` in a distribution and `target/task_bundles` in a source checkout. Bundles must match the {{kib}} version.
+        datatype: string
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.max_concurrent_processes
+        description: |
+          Maximum number of child processes serving tasks concurrently, from `1` to `1000`. Defaults to `xpack.task_manager.max_workers`. Tasks that reach this limit are retried without executing inside {{kib}}.
+        datatype: int
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.child_max_old_space_mb
+        description: |
+          Maximum old-generation heap size of each child process in megabytes, from `64` to `65536`. When unset, Node.js chooses the limit. Child processes do not inherit the heap size flags used to start {{kib}}.
+        datatype: int
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.child_max_semi_space_mb
+        description: |
+          Maximum semi-space size of each child process in megabytes, from `1` to `256`. Defaults to `2` when unset. Larger values increase resident memory and can reduce garbage collection during allocation-heavy tasks.
+        datatype: int
+        default: 2
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.reuse.enabled
+        description: |
+          Retains idle child processes for subsequent compatible dispatches. Each execution receives its current settings, credentials, feature flags, and execution context, and disposes its execution services before returning to the pool. These settings configure the child process supervisor; remote workers configure their own process pool.
+        datatype: bool
+        default: false
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.reuse.idle_timeout_ms
+        description: |
+          Maximum time an unused retained child process remains idle, in milliseconds, from `1` to `3600000`.
+        datatype: int
+        default: 30000
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.reuse.max_age_ms
+        description: |
+          Maximum age of a retained child process, in milliseconds, from `1` to `86400000`. A process retires between executions when its age limit is reached.
+        datatype: int
+        default: 300000
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.reuse.max_runs
+        description: |
+          Maximum number of executions served by a retained child process before retirement, from `1` to `100000`.
+        datatype: int
+        default: 100
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.reuse.max_idle_processes
+        description: |
+          Maximum number of idle child processes retained by the supervisor, from `1` to `1000`. This limit is separate from the limit on concurrently executing processes.
+        datatype: int
+        default: 10
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.remote.url
+        description: |
+          URL of the task worker serving native bundles. Required when `mode` is `remote`. The worker must serve bundles matching the {{kib}} version and support the task process protocol.
+        datatype: string
+        applies_to:
+          self: preview
+
+      - setting: xpack.task_manager.task_execution.remote.token
+        description: |
+          Bearer token used to authenticate requests to the remote worker. Set this to the worker's `TASK_PROCESS_TOKEN` when worker authentication is enabled.
+        datatype: string
+        applies_to:
+          self: preview
+
   - group: Task Manager settings
     id: task-manager-settings
     settings:

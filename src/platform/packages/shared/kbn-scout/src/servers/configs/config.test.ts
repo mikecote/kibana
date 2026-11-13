@@ -24,6 +24,7 @@ describe('Config.getScoutTestConfig', () => {
           protocol: 'http',
           hostname: 'localhost',
           port: 5620,
+          pathname: '/task-processes',
           username: 'elastic',
           password: 'changeme',
         },
@@ -55,7 +56,7 @@ describe('Config.getScoutTestConfig', () => {
       license: 'trial',
       cloudUsersFilePath: expect.stringContaining('.ftr/role_users.json'),
       hosts: {
-        kibana: 'http://localhost:5620',
+        kibana: 'http://localhost:5620/task-processes',
         elasticsearch: 'http://localhost:9220',
       },
       auth: {

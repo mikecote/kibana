@@ -36,6 +36,8 @@ dependsOn:
   - '@kbn/use-tracked-promise'
   - '@kbn/core-application-browser'
   - '@kbn/i18n-react'
+  - '@kbn/workflows-extensions'
+  - '@kbn/task-manager-plugin'
 tags:
   - plugin
   - prod

@@ -12,15 +12,11 @@ import { ConfirmationStatus } from '@kbn/agent-builder-common/agents/prompts';
 import type { BuiltinToolDefinition, ModelProvider } from '@kbn/agent-builder-server';
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import { isSupportedConnectorType } from '@kbn/inference-common';
 import { RiskScoreDataClient } from '../../../../lib/entity_analytics/risk_score/risk_score_data_client';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type {
-  SecuritySolutionPluginCoreSetupDependencies,
-  SetupPlugins,
-  StartPlugins,
-} from '../../../../plugin_contract';
+import type { SecurityLeadToolServices } from './services';
+import type { EntityAnalyticsMlServices } from '../../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
 import { getLeadToolAvailability } from './lead_availability';
 import {
   getLeadGenerationConfig,
@@ -101,11 +97,11 @@ const getChatConnectorId = async (modelProvider: ModelProvider): Promise<string 
 };
 
 export const generateLeadsTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityLeadToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
-  getStartServices: StartServicesAccessor<StartPlugins>,
-  ml: SetupPlugins['ml']
+  getStartServices: SecurityLeadToolServices['getStartServices'],
+  ml: EntityAnalyticsMlServices | undefined
 ): BuiltinToolDefinition<typeof schema> => {
   return {
     id: SECURITY_GENERATE_LEADS_TOOL_ID,
@@ -256,7 +252,7 @@ export const generateLeadsTool = (
           connectorId: resolvedConnectorId,
         });
 
-        runLeadGenerationInBackground({
+        const background = runLeadGenerationInBackground({
           savedObjectsClient,
           connectorId: resolvedConnectorId,
           executionUuid,
@@ -277,6 +273,7 @@ export const generateLeadsTool = (
             relationshipsClient,
           },
         });
+        core.trackBackgroundTask?.(background);
 
         return {
           results: [

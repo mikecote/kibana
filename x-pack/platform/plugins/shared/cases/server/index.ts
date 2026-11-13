@@ -59,3 +59,7 @@ export type {
   WorkflowAttachmentTarget,
   WorkflowAttachmentValidationContext,
 } from './attachment_framework/types';
+
+export type { CasesAttachmentTypeContribution } from './task_types/attachment_type_contribution';
+
+export type { CasesClientContribution } from './task_types/client_contribution';

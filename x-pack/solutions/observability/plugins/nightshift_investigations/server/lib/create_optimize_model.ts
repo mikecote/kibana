@@ -50,8 +50,8 @@ export const createOptimizeModel = async ({
   roundConnectorId?: string;
   agentBuilder: AgentBuilderPluginStart | undefined;
   inference: InferenceServerStart | undefined;
-  savedObjects: CoreStart['savedObjects'] | undefined;
-  uiSettings: CoreStart['uiSettings'] | undefined;
+  savedObjects: Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
   telemetryMetadata?: ConnectorTelemetryMetadata;
   logger: Logger;
 }): Promise<ScopedModel | undefined> => {

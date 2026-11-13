@@ -47,6 +47,14 @@ const makeDeps = (
       workflowsExtensions: {
         getAllTriggerDefinitions: () => listedTriggers as any,
         isReady: jest.fn().mockResolvedValue(undefined),
+        getAllStepDefinitions: () =>
+          Object.entries(stepDefinitions).map(([id, definition]) => ({
+            id,
+            label: id,
+            inputSchema: z.object({}),
+            outputSchema: z.object({}),
+            ...definition,
+          })),
         getTriggerDefinition: (triggerType: string) =>
           listedTriggers.find(({ id }) => id === triggerType) as any,
         getStepDefinition: (stepTypeId: string) => stepDefinitions[stepTypeId] as any,
@@ -100,6 +108,21 @@ const slackWorkflowYaml = (reference: string) =>
   ].join('\n');
 
 describe('WorkflowValidationService', () => {
+  it('keeps custom step contracts scoped to the current registry across reused workers', async () => {
+    const first = new WorkflowValidationService(
+      makeDeps([], { stepDefinitions: { 'custom.first': {} } }).deps
+    );
+    const second = new WorkflowValidationService(
+      makeDeps([], { stepDefinitions: { 'custom.second': {} } }).deps
+    );
+    const request = {} as Parameters<WorkflowValidationService['getContextRegistry']>[0]['request'];
+    const firstRegistry = await first.getContextRegistry({ spaceId: 'default', request });
+    const secondRegistry = await second.getContextRegistry({ spaceId: 'default', request });
+    expect(firstRegistry.getConnector?.('custom.first')).toBeDefined();
+    expect(secondRegistry.getConnector?.('custom.second')).toBeDefined();
+    expect(secondRegistry.getConnector?.('custom.first')).toBeUndefined();
+  });
+
   describe('getRegisteredCustomTriggerDefinitions', () => {
     it('returns triggers from workflows extensions', () => {
       const { deps } = makeDeps([{ id: 'cases.caseUpdated' }]);

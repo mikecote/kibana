@@ -114,6 +114,8 @@ dependsOn:
   - '@kbn/attack-discovery-schedules-common'
   - '@kbn/workflows'
   - '@kbn/workflows-management-plugin'
+  - '@kbn/core-test-helpers-kbn-server'
+  - '@kbn/workflows-yaml'
 tags:
   - plugin
   - prod

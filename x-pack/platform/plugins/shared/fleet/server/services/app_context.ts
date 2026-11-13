@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { Observable } from 'rxjs';
+import type { Observable, Subscription } from 'rxjs';
 import { BehaviorSubject } from 'rxjs';
 import { kibanaPackageJson } from '@kbn/repo-info';
 
@@ -23,7 +23,7 @@ import type { SavedObjectTaggingStart } from '@kbn/saved-objects-tagging-plugin/
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import { SPACES_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
-import type { ElasticsearchClient } from '@kbn/core-elasticsearch-server';
+import type { ElasticsearchClient, IClusterClient } from '@kbn/core-elasticsearch-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { Logger } from '@kbn/logging';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
@@ -50,6 +50,7 @@ import type {
 } from '../types';
 import { KibanaSavedObjectType } from '../types';
 import type { FleetAppContext } from '../plugin';
+import type { FleetPackageMetadataTaskProcessSettings } from '../package_metadata_task_process_settings';
 import type { TelemetryEventsSender } from '../telemetry/sender';
 import { UNINSTALL_TOKENS_SAVED_OBJECT_TYPE } from '../constants';
 import type { MessageSigningServiceInterface } from '..';
@@ -65,17 +66,40 @@ export const DEFAULT_INCLUDED_HIDDEN_TYPES = [
   KibanaSavedObjectType.sloTemplate,
 ];
 
+export interface FleetExecutionAppContext {
+  elasticsearch: Pick<IClusterClient, 'asInternalUser'>;
+  savedObjects: SavedObjectsServiceStart;
+  encryptedSavedObjectsStart?: Pick<EncryptedSavedObjectsPluginStart, 'getClient'>;
+  encryptedSavedObjectsSetup?: Pick<EncryptedSavedObjectsPluginSetup, 'canEncrypt'>;
+  securitySetup: Pick<SecurityPluginSetup, 'audit' | 'license'>;
+  config$?: Observable<FleetConfigType>;
+  configInitialValue: FleetConfigType;
+  experimentalFeatures: ExperimentalFeatures;
+  logger?: Logger;
+  kibanaVersion: string;
+  kibanaBranch: string;
+  kibanaInstanceId: string;
+  isProductionMode: boolean;
+  isFipsEnabled: boolean;
+  includedHiddenTypes?: string[];
+  registry:
+    | { kind: 'native' }
+    | { kind: 'snapshot'; settings: FleetPackageMetadataTaskProcessSettings };
+}
+
 class AppContextService {
   private encryptedSavedObjects: EncryptedSavedObjectsClient | undefined;
-  private encryptedSavedObjectsSetup: EncryptedSavedObjectsPluginSetup | undefined;
-  private encryptedSavedObjectsStart: EncryptedSavedObjectsPluginStart | undefined;
+  private encryptedSavedObjectsSetup: FleetExecutionAppContext['encryptedSavedObjectsSetup'];
+  private encryptedSavedObjectsStart: FleetExecutionAppContext['encryptedSavedObjectsStart'];
   private data: DataPluginStart | undefined;
   private esClient: ElasticsearchClient | undefined;
   private experimentalFeatures: ExperimentalFeatures = allowedExperimentalValues;
   private securityCoreStart: SecurityServiceStart | undefined;
-  private securitySetup: SecurityPluginSetup | undefined;
+  private securitySetup: FleetExecutionAppContext['securitySetup'] | undefined;
   private securityStart: SecurityPluginStart | undefined;
   private config$?: Observable<FleetConfigType>;
+  private configSubscription?: Subscription;
+  private registry?: FleetExecutionAppContext['registry'];
   private configSubject$?: BehaviorSubject<FleetConfigType>;
   private savedObjects: SavedObjectsServiceStart | undefined;
   private isProductionMode: FleetAppContext['isProductionMode'] = false;
@@ -101,22 +125,15 @@ class AppContextService {
   private isFipsEnabled: boolean = false;
 
   public start(appContext: FleetAppContext) {
+    this.startExecution({
+      ...appContext,
+      elasticsearch: appContext.elasticsearch.client,
+      registry: { kind: 'native' },
+    });
     this.data = appContext.data;
-    this.esClient = appContext.elasticsearch.client.asInternalUser;
-    this.encryptedSavedObjectsStart = appContext.encryptedSavedObjectsStart;
-    this.encryptedSavedObjects = appContext.encryptedSavedObjectsStart?.getClient();
-    this.encryptedSavedObjectsSetup = appContext.encryptedSavedObjectsSetup;
     this.securityCoreStart = appContext.securityCoreStart;
-    this.securitySetup = appContext.securitySetup;
     this.securityStart = appContext.securityStart;
-    this.savedObjects = appContext.savedObjects;
-    this.experimentalFeatures = appContext.experimentalFeatures;
-    this.isProductionMode = appContext.isProductionMode;
     this.cloud = appContext.cloud;
-    this.logger = appContext.logger;
-    this.kibanaVersion = appContext.kibanaVersion;
-    this.kibanaBranch = appContext.kibanaBranch;
-    this.kibanaInstanceId = appContext.kibanaInstanceId;
     this.httpSetup = appContext.httpSetup;
     this.telemetryEventsSender = appContext.telemetryEventsSender;
     this.savedObjectsTagging = appContext.savedObjectsTagging;
@@ -129,18 +146,33 @@ class AppContextService {
     this.alertingStart = appContext.alertingStart;
     this.reportingStart = appContext.reportingStart;
     this.featureFlags = appContext.featureFlags;
+  }
+
+  /** Initializes the actual execution services shared by native Fleet and task workers. */
+  public startExecution(appContext: FleetExecutionAppContext): void {
+    this.registry = appContext.registry;
+    this.esClient = appContext.elasticsearch.asInternalUser;
+    this.encryptedSavedObjectsStart = appContext.encryptedSavedObjectsStart;
+    this.encryptedSavedObjects = appContext.encryptedSavedObjectsStart?.getClient();
+    this.encryptedSavedObjectsSetup = appContext.encryptedSavedObjectsSetup;
+    this.securitySetup = appContext.securitySetup;
+    this.savedObjects = appContext.savedObjects;
+    this.experimentalFeatures = appContext.experimentalFeatures;
+    this.isProductionMode = appContext.isProductionMode;
+    this.logger = appContext.logger;
+    this.kibanaVersion = appContext.kibanaVersion;
+    this.kibanaBranch = appContext.kibanaBranch;
+    this.kibanaInstanceId = appContext.kibanaInstanceId;
     this.isFipsEnabled = appContext.isFipsEnabled;
     this.includedHiddenTypes = appContext.includedHiddenTypes ?? DEFAULT_INCLUDED_HIDDEN_TYPES;
-
-    if (appContext.config$) {
-      this.config$ = appContext.config$;
-      const initialValue = appContext.configInitialValue;
-      this.configSubject$ = new BehaviorSubject(initialValue);
-      this.config$.subscribe(this.configSubject$);
-    }
+    this.configSubscription?.unsubscribe();
+    this.config$ = appContext.config$;
+    this.configSubject$ = new BehaviorSubject(appContext.configInitialValue);
+    this.configSubscription = this.config$?.subscribe(this.configSubject$);
   }
 
   public stop() {
+    this.configSubscription?.unsubscribe();
     this.externalCallbacks.clear();
   }
 
@@ -171,7 +203,9 @@ class AppContextService {
   }
 
   public getSecurityLicense() {
-    return this.securitySetup!.license;
+    const license = this.securitySetup?.license;
+    if (!license) throw new Error('Security license not set.');
+    return license;
   }
 
   public getIsFipsEnabled() {
@@ -191,6 +225,12 @@ class AppContextService {
 
   public getConfig() {
     return this.configSubject$?.value;
+  }
+
+  /** Returns captured registry material only for an execution initialized from a dispatch snapshot. */
+  public getPackageMetadata(): FleetPackageMetadataTaskProcessSettings | undefined {
+    if (!this.registry) throw new Error('Fleet registry execution has not initialized');
+    return this.registry.kind === 'snapshot' ? this.registry.settings : undefined;
   }
 
   public getConfig$() {

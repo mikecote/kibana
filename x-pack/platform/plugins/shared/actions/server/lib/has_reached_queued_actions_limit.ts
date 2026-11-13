@@ -9,7 +9,7 @@ import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { ActionsConfigurationUtilities } from '../actions_config';
 
 export async function hasReachedTheQueuedActionsLimit(
-  taskManager: TaskManagerStartContract,
+  taskManager: Pick<TaskManagerStartContract, 'aggregate'>,
   configurationUtilities: ActionsConfigurationUtilities,
   numberOfActions: number
 ) {

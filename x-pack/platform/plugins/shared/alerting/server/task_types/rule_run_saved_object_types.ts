@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { getSpaceSavedObjectType } from '@kbn/spaces-plugin/server/saved_objects/saved_objects_service';
 import type { SavedObjectsServiceSetup, SavedObjectsType } from '@kbn/core/server';
 import type {
   EncryptedSavedObjectTypeRegistration,
@@ -85,6 +86,7 @@ export const getRuleRunDeclarations = (): {
       ...savedObjectTypes.filter((type) => SAVED_OBJECT_TYPES.has(type.name)),
       maintenanceWindowSavedObjectType,
       dataViewSavedObjectType,
+      getSpaceSavedObjectType(),
     ],
     encryptedSavedObjectTypes: encryptedSavedObjectTypes.filter((registration) =>
       ENCRYPTED_SAVED_OBJECT_TYPES.has(registration.type)

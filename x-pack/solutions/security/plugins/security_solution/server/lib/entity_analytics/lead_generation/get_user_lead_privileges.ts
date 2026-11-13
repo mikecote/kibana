@@ -12,7 +12,7 @@ import { _formatPrivileges, hasReadWritePermissions } from '../utils/check_and_f
 
 export const getUserLeadPrivileges = async (
   request: KibanaRequest,
-  security: SecurityPluginStart,
+  security: Pick<SecurityPluginStart, 'authz'>,
   spaceId: string
 ) => {
   const indexName = getLeadsIndexName(spaceId);

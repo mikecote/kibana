@@ -18,7 +18,12 @@ interface AuthorizedConnector {
 export const authorizeConnector = async (
   connectorId: string,
   callContext: SandboxCallContext,
-  actions: ActionsPluginStart | undefined
+  actions:
+    | Pick<
+        ActionsPluginStart,
+        'getActionsClientWithRequest' | 'getActionsAuthorizationWithRequest' | 'inMemoryConnectors'
+      >
+    | undefined
 ): Promise<AuthorizedConnector | { errorMessage: string }> => {
   if (!actions) {
     return { errorMessage: 'Connectors are not available in this deployment' };

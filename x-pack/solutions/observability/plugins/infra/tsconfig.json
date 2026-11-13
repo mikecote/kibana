@@ -13,7 +13,6 @@
     "test/scout/api/**/*"
   ],
   "kbn_references": [
-    "@kbn/task-manager-plugin",
     "@kbn/synthtrace",
     "@kbn/synthtrace-client",
     "@kbn/core",
@@ -157,7 +156,14 @@
     "@kbn/tooling-log",
     "@kbn/core-logging-server-mocks",
     "@kbn/ui-callout",
-    "@kbn/core-ui-settings-common"
+    "@kbn/core-ui-settings-common",
+    "@kbn/workflows-extensions",
+    "@kbn/zod",
+    "@kbn/management-settings-ids",
+    "@kbn/apm-sources-access-plugin",
+    "@kbn/workflows-execution-engine",
+    "@kbn/workflows",
+    "@kbn/task-manager-plugin"
   ],
   "exclude": ["target/**/*"]
 }

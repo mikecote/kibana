@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { CoreSetup, CoreStart } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup, AgentBuilderPluginStart } from '@kbn/agent-builder-server';
 import type {
   AgentBuilderSmlPluginSetup,
@@ -49,4 +50,26 @@ export interface AgentBuilderPlatformPluginSetup {}
 
 export interface AgentBuilderPlatformPluginStart {
   tracingFeatures: AgentBuilderPlatformTracingFeaturesStart;
+}
+
+/**
+ * What the registrations of the plugin read from `coreSetup`: the start services of Core and of the
+ * plugins, and the base path. Kibana's `coreSetup` satisfies it, and so does what a task process builds
+ * from its host, so there is one implementation of what is registered.
+ */
+export interface AgentBuilderPlatformCoreSetup {
+  getStartServices: () => Promise<
+    [
+      {
+        elasticsearch: {
+          client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser'>;
+        };
+        savedObjects: CoreStart['savedObjects'];
+        uiSettings: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
+      },
+      Pick<PluginStartDependencies, 'agentBuilder' | 'actions' | 'files' | 'llmTasks'>,
+      unknown
+    ]
+  >;
+  http: { basePath: Pick<CoreSetup['http']['basePath'], 'get'> };
 }

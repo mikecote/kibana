@@ -9,10 +9,10 @@ import { z } from '@kbn/zod/v4';
 import { ToolType, ToolResultType } from '@kbn/agent-builder-common';
 import type { McpToolConfig } from '@kbn/agent-builder-common/tools';
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import type { ListToolsResponse } from '@kbn/mcp-client';
 import { fromJSONSchema } from '@kbn/zod/v4/from_json_schema';
 import type { Logger } from '@kbn/core/server';
+import type { AgentBuilderActionsStart } from '../../../actions_services';
 import type { ToolTypeDefinition } from '../definitions';
 import { configurationSchema, configurationUpdateSchema } from './schemas';
 import { validateConfig } from './validate_configuration';
@@ -25,7 +25,7 @@ export async function listMcpTools({
   request,
   connectorId,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   connectorId: string;
 }): Promise<ListToolsResponse> {
@@ -56,7 +56,7 @@ export async function getNamedMcpTools({
   toolNames,
   logger,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   connectorId: string;
   toolNames: string[];
@@ -98,7 +98,7 @@ async function executeMcpTool({
   toolName,
   toolArguments,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   connectorId: string;
   toolName: string;
@@ -144,7 +144,7 @@ async function executeMcpTool({
 export const getMcpToolType = ({
   actions,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
 }): ToolTypeDefinition<ToolType.mcp, McpToolConfig, z.ZodObject<any>> => {
   return {
     toolType: ToolType.mcp,

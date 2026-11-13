@@ -15,14 +15,13 @@ import type {
   Logger,
   Plugin,
 } from '@kbn/core/server';
+import { registerVegaEmbeddable } from './embeddable_contribution';
 import type {
   VisTypeVegaPluginSetupDependencies,
   VisTypeVegaPluginSetup,
   VisTypeVegaPluginStart,
 } from './types';
-import { VEGA_EMBEDDABLE_TYPE, VEGA_STANDALONE_EMBEDDABLE_FLAG } from '../common/constants';
-import { getVegaEmbeddableSchema } from './embeddable/schema';
-import { getTransforms } from './embeddable/transforms';
+import { VEGA_STANDALONE_EMBEDDABLE_FLAG } from '../common/constants';
 
 export class VisTypeVegaPlugin implements Plugin<VisTypeVegaPluginSetup, VisTypeVegaPluginStart> {
   private readonly logger: Logger;
@@ -38,12 +37,7 @@ export class VisTypeVegaPlugin implements Plugin<VisTypeVegaPluginSetup, VisType
         const standaloneEmbeddableEnabled = await firstValueFrom(
           featureFlags.getBooleanValue$(VEGA_STANDALONE_EMBEDDABLE_FLAG, false)
         );
-        embeddable.registerEmbeddableServerDefinition(VEGA_EMBEDDABLE_TYPE, {
-          title: 'Vega',
-          getTransforms: (drilldownTransforms) => getTransforms(drilldownTransforms, this.logger),
-          getSchema: (getDrilldownsSchema) =>
-            standaloneEmbeddableEnabled ? getVegaEmbeddableSchema(getDrilldownsSchema) : undefined,
-        });
+        registerVegaEmbeddable(embeddable, () => standaloneEmbeddableEnabled, this.logger);
       })
       .catch(() => {});
     return {};

@@ -17,6 +17,7 @@ const LOCALHOST_FALLBACK = 'http://localhost:5601';
  */
 export interface KibanaUrlSource {
   http?: {
+    kibanaUrl?: string;
     basePath?: { publicBaseUrl?: string; prepend?: (path: string) => string };
     getServerInfo?: () => { protocol: string; hostname: string; port: number | string };
   };

@@ -85,6 +85,24 @@ describe('ConnectorExecutor', () => {
       expect(result).toEqual(expectedResult);
     });
 
+    it('resolves explicitly named system connectors through the authorized actions client', async () => {
+      const id = 'system-connector-.workflows';
+      mockActionsClient.get.mockResolvedValue({ id } as never);
+      mockActionsClient.execute.mockResolvedValue({ status: 'ok', actionId: id });
+      await connectorExecutor.execute({
+        connectorType: 'workflows',
+        connectorNameOrId: id,
+        input,
+        abortController,
+      });
+      expect(mockActionsClient.get).toHaveBeenCalledWith({ id, throwIfSystemAction: false });
+      expect(mockActionsClient.execute).toHaveBeenCalledWith({
+        actionId: id,
+        params: input,
+        signal: abortController.signal,
+      });
+    });
+
     it('should resolve connector ID by name and execute', async () => {
       const connectorId = 'resolved-connector-id';
       const name = 'my-connector';

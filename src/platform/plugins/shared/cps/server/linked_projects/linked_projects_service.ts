@@ -18,7 +18,9 @@ export class LinkedProjectsService {
 
   constructor(
     private readonly logger: Logger,
-    private readonly elasticsearch: ElasticsearchServiceStart
+    private readonly elasticsearch: {
+      client: Pick<ElasticsearchServiceStart['client'], 'asScoped'>;
+    }
   ) {}
 
   public getLinkedProjects(request: KibanaRequest): Promise<CpsLinkedProject[] | undefined> {

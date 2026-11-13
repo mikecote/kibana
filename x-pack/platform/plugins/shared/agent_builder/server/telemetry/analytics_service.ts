@@ -83,14 +83,19 @@ const inputAttachmentTypes = (
  * `AGENT_BUILDER_EVENT_TYPES` so call sites can be kept small, typed, and safe.
  */
 export class AnalyticsService {
-  constructor(private readonly analytics: AnalyticsServiceSetup, private readonly logger: Logger) {}
+  constructor(
+    private readonly analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>,
+    private readonly logger: Logger
+  ) {}
 
   /**
    * Register Agent Builder server event types with core analytics.
    */
-  registerAgentBuilderEventTypes(): void {
+  registerAgentBuilderEventTypes(
+    analytics: Pick<AnalyticsServiceSetup, 'registerEventType'>
+  ): void {
     agentBuilderServerEbtEvents.forEach((eventConfig) => {
-      this.analytics.registerEventType(eventConfig);
+      analytics.registerEventType(eventConfig);
     });
   }
 

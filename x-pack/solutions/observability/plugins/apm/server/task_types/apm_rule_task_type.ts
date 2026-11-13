@@ -10,12 +10,14 @@ import { getRuleTypeFromRegistration } from '@kbn/alerting-plugin/server/task_ty
 import { alertsLocatorID } from '@kbn/observability-plugin/common';
 import { AlertsLocatorDefinition } from '@kbn/observability-plugin/common/locators/alerts';
 import {
+  createGetApmIndices,
   apmIndicesSavedObjectDefinition,
-  getApmIndicesSavedObject,
-} from '@kbn/apm-sources-access-plugin/server/saved_objects/apm_indices';
+  type APMIndices,
+} from '@kbn/apm-sources-access-plugin/server';
 import {
   createMlTaskProcessServices,
   getMlTaskProcessSavedObjectTypes,
+  ML_TASK_PROCESS_SETTINGS_ID,
 } from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
 import type { APMConfig } from '..';
 import type { RegisterRuleDependencies } from '../routes/alerts/register_apm_rule_types';
@@ -23,7 +25,7 @@ import type { RegisterRuleDependencies } from '../routes/alerts/register_apm_rul
 /** What the APM and APM sources plugins give their rule types in a task process. */
 export interface ApmTaskProcessSettings {
   apm: APMConfig;
-  apmSourcesAccess: { indices: Record<string, string> };
+  apmSourcesAccess: { indices: APMIndices };
 }
 
 /**
@@ -42,16 +44,19 @@ export const createApmRuleTaskType = (
       ruleTypeId,
       getRuleType: (deps) => {
         const { logger, publicBaseUrl, settings, locators } = deps;
-        const ml = options.usesMl ? createMlTaskProcessServices(deps) : undefined;
+        const ml =
+          options.usesMl && settings[ML_TASK_PROCESS_SETTINGS_ID]
+            ? createMlTaskProcessServices(deps)
+            : undefined;
         const ruleType = getRuleTypeFromRegistration((alerting) =>
           register({
             alerting,
             basePath: { publicBaseUrl },
             // What the APM sources plugin does: the indices of the config, overridden by the saved object.
-            getApmIndices: async (soClient: Parameters<typeof getApmIndicesSavedObject>[0]) => ({
-              ...(settings.apmSourcesAccess as ApmTaskProcessSettings['apmSourcesAccess']).indices,
-              ...(await getApmIndicesSavedObject(soClient)),
-            }),
+            getApmIndices: createGetApmIndices(
+              () =>
+                (settings.apmSourcesAccess as ApmTaskProcessSettings['apmSourcesAccess']).indices
+            ),
             apmConfig: settings.apm as APMConfig,
             logger: logger.get('rule'),
             alertsLocator: locators.get(alertsLocatorID),
@@ -66,6 +71,7 @@ export const createApmRuleTaskType = (
     },
     {
       locators: [new AlertsLocatorDefinition()],
+      optionalSettings: options.usesMl ? [ML_TASK_PROCESS_SETTINGS_ID] : [],
       savedObjectTypes: [
         apmIndicesSavedObjectDefinition,
         ...(options.usesMl ? getMlTaskProcessSavedObjectTypes() : []),

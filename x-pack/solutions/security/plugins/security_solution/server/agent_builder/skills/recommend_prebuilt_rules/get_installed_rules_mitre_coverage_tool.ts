@@ -7,14 +7,13 @@
 
 import { z, lazySchema } from '@kbn/zod/v4';
 import { getMitreFrameworkByThreatName } from '@kbn/security-mitre-attack-common';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
+import type { SecuritySkillServices } from '../services';
 import { findRules } from '../../../lib/detection_engine/rule_management/logic/search/find_rules';
 import type { RuleParams } from '../../../lib/detection_engine/rule_schema';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 
 export const GET_INSTALLED_RULES_MITRE_COVERAGE_INLINE_TOOL_ID =
   'security.get_installed_rules_mitre_coverage';
@@ -128,7 +127,7 @@ export const buildMitreCoverageFromRules = (
 };
 
 interface GetInstalledRulesMitreCoverageToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
 }
 

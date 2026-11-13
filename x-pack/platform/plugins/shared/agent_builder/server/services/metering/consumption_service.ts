@@ -5,9 +5,10 @@
  * 2.0.
  */
 
-import type { KibanaRequest, ElasticsearchServiceStart } from '@kbn/core/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { FieldValue } from '@elastic/elasticsearch/lib/api/types';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import type {
   ConsumptionResponse,
   ConsumptionSortField,
@@ -61,7 +62,7 @@ export interface ConsumptionService {
 }
 
 export interface ConsumptionServiceStartDeps {
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
 }
 

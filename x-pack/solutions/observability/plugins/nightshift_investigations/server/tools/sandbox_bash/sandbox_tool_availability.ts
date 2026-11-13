@@ -21,7 +21,15 @@ const unavailable = (reason: string): ToolAvailabilityResult => ({ status: 'unav
 export const createSandboxToolAvailability = ({
   getDeps,
 }: {
-  getDeps: () => { featureFlags?: FeatureFlagsStart; security?: SecurityPluginStart };
+  getDeps: () => {
+    featureFlags?: Pick<FeatureFlagsStart, 'getBooleanValue$'>;
+    security?: {
+      authz: Pick<
+        SecurityPluginStart['authz'],
+        'mode' | 'actions' | 'checkPrivilegesDynamicallyWithRequest'
+      >;
+    };
+  };
 }): ToolAvailabilityConfig => ({
   cacheMode: 'none',
   handler: async ({ request }) => {

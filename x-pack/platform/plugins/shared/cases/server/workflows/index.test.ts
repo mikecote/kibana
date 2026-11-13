@@ -18,18 +18,17 @@ describe('registerCaseWorkflowSteps', () => {
   ) => {
     const workflowsExtensions = { registerStepDefinition: jest.fn() };
     const getCasesClient = jest.fn();
-    const waitForStartServices = jest.fn(() => Promise.resolve());
+    const waitForAttachmentTypes = jest.fn(() => Promise.resolve());
 
-    registerCaseWorkflowSteps(
-      workflowsExtensions as never,
-      getCasesClient as never,
-      registry,
-      isCasesAttachmentsEnabled,
+    registerCaseWorkflowSteps(workflowsExtensions as never, {
+      getCasesClient: getCasesClient as never,
       isTemplatesEnabled,
-      waitForStartServices
-    );
+      addAttachments: isCasesAttachmentsEnabled
+        ? { unifiedAttachmentTypeRegistry: registry, waitForAttachmentTypes }
+        : undefined,
+    });
 
-    return { register: workflowsExtensions.registerStepDefinition, waitForStartServices };
+    return { register: workflowsExtensions.registerStepDefinition, waitForAttachmentTypes };
   };
 
   // The attachment registry is populated by solutions' `setup` (which runs
@@ -47,7 +46,7 @@ describe('registerCaseWorkflowSteps', () => {
   // The bug the wait guard fixes: without it the loader's `.then` fires on the
   // microtask queue while core is still awaiting the next plugin's `init`,
   // snapshotting the attachment registry before solutions have registered.
-  // Awaiting `waitForStartServices` inside the loader defers composition until
+  // Awaiting `waitForAttachmentTypes` inside the loader defers composition until
   // every setup has completed.
   // `cases.setExtendedFields` is gated on the templates feature flag (same flag that gates field
   // definitions and template CRUD). `cases.createCaseFromTemplate` is registered in both flag
@@ -61,19 +60,19 @@ describe('registerCaseWorkflowSteps', () => {
 
   it('awaits start services inside the attachments-step loader before composing the schema', async () => {
     const registry = new UnifiedAttachmentTypeRegistry();
-    const { register, waitForStartServices } = registerWithFlag(true, { registry });
+    const { register, waitForAttachmentTypes } = registerWithFlag(true, { registry });
 
     const loaderCall = register.mock.calls.find(([arg]) => typeof arg === 'function');
     expect(loaderCall).toBeDefined();
     const loader = loaderCall![0] as () => Promise<unknown>;
 
     const startServicesResolvers: Array<() => void> = [];
-    waitForStartServices.mockImplementationOnce(
+    waitForAttachmentTypes.mockImplementationOnce(
       () => new Promise<void>((resolve) => startServicesResolvers.push(resolve))
     );
 
     const loaderPromise = loader();
-    expect(waitForStartServices).toHaveBeenCalledTimes(1);
+    expect(waitForAttachmentTypes).toHaveBeenCalledTimes(1);
 
     // Registry is empty in this test → the step should resolve to `undefined`
     // (a silently-skipped registration), but only after start services resolves.

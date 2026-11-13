@@ -6,24 +6,9 @@
  */
 
 import type { Logger } from '@kbn/core/server';
-import { APP_PATH } from '../../../../../../common/constants';
 import type { SignalSearchResponse } from '../../../rule_types/types';
 
-export const getNotificationResultsLink = ({
-  kibanaSiemAppUrl = APP_PATH,
-  id,
-  from,
-  to,
-}: {
-  kibanaSiemAppUrl?: string;
-  id: string;
-  from?: string;
-  to?: string;
-}) => {
-  if (from == null || to == null) return '';
-
-  return `${kibanaSiemAppUrl}/rules/id/${id}?timerange=(global:(linkTo:!(timeline),timerange:(from:${from},kind:absolute,to:${to})),timeline:(linkTo:!(global),timerange:(from:${from},kind:absolute,to:${to})))`;
-};
+export { getNotificationResultsLink } from '../../../rule_types/get_notification_results_link';
 
 interface DeconflictOptions {
   signals: unknown[];

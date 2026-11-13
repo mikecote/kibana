@@ -98,7 +98,7 @@ describe('Search service', () => {
         asyncSearch: { waitForCompletion: 1 },
       };
       context.config.create = jest.fn().mockReturnValue(of({ search }));
-      context.config.get = jest.fn().mockReturnValue({ search });
+      context.config.get = jest.fn().mockReturnValue({ search, enableUiSettingsValidations: true });
       (context.config.legacy as any).globalConfig$ = of({
         elasticsearch: {
           shardTimeout: moment.duration(7, 'seconds'),
@@ -118,6 +118,7 @@ describe('Search service', () => {
 
       expect(start.getTaskProcessSettings!()).toEqual({
         searchConfig: search,
+        uiSettingsValidationsEnabled: true,
         elasticsearchTimeouts: { shardTimeout: 7000, requestTimeout: 9000 },
         rollupsEnabled: true,
       });

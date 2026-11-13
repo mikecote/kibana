@@ -26,6 +26,7 @@ export interface ServerShortUrlClientFactoryDependencies {
    * Locators service.
    */
   locators: ILocatorClient;
+  onBackgroundTask?: (task: Promise<void>) => void;
 }
 
 export interface ServerShortUrlClientFactoryCreateParams {
@@ -45,11 +46,12 @@ export class ServerShortUrlClientFactory
         savedObjects: params.savedObjects!,
         savedObjectType: 'url',
       });
-    const { currentVersion, locators } = this.dependencies;
+    const { currentVersion, locators, onBackgroundTask } = this.dependencies;
     const client = new ServerShortUrlClient({
       storage,
       currentVersion,
       locators,
+      onBackgroundTask,
     });
 
     return client;

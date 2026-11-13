@@ -10,7 +10,7 @@ import type { Observable } from 'rxjs';
 import { concat, of, shareReplay } from 'rxjs';
 import type { Refresh } from '@elastic/elasticsearch/lib/api/types';
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { KibanaRequest } from '@kbn/core-http-server';
@@ -48,6 +48,7 @@ import type {
   FindExecutionsOptions,
 } from '@kbn/agent-builder-server/execution';
 import { ExecutionStatus, isExecutionTerminalEvent } from '@kbn/agent-builder-common';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { ABORT_WAIT_FOR_TERMINAL_TIMEOUT_MS, FOLLOW_POLL_INTERVAL_MS } from './constants';
 import { getCurrentSpaceId } from '../../utils/spaces';
 import { isVersionConflictError } from '../../utils/is_version_conflict_error';
@@ -83,8 +84,8 @@ interface ParentExecution {
 }
 
 export interface AgentExecutionServiceDeps extends AgentExecutionDeps {
-  elasticsearch: ElasticsearchServiceStart;
-  taskManager: TaskManagerStartContract;
+  elasticsearch: AgentBuilderElasticsearch;
+  taskManager: Pick<TaskManagerStartContract, 'ensureScheduled' | 'runSoon'>;
   spaces?: SpacesPluginStart;
   attachmentsService: AttachmentServiceStart;
 }

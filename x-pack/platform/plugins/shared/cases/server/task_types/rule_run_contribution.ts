@@ -7,14 +7,7 @@
 
 import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
 import { getCasesConnectorAdapter, getCasesConnectorType } from '../connectors/cases';
-import type { ServerlessProjectType } from '../../common/constants/types';
-
-/** What a rule run needs of cases, which Kibana sends as `settings.cases`. */
-export interface CasesTaskProcessSettings {
-  serverlessProjectType?: ServerlessProjectType;
-  isCasesAttachmentsEnabled: boolean;
-  isTemplatesEnabled: boolean;
-}
+import type { CasesTaskProcessSettings } from './cases_task_process_settings';
 
 const kibanaOnly = (what: string) => () => {
   throw new Error(

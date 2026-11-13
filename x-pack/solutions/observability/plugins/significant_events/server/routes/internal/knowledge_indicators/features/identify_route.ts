@@ -247,7 +247,11 @@ const identifyInferredFeaturesRoute = createServerRoute({
       await installFeatureIdentificationAgent({
         agentBuilder: server.agentBuilder,
         spaceId: request.spaceId,
-        availability: createSignificantEventsAvailability({ server, logger: routeLogger }),
+        availability: createSignificantEventsAvailability({
+          assertAccess: () =>
+            assertSignificantEventsAccess({ server, licensing: server.licensing }),
+          logger: routeLogger,
+        }),
       });
     }
 

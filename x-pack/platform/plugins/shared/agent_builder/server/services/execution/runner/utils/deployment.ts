@@ -8,8 +8,9 @@
 import type { Logger } from '@kbn/logging';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+
 import type { DeploymentContext } from '@kbn/agent-builder-server';
+import type { AgentBuilderLicensing } from '../../../runtime_ports';
 import type { DeploymentInfo } from '../../../../utils/deployment_info';
 
 const getSpaceSolution = async ({
@@ -37,7 +38,7 @@ const getLicense = async ({
   licensing,
   logger,
 }: {
-  licensing: LicensingPluginStart;
+  licensing: AgentBuilderLicensing;
   logger: Logger;
 }): Promise<DeploymentContext['license']> => {
   try {
@@ -63,7 +64,7 @@ export const resolveDeploymentContext = async ({
   deploymentInfo: DeploymentInfo;
   request: KibanaRequest;
   spaces: SpacesPluginStart | undefined;
-  licensing: LicensingPluginStart;
+  licensing: AgentBuilderLicensing;
   logger: Logger;
 }): Promise<DeploymentContext> => {
   if (deploymentInfo.environment === 'serverless') {

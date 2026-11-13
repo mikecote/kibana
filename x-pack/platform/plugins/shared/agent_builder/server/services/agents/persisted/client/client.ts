@@ -6,12 +6,7 @@
  */
 
 import pRetry, { AbortError } from 'p-retry';
-import type {
-  ElasticsearchServiceStart,
-  KibanaRequest,
-  Logger,
-  SecurityServiceStart,
-} from '@kbn/core/server';
+import type { KibanaRequest, Logger, SecurityServiceStart } from '@kbn/core/server';
 import { validateAgentId } from '@kbn/agent-builder-common/agents';
 import {
   agentApprovalsEqual,
@@ -33,6 +28,7 @@ import {
   type UserIdAndName,
 } from '@kbn/agent-builder-common';
 import { SYSTEM_USER_ID } from '@kbn/agent-builder-common/constants';
+import type { AgentBuilderElasticsearch } from '../../../runtime_ports';
 import { getUserFromRequest } from '../../../utils';
 import type {
   AgentAccessControlUpdateRequest,
@@ -276,7 +272,7 @@ export const createClient = async ({
   space: string;
   request: KibanaRequest;
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   toolsService: ToolsServiceStart;
   logger: Logger;
 }): Promise<AgentClient> => {
@@ -305,7 +301,7 @@ export const createSystemClient = ({
   logger,
 }: {
   space: string;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: Pick<AgentBuilderElasticsearch, 'client'>;
   logger: Logger;
 }): SystemAgentClient => {
   const storage = createStorage({ logger, esClient: elasticsearch.client.asInternalUser });

@@ -8,15 +8,18 @@
 import { max, memoize, omit } from 'lodash';
 import type { Logger } from '@kbn/core/server';
 import type { ObjectType } from '@kbn/config-schema';
-import type { TaskTypeDictionary } from './task_type_dictionary';
-import type { TaskInstance, ConcreteTaskInstance, TaskDefinition } from './task';
+import type {
+  TaskSchedulingDefinition,
+  TaskSchedulingDefinitionRegistry,
+} from './task_scheduling_definition_registry';
+import type { TaskInstance, ConcreteTaskInstance } from './task';
 import { isInterval, parseIntervalAsMillisecond } from './lib/intervals';
 import { isErr, tryAsResult } from './lib/result_type';
 import { rruleScheduleV3 } from './saved_objects/schemas/rrule';
 
 interface TaskValidatorOpts {
   allowReadingInvalidState: boolean;
-  definitions: TaskTypeDictionary;
+  definitions: TaskSchedulingDefinitionRegistry;
   logger: Logger;
 }
 
@@ -30,9 +33,11 @@ type LatestStateSchema =
 
 export class TaskValidator {
   private readonly logger: Logger;
-  private readonly definitions: TaskTypeDictionary;
+  private readonly definitions: TaskSchedulingDefinitionRegistry;
   private readonly allowReadingInvalidState: boolean;
-  private readonly cachedGetLatestStateSchema: (taskTypeDef: TaskDefinition) => LatestStateSchema;
+  private readonly cachedGetLatestStateSchema: (
+    taskTypeDef: TaskSchedulingDefinition
+  ) => LatestStateSchema;
   private readonly cachedExtendSchema: typeof extendSchema;
 
   constructor({ definitions, allowReadingInvalidState, logger }: TaskValidatorOpts) {
@@ -191,7 +196,7 @@ export class TaskValidator {
   private migrateTaskState(
     state: ConcreteTaskInstance['state'],
     currentVersion: number | undefined,
-    taskTypeDef: TaskDefinition,
+    taskTypeDef: TaskSchedulingDefinition,
     latestStateSchema: LatestStateSchema
   ) {
     if (!latestStateSchema || (currentVersion && currentVersion >= latestStateSchema.version)) {
@@ -247,7 +252,7 @@ function extendSchema(options: {
   return options.latestStateSchema.schema.extendsDeep({ unknowns: options.unknowns });
 }
 
-function getLatestStateSchema(taskTypeDef: TaskDefinition): LatestStateSchema {
+function getLatestStateSchema(taskTypeDef: TaskSchedulingDefinition): LatestStateSchema {
   if (!taskTypeDef.stateSchemaByVersion) {
     return;
   }

@@ -7,12 +7,13 @@
 
 import { i18n } from '@kbn/i18n';
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import { extractReferences, injectReferences } from '@kbn/data-plugin/common';
+import { extractReferences } from '@kbn/data-plugin/common';
 import { ES_QUERY_ID, STACK_ALERTS_FEATURE_ID } from '@kbn/rule-data-utils';
 import {
   EsQueryRuleParamsSchema,
   type EsQueryRuleParams,
 } from '@kbn/response-ops-rule-params/es_query';
+import { injectEsQueryReferences } from './inject_references';
 import { STACK_ALERTS_AAD_CONFIG } from '..';
 import type { RuleType } from '../../types';
 import type { ActionContext } from './action_context';
@@ -209,17 +210,10 @@ export function getRuleType(
 
         return { params: params as EsQueryRuleParamsExtractedParams, references: [] };
       },
-      injectReferences: (params, references) => {
-        if (isSearchSourceRule(params.searchType)) {
-          return {
-            ...params,
-            searchConfiguration: injectReferences(params.searchConfiguration, references),
-          };
-        }
-        return params;
-      },
+      injectReferences: injectEsQueryReferences,
     },
     minimumLicenseRequired: 'basic',
+    ruleTaskTimeout: '1m',
     isExportable: true,
     executor: async (options: ExecutorOptions<EsQueryRuleParams>) => {
       return await executor(options, sourceFields);

@@ -11,6 +11,9 @@ import type { Logger } from '@kbn/logging';
 import type { ToolAvailabilityResult } from '@kbn/agent-builder-server';
 import type { CasesServerStartDependencies } from '../../types';
 
+import { createCasesToolServices } from '../cases_tool_services';
+import type { CasesToolServices } from '../cases_tool_services';
+
 /** Solutions where Cases is available (undefined = stateful, no gating). */
 const ALLOWED_SOLUTIONS = new Set(['classic', 'oblt', 'security', undefined]);
 
@@ -23,9 +26,24 @@ export async function getCasesToolAvailability({
   logger: Logger;
   request: KibanaRequest;
 }): Promise<ToolAvailabilityResult> {
+  return getCasesToolAvailabilityWithServices({
+    services: createCasesToolServices(core),
+    logger,
+    request,
+  });
+}
+
+const getCasesToolAvailabilityWithServices = async ({
+  services,
+  logger,
+  request,
+}: {
+  services: CasesToolServices;
+  logger: Logger;
+  request: KibanaRequest;
+}): Promise<ToolAvailabilityResult> => {
   try {
-    const [, pluginsStart] = await core.getStartServices();
-    const activeSpace = await pluginsStart.spaces?.spacesService.getActiveSpace(request);
+    const activeSpace = await services.getActiveSpace(request);
     if (!ALLOWED_SOLUTIONS.has(activeSpace?.solution)) {
       return {
         status: 'unavailable',
@@ -37,7 +55,7 @@ export async function getCasesToolAvailability({
     logger.debug(error);
   }
   return { status: 'available' };
-}
+};
 
 /**
  * Returns the availability config object to attach to a Cases tool definition.
@@ -46,8 +64,13 @@ export async function getCasesToolAvailability({
 export const createCasesToolAvailability = (
   core: CoreSetup<CasesServerStartDependencies>,
   logger: Logger
+) => createCasesToolAvailabilityWithServices(createCasesToolServices(core), logger);
+
+export const createCasesToolAvailabilityWithServices = (
+  services: CasesToolServices,
+  logger: Logger
 ) => ({
   cacheMode: 'space' as const,
   handler: ({ request }: { request: KibanaRequest }) =>
-    getCasesToolAvailability({ core, logger, request }),
+    getCasesToolAvailabilityWithServices({ services, logger, request }),
 });

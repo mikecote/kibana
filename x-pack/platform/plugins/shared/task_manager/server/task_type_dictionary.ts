@@ -17,6 +17,10 @@ import type {
   RemoteRunObserverFactory,
 } from './task';
 import { taskDefinitionSchema } from './task';
+import type {
+  TaskSchedulingDefinitionRegistry,
+  TaskSchedulingRegistration,
+} from './task_scheduling_definition_registry';
 import { CONCURRENCY_ALLOW_LIST_BY_TASK_TYPE } from './constants';
 
 /**
@@ -201,41 +205,7 @@ export class TaskTypeDictionary {
    * @param taskDefinitions - The Kibana task definitions dictionary
    */
   public registerTaskDefinitions(taskDefinitions: TaskDefinitionRegistry) {
-    const taskTypesToRegister = Object.keys(taskDefinitions);
-    const duplicate = taskTypesToRegister.find((type) => this.definitions.has(type));
-    if (duplicate) {
-      throw new Error(`Task ${duplicate} is already defined!`);
-    }
-
-    const invalidTaskType = taskTypesToRegister.find((type) => type.includes(','));
-    if (invalidTaskType) {
-      throw new Error(`Task type "${invalidTaskType}" cannot contain a comma.`);
-    }
-
-    const removed = taskTypesToRegister.find((type) => REMOVED_TYPES.indexOf(type) >= 0);
-    if (removed) {
-      throw new Error(`Task ${removed} has been removed from registration!`);
-    }
-
-    for (const taskType of taskTypesToRegister) {
-      if (taskDefinitions[taskType].maxConcurrency !== undefined) {
-        if (!CONCURRENCY_ALLOW_LIST_BY_TASK_TYPE.includes(taskType)) {
-          // maxConcurrency is designed to limit how many tasks of the same type a single Kibana
-          // instance should run at a time. Meaning if you have 8 Kibanas running, you will still
-          // see up to 8 tasks running at a time but one per Kibana instance. This is helpful for
-          // reporting purposes but not for many other cases and are better off not setting this value.
-          throw new Error(`maxConcurrency setting isn't allowed for task type: ${taskType}`);
-        }
-
-        // if this task type shares concurrency with another task type and both have been
-        // registered, throw an error if their maxConcurrency values are different
-        this.verifySharedConcurrencyAndCost(
-          taskType,
-          taskDefinitions[taskType].maxConcurrency!,
-          taskDefinitions[taskType].cost
-        );
-      }
-    }
+    validateTaskDefinitionRegistrations(this, taskDefinitions);
 
     try {
       for (const definition of sanitizeTaskDefinitions(taskDefinitions)) {
@@ -243,32 +213,6 @@ export class TaskTypeDictionary {
       }
     } catch (e) {
       this.logger.error(`Could not sanitize task definitions: ${e.message}`);
-    }
-  }
-
-  private verifySharedConcurrencyAndCost(
-    taskType: string,
-    maxConcurrency: number,
-    cost?: TaskCost
-  ) {
-    const shared = sharedConcurrencyTaskTypes(taskType);
-
-    if (shared) {
-      const otherTaskTypes: string[] = shared.filter((type) => type !== taskType);
-
-      for (const otherTaskType of otherTaskTypes) {
-        const otherTaskDef = this.definitions.get(otherTaskType);
-        if (otherTaskDef && otherTaskDef.maxConcurrency !== maxConcurrency) {
-          throw new Error(
-            `Task type "${taskType}" shares concurrency limits with ${otherTaskType} but has a different maxConcurrency.`
-          );
-        }
-        if (otherTaskDef && otherTaskDef.cost !== cost) {
-          throw new Error(
-            `Task type "${taskType}" shares concurrency limits with ${otherTaskType} but has a different cost.`
-          );
-        }
-      }
     }
   }
 }
@@ -288,3 +232,69 @@ export function sanitizeTaskDefinitions(taskDefinitions: TaskDefinitionRegistry)
 export function sharedConcurrencyTaskTypes(taskType: string) {
   return SHARED_CONCURRENCY_TASKS.find((tasks: string[]) => tasks.includes(taskType));
 }
+
+/** Validates task registration policy for native execution and scheduling registries. */
+export const validateTaskDefinitionRegistrations = (
+  definitions: Pick<TaskSchedulingDefinitionRegistry, 'get' | 'has'>,
+  taskDefinitions: Readonly<Record<string, TaskSchedulingRegistration>>
+): void => {
+  const taskTypesToRegister = Object.keys(taskDefinitions);
+  const duplicate = taskTypesToRegister.find((type) => definitions.has(type));
+  if (duplicate) {
+    throw new Error(`Task ${duplicate} is already defined!`);
+  }
+
+  const invalidTaskType = taskTypesToRegister.find((type) => type.includes(','));
+  if (invalidTaskType) {
+    throw new Error(`Task type "${invalidTaskType}" cannot contain a comma.`);
+  }
+
+  const removed = taskTypesToRegister.find((type) => REMOVED_TYPES.indexOf(type) >= 0);
+  if (removed) {
+    throw new Error(`Task ${removed} has been removed from registration!`);
+  }
+
+  for (const taskType of taskTypesToRegister) {
+    const { maxConcurrency, cost } = taskDefinitions[taskType];
+    if (maxConcurrency !== undefined) {
+      if (!CONCURRENCY_ALLOW_LIST_BY_TASK_TYPE.includes(taskType)) {
+        // maxConcurrency is designed to limit how many tasks of the same type a single Kibana
+        // instance should run at a time. Meaning if you have 8 Kibanas running, you will still
+        // see up to 8 tasks running at a time but one per Kibana instance. This is helpful for
+        // reporting purposes but not for many other cases and are better off not setting this value.
+        throw new Error(`maxConcurrency setting isn't allowed for task type: ${taskType}`);
+      }
+
+      // if this task type shares concurrency with another task type and both have been
+      // registered, throw an error if their maxConcurrency values are different
+      verifySharedConcurrencyAndCost(definitions, taskType, maxConcurrency, cost);
+    }
+  }
+};
+
+const verifySharedConcurrencyAndCost = (
+  definitions: Pick<TaskSchedulingDefinitionRegistry, 'get'>,
+  taskType: string,
+  maxConcurrency: number,
+  cost?: TaskCost
+): void => {
+  const shared = sharedConcurrencyTaskTypes(taskType);
+
+  if (shared) {
+    const otherTaskTypes: string[] = shared.filter((type) => type !== taskType);
+
+    for (const otherTaskType of otherTaskTypes) {
+      const otherTaskDef = definitions.get(otherTaskType);
+      if (otherTaskDef && otherTaskDef.maxConcurrency !== maxConcurrency) {
+        throw new Error(
+          `Task type "${taskType}" shares concurrency limits with ${otherTaskType} but has a different maxConcurrency.`
+        );
+      }
+      if (otherTaskDef && otherTaskDef.cost !== cost) {
+        throw new Error(
+          `Task type "${taskType}" shares concurrency limits with ${otherTaskType} but has a different cost.`
+        );
+      }
+    }
+  }
+};

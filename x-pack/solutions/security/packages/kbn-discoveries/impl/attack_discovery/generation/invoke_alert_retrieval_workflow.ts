@@ -5,13 +5,14 @@
  * 2.0.
  */
 
-import type { AuthenticatedUser, KibanaRequest, Logger } from '@kbn/core/server';
-import type { IEventLogger } from '@kbn/event-log-plugin/server';
 import type {
+  WorkflowExecutionEventDispatchMetadata,
   WorkflowDetailDto,
   WorkflowExecutionDto,
   WorkflowExecutionEngineModel,
 } from '@kbn/workflows';
+import type { AuthenticatedUser, KibanaRequest, Logger } from '@kbn/core/server';
+import type { IEventLogger } from '@kbn/event-log-plugin/server';
 
 import type { AttackDiscoverySource } from '../persistence/event_logging';
 import { AttackDiscoveryError } from '../../lib/errors/attack_discovery_error';
@@ -142,7 +143,8 @@ export interface WorkflowsManagementApi {
     spaceId: string,
     inputs: Record<string, unknown>,
     request: KibanaRequest,
-    triggeredBy: string
+    triggeredBy: string,
+    metadata?: WorkflowExecutionEventDispatchMetadata
   ) => Promise<string>;
 }
 

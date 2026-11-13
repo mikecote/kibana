@@ -23,6 +23,13 @@ dependsOn:
   - '@kbn/core-spaces-common'
   - '@kbn/logging-mocks'
   - '@kbn/spaces-plugin'
+  - '@kbn/fs'
+  - '@kbn/repo-info'
+  - '@kbn/workflows-extensions'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/zod'
+  - '@kbn/workflows'
+  - '@kbn/workflows-execution-engine'
 tags:
   - plugin
   - prod

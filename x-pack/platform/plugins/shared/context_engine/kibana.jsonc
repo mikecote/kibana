@@ -11,6 +11,9 @@
     "requiredPlugins": ["actions", "data", "features", "security", "share", "esql", "triggersActionsUi", "taskManager", "workflowsExtensions"],
     "optionalPlugins": ["console", "spaces"],
     "runtimePluginDependencies": ["agentBuilder", "workflowsManagement"],
-    "requiredBundles": ["kibanaReact", "actions"]
+    "requiredBundles": ["kibanaReact", "actions"],
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
+    }
   }
 }

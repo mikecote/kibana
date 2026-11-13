@@ -12,8 +12,8 @@ import type { BuiltinToolDefinition, StaticToolRegistration } from '@kbn/agent-b
 import type { Logger } from '@kbn/core/server';
 import dedent from 'dedent';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../../types';
 import { timeRangeSchemaOptional, indexDescription } from '../../utils/tool_schemas';
 import {
@@ -79,8 +79,8 @@ export function createGetLogGroupsTool({
   plugins,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
   logger: Logger;
 }): StaticToolRegistration<typeof getLogsSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof getLogsSchema> = {

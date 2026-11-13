@@ -8,23 +8,40 @@
  */
 
 import type { PluginStartContract as ActionsPluginStartContract } from '@kbn/actions-plugin/server';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { CoreStart, KibanaRequest } from '@kbn/core/server';
-import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
+import type { KibanaRequest } from '@kbn/core/server';
 import type { WorkflowRepository } from '@kbn/workflows';
-import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
+import type {
+  EventChainContextStore,
+  WorkflowsExtensionsServerPluginStart,
+} from '@kbn/workflows-extensions/server';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import type { WorkflowLogEvent } from '../repositories/logs_repository';
 import type { StepExecutionRepository } from '../repositories/step_execution_repository';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
+import type { ExecutionIdentityContexts } from '../service_account_execution';
+import type { HitlLifecycleAuditRegistry } from '../step/wait_for_input_step/hitl_lifecycle_auditor';
 import type { WorkflowsExecutionEnginePluginStart } from '../types';
+import type {
+  WorkflowCloudInfo,
+  WorkflowCoreStart,
+  WorkflowRuntimeTaskManager,
+} from '../workflow_core_services';
 
 export interface ContextDependencies {
-  cloudSetup: CloudSetup | undefined;
-  coreStart: CoreStart;
-  actions: ActionsPluginStartContract;
-  taskManager: TaskManagerStartContract;
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart;
+  cloudSetup: WorkflowCloudInfo | undefined;
+  coreStart: WorkflowCoreStart;
+  actions: Pick<ActionsPluginStartContract, 'getActionsClientWithRequest'>;
+  taskManager: WorkflowRuntimeTaskManager;
+  workflowsExtensions: Pick<
+    WorkflowsExtensionsServerPluginStart,
+    'isReady' | 'hasStepDefinition' | 'getStepDefinition' | 'getTriggerDefinition'
+  >;
+  /** Where a run remembers the request that scheduled it; the default when absent. */
+  identityContexts?: ExecutionIdentityContexts;
+  /** Where a run records its event chain on the request; `setWorkflowEventChainContext` when absent. */
+  eventChainContext?: Pick<EventChainContextStore, 'set'>;
+  /** Where human-in-the-loop lifecycle events are audited; the default registry when absent. */
+  hitlLifecycle?: Pick<HitlLifecycleAuditRegistry, 'emit'>;
   config: WorkflowsExecutionEngineConfig;
   workflowRepository?: WorkflowRepository;
   workflowExecutionRepository?: WorkflowExecutionRepository;

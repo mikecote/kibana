@@ -80,11 +80,6 @@ import { preprocessAlertInputs } from './routes/executions/utils/preprocess_aler
 import type { WorkflowManagementAuditLog } from './routes/utils/workflow_audit_logging';
 import type { WorkflowsManagementClient } from './workflows_management_client';
 import { createWorkflowsManagementClient } from './workflows_management_client';
-import type {
-  SearchExecutionsViewParams,
-  SearchWorkflowExecutionsParams,
-  WorkflowsService,
-} from './workflows_management_service';
 import {
   getWorkflowExecutionForRequest,
   getWorkflowForRequest,
@@ -96,6 +91,11 @@ import type {
   WorkflowChangesHistoryResponse,
 } from '../../common/lib/workflow_change_history/types';
 import { updateWorkflowYamlFields } from '../../common/lib/yaml/update_workflow_yaml_fields';
+import type {
+  SearchExecutionsViewParams,
+  SearchWorkflowExecutionsParams,
+  WorkflowsRuntime,
+} from '../runtime/workflows_runtime';
 import { getWorkflowDeleteOperation } from '../services/workflow_access_control';
 import type { BulkCreateWorkflowsResult } from '../services/workflow_crud_service';
 import type {
@@ -275,6 +275,7 @@ const executeWorkflowFinalStatuses = [
 ];
 
 export interface ExecuteWorkflowBaseParams {
+  signal?: AbortSignal;
   request: KibanaRequest;
   spaceId: string;
   inputs?: Record<string, unknown>;
@@ -328,10 +329,14 @@ export class WorkflowsManagementApi {
   private audit: WorkflowManagementAuditLog | null = null;
 
   constructor(
-    private readonly workflowsService: WorkflowsService,
+    private readonly workflowsService: WorkflowsRuntime,
     public readonly isWorkflowsAvailable: boolean,
     private readonly logger: Logger
   ) {}
+
+  public async flush(): Promise<void> {
+    await Promise.all([...this.pendingSmlUpdates.values()]);
+  }
 
   public getClient(request: KibanaRequest): WorkflowsManagementClient {
     return createWorkflowsManagementClient(this, request);
@@ -812,7 +817,9 @@ export class WorkflowsManagementApi {
       completionTimeoutSec = DEFAULT_EXECUTE_WORKFLOW_COMPLETION_TIMEOUT_SEC,
       triggeredBy,
       metadata,
+      signal,
     } = params;
+    signal?.throwIfAborted();
 
     const workflow = isExecuteInlineWorkflowParams(params)
       ? await this.createEphemeralWorkflowExecutionModel(params)
@@ -832,6 +839,7 @@ export class WorkflowsManagementApi {
       spaceId,
       waitForCompletion,
       completionTimeoutSec,
+      signal,
     });
 
     return {
@@ -896,34 +904,29 @@ export class WorkflowsManagementApi {
     spaceId,
     waitForCompletion,
     completionTimeoutSec,
+    signal,
   }: {
+    signal?: AbortSignal;
     workflowExecutionId: string;
     spaceId: string;
     waitForCompletion: boolean;
     completionTimeoutSec: number;
   }): Promise<{ execution?: WorkflowExecutionDto; timedOut?: boolean }> {
     const waitLimit = Date.now() + completionTimeoutSec * 1000;
-    await waitMs(INITIAL_EXECUTE_WORKFLOW_WAIT_MS);
+    await waitMs(INITIAL_EXECUTE_WORKFLOW_WAIT_MS, signal);
 
     let execution: WorkflowExecutionDto | null | undefined;
     do {
-      try {
-        execution = await this.workflowsService.getWorkflowExecution(workflowExecutionId, spaceId, {
-          includeOutput: true,
-        });
+      signal?.throwIfAborted();
+      execution = await this.workflowsService.getWorkflowExecution(workflowExecutionId, spaceId, {
+        includeOutput: true,
+      });
+      const shouldReturn = waitForCompletion
+        ? execution && executeWorkflowFinalStatuses.includes(execution.status)
+        : execution;
+      if (shouldReturn && execution) return { execution };
 
-        const shouldReturn = waitForCompletion
-          ? execution && executeWorkflowFinalStatuses.includes(execution.status)
-          : execution;
-
-        if (shouldReturn && execution) {
-          return { execution };
-        }
-      } catch (e) {
-        // Keep polling until timeout; execution documents can lag immediately after scheduling.
-      }
-
-      await waitMs(EXECUTE_WORKFLOW_CHECK_INTERVAL_MS);
+      await waitMs(EXECUTE_WORKFLOW_CHECK_INTERVAL_MS, signal);
     } while (Date.now() < waitLimit);
 
     return {
@@ -1602,8 +1605,22 @@ export class WorkflowsManagementApi {
   }
 }
 
-const waitMs = (durationMs: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, durationMs));
+const waitMs = (durationMs: number, signal?: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, durationMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 /**
  * Builds a `WorkflowValidationError` from a failed validation result, formatting

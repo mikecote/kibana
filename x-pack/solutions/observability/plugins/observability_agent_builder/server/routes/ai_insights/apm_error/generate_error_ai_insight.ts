@@ -10,7 +10,7 @@ import type { Logger } from '@kbn/logging';
 import { MessageRole } from '@kbn/inference-common';
 import type { BoundInferenceClient, InferenceConnector } from '@kbn/inference-common';
 import dedent from 'dedent';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../../data_registry/data_registry';
 import type {
   ObservabilityAgentBuilderCoreSetup,
   ObservabilityAgentBuilderPluginSetupDependencies,
@@ -76,7 +76,7 @@ export interface GenerateErrorAiInsightParams {
   request: KibanaRequest;
   inferenceClient: BoundInferenceClient;
   connector: InferenceConnector;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }
 
 export async function generateErrorAiInsight({

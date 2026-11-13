@@ -17,12 +17,7 @@ import type {
 import type { DataRequestHandlerContext } from '@kbn/data-plugin/server';
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
 import { AIOPS_PLUGIN_ID } from '@kbn/aiops-common/constants';
-import { EMBEDDABLE_LOG_RATE_ANALYSIS_TYPE } from '@kbn/aiops-log-rate-analysis/constants';
-import { EMBEDDABLE_PATTERN_ANALYSIS_TYPE } from '@kbn/aiops-log-pattern-analysis/constants';
-import { EMBEDDABLE_CHANGE_POINT_CHART_TYPE } from '@kbn/aiops-change-point-detection/constants';
-import { changePointChartEmbeddableStateSchema } from '@kbn/aiops-server-schemas/embeddables/change_point_chart';
-import { patternAnalysisEmbeddableStateSchema } from '@kbn/aiops-server-schemas/embeddables/pattern_analysis';
-import { logRateAnalysisEmbeddableStateSchema } from '@kbn/aiops-server-schemas/embeddables/log_rate_analysis';
+
 import { isActiveLicense } from './lib/license';
 import type {
   AiopsLicense,
@@ -37,12 +32,8 @@ import { defineRoute as defineCategorizationFieldValidationRoute } from './route
 import { registerCaseAttachments } from './register_cases';
 import type { ConfigSchema } from './config_schema';
 import { setupCapabilities } from './lib/capabilities';
-import { transformIn as changePointTransformIn } from '../common/embeddables/change_point_chart/transform_in';
-import { transformOut as changePointTransformOut } from '../common/embeddables/change_point_chart/transform_out';
-import { transformIn as logRateTransformIn } from '../common/embeddables/log_rate_analysis/transform_in';
-import { transformOut as logRateTransformOut } from '../common/embeddables/log_rate_analysis/transform_out';
-import { transformIn as patternAnalysisTransformIn } from '../common/embeddables/pattern_analysis/transform_in';
-import { transformOut as patternAnalysisTransformOut } from '../common/embeddables/pattern_analysis/transform_out';
+
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class AiopsPlugin
   implements Plugin<AiopsPluginSetup, AiopsPluginStart, AiopsPluginSetupDeps, AiopsPluginStartDeps>
@@ -86,32 +77,7 @@ export class AiopsPlugin
       defineCategorizationFieldValidationRoute(router, aiopsLicense, this.usageCounter);
     });
 
-    plugins.embeddable.registerEmbeddableServerDefinition(EMBEDDABLE_CHANGE_POINT_CHART_TYPE, {
-      title: 'Change point detection chart',
-      getSchema: () => changePointChartEmbeddableStateSchema,
-      getTransforms: () => ({
-        transformIn: changePointTransformIn,
-        transformOut: changePointTransformOut,
-      }),
-    });
-
-    plugins.embeddable.registerEmbeddableServerDefinition(EMBEDDABLE_PATTERN_ANALYSIS_TYPE, {
-      title: 'Pattern analysis',
-      getSchema: () => patternAnalysisEmbeddableStateSchema,
-      getTransforms: () => ({
-        transformIn: patternAnalysisTransformIn,
-        transformOut: patternAnalysisTransformOut,
-      }),
-    });
-
-    plugins.embeddable.registerEmbeddableServerDefinition(EMBEDDABLE_LOG_RATE_ANALYSIS_TYPE, {
-      title: 'Log rate analysis',
-      getSchema: () => logRateAnalysisEmbeddableStateSchema,
-      getTransforms: () => ({
-        transformIn: logRateTransformIn,
-        transformOut: logRateTransformOut,
-      }),
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     return {};
   }

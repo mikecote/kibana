@@ -119,6 +119,11 @@ export class ApiKeyService implements ApiKeyServiceContract {
   }
 
   private isAuthenticationTypeAPIKey(): boolean {
+    if (this.request.isFakeRequest) {
+      return (
+        HTTPAuthorizationHeader.parseFromRequest(this.request)?.scheme.toLowerCase() === 'apikey'
+      );
+    }
     const user = this.securityService.authc.getCurrentUser(this.request);
     return user?.authentication_type === 'api_key';
   }

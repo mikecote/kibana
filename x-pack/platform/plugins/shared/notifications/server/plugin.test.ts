@@ -11,7 +11,7 @@ import type { NotificationsConfigType } from './config';
 import { NotificationsPlugin } from './plugin';
 import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { EmailServiceProvider } from './services/connectors_email_service_provider';
-import type { EmailServiceStart } from './services';
+import type { NotificationsServerStart } from './types';
 
 jest.mock('./services/connectors_email_service_provider');
 
@@ -90,7 +90,8 @@ describe('Notifications Plugin', () => {
     it('should return EmailServiceProvider.start() contract as part of its contract', () => {
       const { plugin, coreStart, pluginStart } = createNotificationsPlugin(validConnectorConfig);
 
-      const emailStart: EmailServiceStart = {
+      const emailStart: NotificationsServerStart = {
+        getTaskProcessSettings: jest.fn(() => ({})),
         getEmailService: jest.fn(),
         isEmailServiceAvailable: jest.fn(),
       };

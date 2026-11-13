@@ -7,6 +7,7 @@
   "group": "platform",
   "visibility": "shared",
   "plugin": {
+    "taskTypeContributions": {"alerting-rule-read": ["server/task_types/rule_read_contribution.ts"]},
     "id": "stackAlerts",
     "browser": true,
     "server": true,

@@ -27,7 +27,8 @@ import type {
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
 import { DEFAULT_SPACE_ID, type SpaceId } from '@kbn/core-spaces-common';
-import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { SpacesPluginStart, SpacesPluginSetup } from '@kbn/spaces-plugin/server';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import type {
   KibanaRequest,
   Logger,
@@ -68,6 +69,10 @@ import type {
   WorkflowsExtensionsServerPluginSetup,
   WorkflowsExtensionsServerPluginStart,
 } from '@kbn/workflows-extensions/server';
+import {
+  RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID,
+  type RuleDataViewsCapabilitiesSettings,
+} from './task_types/rule_data_views_settings';
 import { CONNECTOR_ADAPTERS_PARITY_KIND } from './task_types/parity_kinds';
 import { ApiKeyType } from './task_runner/types';
 import { AsyncDomainEventBus } from './lib/events/event_bus';
@@ -76,6 +81,10 @@ import type {
   AlertingPublisherContext,
 } from './lib/workflow_extensions/events';
 import { registerTriggerDefinitions } from './lib/workflow_extensions/register_trigger_definitions';
+import {
+  ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID,
+  getAlertingAuthorizationTaskProcessSettings,
+} from './task_types/alerting_authorization_task_process_settings';
 import {
   ALERTING_RUN_SETTINGS_ID,
   DEFAULT_ALERTING_RUN_SETTINGS,
@@ -87,6 +96,7 @@ import { RuleTypeRegistry } from './rule_type_registry';
 import { TaskRunnerFactory } from './task_runner';
 import { RulesClientFactory } from './rules_client_factory';
 import { ruleQueryInspectorRoute } from './routes/rule/apis/rule_query_inspector/rule_query_inspector_route';
+import { RULE_READ_SETTINGS_ID, getRuleReadSettings } from './task_types/rule_read_contribution';
 import type { RulesClientCreateOptions } from './rules_client_factory';
 import {
   RulesSettingsClientFactory,
@@ -232,6 +242,7 @@ export interface AlertingServerStart {
 }
 
 export interface AlertingPluginsSetup {
+  spaces?: SpacesPluginSetup;
   security?: SecurityPluginSetup;
   telemetry?: TelemetryPluginSetup;
   cloud?: CloudSetup;
@@ -349,6 +360,16 @@ export class AlertingPlugin {
     plugins: AlertingPluginsSetup
   ): AlertingServerSetup {
     this.actionsSetup = plugins.actions;
+    this.taskProcessSettings[RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID] =
+      (): RuleDataViewsCapabilitiesSettings => ({
+        features: plugins.features.getKibanaFeatures().map((feature) => feature.toRaw()),
+        spacesEnabled: plugins.spaces !== undefined,
+      });
+    if (plugins.spaces) {
+      const spaces = plugins.spaces;
+      this.taskProcessSettings[SPACES_TASK_PROCESS_SETTINGS_ID] = () =>
+        spaces.getTaskProcessSettings();
+    }
     this.kibanaBaseUrl = core.http.basePath.publicBaseUrl;
     this.licenseState = new LicenseState(plugins.licensing.license$);
     this.security = plugins.security;
@@ -599,7 +620,31 @@ export class AlertingPlugin {
       core
     );
 
+    const getReadSettings = () => getRuleReadSettings(ruleTypeRegistry);
+    this.taskProcessSettings[RULE_READ_SETTINGS_ID] = getReadSettings;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      RULE_READ_SETTINGS_ID,
+      getReadSettings
+    );
+
+    const getAuthorizationSettings = async () => {
+      const [, startPlugins] = await core.getStartServices();
+      return getAlertingAuthorizationTaskProcessSettings({
+        ruleTypeRegistry,
+        features: plugins.features,
+        spacesEnabled: Boolean(startPlugins.spaces),
+        securityEnabled: Boolean(plugins.security),
+      });
+    };
+    this.taskProcessSettings[ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID] =
+      getAuthorizationSettings;
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      ALERTING_AUTHORIZATION_TASK_PROCESS_SETTINGS_ID,
+      getAuthorizationSettings
+    );
+
     if (plugins.workflowsExtensions) {
+      plugins.workflowsExtensions.registerTaskProcessSettings('alerting', () => this.config);
       this.alertingEventBus = new AsyncDomainEventBus<
         AlertingDomainEvent,
         AlertingPublisherContext
@@ -920,6 +965,8 @@ export class AlertingPlugin {
     });
 
     if (this.alertingEventBus && plugins.workflowsExtensions) {
+      Object.assign(this.taskProcessSettings, plugins.workflowsExtensions.getTaskProcessSettings());
+      Object.assign(this.taskProcessParity, plugins.workflowsExtensions.getTaskProcessParity());
       this.alertStatusChangedSubscriber = new AlertStatusChangedWorkflowSubscriber(
         this.alertingEventBus,
         plugins.workflowsExtensions,

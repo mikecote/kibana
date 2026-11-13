@@ -6,10 +6,10 @@
  */
 
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
 import { createBadRequestError } from '@kbn/agent-builder-common';
 import { CONNECTOR_ID as MCP_CONNECTOR_TYPE_ID } from '@kbn/connector-schemas/mcp/constants';
 import type { McpToolConfig } from '@kbn/agent-builder-common/tools';
+import type { AgentBuilderActionsStart } from '../../../actions_services';
 import { listMcpTools } from './tool_type';
 
 /**
@@ -20,7 +20,7 @@ export async function validateConnector({
   request,
   connectorId,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   connectorId: string;
 }): Promise<void> {
@@ -49,7 +49,7 @@ export async function validateToolName({
   connectorId,
   toolName,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   connectorId: string;
   toolName: string;
@@ -89,7 +89,7 @@ export async function validateConfig({
   request,
   config,
 }: {
-  actions: ActionsPluginStart;
+  actions: AgentBuilderActionsStart;
   request: KibanaRequest;
   config: McpToolConfig;
 }): Promise<void> {

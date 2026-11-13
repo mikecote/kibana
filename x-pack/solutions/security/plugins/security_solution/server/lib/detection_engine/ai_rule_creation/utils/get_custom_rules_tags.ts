@@ -12,7 +12,7 @@ import { findRules } from '../../rule_management/logic/search/find_rules';
 export const getCustomRulesTags = async ({
   rulesClient,
 }: {
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
 }): Promise<string[]> => {
   const filterKQL = convertRulesFilterToKQL({
     showCustomRules: true,

@@ -184,7 +184,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('step definition creation', () => {
     it('should create step definition with correct structure', () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       expect(mockCreateServerStepDefinition).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -199,7 +201,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('handler execution', () => {
     it('should successfully classify data with single category', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(mockCoreSetup.getStartServices).toHaveBeenCalled();
@@ -242,7 +246,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result.output).toEqual({
@@ -268,7 +274,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result.output).toEqual({
@@ -294,7 +302,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result).toBeDefined();
@@ -310,7 +320,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle custom temperature setting', async () => {
       mockContext.input.temperature = 0.3;
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockInference.getChatModel).toHaveBeenCalledWith(
@@ -325,7 +337,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle undefined temperature', async () => {
       mockContext.input.temperature = undefined;
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockInference.getChatModel).toHaveBeenCalledWith(
@@ -340,7 +354,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('prompt building', () => {
     it('should build correct prompt structure', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildSystemPart).toHaveBeenCalled();
@@ -357,7 +373,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle different input types', async () => {
       mockContext.input.input = { key: 'value' };
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildDataPart).toHaveBeenCalledWith({ key: 'value' });
@@ -366,7 +384,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle array input', async () => {
       mockContext.input.input = ['item1', 'item2'];
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildDataPart).toHaveBeenCalledWith(['item1', 'item2']);
@@ -375,7 +395,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle undefined instructions', async () => {
       mockContext.input.instructions = undefined;
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildInstructionsPart).toHaveBeenCalledWith(undefined);
@@ -384,7 +406,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('schema and validation', () => {
     it('should build structured output schema from input', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildStructuredOutputSchema).toHaveBeenCalledWith(mockContext.input);
@@ -392,7 +416,9 @@ describe('aiClassifyStepDefinition', () => {
     });
 
     it('should pass model response schema to withStructuredOutput', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockChatModel.withStructuredOutput).toHaveBeenCalledWith(mockSchema, {
@@ -403,7 +429,9 @@ describe('aiClassifyStepDefinition', () => {
     });
 
     it('should validate model response', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockValidateModelResponse).toHaveBeenCalledWith({
@@ -425,7 +453,9 @@ describe('aiClassifyStepDefinition', () => {
         throw new Error('Validation failed');
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       await expect(stepDefinition.handler(mockContext)).rejects.toThrow('Validation failed');
     });
@@ -433,7 +463,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('model invocation', () => {
     it('should invoke model with correct parameters', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockRunnable.invoke).toHaveBeenCalledWith(
@@ -448,7 +480,9 @@ describe('aiClassifyStepDefinition', () => {
     });
 
     it('should respect abort signal', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockRunnable.invoke).toHaveBeenCalledWith(
@@ -462,13 +496,17 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle model invocation errors', async () => {
       mockRunnable.invoke.mockRejectedValueOnce(new Error('Model invocation failed'));
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       await expect(stepDefinition.handler(mockContext)).rejects.toThrow('Model invocation failed');
     });
 
     it('should set maxRetries to 0', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockInference.getChatModel).toHaveBeenCalledWith(
@@ -483,7 +521,9 @@ describe('aiClassifyStepDefinition', () => {
 
   describe('connector resolution', () => {
     it('should resolve connector id from config', async () => {
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockResolveConnectorId).toHaveBeenCalledWith(
@@ -497,7 +537,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle undefined connector id in config', async () => {
       mockContext.config['connector-id'] = undefined;
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockResolveConnectorId).toHaveBeenCalledWith(
@@ -511,7 +553,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should use resolved connector id for chat model', async () => {
       mockResolveConnectorId.mockResolvedValueOnce('custom-resolved-id');
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockInference.getChatModel).toHaveBeenCalledWith(
@@ -524,7 +568,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle connector resolution errors', async () => {
       mockResolveConnectorId.mockRejectedValueOnce(new Error('Connector not found'));
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       await expect(stepDefinition.handler(mockContext)).rejects.toThrow('Connector not found');
     });
@@ -546,7 +592,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result.output).toEqual({
@@ -570,7 +618,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result.output).toEqual({
@@ -593,7 +643,9 @@ describe('aiClassifyStepDefinition', () => {
         },
       });
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       const result = await stepDefinition.handler(mockContext);
 
       expect(result.output).toEqual({
@@ -612,7 +664,9 @@ describe('aiClassifyStepDefinition', () => {
       const fakeRequest = { id: 'fake-request' } as KibanaRequest;
       mockContextManager.getFakeRequest.mockReturnValue(fakeRequest);
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockContextManager.getFakeRequest).toHaveBeenCalledTimes(2);
@@ -634,7 +688,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle empty categories array', async () => {
       mockContext.input.categories = [];
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildClassificationRequestPart).toHaveBeenCalledWith(
@@ -647,7 +703,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle empty string input', async () => {
       mockContext.input.input = '';
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildDataPart).toHaveBeenCalledWith('');
@@ -664,7 +722,9 @@ describe('aiClassifyStepDefinition', () => {
       };
       mockContext.input.input = complexInput;
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
       await stepDefinition.handler(mockContext);
 
       expect(mockBuildDataPart).toHaveBeenCalledWith(complexInput);
@@ -673,7 +733,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle getChatModel failure', async () => {
       mockInference.getChatModel.mockRejectedValueOnce(new Error('Chat model unavailable'));
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       await expect(stepDefinition.handler(mockContext)).rejects.toThrow('Chat model unavailable');
     });
@@ -681,7 +743,9 @@ describe('aiClassifyStepDefinition', () => {
     it('should handle getStartServices failure', async () => {
       mockCoreSetup.getStartServices.mockRejectedValueOnce(new Error('Services unavailable'));
 
-      const stepDefinition = aiClassifyStepDefinition(mockCoreSetup);
+      const stepDefinition = aiClassifyStepDefinition(() =>
+        mockCoreSetup.getStartServices().then(([, deps]) => deps)
+      );
 
       await expect(stepDefinition.handler(mockContext)).rejects.toThrow('Services unavailable');
     });

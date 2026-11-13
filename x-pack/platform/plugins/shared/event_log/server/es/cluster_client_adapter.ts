@@ -26,6 +26,12 @@ import type {
 import type { ParsedIndexAlias } from './init';
 import type { EsNames } from './names';
 
+const FLUSH_MARKER = Symbol('event log flush');
+type FlushCompletion = ReturnType<typeof Promise.withResolvers<void>>;
+interface FlushMarker {
+  [FLUSH_MARKER]: FlushCompletion;
+}
+
 export const EVENT_BUFFER_TIME = 1000; // milliseconds
 export const EVENT_BUFFER_LENGTH = 100;
 
@@ -154,7 +160,10 @@ export class ClusterClientAdapter<
 > {
   private readonly logger: Logger;
   private readonly elasticsearchClientPromise: Promise<ElasticsearchClient>;
-  private readonly docBuffer$: Subject<TDoc>;
+  private readonly docBuffer$: Subject<TDoc | FlushMarker>;
+  private readonly pendingFlushes = new Set<FlushCompletion>();
+  private stopped = false;
+  private flushFailure?: Error;
   private readonly wait: Wait;
   private readonly docsBufferedFlushed: Promise<void>;
   private readonly esNames: EsNames;
@@ -164,7 +173,7 @@ export class ClusterClientAdapter<
     this.elasticsearchClientPromise = opts.elasticsearchClientPromise;
     this.esNames = opts.esNames;
     this.wait = opts.wait;
-    this.docBuffer$ = new Subject<TDoc>();
+    this.docBuffer$ = new Subject<TDoc | FlushMarker>();
 
     // buffer event log docs for time / buffer length, ignore empty
     // buffers, then index the buffered docs; kick things off with a
@@ -173,9 +182,39 @@ export class ClusterClientAdapter<
       .pipe(
         bufferTime(EVENT_BUFFER_TIME, null, EVENT_BUFFER_LENGTH),
         rxFilter((docs) => docs.length > 0),
-        concatMap(async (docs) => await this.indexDocuments(docs))
+        concatMap(async (entries) => {
+          const docs: TDoc[] = [];
+          const completions: FlushCompletion[] = [];
+          for (const entry of entries) {
+            if (FLUSH_MARKER in entry) {
+              completions.push(entry[FLUSH_MARKER]);
+            } else {
+              docs.push(entry);
+            }
+          }
+          if (docs.length) await this.indexDocuments(docs);
+          for (const completion of completions) {
+            this.pendingFlushes.delete(completion);
+            completion.resolve();
+          }
+        })
       )
       .toPromise();
+    this.docsBufferedFlushed.catch((error: Error) => {
+      this.flushFailure = error;
+      for (const completion of this.pendingFlushes) completion.reject(error);
+      this.pendingFlushes.clear();
+    });
+  }
+
+  /** Waits for queued writes while leaving the adapter open for the next execution. */
+  public async flush(): Promise<void> {
+    if (this.stopped) return this.docsBufferedFlushed;
+    if (this.flushFailure) throw this.flushFailure;
+    const completion = Promise.withResolvers<void>();
+    this.pendingFlushes.add(completion);
+    this.docBuffer$.next({ [FLUSH_MARKER]: completion });
+    return completion.promise;
   }
 
   // This will be called at plugin stop() time; the assumption is any plugins
@@ -185,6 +224,7 @@ export class ClusterClientAdapter<
   // and so should end up writing all events out that pass through, before
   // Kibana shuts down (cleanly).
   public async shutdown(): Promise<void> {
+    this.stopped = true;
     this.docBuffer$.complete();
     await this.docsBufferedFlushed;
   }

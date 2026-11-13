@@ -5,7 +5,8 @@
  * 2.0.
  */
 
-import type { GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { AlertsClientError } from '@kbn/alerting-plugin/server';
 import moment from 'moment';
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
@@ -24,7 +25,6 @@ import {
   alertsLocatorID,
   getAlertUrl,
   observabilityFeatureId,
-  observabilityPaths,
 } from '@kbn/observability-plugin/common';
 import type { LocatorPublic } from '@kbn/share-plugin/common';
 import { asyncForEach } from '@kbn/std';
@@ -231,6 +231,5 @@ export const durationAnomalyAlertFactory: UptimeAlertTypeFactory<ActionGroupIds>
     return { state: updateState(state, foundAnomalies) };
   },
   alerts: UptimeRuleTypeAlertDefinition,
-  getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-    observabilityPaths.ruleDetails(rule.id),
+  getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
 });

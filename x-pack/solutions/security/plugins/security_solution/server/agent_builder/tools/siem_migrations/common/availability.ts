@@ -9,8 +9,8 @@ import type { ToolAvailabilityConfig } from '@kbn/agent-builder-server';
 import type { ToolAvailabilityContext } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import { ProductFeatureKey } from '@kbn/security-solution-features/keys';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { SecurityAccessToolServices } from '../../access_services';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service';
 import { getAgentBuilderResourceAvailability } from '../../../utils/get_agent_builder_resource_availability';
 
 /**
@@ -23,8 +23,8 @@ import { getAgentBuilderResourceAvailability } from '../../../utils/get_agent_bu
  * checks for mutations happen in the tool handler — see start_rule_migration_tool.
  */
 export const createSiemMigrationAvailability = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
-  productFeaturesService: ProductFeaturesService,
+  core: SecurityAccessToolServices,
+  productFeaturesService: ProductFeaturesReader,
   logger: Logger
 ): ToolAvailabilityConfig => ({
   cacheMode: 'space' as const,

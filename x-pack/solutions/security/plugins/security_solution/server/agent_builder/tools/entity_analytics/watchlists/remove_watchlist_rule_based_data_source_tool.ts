@@ -12,7 +12,7 @@ import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityWatchlistToolServices } from './services';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
 import { syncWatchlistInBackground } from '../../../../lib/entity_analytics/watchlists/entity_sources/entity_sources_service';
 import {
@@ -51,7 +51,7 @@ export const SECURITY_REMOVE_WATCHLIST_RULE_BASED_DATA_SOURCE_TOOL_ID = security
 );
 
 export const removeWatchlistRuleBasedDataSourceTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityWatchlistToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   hasEncryptionKey: boolean
@@ -243,7 +243,7 @@ Resolve the watchlist id via \`security.get_watchlist_id\` first when the user n
         await entitySourceClient.delete(existingSource.id);
         await watchlistClient.removeEntitySourceReference(params.watchlistId, existingSource);
 
-        void syncWatchlistInBackground({
+        const sync = syncWatchlistInBackground({
           watchlistId: params.watchlistId,
           logContext: SECURITY_REMOVE_WATCHLIST_RULE_BASED_DATA_SOURCE_TOOL_ID,
           esClient: esClient.asCurrentUser,
@@ -253,6 +253,7 @@ Resolve the watchlist id via \`security.get_watchlist_id\` first when the user n
           getStartServices: core.getStartServices,
           hasEncryptionKey,
         });
+        core.trackBackgroundTask?.(sync);
 
         telemetryTracker.recordResultCount(1);
         return {

@@ -8,7 +8,7 @@
 import type { KibanaRequest } from '@kbn/core-http-server';
 import { SIEM_MIGRATIONS_API_ACTION_ALL } from '@kbn/security-solution-features/actions';
 import { RULES_API_READ } from '@kbn/security-solution-features/constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityAccessToolServices } from '../../access_services';
 
 /**
  * Runtime, per-request privilege check for mutating Automatic Migration actions.
@@ -21,7 +21,7 @@ import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../pl
  * Returns `true` when the current user can perform all SIEM migration operations.
  */
 export const hasSiemMigrationPrivileges = async (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   request: KibanaRequest,
   additionalPrivileges: readonly string[] = []
 ): Promise<boolean> => {
@@ -37,7 +37,7 @@ export const hasSiemMigrationPrivileges = async (
 };
 
 export const hasRuleMigrationPrivileges = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   request: KibanaRequest,
   additionalPrivileges: readonly string[] = []
 ): Promise<boolean> =>

@@ -11,6 +11,9 @@
     "id": "ruleRegistry",
     "browser": false,
     "server": true,
+    "taskTypeContributions": {
+      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
+    },
     "configPath": [
       "xpack",
       "ruleRegistry"
@@ -22,7 +25,8 @@
     ],
     "optionalPlugins": [
       "security",
-      "spaces"
+      "spaces",
+      "workflowsExtensions"
     ]
   }
 }

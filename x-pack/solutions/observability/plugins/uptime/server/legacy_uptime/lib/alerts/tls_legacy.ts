@@ -5,12 +5,13 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
-import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
+import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import moment from 'moment';
 import { schema } from '@kbn/config-schema';
 import type { ActionGroupIdsOf } from '@kbn/alerting-plugin/common';
-import type { GetViewInAppRelativeUrlFnOpts } from '@kbn/alerting-plugin/server';
 import { AlertsClientError, DEFAULT_AAD_CONFIG } from '@kbn/alerting-plugin/server';
 import type { LegacyUptimeRuleTypeFactory } from './types';
 import { updateState } from './common';
@@ -177,6 +178,5 @@ export const tlsLegacyRuleFactory: LegacyUptimeRuleTypeFactory<ActionGroupIds> =
 
     return { state: updateState(state, foundCerts) };
   },
-  getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-    observabilityPaths.ruleDetails(rule.id),
+  getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
 });

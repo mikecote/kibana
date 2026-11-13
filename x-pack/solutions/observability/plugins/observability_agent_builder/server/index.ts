@@ -14,6 +14,8 @@ export type {
   ObservabilityAgentBuilderPluginStartDependencies,
 } from './types';
 
+export type { ObservabilityAgentBuilderDataRegistryTypes } from './data_registry/data_registry_types';
+
 export type { ObservabilityAgentBuilderServerRouteRepository } from './routes/get_global_observability_agent_builder_route_repository';
 
 export const plugin = async (initializerContext: PluginInitializerContext) => {

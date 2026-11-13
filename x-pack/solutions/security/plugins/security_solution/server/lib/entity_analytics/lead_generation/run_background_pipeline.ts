@@ -16,50 +16,43 @@ export interface RunLeadGenerationInBackgroundArgs {
   readonly executionUuid: string;
 }
 
-/**
- * Fires runLeadGenerationPipeline in a background IIFE and persists
- * success/error status via upsertLeadGenerationConfig. Pipeline errors
- * (including ES security_exception) are caught here and surface via the
- * status endpoint's `lastError` field rather than propagating to the caller.
- */
-export const runLeadGenerationInBackground = ({
+/** Runs the background pipeline, persists its status, and exposes completion to execution hosts. */
+export const runLeadGenerationInBackground = async ({
   pipelineArgs,
   savedObjectsClient,
   connectorId,
   executionUuid,
-}: RunLeadGenerationInBackgroundArgs): void => {
+}: RunLeadGenerationInBackgroundArgs): Promise<void> => {
   const { logger, spaceId } = pipelineArgs;
 
-  void (async () => {
-    try {
-      await runLeadGenerationPipeline(pipelineArgs);
-      await upsertLeadGenerationConfig(savedObjectsClient, spaceId, {
-        connectorId,
-        lastExecutionUuid: executionUuid,
-        lastError: null,
-      }).catch((err: Error) =>
-        logger.warn(
-          `[LeadGeneration] Failed to persist success status (executionUuid=${executionUuid}): ${err.message}`
-        )
-      );
-      logger.info(
-        `[LeadGeneration] Background generation completed (connectorId=${connectorId}, executionUuid=${executionUuid})`
-      );
-    } catch (pipelineError) {
-      const errorMessage =
-        pipelineError instanceof Error ? pipelineError.message : String(pipelineError);
-      logger.error(
-        `[LeadGeneration] Background generation failed (executionUuid=${executionUuid}): ${errorMessage}`
-      );
-      await upsertLeadGenerationConfig(savedObjectsClient, spaceId, {
-        connectorId,
-        lastExecutionUuid: executionUuid,
-        lastError: errorMessage,
-      }).catch((err: Error) =>
-        logger.warn(
-          `[LeadGeneration] Failed to persist error status (executionUuid=${executionUuid}): ${err.message}`
-        )
-      );
-    }
-  })();
+  try {
+    await runLeadGenerationPipeline(pipelineArgs);
+    await upsertLeadGenerationConfig(savedObjectsClient, spaceId, {
+      connectorId,
+      lastExecutionUuid: executionUuid,
+      lastError: null,
+    }).catch((err: Error) =>
+      logger.warn(
+        `[LeadGeneration] Failed to persist success status (executionUuid=${executionUuid}): ${err.message}`
+      )
+    );
+    logger.info(
+      `[LeadGeneration] Background generation completed (connectorId=${connectorId}, executionUuid=${executionUuid})`
+    );
+  } catch (pipelineError) {
+    const errorMessage =
+      pipelineError instanceof Error ? pipelineError.message : String(pipelineError);
+    logger.error(
+      `[LeadGeneration] Background generation failed (executionUuid=${executionUuid}): ${errorMessage}`
+    );
+    await upsertLeadGenerationConfig(savedObjectsClient, spaceId, {
+      connectorId,
+      lastExecutionUuid: executionUuid,
+      lastError: errorMessage,
+    }).catch((err: Error) =>
+      logger.warn(
+        `[LeadGeneration] Failed to persist error status (executionUuid=${executionUuid}): ${err.message}`
+      )
+    );
+  }
 };

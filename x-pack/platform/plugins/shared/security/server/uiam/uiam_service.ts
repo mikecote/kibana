@@ -463,7 +463,38 @@ interface UiamServiceOptions {
   elasticsearchUrl?: string;
   /** The Kibana version, used to set the User-Agent header on outbound UIAM requests. */
   kibanaVersion: string;
+  /**
+   * The contents of the mTLS client certificate, key and certificate authorities, instead of the
+   * files `config.ssl` names. For a process that cannot read Kibana's files: Kibana reads them and
+   * sends what they hold.
+   */
+  tls?: UiamTlsMaterial;
 }
+
+/** The PEM contents of the TLS material a UIAM connection uses. */
+export interface UiamTlsMaterial {
+  certificate?: string;
+  key?: string;
+  certificateAuthorities?: string[];
+}
+
+/** Reads the TLS material `config.ssl` names, as the UIAM service reads it. */
+export const readUiamTlsMaterial = (
+  ssl: Pick<NonNullable<UiamConfigType>['ssl'], 'certificate' | 'key' | 'certificateAuthorities'>
+): UiamTlsMaterial => {
+  const readFile = (file: string) => readFileSync(file, 'utf8');
+  const { certificate, key, certificateAuthorities } = ssl;
+  return {
+    certificate: certificate ? readFile(certificate) : undefined,
+    key: key ? readFile(key) : undefined,
+    certificateAuthorities: certificateAuthorities
+      ? (Array.isArray(certificateAuthorities)
+          ? certificateAuthorities
+          : [certificateAuthorities]
+        ).map(readFile)
+      : undefined,
+  };
+};
 
 /**
  * See {@link UiamServicePublic}.
@@ -475,12 +506,14 @@ export class UiamService implements UiamServicePublic {
   readonly #kibanaServerResourceURL: string;
   readonly #elasticsearchUrl?: string;
   readonly #userAgentHeader: string;
+  readonly #tls?: UiamTlsMaterial;
 
   constructor(logger: Logger, config: UiamConfigType, options: UiamServiceOptions) {
     this.#logger = logger;
     this.#kibanaServerResourceURL = options.kibanaServerResourceURL;
     this.#elasticsearchUrl = options.elasticsearchUrl;
     this.#userAgentHeader = `Kibana/${options.kibanaVersion}`;
+    this.#tls = options.tls;
 
     // Destructure existing config and re-create it again after validation to make TypeScript can infer the proper types.
     const { enabled, url, sharedSecret, ssl, unsafe = {} } = config;
@@ -1446,21 +1479,15 @@ export class UiamService implements UiamServicePublic {
    * Creates a custom dispatcher for the native `fetch` to use custom TLS connection settings.
    */
   #createFetchDispatcher() {
-    const { certificateAuthorities, verificationMode } = this.#config.ssl;
+    const { verificationMode } = this.#config.ssl;
 
-    const readFile = (file: string) => readFileSync(file, 'utf8');
-
-    // Read client certificate and key for mTLS from PEM files.
-    const cert = this.#config.ssl.certificate ? readFile(this.#config.ssl.certificate) : undefined;
-    const key = this.#config.ssl.key ? readFile(this.#config.ssl.key) : undefined;
-
-    // Read CA certificate(s) from the file paths defined in the config.
-    const ca = certificateAuthorities
-      ? (Array.isArray(certificateAuthorities)
-          ? certificateAuthorities
-          : [certificateAuthorities]
-        ).map((caPath) => readFile(caPath))
-      : undefined;
+    // The mTLS client certificate and key and the CA certificate(s), from the PEM files the config
+    // names, or the contents a process was sent.
+    const {
+      certificate: cert,
+      key,
+      certificateAuthorities: ca,
+    } = this.#tls ?? readUiamTlsMaterial(this.#config.ssl);
 
     // If we don't have any custom TLS settings and the full verification is required, we don't
     // need a custom dispatcher as it's the default `fetch` behavior.

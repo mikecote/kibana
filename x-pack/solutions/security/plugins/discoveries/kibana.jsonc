@@ -33,6 +33,12 @@
     ],
     "requiredBundles": [],
     "taskTypeContributions": {
+      "agent-builder": [
+        "server/task_types/agent_builder_contribution.ts"
+      ],
+      "workflow-steps": [
+        "server/task_types/workflow_steps_contribution.ts"
+      ],
       "attack-discovery-workflow-executor": [
         "server/task_types/workflow_executor_contribution.ts"
       ]

@@ -40,7 +40,7 @@ import { createEsoMigration, isEsQueryRuleType, pipeMigrations } from './utils';
 export { FILEBEAT_7X_INDICATOR_PATH } from './constants';
 
 export function getMigrations(
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
   searchSourceMigrations: MigrateFunctionsObject,
   isPreconfigured: (connectorId: string) => boolean
 ): SavedObjectMigrationMap {
@@ -137,7 +137,7 @@ function mapSearchSourceMigrationFunc(
  * It doesn't modify existing migrations. The following migrations will occur at minimum version of 8.3+.
  */
 function getSearchSourceMigrations(
-  encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>,
   searchSourceMigrations: MigrateFunctionsObject
 ) {
   const filteredMigrations: SavedObjectMigrationMap = {};

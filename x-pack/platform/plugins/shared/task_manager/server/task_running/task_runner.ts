@@ -11,19 +11,21 @@
  * rescheduling, middleware application, etc.
  */
 
-import apm from 'elastic-apm-node';
-import { withActiveSpan } from '@kbn/tracing-utils';
 import { v4 as uuidv4 } from 'uuid';
 import { withSpan } from '@kbn/apm-utils';
 import { flow, identity, isEqual, omit } from 'lodash';
 import type { ExecutionContextStart, Logger } from '@kbn/core/server';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
+import {
+  startTaskRunTransaction,
+  withTaskRunSpan,
+  runTaskWithExecutionContext,
+} from './task_tracing';
 import { buildChildRequestEnricher, buildTaskFakeRequest } from './fake_request_factory';
 import type { Middleware } from '../lib/middleware';
 import type { Result } from '../lib/result_type';
 import { asErr, asOk, eitherAsync, isErr, isOk, mapErr, mapOk, unwrap } from '../lib/result_type';
-import { getExecutionContextRunner } from '../lib/execution_context';
 import type { TaskMarkRunning, TaskRun, TaskTiming, TaskManagerStat } from '../task_events';
 import {
   asTaskRunEvent,
@@ -47,6 +49,7 @@ import type {
   TaskDefinition,
   TaskEventLogger,
   TaskRunAsContext,
+  TaskRunAs,
   TaskTypeGroup,
 } from '../task';
 import { isFailedRunResult, TaskStatus, TaskCost, getTaskCostFromInstance } from '../task';
@@ -82,7 +85,7 @@ import type { TaskProcessDispatch } from '../task_process/remote_task_runner';
 
 export const EMPTY_RUN_RESULT: SuccessfulRunResult = { state: {} };
 
-export const TASK_MANAGER_RUN_TRANSACTION_TYPE = 'task-run';
+export { TASK_MANAGER_RUN_TRANSACTION_TYPE } from './task_tracing';
 export const TASK_MANAGER_TRANSACTION_TYPE = 'task-manager';
 export const TASK_MANAGER_TRANSACTION_TYPE_MARK_AS_RUNNING = 'mark-task-as-running';
 
@@ -177,7 +180,7 @@ export type RanTask = TaskRunning<TaskRunningStage.RAN, ConcreteTaskInstance>;
 export type TaskRunningInstance = PendingTask | ReadyToRunTask | RanTask;
 
 type CredentialCheck =
-  | { outcome: 'run'; runAs?: TaskRunAsContext }
+  | { outcome: 'run'; runAs?: TaskRunAsContext; runAsIdentity?: TaskRunAs }
   | { outcome: 'retry' | 'fail'; error: DecoratedError };
 
 /**
@@ -402,20 +405,11 @@ export class TaskManagerRunner implements TaskRunner {
 
     this.logger.debug(`Running task ${this}`, { tags: ['task:start', this.id, this.taskType] });
 
-    return withActiveSpan(
-      'task-manager-run',
-      {
-        attributes: {
-          'transaction.type': TASK_MANAGER_RUN_TRANSACTION_TYPE,
-          'kibana.task.type': this.taskType,
-        },
-        // Make sure that this is a parent transaction (not a child of any other ongoing transaction)
-        root: true,
-      },
+    return withTaskRunSpan(
+      this.taskType,
+      // The root task span supplies the trace context for worker dispatch.
       async () => {
-        const apmTrans = apm.startTransaction(this.taskType, TASK_MANAGER_RUN_TRANSACTION_TYPE, {
-          childOf: this.instance.task.traceparent,
-        });
+        const apmTrans = startTaskRunTransaction(this.taskType, this.instance.task.traceparent);
         const stopEventLoopMonitoring = startEventLoopMonitoring(this.config.event_loop_delay);
         const makeTaskTiming = (): TaskTiming => ({
           start: startedAt.getTime(),
@@ -501,7 +495,7 @@ export class TaskManagerRunner implements TaskRunner {
             if (apmTrans) apmTrans.end('failure');
             return processedResult;
           }
-          const { runAs } = credentialCheck;
+          const { runAs, runAsIdentity } = credentialCheck;
 
           const sanitizedTaskInstance = omit(modifiedContext.taskInstance, [
             'apiKey',
@@ -548,10 +542,9 @@ export class TaskManagerRunner implements TaskRunner {
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
             });
 
-          // Service-account (`runAs`) tasks carry a closure that cannot cross a process boundary,
-          // so they always run in this process.
-          const route = runAs ? undefined : this.taskProcessDispatch?.getRoute(this.taskType);
+          const route = this.taskProcessDispatch?.getRoute(this.taskType);
           if (route && this.taskProcessDispatch) {
+            const snapshot = await this.taskProcessDispatch.getSnapshot?.(this.taskType);
             this.task = new RemoteTaskRunner({
               route,
               request: {
@@ -559,20 +552,26 @@ export class TaskManagerRunner implements TaskRunner {
                 taskInstance: JSON.parse(JSON.stringify(sanitizedTaskInstance)),
                 executionUuid: this.uuid,
                 apiKey: apiKeyForRequest,
+                runAs: runAsIdentity,
+                snapshot,
+                cancelGracePeriodMs: this.taskProcessDispatch.getCancelGracePeriodMs?.(
+                  this.taskType
+                ),
                 spaceId: modifiedContext.taskInstance.userScope?.spaceId,
                 uiamApiKeyExternal: modifiedContext.taskInstance.userScope?.uiamApiKeyExternal,
                 userProfileId,
                 userName,
-                featureFlags: await this.taskProcessDispatch.getFeatureFlags?.(this.taskType),
+                featureFlags: snapshot?.featureFlags,
                 kibanaVersion: this.taskProcessDispatch.kibanaVersion,
               },
               timeoutMs: parseIntervalAsMillisecond(this.timeout),
               signal: abortController.signal,
               setCustomTaskRunEventFields: this.setCustomTaskRunEventFields,
-              // A process that cannot be started, or does not serve this type, leaves the run to
-              // this process.
-              fallback: runInThisProcess,
-              onFallback: this.taskProcessDispatch.onFallback,
+              onDispatchFailure: this.taskProcessDispatch.onDispatchFailure,
+              onTasksCreated: this.taskProcessDispatch.onTasksCreated,
+              onMetrics: this.taskProcessDispatch.onMetrics,
+              getCurrentTasksInPool: this.taskProcessDispatch.getCurrentTasksInPool,
+              getFeatureFlags: this.taskProcessDispatch.getFeatureFlags,
               observer: definition.observeRemoteRun?.({ taskInstance: sanitizedTaskInstance }),
             });
           } else {
@@ -598,14 +597,10 @@ export class TaskManagerRunner implements TaskRunner {
             if (originalTaskCancel) return originalTaskCancel.call(this);
           };
 
-          const runner = getExecutionContextRunner(this.executionContext, {
-            name: `run ${this.instance.task.taskType}`,
-            id: this.instance.task.id,
-            description: 'run task',
-          });
-
-          const result = await runner.run(() =>
-            withSpan({ name: 'run', type: 'task manager' }, () => this.task!.run())
+          const result = await runTaskWithExecutionContext(
+            this.executionContext,
+            this.instance.task,
+            () => this.task!.run()
           );
 
           stopUpdatingLongRunningTasks();
@@ -714,7 +709,11 @@ export class TaskManagerRunner implements TaskRunner {
       );
     }
 
-    return { outcome: 'run', runAs: createRunAsContext(runAs, verifiedRunAs) };
+    return {
+      outcome: 'run',
+      runAs: createRunAsContext(runAs, verifiedRunAs),
+      runAsIdentity: verifiedRunAs,
+    };
   }
 
   /**

@@ -16,7 +16,7 @@ import {
   MAX_WATCHLIST_DESCRIPTION_LENGTH,
   MAX_WATCHLIST_NAME_LENGTH,
 } from '../../../../../common/entity_analytics/watchlists/constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
 import { securityTool } from '../../constants';
@@ -56,7 +56,7 @@ const schema = lazySchema(() =>
 export const SECURITY_UPDATE_WATCHLIST_TOOL_ID = securityTool('update_watchlist');
 
 export const updateWatchlistTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

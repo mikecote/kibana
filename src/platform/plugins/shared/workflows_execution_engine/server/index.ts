@@ -18,6 +18,7 @@ export async function plugin(initializerContext: PluginInitializerContext) {
   return new WorkflowsExecutionEnginePlugin(initializerContext);
 }
 
+export { initializeDataStreamDataClients } from './repositories/data_access_layer/implementations/data_stream/data_stream_data_client_bundle';
 export { createPlainIndexDataClients } from './repositories/data_access_layer/implementations/plain_index/plain_index_data_client_bundle';
 export { createWorkflowScheduler } from './create_workflow_scheduler';
 export type {
@@ -25,6 +26,38 @@ export type {
   WorkflowSchedulerDeps,
   WorkflowSchedulerTaskManager,
 } from './create_workflow_scheduler';
+export { createWorkflowRuntime } from './create_workflow_runtime';
+export type {
+  WorkflowRuntime,
+  WorkflowRuntimeDeps,
+  WorkflowRuntimeState,
+  WorkflowTaskContext,
+  WorkflowTaskFunction,
+} from './create_workflow_runtime';
+export type {
+  WorkflowCloudInfo,
+  WorkflowCoreStart,
+  WorkflowDataStreamsAdapter,
+  WorkflowRuntimeTaskManager,
+} from './workflow_core_services';
+export { getWorkflowDataStreamDefinitions, registerWorkflowDataStreams } from './data_streams';
+export {
+  assertRunnableInProcess,
+  assertRunnableInProcessPreflight,
+  collectWorkflowRequirements,
+  findMissingWorkflowCapabilities,
+} from './lib/assert_runnable_in_process';
+export type {
+  MissingWorkflowCapabilities,
+  WorkflowPreflight,
+  WorkflowPreflightContext,
+  WorkflowRequirements,
+  WorkflowRunCapabilities,
+} from './lib/assert_runnable_in_process';
+export { buildWorkflowMeteringRecord, createWorkflowsMeteringReporter } from './metering';
+export type { MeteringSink, WorkflowMeteringRecord } from './metering';
+export { ExecutionIdentityContexts } from './service_account_execution';
+export { HitlLifecycleAuditRegistry } from './step/wait_for_input_step/hitl_lifecycle_auditor';
 export type { WorkflowsExecutionEngineConfig } from './config';
 export { WORKFLOWS_EXECUTION_ENGINE_TASK_PROCESS_SETTINGS_ID } from './task_process_settings';
 

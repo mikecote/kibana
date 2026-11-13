@@ -147,6 +147,34 @@ describe('WorkflowsService (facade)', () => {
     return service;
   };
 
+  it('returns Core only after the shared runtime has initialized', async () => {
+    const initialization = Promise.withResolvers<void>();
+    MockedWorkflowChangeHistoryService.mockImplementationOnce(
+      () =>
+        ({
+          initialize: () => initialization.promise,
+          isInitialized: () => true,
+        } as never)
+    );
+    const coreStart = makeCoreStart(makeEsClient());
+    const service = new WorkflowsService(
+      makeCoreSetup(async () => [coreStart, makePluginsStart()]),
+      makePluginsSetup(),
+      loggerMock.create(),
+      '9.0.0'
+    );
+    let resolved = false;
+    const started = service.getCoreStart().then((core) => {
+      resolved = true;
+      return core;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    initialization.resolve();
+    await expect(started).resolves.toBe(coreStart);
+  });
+
   beforeEach(() => {
     MockedWorkflowChangeHistoryService.mockImplementation(
       () =>

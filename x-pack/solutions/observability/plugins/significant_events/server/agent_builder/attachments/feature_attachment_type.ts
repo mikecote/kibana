@@ -12,15 +12,15 @@ import type {
 import { getLatestVersion, type VersionedAttachment } from '@kbn/agent-builder-common/attachments';
 import type { Logger } from '@kbn/core/server';
 import { featureSchema, type Feature } from '@kbn/significant-events-schema';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
 import { decodeFeatureAttachmentOrigin, KI_FEATURE_ATTACHMENT_TYPE } from '../../../common';
 import type { GetScopedClients } from '../../routes/types';
 import { canReadSignificantEvents } from '../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../types';
 
 interface CreateSignificantEventFeatureAttachmentTypeOptions {
   logger: Logger;
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
 }
 
 export const formatFeatureAsText = (feature: Feature): string => {

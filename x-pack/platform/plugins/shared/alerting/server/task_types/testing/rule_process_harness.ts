@@ -22,9 +22,11 @@
  */
 
 // eslint-disable-next-line @kbn/eslint/require_kbn_fs
-import { cpSync, existsSync, mkdtempSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import type { TaskFeatureFlagDefinitions } from '@kbn/task-manager-plugin/server/task_process/feature_flag_declarations';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { createRequire } from 'module';
 import { fetch as undiciFetch } from 'undici';
 import { Client } from '@elastic/elasticsearch';
 import { REPO_ROOT, kibanaPackageJson } from '@kbn/repo-info';
@@ -33,14 +35,36 @@ import { createTestServers } from '@kbn/core-test-helpers-kbn-server';
 import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
 import { createSystemConnectors } from '@kbn/actions-plugin/server/create_system_actions';
+import { createRuleRunActions } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
+import type { ActionsTaskProcessSettings } from '@kbn/actions-plugin/server/task_types/task_process_settings';
+import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import type { TaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import { collectRemoteGaugeMetrics } from '@kbn/task-manager-plugin/server/task_process/metrics_transport';
+import type {
+  TaskProcessAddress,
+  TaskProcessDispatch,
+} from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
+import type { TaskProcessInit } from '@kbn/task-manager-plugin/server/task_process/wire';
+import { startTaskProcessWorker } from '@kbn/task-manager-plugin/server/task_process/worker';
+import { TASK_PROCESS_PROTOCOL_VERSION } from '@kbn/task-manager-plugin/server/task_process/protocol';
 import { reviveTaskInstance } from '@kbn/task-manager-plugin/server/task_process/wire';
 import { serializeSettings } from '@kbn/task-manager-plugin/server/task_process/settings';
 import { TaskProcessSupervisor } from '@kbn/task-manager-plugin/server/task_process/supervisor';
-import type { RemoteRunObserver, RunResult } from '@kbn/task-manager-plugin/server/task';
+import {
+  runFlushers,
+  runInRunContext,
+} from '@kbn/task-manager-plugin/server/task_process/run_context';
+import type {
+  CancellableTask,
+  RemoteRunObserver,
+  RunContext,
+  RunResult,
+} from '@kbn/task-manager-plugin/server/task';
 import type { TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import {
   ConfigSchema as SecurityConfigSchema,
@@ -50,11 +74,14 @@ import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/s
 import { getLicenseFetcher } from '@kbn/licensing-plugin/server/license_fetcher';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
 import eventLogMappings from '@kbn/event-log-plugin/generated/mappings.json';
+import type { RuleRunContribution } from '../rule_run_contribution';
+import type { AlertStatusChangedOptIn } from '../../lib/workflow_extensions/alert_status_changed_opt_in';
+import { ConnectorAdapterRegistry } from '../../connector_adapters/connector_adapter_registry';
 import { configSchema as alertingConfigSchema } from '../../config';
 import registeredConnectorIds from '../rule_run_connector_type_ids.json';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { getTaskBundleEntries, buildTaskBundle, getContributionFiles } = require(join(
+const { getTaskBundleEntries, buildTaskBundle, resolveTaskContributions } = require(join(
   REPO_ROOT,
   'src/dev/task_bundles/build'
 ));
@@ -89,9 +116,16 @@ export interface RuleModuleUnderTest {
   taskType: TaskTypeModule;
   /** The name of its bundle, as `getTaskBundleEntries()` names it (`stackAlerts__es_query`). */
   bundle: string;
+  /** An integration fixture module to build in place of a production task entry. */
+  file?: string;
 }
 
 export interface RuleProcessHarnessOptions {
+  mode?: 'child_process' | 'remote';
+  reuse?: boolean;
+  featureFlags?: TaskFeatureFlagDefinitions;
+  instrumentation?: TaskProcessInit['instrumentation'];
+  onMetrics?: TaskProcessDispatch['onMetrics'];
   /** The rule types to serve. Their bundles are built in parallel, once. */
   rules: RuleModuleUnderTest[];
   /**
@@ -105,7 +139,9 @@ export interface RuleProcessHarnessOptions {
    * Contributions that only the runs in the test process (`runInProcess`) get, such as a fake workflows
    * client: a forked process has the contributions its bundle was built with.
    */
-  inProcessContributions?: unknown[];
+  inProcessContributions?: RuleRunContribution[];
+  registerTaskSchedulingDefinitions?: (definitions: TaskSchedulingDefinitions) => void;
+  additionalContributions?: Record<string, string[]>;
   /** Extra indices to create (name -> mappings), before any rule runs. */
   indices?: Record<string, Record<string, unknown>>;
 }
@@ -141,7 +177,7 @@ export interface SeedRuleOptions {
 
 export interface RunOptions {
   /** Called when the process declines the run or cannot serve it. Defaults to a mock that must not be called. */
-  fallback?: jest.Mock;
+  onDispatchFailure?: jest.Mock;
   timeoutMs?: number;
   state?: Record<string, unknown>;
   observer?: RemoteRunObserver;
@@ -150,7 +186,7 @@ export interface RunOptions {
 
 export interface RunOutcome {
   result: RunResult | undefined | void;
-  fallback: jest.Mock;
+  onDispatchFailure: jest.Mock;
   /** The `RemoteTaskRunner`, for the test that cancels it. */
   runner: RemoteTaskRunner;
 }
@@ -176,6 +212,7 @@ export const DEFAULT_RULE_ATTRIBUTES = () => ({
 });
 
 export class RuleProcessHarness {
+  public readonly logger = loggingSystemMock.createLogger();
   public es!: Client;
   public esServer!: TestElasticsearchUtils;
   public supervisor!: TaskProcessSupervisor;
@@ -185,6 +222,9 @@ export class RuleProcessHarness {
   /** Connector types Kibana registered that the bundles lack: set by a test to see the run declined. */
   public unregisteredConnectorTypes: string[] = [];
 
+  private worker?: ReturnType<typeof startTaskProcessWorker>;
+  private remoteAddress?: TaskProcessAddress;
+  private readonly schedulingDefinitions = new TaskSchedulingDefinitions();
   private options!: RuleProcessHarnessOptions;
   private seederClient!: ReturnType<
     TaskProcessCore['host']['savedObjects']['getUnsafeInternalClient']
@@ -196,6 +236,18 @@ export class RuleProcessHarness {
   /** Everything Kibana sends a rule process, composed as Kibana does it. */
   public getSettings(): Record<string, unknown> {
     return {
+      taskManager: {
+        api_key_type: 'es',
+        grant_uiam_api_keys: false,
+        scheduling: {
+          taskManagerId: `kibana:${KIBANA_UUID}`,
+          securityEnabled:
+            this.license?.isAvailable === true && this.license.getFeature('security').isEnabled,
+          middlewareIds: [],
+          allowReadingInvalidState: false,
+          definitions: createTaskSchedulingSnapshot(this.schedulingDefinitions),
+        },
+      },
       alerting: alertingConfigSchema.validate({}),
       actions: actionsConfigSchema.validate({}),
       // What Kibana decided while it started from the plugins around alerting.
@@ -237,6 +289,7 @@ export class RuleProcessHarness {
   /** The `init` message of a process: what Kibana sends it. */
   public getInit() {
     return {
+      instrumentation: this.options.instrumentation,
       server: { uuid: KIBANA_UUID, buildNum: 1, isServerless: false },
       encryptedSavedObjects: { encryptionKey: ENCRYPTION_KEY, decryptionOnlyKeys: [] },
       settings: Object.fromEntries(
@@ -264,6 +317,10 @@ export class RuleProcessHarness {
 
   public async start(options: RuleProcessHarnessOptions) {
     this.options = options;
+    options.registerTaskSchedulingDefinitions?.(this.schedulingDefinitions);
+    for (const { taskType } of options.rules) {
+      this.schedulingDefinitions.registerTaskDefinitions({ [taskType.type]: taskType });
+    }
     const { startES } = createTestServers({
       adjustTimeout: (t) => jest.setTimeout(t),
       settings: { es: { license: 'trial' } },
@@ -273,7 +330,10 @@ export class RuleProcessHarness {
     const prebuiltDir = process.env.KBN_TASK_BUNDLE_TEST_DIR;
     if (prebuiltDir) cpSync(prebuiltDir, bundleDir, { recursive: true });
     const names = new Set(options.rules.map(({ bundle }) => bundle));
-    const entries = getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name));
+    const entries: Array<{ name: string; file: string }> = [
+      ...getTaskBundleEntries().filter(({ name }: { name: string }) => names.has(name)),
+      ...options.rules.flatMap(({ file, bundle }) => (file ? [{ name: bundle, file }] : [])),
+    ];
     const missing = [...names].filter(
       (name) => !entries.some((entry: { name: string }) => entry.name === name)
     );
@@ -286,15 +346,28 @@ export class RuleProcessHarness {
             throw new Error(`Missing prebuilt task bundle ${name} in ${prebuiltDir}`);
           }
         }
-        return entries;
+        const manifestPath = join(prebuiltDir, 'manifest.json');
+        const manifest = existsSync(manifestPath)
+          ? (JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+              bundles: Record<string, { featureFlags?: TaskFeatureFlagDefinitions }>;
+            })
+          : undefined;
+        return entries.map((entry) => ({
+          ...entry,
+          featureFlags: manifest?.bundles[entry.name]?.featureFlags,
+        }));
       }
-      const built: unknown[] = [];
+      const built: Array<{ name: string; featureFlags?: TaskFeatureFlagDefinitions }> = [];
       for (let i = 0; i < entries.length; i += BUILD_CONCURRENCY) {
         built.push(
           ...(await Promise.all(
-            entries
-              .slice(i, i + BUILD_CONCURRENCY)
-              .map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
+            entries.slice(i, i + BUILD_CONCURRENCY).map((entry) =>
+              buildTaskBundle({
+                entry,
+                outDir: bundleDir,
+                additionalContributions: options.additionalContributions,
+              })
+            )
           ))
         );
       }
@@ -321,48 +394,154 @@ export class RuleProcessHarness {
     // Seeds through a host of the same kind the process gets, which writes documents the way Kibana
     // does: migrated, encrypted and in the default space. It also runs rules in this process, with
     // what plugins contribute, for the tests that compare a forked run with one that is not.
-    this.seeder = await startTaskProcessCore({
-      init: {
-        kind: 'init',
-        elasticsearch: this.esConfig(),
-        kibanaVersion: KIBANA_VERSION,
-        authToken: '',
-        ...this.getInit(),
+    const startSeeder = () =>
+      startTaskProcessCore({
+        init: {
+          kind: 'init',
+          elasticsearch: this.esConfig(),
+          kibanaVersion: KIBANA_VERSION,
+          authToken: '',
+          ...this.getInit(),
+        },
+        module: this.getSeederModule(),
+        contributions: this.loadContributions(),
+      });
+    this.seeder = await startSeeder();
+    const { host } = this.seeder;
+    const settings = this.getSettings();
+    const { licensing, encryptedSavedObjects, taskManager } = host;
+    if (!licensing || !encryptedSavedObjects || !taskManager)
+      throw new Error('Native scheduling metadata capture requires the genuine rule host');
+    const connectorAdapters = new ConnectorAdapterRegistry();
+    const optIns: AlertStatusChangedOptIn[] = [];
+    const contributions = this.loadContributions()['alerting-rule-run'] as RuleRunContribution[];
+    const actions = createRuleRunActions({
+      logger: host.logger.get('actions'),
+      config: settings.actions as ActionsConfig,
+      inMemoryConnectors: (settings.actionsConnectors as ActionsTaskProcessSettings)
+        .inMemoryConnectors,
+      license$: licensing.license$,
+      elasticsearch: host.elasticsearch,
+      savedObjects: host.savedObjects,
+      getEncryptedSavedObjectsClient: encryptedSavedObjects.getClient,
+      taskManager,
+      registerConnectorTypes: (registry) => {
+        for (const contribution of contributions) {
+          contribution.register?.(
+            {
+              actions: registry,
+              alerting: {
+                registerConnectorAdapter: (adapter) => connectorAdapters.register(adapter),
+                enableAlertStatusChanged: (optIn) => {
+                  optIns.push(optIn);
+                },
+              },
+            },
+            {
+              host,
+              settings,
+              logger: host.logger,
+              isServerless: false,
+              kibanaVersion: KIBANA_VERSION,
+            }
+          );
+        }
       },
-      module: this.getSeederModule(),
-      contributions: this.loadContributions(),
     });
+    try {
+      for (const definition of actions.taskDefinitions.getAllDefinitions()) {
+        this.schedulingDefinitions.registerTaskDefinitions({ [definition.type]: definition });
+      }
+    } finally {
+      await actions.stop();
+      await this.seeder.stop();
+    }
+    this.seeder = await startSeeder();
     this.seederClient = this.seeder.host.savedObjects.getUnsafeInternalClient({
       includedHiddenTypes: ['alert', 'action'],
     });
     this.defaultApiKey = await this.createApiKey();
 
-    const built = (await building) as Array<{ name: string }>;
+    const built = await building;
     writeFileSync(
       join(bundleDir, 'manifest.json'),
       JSON.stringify({
         bundles: Object.fromEntries(
           options.rules.map(({ bundle, taskType }) => {
             const entry = built.find(({ name }) => name === bundle)!;
-            return [entry.name, { file: `${entry.name}.mjs`, taskType: taskType.type }];
+            return [
+              entry.name,
+              {
+                file: `${entry.name}.mjs`,
+                taskType: taskType.type,
+                featureFlags: entry.featureFlags,
+              },
+            ];
           })
         ),
       })
     );
-    this.supervisor = new TaskProcessSupervisor({
-      settings: {
-        bundle_dir: bundleDir,
-        kibanaVersion: KIBANA_VERSION,
-        getElasticsearchConfig: () => this.esConfig(),
-        getInitFor: () => this.getInit(),
-      },
-      logger: loggingSystemMock.createLogger(),
-    });
-    this.supervisor.start();
+    const processSettings = {
+      bundle_dir: bundleDir,
+      kibanaVersion: KIBANA_VERSION,
+      ...(options.reuse
+        ? {
+            reuse: {
+              maxRuns: 100,
+              maxAgeMs: 300000,
+              idleTimeoutMs: 30000,
+              maxIdleProcesses: 4,
+            },
+          }
+        : {}),
+    };
+    const logger = this.logger;
+    if (options.mode === 'remote') {
+      const token = 'rule-process-harness';
+      const worker = startTaskProcessWorker({
+        settings: processSettings,
+        logger,
+        authToken: token,
+        port: 0,
+        host: '127.0.0.1',
+      });
+      this.worker = worker;
+      await new Promise<void>((resolve, reject) => {
+        worker.server.once('error', reject);
+        worker.server.once('listening', resolve);
+      });
+      const address = worker.server.address();
+      if (!address || typeof address === 'string') throw new Error('Rule worker has no address');
+      this.remoteAddress = { url: `http://127.0.0.1:${address.port}`, token };
+      this.supervisor = worker.supervisor;
+    } else {
+      this.supervisor = new TaskProcessSupervisor({
+        settings: {
+          ...processSettings,
+          getElasticsearchConfig: () => this.esConfig(),
+          getInitFor: () => this.getInit(),
+        },
+        logger,
+      });
+      this.supervisor.start();
+    }
+  }
+
+  /** Collects this harness node's gauges through the same local or remote worker control path. */
+  public collectGaugeMetrics(): ReturnType<TaskProcessSupervisor['collectGaugeMetrics']> {
+    return this.remoteAddress
+      ? collectRemoteGaugeMetrics(this.remoteAddress, KIBANA_UUID)
+      : this.supervisor.collectGaugeMetrics(KIBANA_UUID);
+  }
+
+  /** Returns the actual supervisor counters for local or remote workers. */
+  public getWorkerStats(): ReturnType<TaskProcessSupervisor['getStats']> {
+    return (this.worker ?? this.supervisor).getStats();
   }
 
   public async stop() {
-    await this.supervisor?.stop();
+    if (this.worker) await this.worker.stop();
+    else await this.supervisor?.stop();
     await this.seeder?.stop();
     await this.esServer?.stop();
   }
@@ -376,7 +555,8 @@ export class RuleProcessHarness {
     const contributions = this.loadContributions();
     // With what plugins contribute applied, as a process applies it to its own module.
     const modules = this.options.rules.map(
-      ({ taskType }) => taskType.contributions?.apply?.(contributions) ?? taskType
+      ({ taskType }) =>
+        taskType.contributions?.apply?.(contributions, this.getSettings()) ?? taskType
     );
     const [first] = modules;
     const savedObjectTypes = new Map(
@@ -402,16 +582,26 @@ export class RuleProcessHarness {
   }
 
   /** What plugins contribute to rule runs, which the bundle builder imports into each bundle. */
-  private loadContributions() {
-    return {
-      'alerting-rule-run': [
-        ...getContributionFiles('alerting-rule-run').map(
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          (file: string) => require(file).contribution
-        ),
-        ...(this.options.inProcessContributions ?? []),
-      ],
-    };
+  private loadContributions(): Record<string, object[]> {
+    const contributions: Record<string, object[]> = {};
+    const requireContribution = createRequire(__filename);
+    for (const { taskType } of this.options.rules) {
+      const filesByKey: Record<string, string[]> = resolveTaskContributions(
+        taskType,
+        this.options.additionalContributions
+      );
+      for (const [key, files] of Object.entries(filesByKey)) {
+        if (contributions[key]) continue;
+        contributions[key] = files.map(
+          (file) => (requireContribution(file) as { contribution: object }).contribution
+        );
+      }
+    }
+    contributions['alerting-rule-run'] = [
+      ...(contributions['alerting-rule-run'] ?? []),
+      ...(this.options.inProcessContributions ?? []),
+    ];
+    return contributions;
   }
 
   /**
@@ -420,14 +610,12 @@ export class RuleProcessHarness {
    */
   private async createKibanaIndices() {
     const indexMappings = new Map<string, Record<string, unknown>>();
-    for (const { taskType } of this.options.rules) {
-      for (const type of taskType.savedObjectTypes ?? []) {
-        const index = type.indexPattern ?? '.kibana';
-        indexMappings.set(index, {
-          ...(indexMappings.get(index) ?? {}),
-          [type.name]: type.mappings,
-        });
-      }
+    for (const type of this.getSeederModule().savedObjectTypes ?? []) {
+      const index = type.indexPattern ?? '.kibana';
+      indexMappings.set(index, {
+        ...(indexMappings.get(index) ?? {}),
+        [type.name]: type.mappings,
+      });
     }
     // The main index, where saved objects such as data views live, even if no rule type has its own.
     indexMappings.set('.kibana', { ...(indexMappings.get('.kibana') ?? {}) });
@@ -631,36 +819,56 @@ export class RuleProcessHarness {
 
   /**
    * Runs a rule through `RemoteTaskRunner` as Task Manager does, in a process forked by the supervisor.
-   * Fails when the run was declined (the fallback was called), unless the test passes its own fallback.
+   * Rejects when the process cannot execute the run.
    */
   public createRunner(ruleId: string, ruleTypeId: string, options: RunOptions = {}) {
     const taskType = `alerting:${ruleTypeId}`;
-    const fallback =
-      options.fallback ??
-      jest.fn().mockReturnValue({ run: async () => ({ state: { declinedToKibana: true } }) });
-    const route = this.supervisor.getRoute(taskType)! as Extract<
-      ReturnType<TaskProcessSupervisor['getRoute']>,
-      { acquire: unknown }
-    >;
-    let lease: { url: string } | undefined;
+    const onDispatchFailure = options.onDispatchFailure ?? jest.fn();
+    const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
+    if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
+    const route = this.remoteAddress ?? this.supervisor.getRoute(taskType);
+    if (!route) throw new Error(`${NOT_ROUTED}: ${taskType}`);
+    let lease: TaskProcessAddress | undefined = this.remoteAddress;
     const runner = new RemoteTaskRunner({
-      route: {
-        acquire: async (context) => {
-          lease = await route.acquire(context);
-          return lease as never;
-        },
-      },
+      route:
+        'acquire' in route
+          ? {
+              acquire: async (context) => {
+                const acquired = await route.acquire(context);
+                lease = acquired;
+                return acquired;
+              },
+            }
+          : route,
       request: {
+        ...(this.remoteAddress
+          ? {
+              snapshot: {
+                protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+                init: {
+                  ...this.getInit(),
+                  kibanaVersion: KIBANA_VERSION,
+                  elasticsearch: this.esConfig(),
+                },
+              },
+            }
+          : {}),
         taskType,
         taskInstance: this.taskInstanceOf(ruleId, ruleTypeId, options.state) as never,
         executionUuid: `${ruleId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         kibanaVersion: KIBANA_VERSION,
+        cancelGracePeriodMs: module.cancelGracePeriodMs,
       },
       timeoutMs: options.timeoutMs ?? 120000,
       setCustomTaskRunEventFields: jest.fn(),
       fetchFn: undiciFetch as unknown as typeof fetch,
-      fallback: fallback as never,
+      onDispatchFailure: onDispatchFailure as never,
       observer: options.observer,
+      onMetrics: this.options.onMetrics,
+      getFeatureFlags: async (_taskType, declarations) => ({
+        ...declarations,
+        ...this.options.featureFlags,
+      }),
       signal: options.signal,
     });
     /** Resolves when the process has the run in flight: it booted and the task is running. */
@@ -680,7 +888,7 @@ export class RuleProcessHarness {
       }
       throw new Error('The process never had the run in flight');
     };
-    return { runner, fallback, waitForInFlight };
+    return { runner, onDispatchFailure, waitForInFlight };
   }
 
   /** The processes the supervisor forked end with their runs. */
@@ -719,14 +927,9 @@ export class RuleProcessHarness {
     ruleTypeId: string,
     options: RunOptions = {}
   ): Promise<RunOutcome> {
-    const { runner, fallback } = this.createRunner(ruleId, ruleTypeId, options);
+    const { runner, onDispatchFailure } = this.createRunner(ruleId, ruleTypeId, options);
     const result = await runner.run();
-    if (!options.fallback && fallback.mock.calls.length) {
-      throw new Error(
-        `The run of ${ruleId} (${ruleTypeId}) was declined: Kibana would have run it`
-      );
-    }
-    return { result, fallback, runner };
+    return { result, onDispatchFailure, runner };
   }
 
   /**
@@ -739,14 +942,14 @@ export class RuleProcessHarness {
     state: Record<string, unknown> = {}
   ) {
     const taskType = `alerting:${ruleTypeId}`;
-    const context = {
+    const context: RunContext = {
       taskInstance: reviveTaskInstance(this.taskInstanceOf(ruleId, ruleTypeId, state)),
       fakeRequest: undefined,
       signal: new AbortController().signal,
       executionUuid: `${ruleId}-in-process-${Date.now()}`,
       setCustomTaskRunEventFields: jest.fn(),
-    } as never;
-    let task: { run: () => Promise<unknown> };
+    };
+    let task: CancellableTask;
     const definition = this.seeder.definitions.get(taskType);
     if (definition) {
       task = definition.createTaskRunner(context);
@@ -755,14 +958,27 @@ export class RuleProcessHarness {
       // needs are alike enough to share: the rule types of one test file do not differ in them.
       const module = this.options.rules.find((rule) => rule.taskType.type === taskType)?.taskType;
       if (!module) throw new Error(`${NOT_ROUTED}: ${taskType}`);
-      const applied = module.contributions?.apply?.(this.loadContributions()) ?? module;
+      const applied =
+        module.contributions?.apply?.(this.loadContributions(), this.getSettings()) ?? module;
       task = applied.createTaskRunner(context, this.seeder.host);
     }
-    try {
-      return await task.run();
-    } finally {
-      await this.seeder.flush();
-    }
+    const flushers: Array<() => Promise<void>> = [];
+    const { value, error } = await runInRunContext(
+      async () => {
+        try {
+          return await task.run();
+        } finally {
+          await Promise.all([runFlushers(flushers, this.seeder.host.logger), this.seeder.flush()]);
+        }
+      },
+      {
+        executionId: `${context.taskInstance.id}::${context.executionUuid}`,
+        flushers,
+        featureFlags: this.options.featureFlags,
+      }
+    );
+    if (error !== undefined) throw error;
+    return value;
   }
 
   /**

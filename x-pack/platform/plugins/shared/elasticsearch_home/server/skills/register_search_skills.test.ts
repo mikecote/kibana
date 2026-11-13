@@ -6,16 +6,9 @@
  */
 
 import { agentBuilderMocks } from '@kbn/agent-builder-plugin/server/mocks';
-import { cloudMock } from '@kbn/cloud-plugin/server/mocks';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import { loggingSystemMock } from '@kbn/core/server/mocks';
 import { skills } from '@kbn/search-agent';
 import { registerSearchSkills } from './register_search_skills';
-
-const createCloudSetup = (projectType?: CloudSetup['serverless']['projectType']) => {
-  const cloud = cloudMock.createSetup();
-  return { ...cloud, serverless: { ...cloud.serverless, projectType } };
-};
 
 describe('registerSearchSkills', () => {
   it('registers each search skill under the search namespace in a VectorDB project', () => {
@@ -23,7 +16,7 @@ describe('registerSearchSkills', () => {
 
     registerSearchSkills({
       agentBuilder,
-      cloud: createCloudSetup('vectordb'),
+      projectType: 'vectordb',
       logger: loggingSystemMock.createLogger(),
     });
 
@@ -43,7 +36,7 @@ describe('registerSearchSkills', () => {
 
     registerSearchSkills({
       agentBuilder,
-      cloud: createCloudSetup('search'),
+      projectType: 'search',
       logger: loggingSystemMock.createLogger(),
     });
 

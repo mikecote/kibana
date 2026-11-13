@@ -28,7 +28,7 @@ import type {
 import type { PluginConfigDescriptor, PluginManifest } from '@kbn/core-plugins-server';
 import type { DiscoveredPlugin } from '@kbn/core-base-common';
 import type { PluginDiscoveryError } from './discovery';
-import { discover, PluginDiscoveryErrorType } from './discovery';
+import { PluginDiscoveryErrorType } from './discovery/plugin_discovery_error';
 import { PluginWrapper } from './plugin';
 import type { PluginDefinition } from './plugin';
 import { createPluginInitializerContext } from './plugin_context';
@@ -157,7 +157,12 @@ export class PluginsService
             })
           ),
         }
-      : discover({ config, coreContext: this.coreContext, instanceInfo, nodeInfo });
+      : (await import('./discovery/plugins_discovery')).discover({
+          config,
+          coreContext: this.coreContext,
+          instanceInfo,
+          nodeInfo,
+        });
 
     await this.handleDiscoveryErrors(error$);
     await this.handleDiscoveredPlugins(plugin$);

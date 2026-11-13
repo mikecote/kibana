@@ -6,7 +6,7 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
-import type { CasesServerSetupDependencies } from '../types';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import type { CasesClient } from '../client';
 import type { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
 
@@ -14,32 +14,48 @@ import { casesStepRegistry } from './registry';
 import { createCaseFromTemplateStepDefinition } from './steps/create_case_from_template';
 import { setExtendedFieldsStepDefinition } from './steps/set_extended_fields';
 
-export function registerCaseWorkflowSteps(
-  workflowsExtensions: CasesServerSetupDependencies['workflowsExtensions'],
-  getCasesClient: (request: KibanaRequest) => Promise<CasesClient>,
-  unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry,
-  isCasesAttachmentsEnabled: boolean,
-  isTemplatesEnabled: boolean,
+/**
+ * What the cases steps need to run: Kibana builds it from the plugin's services and a task process
+ * from its host (`createCasesRunServices`), so the handlers never reach for plugin state.
+ */
+export interface CasesWorkflowStepServices {
+  getCasesClient: (request: KibanaRequest) => Promise<CasesClient>;
+  isTemplatesEnabled: boolean;
   /**
-   * Resolves once cases's own `start()` has been called by core. Used by the
-   * `cases.addAttachments` loader so the discriminated union sees
-   * solution-contributed attachment types.
+   * `cases.addAttachments` and its flag. It reads the attachment type registry that solutions fill
+   * in their own `setup()`; task processes restore them through native contributions.
    */
-  waitForStartServices: () => Promise<unknown>
+  addAttachments?: {
+    unifiedAttachmentTypeRegistry: UnifiedAttachmentTypeRegistry;
+    /**
+     * Resolves when solution-contributed attachment definitions are available to build the input schema.
+     */
+    waitForAttachmentTypes: () => Promise<void>;
+  };
+}
+
+/**
+ * Registers the cases steps: what `plugin.ts` calls with Kibana's services and the contribution to
+ * the task process of the workflow task types calls with the services of the process.
+ */
+export function registerCaseWorkflowSteps(
+  registry: Pick<WorkflowStepsRegistry, 'registerStepDefinition'> | undefined,
+  { getCasesClient, isTemplatesEnabled, addAttachments }: CasesWorkflowStepServices
 ) {
-  if (!workflowsExtensions) {
+  if (!registry) {
     return;
   }
 
   for (const factory of casesStepRegistry) {
-    workflowsExtensions.registerStepDefinition(factory(getCasesClient));
+    const definition = factory(getCasesClient);
+    registry.registerStepDefinition(definition);
   }
 
   // `cases.createCaseFromTemplate` is registered in every flag state: with the templates feature
   // on it prefers a `cases-template` saved object (server-side expansion pins the version); with it
   // off it falls back to the per-space configuration templates. The flag is threaded in so the step
   // knows which lookup to try first.
-  workflowsExtensions.registerStepDefinition(
+  registry.registerStepDefinition(
     createCaseFromTemplateStepDefinition(getCasesClient, isTemplatesEnabled)
   );
 
@@ -47,15 +63,16 @@ export function registerCaseWorkflowSteps(
   // templates feature flag that gates field definitions and template CRUD — register it only when
   // the feature is on so a workflow can't target fields the deployment can't define.
   if (isTemplatesEnabled) {
-    workflowsExtensions.registerStepDefinition(setExtendedFieldsStepDefinition(getCasesClient));
+    registry.registerStepDefinition(setExtendedFieldsStepDefinition(getCasesClient));
   }
 
   // `cases.addAttachments` is registered separately from the uniform registry:
   // it is flag-gated, needs the attachment registry, and must defer until
-  // solution-contributed types have registered (see `waitForStartServices`).
-  if (isCasesAttachmentsEnabled) {
-    workflowsExtensions.registerStepDefinition(async () => {
-      await waitForStartServices();
+  // solution-contributed types have registered (see `waitForAttachmentTypes`).
+  if (addAttachments) {
+    const { unifiedAttachmentTypeRegistry, waitForAttachmentTypes } = addAttachments;
+    registry.registerStepDefinition(async () => {
+      await waitForAttachmentTypes();
       const { addAttachmentsStepDefinition } = await import('./steps/add_attachments');
       return addAttachmentsStepDefinition(unifiedAttachmentTypeRegistry, getCasesClient);
     });

@@ -14,7 +14,7 @@ import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import { ENABLE_NEW_FLYOUT_SETTING } from '../../../common/constants';
 import { translateLegacyStateToDescriptors } from '../../../common/flyout_v2';
 import type { ExperimentalFeatures } from '../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from './core_services';
 import { securityTool } from './constants';
 
 const FLYOUT_PARAM = 'flyout' as const;
@@ -85,7 +85,7 @@ const appendQueryParam = (path: string, key: string, value: unknown): string => 
  * in-app URL, resolving the deployment base path and the active space segment.
  */
 export const buildRedirectUrlTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof buildRedirectUrlSchema> => ({
   id: SECURITY_BUILD_REDIRECT_URL_TOOL_ID,

@@ -11,7 +11,6 @@ import type { Type } from '@kbn/securitysolution-io-ts-alerting-types';
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
 import type { ILicense } from '@kbn/licensing-types';
 import type { MlPluginSetup } from '@kbn/ml-plugin/server';
-import type { SetupPlugins } from '../../plugin';
 import { MINIMUM_ML_LICENSE } from '../../../common/constants';
 import { hasMlAdminPermissions } from '../../../common/machine_learning/has_ml_admin_permissions';
 import { isMlRule } from '../../../common/machine_learning/helpers';
@@ -37,7 +36,7 @@ export const buildMlAuthz = ({
   savedObjectsClient,
 }: {
   license: ILicense;
-  ml: SetupPlugins['ml'];
+  ml: Pick<MlPluginSetup, 'mlSystemProvider'> | undefined;
   request: KibanaRequest;
   savedObjectsClient: SavedObjectsClientContract;
 }): MlAuthz => {
@@ -69,7 +68,7 @@ export const validateMlAuthz = async ({
   savedObjectsClient,
 }: {
   license: ILicense;
-  ml: SetupPlugins['ml'];
+  ml: Pick<MlPluginSetup, 'mlSystemProvider'> | undefined;
   request: KibanaRequest;
   savedObjectsClient: SavedObjectsClientContract;
 }): Promise<Validation> => {
@@ -118,7 +117,7 @@ export const isMlAdmin = async ({
 }: {
   request: KibanaRequest;
   savedObjectsClient: SavedObjectsClientContract;
-  ml: MlPluginSetup;
+  ml: Pick<MlPluginSetup, 'mlSystemProvider'>;
 }): Promise<boolean> => {
   const mlCapabilities = await ml.mlSystemProvider(request, savedObjectsClient).mlCapabilities();
   return hasMlAdminPermissions(mlCapabilities);

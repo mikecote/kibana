@@ -24,7 +24,7 @@ import type { DeliverInvestigationNotificationsResult } from './deliver_investig
 export interface InvestigationNotificationDeps {
   investigationLocator: Pick<InvestigationLocator, 'getRedirectUrl'>;
   getInvestigationsClient: GetInvestigationsClient;
-  getActions: () => ActionsPluginStart | undefined;
+  getActions: () => Pick<ActionsPluginStart, 'getActionsClientWithRequestInSpace'> | undefined;
   getRoutingClient: (
     request: KibanaRequest,
     spaceId: string,

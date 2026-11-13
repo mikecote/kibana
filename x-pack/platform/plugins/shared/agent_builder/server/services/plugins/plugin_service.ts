@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import type { KibanaRequest, Logger, ElasticsearchServiceStart } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { createBadRequestError, validateSkillId } from '@kbn/agent-builder-common';
 import type { ParsedPluginArchive, ParsedSkillFile } from '@kbn/agent-builder-common';
 import type { PersistedSkillCreateRequest } from '@kbn/agent-builder-common';
@@ -14,6 +14,7 @@ import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { isAllowedBuiltinPlugin } from '@kbn/agent-builder-server/allow_lists';
 import type { BuiltInPluginDefinition } from '@kbn/agent-builder-server/plugins';
 import type { ToolRegistry } from '@kbn/agent-builder-server/tools';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import type { AgentBuilderConfig } from '../../config';
 import type { AnalyticsService, TrackingService } from '../../telemetry';
 import { getCurrentSpaceId } from '../../utils/spaces';
@@ -59,7 +60,7 @@ export interface PluginsService {
 
 export interface PluginsServiceStartDeps {
   logger: Logger;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
   config: AgentBuilderConfig;
   getToolRegistry: (opts: { request: KibanaRequest }) => Promise<ToolRegistry>;

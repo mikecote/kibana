@@ -16,8 +16,12 @@ import { GENERAL_CASES_OWNER, OWNER_INFO } from '../../../common/constants';
 import { getCaseViewPath } from '../../common/utils';
 import { isValidOwner } from '../../../common/utils/owner';
 
+export interface CasesLinkCore {
+  http: { basePath: Pick<CoreStart['http']['basePath'], 'publicBaseUrl' | 'serverBasePath'> };
+}
+
 export interface CoreServices {
-  coreStart: CoreStart;
+  coreStart: CasesLinkCore;
   /** Space ID for the current request, from ToolHandlerContext.spaceId */
   spaceId: string;
 }
@@ -103,7 +107,7 @@ export const deduplicateCases = (casesArrays: RelatedCase[][]): RelatedCase[] =>
 
 function buildFullUrl(
   request: KibanaRequest,
-  core: CoreStart,
+  core: CasesLinkCore,
   spaceId: string,
   path: string
 ): string {
@@ -134,7 +138,7 @@ function buildFullUrl(
  */
 export function getCaseUrl(
   request: KibanaRequest,
-  core: CoreStart,
+  core: CasesLinkCore,
   spaceId: string,
   caseId: string,
   owner: string

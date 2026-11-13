@@ -17,9 +17,9 @@ import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { PluginInitializerContext } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import type { UsageCollectionSetup } from '@kbn/usage-collection-plugin/server';
-import { SEARCH_EMBEDDABLE_TYPE } from '@kbn/discover-utils';
+
 import { registerRoutes } from './api/register_routes';
-import { getDiscoverSessionEmbeddableSchema } from './embeddable/schema';
+
 import type { DiscoverServerPluginStart, DiscoverServerPluginStartDeps } from '.';
 import { DISCOVER_APP_LOCATOR } from '../common';
 import { capabilitiesProvider } from './capabilities_provider';
@@ -27,17 +27,18 @@ import { createSearchEmbeddableFactory } from './embeddable';
 import { initializeLocatorServices } from './locator';
 import { registerSampleData } from './sample_data';
 import { getUiSettings } from './ui_settings';
-import { registerAttachments } from './agent_builder/register_attachments';
-import { registerTools } from './agent_builder/register_tools';
-import { registerSkill } from './agent_builder/register_skill';
+import { registerDiscoverAgentBuilder } from './agent_builder/register_agent_builder';
+import { DISCOVER_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import type { ConfigSchema } from './config';
 import { appLocatorGetLocationCommon } from '../common/app_locator_get_location';
 import {
   METRICS_EXPERIENCE_PRODUCT_FEATURE_ID,
   TRACES_PRODUCT_FEATURE_ID,
 } from '../common/constants';
-import { getSearchEmbeddableTransforms } from '../common/embeddable';
+
 import { createProfileStateRegistry } from '../common/context_awareness';
+
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 
 export class DiscoverServerPlugin
   implements Plugin<object, DiscoverServerPluginStart, object, DiscoverServerPluginStartDeps>
@@ -93,16 +94,15 @@ export class DiscoverServerPlugin
     }
 
     plugins.embeddable.registerEmbeddableFactory(createSearchEmbeddableFactory());
-    plugins.embeddable.registerEmbeddableServerDefinition(SEARCH_EMBEDDABLE_TYPE, {
-      title: 'Discover session',
-      getTransforms: (drilldownTransforms) => getSearchEmbeddableTransforms(drilldownTransforms),
-      getSchema: (getDrilldownsSchema) => getDiscoverSessionEmbeddableSchema(getDrilldownsSchema),
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     if (plugins.agentBuilder) {
-      registerAttachments(plugins.agentBuilder);
-      registerTools(plugins.agentBuilder);
-      registerSkill(plugins.agentBuilder);
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      plugins.agentBuilder.taskProcess?.registerSettings(
+        DISCOVER_AGENT_BUILDER_SETTINGS_ID,
+        () => ({})
+      );
+      registerDiscoverAgentBuilder(plugins.agentBuilder);
     }
 
     core.pricing.registerProductFeatures([

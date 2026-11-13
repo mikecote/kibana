@@ -101,6 +101,35 @@ describe('registerConversationWorkflowEventBridge', () => {
     });
   });
 
+  it('waits for client acquisition and emission before completing the bridge', async () => {
+    const isolatedBus = createConversationEventBus();
+    const acquired = Promise.withResolvers<typeof mockClient>();
+    const emitted = Promise.withResolvers<void>();
+    workflowsExtensions.getClient.mockReturnValue(acquired.promise);
+    jest.mocked(mockClient.emitEvent).mockReturnValue(emitted.promise);
+    const complete = registerConversationWorkflowEventBridge(
+      isolatedBus,
+      workflowsExtensions,
+      logger,
+      []
+    );
+    isolatedBus.emitMetadataPatched(request, {
+      conversationId: 'conv-1',
+      changedFields: ['status'],
+    });
+    const finished = jest.fn();
+    const drained = complete().then(finished);
+    await flushMicrotasks();
+    expect(finished).not.toHaveBeenCalled();
+    acquired.resolve(mockClient);
+    await flushMicrotasks();
+    expect(mockClient.emitEvent).toHaveBeenCalledTimes(1);
+    expect(finished).not.toHaveBeenCalled();
+    emitted.resolve();
+    await drained;
+    expect(finished).toHaveBeenCalledTimes(1);
+  });
+
   it('forwards parent id when present', async () => {
     eventBus.emitMetadataPatched(request, {
       conversationId: 'child-conv',

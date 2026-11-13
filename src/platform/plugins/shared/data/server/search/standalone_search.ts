@@ -53,6 +53,18 @@ import { esqlSearchStrategyProvider } from './strategies/esql_search';
 import { enhancedEsSearchStrategyProvider } from './strategies/ese_search';
 import { sqlSearchStrategyProvider } from './strategies/sql_search';
 
+export type StandaloneScopedSearchClient = Pick<
+  IScopedSearchClient,
+  'search' | 'cancel' | 'extend' | 'dsl' | 'dslPaginated' | 'esql' | 'eql' | 'sql'
+>;
+
+export type StandaloneSearch = Pick<ISearchStart, 'searchSource'> & {
+  asScoped: (
+    request: KibanaRequest,
+    options?: Parameters<ISearchStart['asScoped']>[1]
+  ) => StandaloneScopedSearchClient;
+};
+
 export interface StandaloneSearchDeps {
   logger: Logger;
   elasticsearch: { client: Pick<IClusterClient, 'asInternalUser' | 'asScoped'> };
@@ -77,9 +89,7 @@ export interface StandaloneSearchDeps {
  * source service as the data plugin, without its HTTP routes, expressions, search sessions and
  * usage collection. A search never joins a search session here.
  */
-export const createStandaloneSearch = (
-  deps: StandaloneSearchDeps
-): Pick<ISearchStart, 'asScoped' | 'searchSource'> => {
+export const createStandaloneSearch = (deps: StandaloneSearchDeps): StandaloneSearch => {
   const { logger, elasticsearch, savedObjects, uiSettings, dataViews, fieldFormats } = deps;
   const searchConfig = deps.searchConfig ?? searchConfigSchema.validate({});
   const globalConfig$ = of({
@@ -118,17 +128,13 @@ export const createStandaloneSearch = (
   const searchSourceService = new SearchSourceService();
   searchSourceService.setup();
 
-  const scopedEsClient = (request: KibanaRequest, opts?: unknown) =>
-    opts
-      ? (
-          elasticsearch.client.asScoped as (
-            r: KibanaRequest,
-            o: unknown
-          ) => ReturnType<IClusterClient['asScoped']>
-        )(request, opts)
-      : elasticsearch.client.asScoped(request);
+  const scopedEsClient = (request: KibanaRequest, opts?: Parameters<ISearchStart['asScoped']>[1]) =>
+    elasticsearch.client.asScoped(request, opts);
 
-  const asScoped = (request: KibanaRequest, opts?: unknown): IScopedSearchClient => {
+  const asScoped = (
+    request: KibanaRequest,
+    opts?: Parameters<ISearchStart['asScoped']>[1]
+  ): StandaloneScopedSearchClient => {
     const savedObjectsClient = savedObjects.getScopedClient(request);
     const strategyDeps = {
       savedObjectsClient,
@@ -161,18 +167,40 @@ export const createStandaloneSearch = (
     const methods = new SearchMethodsService(search as ISearchGeneric);
     return {
       search,
+      cancel: (id, options = {}) => {
+        const strategy = strategies.get(options.strategy ?? ENHANCED_ES_SEARCH_STRATEGY);
+        if (!strategy)
+          throw new KbnServerError(`Search strategy ${String(options.strategy)} not found`, 404);
+        if (!strategy.cancel)
+          throw new KbnServerError(
+            `Search strategy ${String(options.strategy)} doesn't support cancellations`,
+            400
+          );
+        return strategy.cancel(id, options, strategyDeps);
+      },
+      extend: async (id, keepAlive, options = {}) => {
+        const strategy = strategies.get(options.strategy ?? ENHANCED_ES_SEARCH_STRATEGY);
+        if (!strategy)
+          throw new KbnServerError(`Search strategy ${String(options.strategy)} not found`, 404);
+        if (!strategy.extend)
+          throw new KbnServerError(
+            `Search strategy ${String(options.strategy)} does not support extend`,
+            400
+          );
+        return strategy.extend(id, keepAlive, options, strategyDeps);
+      },
       dsl: methods.dsl.bind(methods),
       dslPaginated: methods.dslPaginated.bind(methods),
       esql: methods.esql.bind(methods),
       eql: methods.eql.bind(methods),
       sql: methods.sql.bind(methods),
-    } as unknown as IScopedSearchClient;
+    };
   };
 
   return {
     asScoped,
     searchSource: {
-      asScoped: async (request: KibanaRequest, opts?: unknown) => {
+      asScoped: async (request: KibanaRequest, opts?: Parameters<ISearchStart['asScoped']>[1]) => {
         const esClient = scopedEsClient(request, opts);
         const savedObjectsClient = savedObjects.getScopedClient(request);
         const scopedDataViews = await dataViews.dataViewsServiceFactory(
@@ -193,5 +221,5 @@ export const createStandaloneSearch = (
         });
       },
     },
-  } as unknown as Pick<ISearchStart, 'asScoped' | 'searchSource'>;
+  };
 };

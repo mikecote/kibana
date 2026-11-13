@@ -10,6 +10,10 @@
  * 2.0.
  */
 
+import { createNativePrometheusCollector } from '@kbn/task-manager-plugin/server/task_process/testing/native_prometheus_collector';
+import { createNativePrometheusInstrumentation } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_instrumentation';
+import { createNativeMetricsCollector } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_collector';
+import { createNativeMetricsInstrumentation } from '@kbn/task-manager-plugin/server/task_process/testing/native_metrics_instrumentation';
 import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import {
   DYNAMIC_CONNECTOR,
@@ -138,13 +142,13 @@ describe('the .es-query rule type served from a bundle', () => {
   });
 
   it('serves a rule that uses the cases system action, which cases contributes to the process', async () => {
-    const { fallback } = await harness.run(CASES_RULE_ID, RULE_TYPE);
-    expect(fallback).not.toHaveBeenCalled();
+    const { onDispatchFailure } = await harness.run(CASES_RULE_ID, RULE_TYPE);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
   });
 
   it('enqueues the action of a connector that Kibana registered while it ran, as sent, not rebuilt from config', async () => {
-    const { fallback } = await harness.run(DYNAMIC_RULE_ID, RULE_TYPE);
-    expect(fallback).not.toHaveBeenCalled();
+    const { onDispatchFailure } = await harness.run(DYNAMIC_RULE_ID, RULE_TYPE);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
 
     const { actionTaskParams } = await harness.getEnqueued();
     expect(
@@ -155,20 +159,153 @@ describe('the .es-query rule type served from a bundle', () => {
   it('declines every run, before anything is written, when Kibana registered a connector type the process lacks', async () => {
     harness.unregisteredConnectorTypes = ['.registered-after-the-bundle-was-built'];
     try {
-      const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-      const { result } = await harness.run(RULE_ID, RULE_TYPE, { fallback });
-      expect(result).toEqual({ state: { local: true } });
-      expect(fallback).toHaveBeenCalledTimes(1);
+      const onDispatchFailure = jest.fn();
+      await expect(harness.run(RULE_ID, RULE_TYPE, { onDispatchFailure })).rejects.toThrow('422');
+      expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     } finally {
       harness.unregisteredConnectorTypes = [];
     }
   });
 
-  it('declines a rule that uses an action type it does not know, so Kibana runs it', async () => {
-    const fallback = jest.fn().mockReturnValue({ run: async () => ({ state: { local: true } }) });
-    const { result } = await harness.run(UNKNOWN_RULE_ID, RULE_TYPE, { fallback });
-    expect(result).toEqual({ state: { local: true } });
-    expect(fallback).toHaveBeenCalledTimes(1);
+  it('declines a rule that uses an action type it does not know, without local execution', async () => {
+    const onDispatchFailure = jest.fn();
+    await expect(harness.run(UNKNOWN_RULE_ID, RULE_TYPE, { onDispatchFailure })).rejects.toThrow(
+      '422'
+    );
+    expect(onDispatchFailure).toHaveBeenCalledTimes(1);
     expect(await harness.getAlertDocs(ALERTS_INDEX, UNKNOWN_RULE_ID)).toHaveLength(0);
+  });
+});
+
+describe.each([
+  { mode: 'child_process', reuse: false },
+  { mode: 'child_process', reuse: true },
+  { mode: 'remote', reuse: false },
+  { mode: 'remote', reuse: true },
+] as const)('native rule metrics in $mode (reuse: $reuse)', ({ mode, reuse }) => {
+  let harness: RuleProcessHarness;
+  let collector: Awaited<ReturnType<typeof createNativeMetricsCollector>>;
+  beforeAll(async () => {
+    collector = await createNativeMetricsCollector();
+    harness = await startRuleProcessHarness({
+      mode,
+      reuse,
+      instrumentation: createNativeMetricsInstrumentation(collector.url),
+      rules: [{ taskType, bundle: 'stackAlerts__es_query' }],
+    });
+    await harness.createRule({
+      id: 'native-metrics-rule',
+      ruleTypeId: RULE_TYPE,
+      params: ruleParams,
+      actions: [],
+    });
+    await harness.es.index({
+      index: SOURCE_INDEX,
+      document: { '@timestamp': new Date().toISOString() },
+      refresh: 'wait_for',
+    });
+  });
+  afterAll(async () => {
+    try {
+      await harness?.stop();
+    } finally {
+      await collector?.stop();
+    }
+  });
+  it('flushes each native rule counter exactly once with delta temporality and worker identity', async () => {
+    for (const expected of [1, 2]) {
+      const { result, onDispatchFailure } = await harness.run('native-metrics-rule', RULE_TYPE);
+      expect(result).toEqual(
+        expect.objectContaining({ state: expect.any(Object), schedule: { interval: '1m' } })
+      );
+      expect(onDispatchFailure).not.toHaveBeenCalled();
+      const samples = collector.samples.filter(
+        ({ name }) => name === 'kibana.alerting.rule_run.count'
+      );
+      expect(samples.reduce((total, { value }) => total + value, 0)).toBe(expected);
+      expect(samples.every(({ temporality }) => temporality === 1)).toBe(true);
+      for (const sample of samples) {
+        expect(sample.attributes).toEqual(
+          expect.arrayContaining([
+            { key: 'credential.type', value: { stringValue: 'es_api_key' } },
+            { key: 'credential.reason', value: { stringValue: 'config' } },
+          ])
+        );
+      }
+      expect(collector.errors).toEqual([]);
+    }
+    const instances = new Set(
+      collector.samples
+        .filter(({ name, value }) => name === 'kibana.alerting.rule_run.count' && value > 0)
+        .map(({ instanceId }) => instanceId)
+    );
+    expect(instances.size).toBe(reuse ? 1 : 2);
+    expect(harness.supervisor.getStats().spawned).toBe(reuse ? 1 : 2);
+  });
+});
+
+describe.each([
+  { mode: 'child_process', reuse: false },
+  { mode: 'child_process', reuse: true },
+  { mode: 'remote', reuse: false },
+  { mode: 'remote', reuse: true },
+] as const)('native rule Prometheus in $mode (reuse: $reuse)', ({ mode, reuse }) => {
+  let harness: RuleProcessHarness;
+  let collector: Awaited<ReturnType<typeof createNativePrometheusCollector>>;
+  let unregisterGauges: (() => void) | undefined;
+  beforeAll(async () => {
+    collector = await createNativePrometheusCollector();
+    harness = await startRuleProcessHarness({
+      mode,
+      reuse,
+      instrumentation: createNativePrometheusInstrumentation(),
+      onMetrics: (metrics) => collector.exporter.addMetrics(metrics),
+      rules: [{ taskType, bundle: 'stackAlerts__es_query' }],
+    });
+    unregisterGauges = collector.exporter.registerGaugeSource(() => harness.collectGaugeMetrics());
+    await harness.createRule({
+      id: 'native-metrics-rule',
+      ruleTypeId: RULE_TYPE,
+      params: ruleParams,
+      actions: [],
+    });
+    await harness.es.index({
+      index: SOURCE_INDEX,
+      document: { '@timestamp': new Date().toISOString() },
+      refresh: 'wait_for',
+    });
+  });
+  afterAll(async () => {
+    try {
+      unregisterGauges?.();
+      await harness?.stop();
+    } finally {
+      await collector?.stop();
+    }
+  });
+  it('retains exact native rule counters at the Main scrape endpoint across worker reuse and retirement', async () => {
+    for (const expected of [1, 2]) {
+      const { result, onDispatchFailure } = await harness.run('native-metrics-rule', RULE_TYPE);
+      expect(result).toEqual(
+        expect.objectContaining({ state: expect.any(Object), schedule: { interval: '1m' } })
+      );
+      expect(onDispatchFailure).not.toHaveBeenCalled();
+      const body = await collector.scrape();
+      const counters = body
+        .split('\n')
+        .filter((line) => line.startsWith('kibana_alerting_rule_run_count_total{'));
+      expect(
+        counters.reduce((total, line) => total + Number(line.slice(line.lastIndexOf(' ') + 1)), 0)
+      ).toBe(expected);
+      expect(
+        counters.every(
+          (line) =>
+            line.includes('credential_type="es_api_key"') &&
+            line.includes('credential_reason="config"')
+        )
+      ).toBe(true);
+    }
+    expect(await harness.collectGaugeMetrics()).toHaveLength(reuse ? 1 : 0);
+    expect(harness.supervisor.getStats().spawned).toBe(reuse ? 1 : 2);
   });
 });

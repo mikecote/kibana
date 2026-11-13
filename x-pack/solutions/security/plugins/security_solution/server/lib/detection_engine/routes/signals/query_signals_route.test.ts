@@ -48,6 +48,17 @@ describe('query for signal', () => {
   });
 
   describe('query and agg on signals index', () => {
+    test('rejects a missing owning rule data client before an unscoped query can run', async () => {
+      server = serverMock.create();
+      querySignalsRoute(server.router, null);
+      const response = await server.inject(
+        getSignalsQueryRequest(),
+        requestContextMock.convertContext(context)
+      );
+      expect(response.status).toBe(503);
+      expect(context.core.elasticsearch.client.asCurrentUser.search).not.toHaveBeenCalled();
+    });
+
     test('returns 200 when using single query', async () => {
       const response = await server.inject(
         getSignalsQueryRequest(),

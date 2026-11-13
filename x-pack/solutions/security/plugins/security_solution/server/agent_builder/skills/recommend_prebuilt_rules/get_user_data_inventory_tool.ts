@@ -6,19 +6,18 @@
  */
 
 import { z, lazySchema } from '@kbn/zod/v4';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
+import type { SecuritySkillServices } from '../services';
 
 export const GET_USER_DATA_INVENTORY_INLINE_TOOL_ID = 'security.get_user_data_inventory';
 
 export const getUserDataInventorySchema = lazySchema(() => z.object({}).strict());
 
 interface GetUserDataInventoryToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
 }
 

@@ -8,65 +8,23 @@
 import type {
   CoreSetup,
   CoreStart,
-  KibanaRequest,
   Logger,
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import { PROJECT_ROUTING_ALL } from '@kbn/cps-server-utils';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { FeaturesPluginStart } from '@kbn/features-plugin/server';
 import { NIGHTSHIFT_FEATURE_ID } from '@kbn/nightshift-shared';
 import { registerRoutes } from '@kbn/server-route-repository';
-import { EsqlViewsClient } from './lib/esql_views_client';
 import { createSourceChangeEmitter, type SourceChangeEmitter } from './lib/source_change_emitter';
-import { SourcesClient } from './lib/sources_client';
+import { createSourcesClient } from './create_sources_client';
 import { nightshiftSourcesRouteRepository } from './routes';
-import {
-  NIGHTSHIFT_SOURCE_SO_TYPE,
-  nightshiftSourceSavedObjectType,
-} from './saved_objects/nightshift_source_saved_object';
+import { nightshiftSourceSavedObjectType } from './saved_objects/nightshift_source_saved_object';
 import type {
   GetSourcesClient,
   NightshiftSourcesServerSetup,
   NightshiftSourcesServerStart,
 } from './types';
-
-const createSourcesClient = (
-  core: CoreStart,
-  request: KibanaRequest,
-  logger: Logger,
-  sourceChangeEmitter: SourceChangeEmitter
-): SourcesClient => {
-  // Hidden types are left out of the scoped client unless named. Nightshift `all` / `read`
-  // grant this type, so the security extension authorizes the call and writes the audit event.
-  // `configure_nightshift` does not include it. The spaces extension stays on.
-  const soClient = core.savedObjects.getScopedClient(request, {
-    includedHiddenTypes: [NIGHTSHIFT_SOURCE_SO_TYPE],
-  });
-
-  // Views live in the origin project. Reads run as the user; writes run as kibana_system, so the
-  // views stay in sync with their saved objects. The write routes require the `manage` privilege.
-  // Validation and health probes read the data behind a source, which under CPS may live in
-  // linked projects, so they route across all of them.
-  const userViewsEsClient = core.elasticsearch.client.asScoped(request).asCurrentUser;
-  const dataEsClient = core.elasticsearch.client.asScoped(request, {
-    projectRouting: 'expression',
-    value: PROJECT_ROUTING_ALL,
-  }).asCurrentUser;
-
-  return new SourcesClient({
-    soClient,
-    viewsClient: new EsqlViewsClient({
-      userEsClient: userViewsEsClient,
-      internalEsClient: core.elasticsearch.client.asInternalUser,
-    }),
-    dataEsClient,
-    logger,
-    username: core.security.authc.getCurrentUser(request)?.username ?? '<system>',
-    spaceId: request.spaceId,
-    onChange: (change) => sourceChangeEmitter.emit({ ...change, request }),
-  });
-};
 
 export class NightshiftSourcesPlugin
   implements Plugin<NightshiftSourcesServerSetup, NightshiftSourcesServerStart>
@@ -81,7 +39,18 @@ export class NightshiftSourcesPlugin
     this.sourceChangeEmitter = createSourceChangeEmitter(this.logger.get('source-changes'));
   }
 
-  public setup(core: CoreSetup): NightshiftSourcesServerSetup {
+  public setup(
+    core: CoreSetup,
+    plugins: {
+      workflowsExtensions?: Pick<
+        WorkflowsExtensionsServerPluginSetup,
+        'registerTaskProcessSettings'
+      >;
+    } = {}
+  ): NightshiftSourcesServerSetup {
+    plugins.workflowsExtensions?.registerTaskProcessSettings('nightshiftSourcesRuntime', () => ({
+      enabled: true,
+    }));
     core.savedObjects.registerType(nightshiftSourceSavedObjectType);
 
     const getSourcesClient: GetSourcesClient = async ({ request }) => {

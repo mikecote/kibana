@@ -16,14 +16,14 @@ import {
   deleteConnector,
   deleteRule,
   getExecutions,
-  getFallbacks,
+  getDispatchFailures,
   uniqueName,
   waitFor,
 } from '../../../scout_task_processes/api/fixtures';
 
 const TASK_TYPE = `alerting:${ES_QUERY}`;
 
-apiTest.describe('Rules a task process declines', { tag: ['@local-stateful-classic'] }, () => {
+apiTest.describe('Process capability failures', { tag: ['@local-stateful-classic'] }, () => {
   let headers: Record<string, string>;
   const ruleIds: string[] = [];
   const connectorIds: string[] = [];
@@ -38,7 +38,7 @@ apiTest.describe('Rules a task process declines', { tag: ['@local-stateful-class
   });
 
   apiTest(
-    'a Kibana with a connector type no bundle knows runs its rules itself',
+    'an incompatible bundle fails before executing the rule',
     async ({ apiClient, esClient }) => {
       apiTest.setTimeout(TEST_TIMEOUT_MS);
       const since = new Date().toISOString();
@@ -63,12 +63,11 @@ apiTest.describe('Rules a task process declines', { tag: ['@local-stateful-class
         ],
       });
       ruleIds.push(ruleId);
-      await waitFor(
-        async () =>
-          (await getExecutions(esClient, ruleId)).some((e) => e.event?.outcome === 'success'),
-        { message: 'a successful execution in Kibana', timeoutMs: 120_000 }
-      );
-      expect(getFallbacks(TASK_TYPE, 'declined', since).length).toBeGreaterThan(0);
+      await waitFor(async () => getDispatchFailures(TASK_TYPE, 'declined', since).length > 0, {
+        message: 'an explicit process capability failure',
+        timeoutMs: 120_000,
+      });
+      expect(await getExecutions(esClient, ruleId)).toHaveLength(0);
     }
   );
 });

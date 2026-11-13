@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type {
   Plugin,
   CoreSetup,
@@ -27,7 +28,7 @@ import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
 } from '@kbn/task-manager-plugin/server';
-import type { EmbeddableRegistryDefinition, EmbeddableSetup } from '@kbn/embeddable-plugin/server';
+import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
 import { DataViewPersistableStateService } from '@kbn/data-views-plugin/common';
 import type { SharePluginSetup } from '@kbn/share-plugin/server';
 import { LensConfigBuilder } from '@kbn/lens-embeddable-utils';
@@ -35,6 +36,10 @@ import {
   LENS_CONTENT_TYPE,
   LENS_ITEM_LATEST_VERSION,
 } from '@kbn/lens-common/content_management/constants';
+import {
+  getLensRuntimeSettings,
+  LENS_RUNTIME_SETTINGS_ID,
+} from './visualization_migration_contribution';
 import { setupSavedObjects } from './saved_objects';
 import { setupExpressions } from './expressions';
 import { makeLensEmbeddableFactory } from './embeddable/make_lens_embeddable_factory';
@@ -48,6 +53,7 @@ import { registerLensEmbeddableTransformsForDashboardApp } from './dashboard_app
 import { registerDiscoverDrilldown } from './drilldowns/register_discover_drilldown';
 
 export interface PluginSetupContract {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   taskManager?: TaskManagerSetupContract;
   embeddable: EmbeddableSetup;
   expressions: ExpressionsServerSetup;
@@ -78,6 +84,8 @@ export interface LensServerPluginSetup {
   ) => void;
 }
 
+import { registerLensEmbeddableFactory } from './register_lens_embeddable_factory';
+
 export class LensServerPlugin
   implements Plugin<LensServerPluginSetup, {}, PluginSetupContract, PluginStartContract>
 {
@@ -93,6 +101,9 @@ export class LensServerPlugin
       plugins.data.query.filterManager
     );
     setupSavedObjects(core, getFilterMigrations, this.customVisualizationMigrations);
+    plugins.workflowsExtensions?.registerTaskProcessSettings(LENS_RUNTIME_SETTINGS_ID, () =>
+      getLensRuntimeSettings(this.customVisualizationMigrations)
+    );
     setupExpressions(core, plugins.expressions);
 
     if (plugins.share) {
@@ -118,9 +129,7 @@ export class LensServerPlugin
 
     registerDiscoverDrilldown(plugins.embeddable);
 
-    plugins.embeddable.registerEmbeddableFactory(
-      lensEmbeddableFactory() as unknown as EmbeddableRegistryDefinition
-    );
+    registerLensEmbeddableFactory(plugins.embeddable, lensEmbeddableFactory());
 
     const builder = new LensConfigBuilder();
 

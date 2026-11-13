@@ -28,8 +28,10 @@ import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extens
 import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 
+import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { LicensingApiRequestHandlerContext } from '@kbn/licensing-plugin/server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
+import type { AlertTriageAlertsClientFactory } from './alert_triage/alerts_client';
 import type { SubscriptionAvailability } from '../common/availability';
 
 export type AlertZeroRequestHandlerContext = CustomRequestHandlerContext<{
@@ -62,6 +64,7 @@ export interface AlertZeroPluginSetup {
   isEnabled: boolean;
 }
 export interface AlertZeroPluginStart {
+  registerTriageAlertsClientFactory: (factory: AlertTriageAlertsClientFactory) => void;
   /**
    * Lets an optional consumer that already depends on this plugin (e.g. security_solution, via
    * the `isEnabled` soft-flag above) register the TI owner installer from its own `start()`, so
@@ -87,6 +90,7 @@ export interface AlertZeroSetupDependencies {
 }
 
 export interface AlertZeroStartDependencies {
+  licensing: LicensingPluginStart;
   taskManager: TaskManagerStartContract;
   security?: SecurityPluginStart;
   spaces?: SpacesPluginStart;

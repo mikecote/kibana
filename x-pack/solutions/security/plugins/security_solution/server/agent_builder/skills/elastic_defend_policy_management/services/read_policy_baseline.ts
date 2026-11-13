@@ -5,7 +5,6 @@
  * 2.0.
  */
 
-import type { InfoResponse } from '@elastic/elasticsearch/lib/api/types';
 import type { EndpointAppContextService } from '../../../../endpoint/endpoint_app_context_services';
 import { createDefaultPolicy } from '../../../../fleet_integration/handlers/create_default_policy';
 import { hashPolicyConfig } from '../domain/hash_policy_config';
@@ -27,7 +26,7 @@ export const readPolicyBaseline = (
     endpointAppContextService.getLicenseService(),
     { type: 'endpoint', endpointConfig: { preset: args.preset } },
     endpointAppContextService.getCloudSetup(),
-    undefined as unknown as InfoResponse,
+    undefined,
     endpointAppContextService.getProductFeaturesService(),
     endpointAppContextService.getTelemetryConfigProvider(),
     endpointAppContextService.experimentalFeatures

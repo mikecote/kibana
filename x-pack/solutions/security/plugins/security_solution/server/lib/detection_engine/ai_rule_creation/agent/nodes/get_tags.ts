@@ -20,7 +20,7 @@ const AI_RULE_CREATION_TAG = 'AI Rule Creation';
 
 interface GetTagsNodeParams {
   savedObjectsClient: SavedObjectsClientContract;
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
   model: InferenceChatModel;
   events?: ToolEventEmitter;
 }

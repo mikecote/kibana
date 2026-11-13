@@ -51,6 +51,39 @@ describe('pollForWorkflowCompletion', () => {
     jest.useRealTimers();
   });
 
+  it.each(['running', 'completed'])(
+    'aborts %s polling and releases its timer without cancelling execution',
+    async (status) => {
+      const controller = new AbortController();
+      const getWorkflowExecution = jest.fn().mockResolvedValue(createExecution(status));
+      const workflowsManagementApi: WorkflowsManagementApi = {
+        getWorkflow: jest.fn(),
+        getWorkflowExecution,
+        runWorkflow: jest.fn(),
+        scheduleWorkflow: jest.fn(),
+      };
+      const promise = pollForWorkflowCompletion({
+        request,
+        executionId,
+        logger: mockLogger,
+        spaceId,
+        workflowsManagementApi,
+        signal: controller.signal,
+        isReady: () => false,
+      });
+      const rejected = expect(promise).rejects.toThrow('Caller deadline');
+      await jest.advanceTimersByTimeAsync(0);
+      expect(jest.getTimerCount()).toBe(1);
+      const reads = getWorkflowExecution.mock.calls.length;
+      controller.abort(new Error('Caller deadline'));
+      await rejected;
+      expect(jest.getTimerCount()).toBe(0);
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(getWorkflowExecution).toHaveBeenCalledTimes(reads);
+      expect(workflowsManagementApi.scheduleWorkflow).not.toHaveBeenCalled();
+    }
+  );
+
   it('returns when execution is terminal', async () => {
     const workflowsManagementApi: WorkflowsManagementApi = {
       getWorkflow: jest.fn(),

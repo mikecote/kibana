@@ -46,10 +46,16 @@ export interface RegistryAlertTypeWithAuth extends RegistryRuleType {
 
 export type AuthorizedRuleTypes = Map<string, { authorizedConsumers: AuthorizedConsumers }>;
 
+export interface AlertingAuthorizationRuleTypeRegistry {
+  getAllTypes: RuleTypeRegistry['getAllTypes'];
+  has: RuleTypeRegistry['has'];
+  get: (id: string) => Pick<RegistryRuleType, 'id'>;
+}
+
 export interface CreateOptions {
-  ruleTypeRegistry: RuleTypeRegistry;
+  ruleTypeRegistry: AlertingAuthorizationRuleTypeRegistry;
   request: KibanaRequest;
-  features: FeaturesPluginStart;
+  features: Pick<FeaturesPluginStart, 'getKibanaFeatures'>;
   getSpace: (request: KibanaRequest) => Promise<Space | undefined>;
   getSpaceId: (request: KibanaRequest) => string | undefined;
   authorization?: SecurityPluginStart['authz'];
@@ -98,7 +104,7 @@ interface GetAllAuthorizedRuleTypes {
 }
 
 export class AlertingAuthorization {
-  private readonly ruleTypeRegistry: RuleTypeRegistry;
+  private readonly ruleTypeRegistry: AlertingAuthorizationRuleTypeRegistry;
   private readonly request: KibanaRequest;
   private readonly authorization?: SecurityPluginStart['authz'];
   private readonly allRegisteredConsumers: Set<string>;

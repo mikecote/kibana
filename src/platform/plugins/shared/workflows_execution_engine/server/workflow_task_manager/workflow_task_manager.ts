@@ -21,6 +21,7 @@ import { getWorkflowRunTaskId } from './get_workflow_run_task_id';
 import { WORKFLOW_RESUME_TASK_TYPE, WORKFLOW_RUN_TASK_TYPE } from './types';
 import type { ResumeWorkflowExecutionParams, StartWorkflowExecutionParams } from './types';
 import { resolveQueueTtlMs } from '../concurrency/queue_concurrency_utils';
+import type { ExecutionIdentityContexts } from '../service_account_execution';
 import { getWorkflowOriginalRequest } from '../service_account_execution';
 import { generateExecutionTaskScope } from '../utils';
 
@@ -69,7 +70,8 @@ export class WorkflowTaskManager {
       | 'bulkGet'
       | 'bulkRemove'
       | 'ensureScheduled'
-    >
+    >,
+    private identityContexts?: Pick<ExecutionIdentityContexts, 'get'>
   ) {}
 
   /**
@@ -139,7 +141,7 @@ export class WorkflowTaskManager {
         runAt: resumeAt,
         scope: generateExecutionTaskScope(workflowExecution as EsWorkflowExecution),
       },
-      { request: getWorkflowOriginalRequest(fakeRequest), cloneApiKey: true }
+      { request: getWorkflowOriginalRequest(fakeRequest, this.identityContexts), cloneApiKey: true }
     );
 
     return {
@@ -170,7 +172,7 @@ export class WorkflowTaskManager {
         runAt: resumeAt,
         scope: generateExecutionTaskScope(workflowExecution as EsWorkflowExecution),
       },
-      { request: getWorkflowOriginalRequest(fakeRequest), cloneApiKey: true }
+      { request: getWorkflowOriginalRequest(fakeRequest, this.identityContexts), cloneApiKey: true }
     );
 
     return {
@@ -221,7 +223,7 @@ export class WorkflowTaskManager {
         enabled: true,
         priority,
       },
-      { request: getWorkflowOriginalRequest(request), cloneApiKey: true }
+      { request: getWorkflowOriginalRequest(request, this.identityContexts), cloneApiKey: true }
     );
 
     return { taskId: task.id };
@@ -301,7 +303,10 @@ export class WorkflowTaskManager {
         priority,
       },
       fakeRequest
-        ? { request: getWorkflowOriginalRequest(fakeRequest), cloneApiKey: true }
+        ? {
+            request: getWorkflowOriginalRequest(fakeRequest, this.identityContexts),
+            cloneApiKey: true,
+          }
         : undefined
     );
     return { taskId };
@@ -403,7 +408,10 @@ export class WorkflowTaskManager {
         scope: [`workflow:execution:${params.executionId}`],
       },
       params.fakeRequest
-        ? { request: getWorkflowOriginalRequest(params.fakeRequest), cloneApiKey: true }
+        ? {
+            request: getWorkflowOriginalRequest(params.fakeRequest, this.identityContexts),
+            cloneApiKey: true,
+          }
         : undefined
     );
   }

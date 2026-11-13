@@ -36,8 +36,8 @@ export const memoryOptimizeStepDefinition = ({
 }: {
   getAgentBuilder: () => AgentBuilderPluginStart | undefined;
   getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
   logger: Logger;
   isEnabled?: () => boolean;
   telemetry: NightshiftTelemetryClient;

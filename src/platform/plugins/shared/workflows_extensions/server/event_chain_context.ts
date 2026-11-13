@@ -69,12 +69,36 @@ interface RequestWithEventChainContext extends KibanaRequest {
   [key: symbol]: EventChainContext | undefined;
 }
 
+/**
+ * Where the event-chain context of a request is kept. The execution engine builds one per runtime
+ * (one per Kibana node or per task process) and records the context of each run on it; the default
+ * store keeps it on the request under {@link WORKFLOW_EVENT_CHAIN_CONTEXT}, which is what
+ * {@link getEventChainContext} reads, so a store made with the default key is read by every caller.
+ */
+export interface EventChainContextStore {
+  get(request: KibanaRequest): EventChainContext | undefined;
+  set(request: KibanaRequest, context: EventChainContext): void;
+}
+
+/** Makes a store that keeps the context on the request under `key`. */
+export const createEventChainContextStore = (
+  key: symbol = WORKFLOW_EVENT_CHAIN_CONTEXT
+): EventChainContextStore => ({
+  get: (request) => (request as RequestWithEventChainContext)[key],
+  set: (request, context) => {
+    (request as RequestWithEventChainContext)[key] = context;
+  },
+});
+
+/** The store {@link getEventChainContext} and {@link setWorkflowEventChainContext} use. */
+export const defaultEventChainContextStore: EventChainContextStore = createEventChainContextStore();
+
 function getStoredContext(request: KibanaRequest): EventChainContext | undefined {
-  return (request as RequestWithEventChainContext)[WORKFLOW_EVENT_CHAIN_CONTEXT];
+  return defaultEventChainContextStore.get(request);
 }
 
 function setStoredContext(request: KibanaRequest, context: EventChainContext): void {
-  (request as RequestWithEventChainContext)[WORKFLOW_EVENT_CHAIN_CONTEXT] = context;
+  defaultEventChainContextStore.set(request, context);
 }
 
 /** Normalize header value (string or string[]) to a single trimmed string, or undefined if missing/empty. */

@@ -10,8 +10,12 @@ import type {
   SavedObject,
   SavedObjectsExportTransformContext,
   SavedObjectsServiceSetup,
+  SavedObjectsType,
 } from '@kbn/core/server';
-import type { EncryptedSavedObjectsPluginSetup } from '@kbn/encrypted-saved-objects-plugin/server';
+import type {
+  EncryptedSavedObjectTypeRegistration,
+  EncryptedSavedObjectsPluginSetup,
+} from '@kbn/encrypted-saved-objects-plugin/server';
 import type { MigrateFunctionsObject } from '@kbn/kibana-utils-plugin/common';
 import {
   triggersActionsRoute,
@@ -114,6 +118,63 @@ export type AdHocRunAttributesNotPartiallyUpdatable =
   | 'apiKeyToUse'
   | 'uiamApiKey';
 
+export const ruleEncryptedSavedObjectType: EncryptedSavedObjectTypeRegistration = {
+  type: RULE_SAVED_OBJECT_TYPE,
+  /**
+   * We disable enforcing random SO IDs for the rule SO
+   * to allow users creating rules with a predefined ID.
+   */
+  enforceRandomId: false,
+  attributesToEncrypt: new Set(RuleAttributesToEncrypt),
+  attributesToIncludeInAAD: new Set(RuleAttributesIncludedInAAD),
+};
+
+/** Builds the native rule saved object type with its real migrations and export policy. */
+export const getRuleSavedObjectType = ({
+  encryptedSavedObjects,
+  searchSourceMigrations,
+  isPreconfigured,
+  isExportable,
+}: {
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>;
+  searchSourceMigrations: MigrateFunctionsObject;
+  isPreconfigured: (connectorId: string) => boolean;
+  isExportable: (rule: SavedObject<RawRule>) => boolean;
+}): SavedObjectsType => ({
+  name: RULE_SAVED_OBJECT_TYPE,
+  indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+  hidden: true,
+  namespaceType: 'multiple-isolated',
+  convertToMultiNamespaceTypeVersion: '8.0.0',
+  migrations: getMigrations(encryptedSavedObjects, searchSourceMigrations, isPreconfigured),
+  mappings: alertMappings,
+  management: {
+    displayName: 'rule',
+    importableAndExportable: true,
+    getTitle(ruleSavedObject: SavedObject<RawRule>) {
+      return `Rule: [${ruleSavedObject.attributes.name}]`;
+    },
+    getInAppUrl: (savedObject: SavedObject<RawRule>) => {
+      return {
+        path: `${triggersActionsRoute}${getRuleDetailsRoute(encodeURIComponent(savedObject.id))}`,
+        uiCapabilitiesPath: 'management.insightsAndAlerting.triggersActionsRules',
+      };
+    },
+    onImport(ruleSavedObjects) {
+      return {
+        warnings: getImportWarnings(ruleSavedObjects),
+      };
+    },
+    onExport(context: SavedObjectsExportTransformContext, objects: Array<SavedObject<RawRule>>) {
+      return transformRulesForExport(objects);
+    },
+    isExportable(ruleSavedObject: SavedObject<RawRule>) {
+      return isExportable(ruleSavedObject);
+    },
+  },
+  modelVersions: ruleModelVersions,
+});
+
 export function setupSavedObjects(
   savedObjects: SavedObjectsServiceSetup,
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup,
@@ -122,40 +183,14 @@ export function setupSavedObjects(
   isPreconfigured: (connectorId: string) => boolean,
   getSearchSourceMigrations: () => MigrateFunctionsObject
 ) {
-  savedObjects.registerType({
-    name: RULE_SAVED_OBJECT_TYPE,
-    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-    hidden: true,
-    namespaceType: 'multiple-isolated',
-    convertToMultiNamespaceTypeVersion: '8.0.0',
-    migrations: getMigrations(encryptedSavedObjects, getSearchSourceMigrations(), isPreconfigured),
-    mappings: alertMappings,
-    management: {
-      displayName: 'rule',
-      importableAndExportable: true,
-      getTitle(ruleSavedObject: SavedObject<RawRule>) {
-        return `Rule: [${ruleSavedObject.attributes.name}]`;
-      },
-      getInAppUrl: (savedObject: SavedObject<RawRule>) => {
-        return {
-          path: `${triggersActionsRoute}${getRuleDetailsRoute(encodeURIComponent(savedObject.id))}`,
-          uiCapabilitiesPath: 'management.insightsAndAlerting.triggersActionsRules',
-        };
-      },
-      onImport(ruleSavedObjects) {
-        return {
-          warnings: getImportWarnings(ruleSavedObjects),
-        };
-      },
-      onExport(context: SavedObjectsExportTransformContext, objects: Array<SavedObject<RawRule>>) {
-        return transformRulesForExport(objects);
-      },
-      isExportable(ruleSavedObject: SavedObject<RawRule>) {
-        return isRuleExportable(ruleSavedObject, ruleTypeRegistry, logger);
-      },
-    },
-    modelVersions: ruleModelVersions,
-  });
+  savedObjects.registerType(
+    getRuleSavedObjectType({
+      encryptedSavedObjects,
+      searchSourceMigrations: getSearchSourceMigrations(),
+      isPreconfigured,
+      isExportable: (rule) => isRuleExportable(rule, ruleTypeRegistry, logger),
+    })
+  );
 
   savedObjects.registerType({
     name: API_KEY_PENDING_INVALIDATION_TYPE,
@@ -261,40 +296,7 @@ export function setupSavedObjects(
     modelVersions: adHocRunParamsModelVersions,
   });
 
-  savedObjects.registerType({
-    name: RULE_TEMPLATE_SAVED_OBJECT_TYPE,
-    indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
-    hidden: true,
-    namespaceType: 'multiple-isolated',
-    management: {
-      importableAndExportable: true,
-      getTitle(ruleTemplateSavedObject: SavedObject<RawRuleTemplate>) {
-        const { attributes } = ruleTemplateSavedObject;
-        if (attributes.engine === 'v2' && 'rule' in attributes) {
-          const ruleName = (attributes.rule as { metadata?: { name?: string } }).metadata?.name;
-          if (ruleName) {
-            return ruleName;
-          }
-        }
-        if ('name' in attributes && attributes.name) {
-          return attributes.name;
-        }
-        return ruleTemplateSavedObject.id;
-      },
-
-      getInAppUrl: (savedObject: SavedObject<RawRuleTemplate>) => {
-        return {
-          path: `${triggersActionsRoute}${createRuleFromTemplateRoute.replace(
-            ':templateId',
-            encodeURIComponent(savedObject.id)
-          )}`,
-          uiCapabilitiesPath: '',
-        };
-      },
-    },
-    mappings: ruleTemplateMappings,
-    modelVersions: ruleTemplateModelVersions,
-  });
+  savedObjects.registerType(getRuleTemplateSavedObjectType());
 
   // Historical saved object used to track UIAM API key provisioning status. The
   // background provisioning tasks have been removed; this type remains so existing
@@ -330,16 +332,7 @@ export function setupSavedObjects(
   });
 
   // Encrypted attributes
-  encryptedSavedObjects.registerType({
-    type: RULE_SAVED_OBJECT_TYPE,
-    /**
-     * We disable enforcing random SO IDs for the rule SO
-     * to allow users creating rules with a predefined ID.
-     */
-    enforceRandomId: false,
-    attributesToEncrypt: new Set(RuleAttributesToEncrypt),
-    attributesToIncludeInAAD: new Set(RuleAttributesIncludedInAAD),
-  });
+  encryptedSavedObjects.registerType(ruleEncryptedSavedObjectType);
 
   // Encrypted attributes
   encryptedSavedObjects.registerType({
@@ -355,3 +348,39 @@ export function setupSavedObjects(
     attributesToIncludeInAAD: new Set(AdHocRunAttributesIncludedInAAD),
   });
 }
+
+/** Returns the rule template definition shared by plugin and task-process registration. */
+export const getRuleTemplateSavedObjectType = (): SavedObjectsType => ({
+  name: RULE_TEMPLATE_SAVED_OBJECT_TYPE,
+  indexPattern: ALERTING_CASES_SAVED_OBJECT_INDEX,
+  hidden: true,
+  namespaceType: 'multiple-isolated',
+  management: {
+    importableAndExportable: true,
+    getTitle(ruleTemplateSavedObject: SavedObject<RawRuleTemplate>) {
+      const { attributes } = ruleTemplateSavedObject;
+      if (attributes.engine === 'v2' && 'rule' in attributes) {
+        const ruleName = (attributes.rule as { metadata?: { name?: string } }).metadata?.name;
+        if (ruleName) {
+          return ruleName;
+        }
+      }
+      if ('name' in attributes && attributes.name) {
+        return attributes.name;
+      }
+      return ruleTemplateSavedObject.id;
+    },
+
+    getInAppUrl: (savedObject: SavedObject<RawRuleTemplate>) => {
+      return {
+        path: `${triggersActionsRoute}${createRuleFromTemplateRoute.replace(
+          ':templateId',
+          encodeURIComponent(savedObject.id)
+        )}`,
+        uiCapabilitiesPath: '',
+      };
+    },
+  },
+  mappings: ruleTemplateMappings,
+  modelVersions: ruleTemplateModelVersions,
+});

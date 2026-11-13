@@ -78,7 +78,11 @@ export const createMaxCallback =
 /**
  * The file kind definition for interacting with the file service for the backend
  */
-const createFileKinds = (config: FilesConfig, isFipsMode = false): Record<Owner, FileKind> => {
+/** Builds the native Case file kinds shared by Main and worker file services. */
+export const createCaseFileKinds = (
+  config: FilesConfig,
+  isFipsMode = false
+): Record<Owner, FileKind> => {
   return {
     [APP_ID]: buildFileKind(config, APP_ID, isFipsMode),
     [OBSERVABILITY_OWNER]: buildFileKind(config, OBSERVABILITY_OWNER, isFipsMode),
@@ -91,7 +95,7 @@ export const registerCaseFileKinds = (
   filesSetupPlugin: FilesSetup,
   isFipsMode = false
 ) => {
-  const fileKinds = createFileKinds(config, isFipsMode);
+  const fileKinds = createCaseFileKinds(config, isFipsMode);
 
   for (const fileKind of Object.values(fileKinds)) {
     filesSetupPlugin.registerFileKind(fileKind);

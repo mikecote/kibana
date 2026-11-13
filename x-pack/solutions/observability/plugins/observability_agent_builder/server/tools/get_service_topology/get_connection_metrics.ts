@@ -9,7 +9,7 @@ import { calculateThroughputWithRange } from '@kbn/apm-data-access-plugin/server
 import { termQuery } from '@kbn/observability-utils-server/es/queries/term_query';
 import type { KibanaRequest } from '@kbn/core/server';
 import { SERVICE_NAME } from '@kbn/apm-types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import type { TraceMetrics } from '../../data_registry/data_registry_types';
 import { buildConnectionKey } from './build_connections_from_spans';
 import type { ConnectionMetrics, ConnectionWithKey, ServiceTopologyConnection } from './types';
@@ -60,7 +60,7 @@ export async function getConnectionMetrics({
   end,
   serviceNames,
 }: {
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   start: number;
   end: number;

@@ -19,7 +19,7 @@ import { transformOptionsOut } from './transform_options_out';
 import { transformPanelsOut } from './transform_panels_out';
 import { transformPinnedPanelsOut } from './transform_pinned_panels_out';
 import { transformSearchSourceOut } from './transform_search_source_out';
-import { logger } from '../../../kibana_services';
+import { getDashboardReadServices } from '../../../dashboard_read_services';
 
 export function transformDashboardOut(
   attributes: DashboardSavedObjectAttributes | Partial<DashboardSavedObjectAttributes>,
@@ -114,7 +114,7 @@ export function transformDashboardOut(
       };
     } catch (error) {
       const warningMessage = `Unexpected error transforming ${key}. Error: ${error.message}`;
-      logger.warn(warningMessage);
+      getDashboardReadServices().logger.warn(warningMessage);
       otherStateWarnings.push({
         type: 'dropped_property',
         message: warningMessage,

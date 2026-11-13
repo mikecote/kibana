@@ -7,6 +7,11 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
+const {
+  TASK_PROCESS_PROTOCOL_VERSION,
+  TASK_PROCESS_PATHS,
+  assertTaskProcessProtocol,
+} = require('@kbn/task-manager-plugin/server/task_process/protocol');
 const { fork, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -20,7 +25,7 @@ const {
 
 // node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
 //   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>] [--node-defaults]
-//   [--run <request.json>] [--settings <settings.json>]
+//   [--run <request.json>] [--settings <settings.json>] [--init <init.json>]
 // Processes start with the Node flags Kibana's supervisor gives them (a small young generation);
 // `--node-defaults` starts them with Node's own, to compare.
 // For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
@@ -37,6 +42,8 @@ const runFile = getArg('--run');
 const runRequest = runFile ? JSON.parse(fs.readFileSync(runFile, 'utf8')) : undefined;
 const settingsFile = getArg('--settings');
 const extraSettings = settingsFile ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {};
+const initFile = getArg('--init');
+const extraInit = initFile ? JSON.parse(fs.readFileSync(initFile, 'utf8')) : {};
 const readyTimeoutMs = 60000;
 // The flags of a process as the supervisor starts it, without Kibana's own.
 const childOptions = args.includes('--node-defaults')
@@ -84,6 +91,7 @@ const getInit = (settingIds) => ({
     ]),
     ...extraSettings,
   },
+  ...extraInit,
 });
 
 const rssMb = (pid) =>
@@ -109,6 +117,8 @@ const measureOnce = (file, settingIds) =>
     let readyRss;
     let idleRss;
     let runStatus;
+    let taskMs;
+    let runStarted;
     const probes = {};
     const finish = (result) => {
       if (finished) return;
@@ -145,11 +155,18 @@ const measureOnce = (file, settingIds) =>
             peakRss: Math.max(peakRss, readyRss ?? 0, idleRss ?? 0),
             probes,
             runStatus,
+            taskMs,
           });
         }
         return;
       }
       if (message?.kind !== 'ready') return;
+      try {
+        assertTaskProcessProtocol(message);
+      } catch (error) {
+        finish({ error: error.message });
+        return;
+      }
       startupMs = Number(process.hrtime.bigint() - started) / 1e6;
       readyRss = rssMb(child.pid);
       // Let startup work that continues after the ready signal finish before reading idle memory.
@@ -162,12 +179,20 @@ const measureOnce = (file, settingIds) =>
         child.send({ kind: 'task-bundle-memory', phase: 'idle' });
         if (runRequest) {
           try {
-            const response = await fetch(`http://127.0.0.1:${message.port}/run`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json', authorization: 'Bearer bench' },
-              body: JSON.stringify(runRequest),
-            });
+            runStarted = process.hrtime.bigint();
+            const response = await fetch(
+              `http://127.0.0.1:${message.port}${TASK_PROCESS_PATHS.run}`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', authorization: 'Bearer bench' },
+                body: JSON.stringify({
+                  ...runRequest,
+                  protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+                }),
+              }
+            );
             const body = await response.json();
+            taskMs = Number(process.hrtime.bigint() - runStarted) / 1e6;
             runStatus = response.status;
             if (!response.ok) {
               child.removeAllListeners('exit');
@@ -246,11 +271,28 @@ const measureOnce = (file, settingIds) =>
             ...(runRequest
               ? {
                   runStatus: samples[0].runStatus,
+                  taskMs: Math.round(median(samples.map((s) => s.taskMs))),
+                  afterRunRssMb: Math.round(
+                    median(samples.map((s) => s.probes.afterRun.usage.rss)) / 1048576
+                  ),
                   afterRunHeapUsedMb: Math.round(
                     median(samples.map((s) => s.probes.afterRun.usage.heapUsed)) / 1048576
                   ),
                 }
               : {}),
+            samples: samples.map((sample) => ({
+              startupMs: sample.startupMs,
+              readyRssMb: sample.readyRss,
+              idleRssMb: sample.idleRss,
+              peakRssMb: sample.peakRss,
+              heapUsedMb: sample.probes.idle.usage.heapUsed / 1048576,
+              ...(runRequest
+                ? {
+                    taskMs: sample.taskMs,
+                    afterRunRssMb: sample.probes.afterRun.usage.rss / 1048576,
+                  }
+                : {}),
+            })),
           }),
     };
     results.push(row);

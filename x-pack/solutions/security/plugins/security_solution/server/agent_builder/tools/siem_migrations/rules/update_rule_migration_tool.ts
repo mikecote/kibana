@@ -11,10 +11,10 @@ import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
 import { SIEM_RULE_MIGRATION_PATH } from '../../../../../common/siem_migrations/constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityAccessToolServices } from '../../access_services';
 import { RULE_MIGRATION_SKILLS } from '../../../skills/siem_migration/rules/skill_catalog';
 import { MigrationId } from '../common/schemas';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service';
 import { createSelfClient, type SelfClient } from '../../../../common/self_client/self_client';
 import { createSiemMigrationAvailability } from '../common/availability';
 import { hasRuleMigrationPrivileges } from '../common/privileges';
@@ -36,9 +36,9 @@ const buildPath = (migrationId: string): string =>
   SIEM_RULE_MIGRATION_PATH.replace('{migration_id}', encodeURIComponent(migrationId));
 
 export const updateRuleMigrationTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   logger: Logger,
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): BuiltinToolDefinition<typeof schema> => {
   const callSelfClient: SelfClient = createSelfClient({ core, logger });
 

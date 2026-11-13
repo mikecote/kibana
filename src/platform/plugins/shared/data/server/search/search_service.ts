@@ -305,6 +305,8 @@ export class SearchService {
     return {
       getTaskProcessSettings: () => ({
         searchConfig: this.initializerContext.config.get().search,
+        uiSettingsValidationsEnabled:
+          this.initializerContext.config.get().enableUiSettingsValidations,
         elasticsearchTimeouts,
         rollupsEnabled,
       }),

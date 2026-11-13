@@ -16,6 +16,7 @@ import type {
 import { SavedObjectsClient } from '@kbn/core/server';
 import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
 import { Dataset } from '@kbn/rule-registry-plugin/server';
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 import { SyncGlobalParamsPrivateLocationsTask } from './tasks/sync_global_params_task';
 import type {
   SyntheticsPluginsSetupDependencies,
@@ -41,11 +42,6 @@ import {
 import { RebalancePrivateLocationShardsTask } from './tasks/rebalance_private_location_shards_task';
 import { ensureCleanUpTaskScheduled } from './tasks/clean_up_package_policies_task';
 import { flushPendingAgentPolicyRevisionBumps } from './synthetics_service/private_location/package_policy_service';
-import { getTransforms as getStatsTransforms } from '../common/embeddables/stats_overview/get_transforms';
-import { SYNTHETICS_STATS_OVERVIEW_EMBEDDABLE } from '../common/embeddables/stats_overview/constants';
-import { getTransforms as getMonitorsTransforms } from '../common/embeddables/monitors_overview/get_transforms';
-import { SYNTHETICS_MONITORS_EMBEDDABLE } from '../common/embeddables/monitors_overview/constants';
-import { getStatsOverviewEmbeddableSchema, syntheticsMonitorsEmbeddableSchema } from './schemas';
 import { registerDataProviders } from './agent_builder/register_data_provider';
 import { SyntheticsIndicesCache } from './services/synthetics_indices_cache';
 
@@ -146,19 +142,7 @@ export class Plugin implements PluginType {
 
     this.syncGlobalParamsTask.registerTaskDefinition(plugins.taskManager);
 
-    // Register transforms and schema for SYNTHETICS_STATS_OVERVIEW_EMBEDDABLE
-    plugins.embeddable.registerEmbeddableServerDefinition(SYNTHETICS_STATS_OVERVIEW_EMBEDDABLE, {
-      title: 'Synthetics stats overview',
-      getTransforms: getStatsTransforms,
-      getSchema: getStatsOverviewEmbeddableSchema,
-    });
-
-    // Register transforms and schema for SYNTHETICS_MONITORS_EMBEDDABLE
-    plugins.embeddable.registerEmbeddableServerDefinition(SYNTHETICS_MONITORS_EMBEDDABLE, {
-      title: 'Synthetics monitors',
-      getTransforms: getMonitorsTransforms,
-      getSchema: () => syntheticsMonitorsEmbeddableSchema,
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
 
     registerDataProviders({ core, plugins });
 

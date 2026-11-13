@@ -23,13 +23,13 @@ import type {
 } from './types';
 import type { StreamsFieldsRepository } from './repositories/streams_fields_repository';
 
-interface FleetCapabilities {
-  fleet: Capabilities[string];
-  fleetv2: Capabilities[string];
+export interface FieldsMetadataCapabilities {
+  fleet?: Capabilities[string];
+  fleetv2?: Capabilities[string];
 }
 
 interface FieldsMetadataClientDeps {
-  capabilities: FleetCapabilities;
+  capabilities: FieldsMetadataCapabilities;
   logger: Logger;
   ecsFieldsRepository: EcsFieldsRepository;
   metadataFieldsRepository: MetadataFieldsRepository;
@@ -40,7 +40,7 @@ interface FieldsMetadataClientDeps {
 
 export class FieldsMetadataClient implements IFieldsMetadataClient {
   private constructor(
-    private readonly capabilities: FleetCapabilities,
+    private readonly capabilities: FieldsMetadataCapabilities,
     private readonly logger: Logger,
     private readonly ecsFieldsRepository: EcsFieldsRepository,
     private readonly metadataFieldsRepository: MetadataFieldsRepository,
@@ -202,10 +202,10 @@ export class FieldsMetadataClient implements IFieldsMetadataClient {
     return [...fieldsets].sort((a, b) => a.localeCompare(b));
   }
 
-  private hasFleetPermissions(capabilities: FleetCapabilities) {
+  private hasFleetPermissions(capabilities: FieldsMetadataCapabilities) {
     const { fleet, fleetv2 } = capabilities;
 
-    return fleet.read && fleetv2.read;
+    return fleet?.read === true && fleetv2?.read === true;
   }
 
   private makeSourceValidator =

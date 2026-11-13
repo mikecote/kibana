@@ -5,10 +5,11 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import type { ActionGroupIdsOf } from '@kbn/alerting-plugin/common';
 import type {
-  GetViewInAppRelativeUrlFnOpts,
   AlertInstanceContext as AlertContext,
   RuleExecutorOptions,
 } from '@kbn/alerting-plugin/server';
@@ -19,7 +20,7 @@ import {
   tlsRuleParamsSchema,
   type TLSRuleParams,
 } from '@kbn/response-ops-rule-params/synthetics_tls';
-import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
+import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import type { ObservabilityUptimeAlert } from '@kbn/alerts-as-data-utils';
 import type {
   SyntheticsRuleMonitorClient,
@@ -150,7 +151,6 @@ export const registerSyntheticsTLSCheckRule = (
       return { state: updateState(ruleState, foundCerts) };
     },
     alerts: SyntheticsRuleTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 };

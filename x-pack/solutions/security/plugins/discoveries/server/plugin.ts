@@ -13,30 +13,35 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import { ECS_COMPONENT_TEMPLATE_NAME } from '@kbn/alerting-plugin/server';
-import { mappingFromFieldMap } from '@kbn/alerting-plugin/common';
-import type { IRuleDataClient, IndexOptions } from '@kbn/rule-registry-plugin/server';
-import { Dataset } from '@kbn/rule-registry-plugin/server';
-import { ATTACK_DISCOVERY_SCHEDULES_CONSUMER_ID } from '@kbn/elastic-assistant-common';
+import type { IRuleDataClient } from '@kbn/rule-registry-plugin/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 
 import {
-  ATTACK_DISCOVERY_ALERTS_CONTEXT,
-  attackDiscoveryAlertFieldMap,
-} from '@kbn/discoveries/impl/attack_discovery/alert_fields';
-import {
   ATTACK_DISCOVERY_MISCONFIGURATION_EVENT,
   ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT,
   ATTACK_DISCOVERY_STEP_FAILURE_EVENT,
+  WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT,
+  WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT,
+} from '@kbn/discoveries/impl/lib/telemetry/event_based_telemetry';
+import type {
+  WorkflowSuccessTelemetryEvent,
+  WorkflowErrorTelemetryEvent,
 } from '@kbn/discoveries/impl/lib/telemetry/event_based_telemetry';
 import { reportMisconfiguration } from '@kbn/discoveries/impl/lib/telemetry/report_misconfiguration';
 import { isWorkflowsEnabled } from '@kbn/discoveries/impl/lib/helpers/is_workflows_enabled';
 import { getSpaceId } from '@kbn/discoveries/impl/lib/helpers/get_space_id';
+import { runInlineGeneration } from './workflows/generation_runner';
 import { DEFAULT_CONNECTOR_TIMEOUT_MS } from '.';
+import { getAttackDiscoveryIndexOptions } from './lib/attack_discovery/index_options';
 import { preCreateDefaultAdhocAttackDiscoveryIndex } from './lib/attack_discovery/pre_create_default_adhoc_index';
 import { logStartupHealthCheck } from './lib/startup_health_check';
 import { createAttackDiscoveryWorkflowExecutor } from './lib/schedules/workflow_executor/create_attack_discovery_workflow_executor';
+import {
+  DISCOVERIES_TASK_PROCESS_SETTINGS_ID,
+  getDiscoveriesTaskProcessSettings,
+  type DiscoveriesTaskProcessSettings,
+} from './task_types/discoveries_task_process_settings';
 import { registerRoutes } from './routes';
 import { createAttackDiscoveryAttachmentType } from './agent_builder/attachments/attack_discovery';
 import { createAttackDiscoveryVerdictAttachmentType } from './agent_builder/attachments/attack_discovery_verdict';
@@ -73,6 +78,7 @@ export class DiscoveriesPlugin
 {
   private analytics?: AnalyticsServiceSetup;
   private readonly config: DiscoveriesConfig;
+  private agentBuilderTaskProcessSettings: DiscoveriesTaskProcessSettings['agentBuilder'];
   private readonly logger: Logger;
   private adhocAttackDiscoveryDataClient?: IRuleDataClient;
   private workflowsExtensionsStart?: WorkflowsExtensionsServerPluginStart;
@@ -95,6 +101,14 @@ export class DiscoveriesPlugin
     core.analytics.registerEventType(ATTACK_DISCOVERY_MISCONFIGURATION_EVENT);
     core.analytics.registerEventType(ATTACK_DISCOVERY_SCHEDULE_ACTION_EVENT);
     core.analytics.registerEventType(ATTACK_DISCOVERY_STEP_FAILURE_EVENT);
+    if (!plugins.elasticAssistant) {
+      core.analytics.registerEventType<WorkflowSuccessTelemetryEvent>(
+        WORKFLOW_ATTACK_DISCOVERY_SUCCESS_EVENT
+      );
+      core.analytics.registerEventType<WorkflowErrorTelemetryEvent>(
+        WORKFLOW_ATTACK_DISCOVERY_ERROR_EVENT
+      );
+    }
 
     // Register 'discoveries' as a managed-workflow owner. `registerManagedWorkflowOwner`
     // is a setup-only platform contract and the feature flag is not readable during
@@ -121,25 +135,10 @@ export class DiscoveriesPlugin
      * This mirrors what elastic_assistant does, but is owned by this plugin so we have
      * zero runtime dependency on elastic_assistant.
      */
-    const ruleDataServiceOptions: IndexOptions = {
-      // IMPORTANT: These values MUST match what elastic_assistant uses to ensure
-      // both plugins read/write to the same index. See elastic_assistant/server/plugin.ts
-      // The resulting index pattern is: .adhoc.alerts-security.attack.discovery.alerts-{namespace}
-      feature: ATTACK_DISCOVERY_SCHEDULES_CONSUMER_ID,
-      registrationContext: ATTACK_DISCOVERY_ALERTS_CONTEXT,
-      dataset: Dataset.alerts,
-      additionalPrefix: '.adhoc',
-      componentTemplateRefs: [ECS_COMPONENT_TEMPLATE_NAME],
-      componentTemplates: [
-        {
-          name: 'mappings',
-          mappings: mappingFromFieldMap(attackDiscoveryAlertFieldMap),
-        },
-      ],
-    };
 
-    this.adhocAttackDiscoveryDataClient =
-      plugins.ruleRegistry.ruleDataService.initializeIndex(ruleDataServiceOptions);
+    this.adhocAttackDiscoveryDataClient = plugins.ruleRegistry.ruleDataService.initializeIndex(
+      getAttackDiscoveryIndexOptions()
+    );
 
     preCreateDefaultAdhocAttackDiscoveryIndex({
       core,
@@ -176,7 +175,20 @@ export class DiscoveriesPlugin
       this.logger.warn('WorkflowsManagement API not available, skipping workflow registration');
     }
 
+    // What the steps read of the config in a task process of the workflow task types.
+    plugins.workflowsExtensions.registerTaskProcessSettings(
+      DISCOVERIES_TASK_PROCESS_SETTINGS_ID,
+      () =>
+        getDiscoveriesTaskProcessSettings({
+          connectorTimeout: this.config.connectorTimeout ?? DEFAULT_CONNECTOR_TIMEOUT_MS,
+          langSmithApiKey: this.config.langSmithApiKey,
+          langSmithProject: this.config.langSmithProject,
+          agentBuilder: this.agentBuilderTaskProcessSettings,
+        })
+    );
+
     this.workflowStepRegistrationResult = registerWorkflowSteps(plugins.workflowsExtensions, {
+      runGeneration: runInlineGeneration,
       adhocAttackDiscoveryDataClient: this.adhocAttackDiscoveryDataClient,
       analytics: core.analytics,
       connectorTimeout: this.config.connectorTimeout ?? DEFAULT_CONNECTOR_TIMEOUT_MS,
@@ -212,6 +224,17 @@ export class DiscoveriesPlugin
     // than synchronously in setup) is safe. This mirrors the Streams plugin.
     if (plugins.agentBuilder) {
       const agentBuilder = plugins.agentBuilder;
+      const registrations: NonNullable<DiscoveriesTaskProcessSettings['agentBuilder']> = {
+        attachmentTypeIds: [],
+        skillIds: [],
+      };
+      this.agentBuilderTaskProcessSettings = registrations;
+      const registerAttachment = (
+        attachment: Parameters<typeof agentBuilder.attachments.registerType>[0]
+      ) => {
+        agentBuilder.attachments.registerType(attachment);
+        registrations.attachmentTypeIds.push(attachment.id);
+      };
       const logger = this.logger;
       const workflowsManagementApi = this.workflowsManagementApi;
       const adhocAttackDiscoveryDataClient = this.adhocAttackDiscoveryDataClient;
@@ -223,7 +246,7 @@ export class DiscoveriesPlugin
           // The data client is assigned unconditionally in `setup()` above; the guard
           // narrows the optional field rather than describing a reachable state.
           if (adhocAttackDiscoveryDataClient != null) {
-            agentBuilder.attachments.registerType(
+            registerAttachment(
               createAttackDiscoveryAttachmentType({
                 adhocAttackDiscoveryDataClient,
                 esClient: coreStart.elasticsearch.client,
@@ -240,16 +263,20 @@ export class DiscoveriesPlugin
             return;
           }
 
-          agentBuilder.attachments.registerType(createDiagnosticReportAttachmentType());
+          registerAttachment(createDiagnosticReportAttachmentType());
 
           // By value, so unlike the discovery itself it needs no data client to
           // resolve against.
-          agentBuilder.attachments.registerType(createAttackDiscoveryVerdictAttachmentType());
+          registerAttachment(createAttackDiscoveryVerdictAttachmentType());
 
           await registerSkills(agentBuilder, logger, {
+            onRegistered: (id) => {
+              registrations.skillIds.push(id);
+            },
             getEventLogIndex,
             getStartServices,
             runAttackDiscoveryToolDeps: {
+              runGeneration: runInlineGeneration,
               analytics: core.analytics,
               getEventLogIndex,
               getEventLogger,

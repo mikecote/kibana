@@ -6,10 +6,8 @@
  */
 
 import type { KibanaRequest, Logger } from '@kbn/core/server';
-import {
-  createWorkflowTriggerForwarder,
-  type WorkflowsExtensionsServerPluginStart,
-} from '@kbn/workflows-extensions/server';
+import { createWorkflowTriggerForwarder } from '@kbn/workflows-extensions/server';
+import type { SecuritySolutionEventPayload } from '../../events/types';
 import type { SecuritySolutionEventBus } from '../../events/event_bus';
 import {
   AlertStatusChangedTriggerId,
@@ -24,19 +22,29 @@ import {
 
 export const registerSecurityWorkflowEventBridge = (
   eventBus: SecuritySolutionEventBus,
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart | undefined,
-  logger: Logger
-): void => {
+  workflowsExtensions: Parameters<typeof createWorkflowTriggerForwarder>[0] | undefined,
+  logger: Pick<Logger, 'warn'>
+): (() => Promise<void>) => {
   if (!workflowsExtensions) {
-    return;
+    return () => Promise.resolve();
   }
 
   const forward = createWorkflowTriggerForwarder(workflowsExtensions, logger);
 
-  const forwardEvent = (triggerId: string, payload: unknown, request: KibanaRequest) => {
-    forward(triggerId, payload, request).catch((err: unknown) => {
-      logger.warn(`Failed to forward workflow trigger event [${triggerId}]: ${err}`);
+  const pending = new Set<Promise<void>>();
+  const forwardEvent = (
+    triggerId: string,
+    payload: SecuritySolutionEventPayload['payload'],
+    request: KibanaRequest
+  ): void => {
+    const completion = forward(triggerId, payload, request).catch((error) => {
+      logger.warn(`Failed to forward workflow trigger event [${triggerId}]: ${error}`);
     });
+    pending.add(completion);
+    void completion.then(
+      () => pending.delete(completion),
+      () => pending.delete(completion)
+    );
   };
 
   eventBus.onAlertStatusChanged((event) => {
@@ -70,4 +78,7 @@ export const registerSecurityWorkflowEventBridge = (
   eventBus.onNoteUpdated((event) => {
     forwardEvent(NoteUpdatedTriggerId, event.payload, event.request);
   });
+  return async () => {
+    while (pending.size > 0) await Promise.all([...pending]);
+  };
 };

@@ -18,6 +18,7 @@ describe('getRuleRunDeclarations', () => {
       'index-pattern',
       'maintenance-window',
       'rules-settings',
+      'space',
     ]);
     declarations.savedObjectTypes.forEach((type) => expect(type.mappings).toBeDefined());
   });

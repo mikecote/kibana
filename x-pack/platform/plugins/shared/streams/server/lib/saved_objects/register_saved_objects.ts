@@ -15,13 +15,13 @@ import {
 } from './streams_configuration';
 
 export const registerStreamsSavedObjects = (
-  savedObjects: SavedObjectsServiceSetup,
+  savedObjects: Pick<SavedObjectsServiceSetup, 'registerType'>,
   {
     isStreamsCanvasEnabled,
     encryptedSavedObjects,
   }: {
     isStreamsCanvasEnabled: boolean;
-    encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
+    encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'registerType'>;
   }
 ) => {
   if (isStreamsCanvasEnabled) {

@@ -21,6 +21,7 @@ export type {
   CreateEsFileClientArgs,
 } from './file_client';
 export { createEsFileClient } from './file_client';
+export { createFilesRunServices, filesRunSavedObjectTypes } from './create_files_run_services';
 
 export { createFileHashTransform } from './file_client/stream_transforms/file_hash_transform';
 

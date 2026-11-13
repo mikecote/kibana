@@ -6,6 +6,8 @@
  */
 
 import { TaskManagerPlugin } from './plugin';
+import type { TaskManagerSetupContract } from './plugin';
+import { createInitialMiddleware } from './lib/middleware';
 import { KibanaDiscoveryService } from './kibana_discovery_service';
 
 import { coreMock } from '@kbn/core/server/mocks';
@@ -18,6 +20,7 @@ import { licensingMock } from '@kbn/licensing-plugin/server/mocks';
 import { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
 import { TASK_MANAGER_CLAIM_NUDGE_INDEX } from './constants';
 import { defineTaskType } from './task_type_module';
+import type { TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { TaskProcessSupervisor } from './task_process/supervisor';
 import { of } from 'rxjs';
 import moment from 'moment';
@@ -187,7 +190,7 @@ describe('TaskManagerPlugin', () => {
       const startServices = coreMock.createStart();
       core.getStartServices.mockResolvedValue([startServices, {} as never, {} as never]);
       const setup = plugin.setup(core, { usageCollection: undefined });
-      return { plugin, setup, startServices, logger: pluginInitializerContext.logger.get() };
+      return { plugin, setup, core, startServices, logger: pluginInitializerContext.logger.get() };
     };
 
     test('registers the task types of Task Manager itself as modules', () => {
@@ -199,7 +202,7 @@ describe('TaskManagerPlugin', () => {
     });
 
     test('runs a module with Core as its host', async () => {
-      const { plugin, setup, startServices, logger } = setupPlugin();
+      const { plugin, setup, core, startServices, logger } = setupPlugin();
       const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
       setup.registerTaskType(defineTaskType({ type: 'test:module', createTaskRunner }));
 
@@ -222,7 +225,7 @@ describe('TaskManagerPlugin', () => {
           elasticsearch: startServices.elasticsearch.client,
           savedObjects: startServices.savedObjects,
           executionContext: startServices.executionContext,
-          security: startServices.security,
+          security: { ...startServices.security, fips: core.security.fips },
           server: expect.objectContaining({ version: expect.any(String), isServerless: false }),
         })
       );
@@ -232,15 +235,20 @@ describe('TaskManagerPlugin', () => {
       const { plugin, setup } = setupPlugin();
       const createTaskRunner = jest.fn().mockReturnValue({ run: async () => ({ state: {} }) });
       const eventLog = { registerProviderActions: jest.fn(), getLogger: jest.fn() };
+      const unusedSettings = jest.fn().mockRejectedValue(new Error('Unrelated settings were read'));
       setup.registerTaskType(
         defineTaskType({
           type: 'test:capabilities',
           eventLog: { providers: [], create: jest.fn() },
           uiSettings: {},
+          dataStreams: [],
           settings: ['alerting'],
           createTaskRunner,
         }),
-        { hostExtensions: { eventLog }, settings: { alerting: () => ({ max: 1 }) } }
+        {
+          hostExtensions: { eventLog },
+          settings: { alerting: async () => ({ max: 1 }), unused: unusedSettings },
+        }
       );
       const definitions = (
         plugin as unknown as {
@@ -257,7 +265,9 @@ describe('TaskManagerPlugin', () => {
       const host = createTaskRunner.mock.calls[0][1];
       expect(host.eventLog).toBe(eventLog);
       expect(host.settings).toEqual({ alerting: { max: 1 } });
+      expect(unusedSettings).not.toHaveBeenCalled();
       expect(host.uiSettings).toBeDefined();
+      expect(host.dataStreams).toBeDefined();
       expect(host.encryptedSavedObjects).toBeUndefined();
       expect(host.taskManager).toBeUndefined();
     });
@@ -347,6 +357,15 @@ describe('TaskManagerPlugin', () => {
       expect(TaskProcessSupervisor).not.toHaveBeenCalled();
     });
 
+    test('reads the live native execution pool for each worker coordination request', () => {
+      const { taskProcessDispatch } = create({ mode: 'child_process' });
+      mockTaskPollingLifecycle.getCurrentTasksInPool.mockReturnValueOnce(['first-task::run']);
+      expect(taskProcessDispatch.getCurrentTasksInPool()).toEqual(['first-task::run']);
+      mockTaskPollingLifecycle.getCurrentTasksInPool.mockReturnValueOnce(['later-task::run']);
+      expect(taskProcessDispatch.getCurrentTasksInPool()).toEqual(['later-task::run']);
+      expect(mockTaskPollingLifecycle.getCurrentTasksInPool).toHaveBeenCalledTimes(2);
+    });
+
     test('evaluates the feature flags a module declares and the ones the registration adds, per dispatch', async () => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
@@ -399,6 +418,19 @@ describe('TaskManagerPlugin', () => {
         'later.flag': true,
       });
       await expect(taskProcessDispatch.getFeatureFlags('test:unknown')).resolves.toBeUndefined();
+      values['contributed.flag'] = true;
+      await expect(
+        taskProcessDispatch.getFeatureFlags('test:flags', { 'contributed.flag': false })
+      ).resolves.toEqual({
+        'declared.flag': true,
+        'added.flag': true,
+        'later.flag': true,
+        'contributed.flag': true,
+      });
+      values['contributed.flag'] = false;
+      await expect(
+        taskProcessDispatch.getFeatureFlags('test:flags', { 'contributed.flag': false })
+      ).resolves.toMatchObject({ 'contributed.flag': false });
     });
 
     test('starts the supervisor with the Kibana Elasticsearch connection and stops it', async () => {
@@ -424,7 +456,14 @@ describe('TaskManagerPlugin', () => {
   });
 
   describe('what a task process is sent', () => {
-    const setupWithModule = (startServices: Record<string, unknown>) => {
+    const setupWithModule = (
+      startServices: Record<string, unknown>,
+      settings: TaskTypeRegistrationOptions['settings'] = {
+        connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }),
+      },
+      moduleOptions: Pick<TaskTypeModule, 'taskManager'> = {},
+      configure?: (setup: TaskManagerSetupContract) => void
+    ) => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
         task_execution: { mode: 'child_process' },
@@ -453,20 +492,22 @@ describe('TaskManagerPlugin', () => {
       setup.registerTaskType(
         defineTaskType({
           type: 'test:module',
+          ...moduleOptions,
           createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
         }),
         {
-          settings: { connectors: () => ({ list: [{ id: 'dynamic', secrets: { token: 't' } }] }) },
+          settings,
           parity: { connectorTypes: () => connectorTypes },
         }
       );
+      configure?.(setup);
       plugin.start(coreStart, {
         cloud: cloudMock.createStart(),
         licensing: licensingMock.createStart(),
       });
       const { getInitFor } = (TaskProcessSupervisor as unknown as jest.Mock).mock.calls.at(-1)[0]
         .settings;
-      return { getInitFor, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
+      return { getInitFor, setup, setConnectorTypes: (ids: string[]) => (connectorTypes = ids) };
     };
 
     const uiSettingsStart = (
@@ -493,6 +534,69 @@ describe('TaskManagerPlugin', () => {
       };
     };
 
+    test('captures native middleware ids in Main registration order', async () => {
+      const { getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true },
+        (setup) => {
+          setup.registerTaskProcessEncryptionKeys(() => ({ decryptionOnlyKeys: [] }));
+          setup.addMiddleware(createInitialMiddleware(), { id: 'first' });
+          setup.addMiddleware(createInitialMiddleware(), { id: 'second' });
+        }
+      );
+      expect(
+        (await getInitFor('test:module')).settings.taskManager.scheduling.middlewareIds
+      ).toEqual(['first', 'second']);
+    });
+
+    test('refuses process scheduling with middleware that has no native registration id', async () => {
+      const { getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true },
+        (setup) => {
+          setup.registerTaskProcessEncryptionKeys(() => ({ decryptionOnlyKeys: [] }));
+          setup.addMiddleware(createInitialMiddleware());
+        }
+      );
+      await expect(getInitFor('test:module')).rejects.toThrow(
+        'middleware must declare native contribution ids'
+      );
+    });
+
+    test('rejects duplicate and empty middleware ids during setup', () => {
+      expect(() =>
+        setupWithModule(uiSettingsStart({}, {}), {}, {}, (setup) => {
+          setup.addMiddleware(createInitialMiddleware(), { id: 'same' });
+          setup.addMiddleware(createInitialMiddleware(), { id: 'same' });
+        })
+      ).toThrow('already registered');
+      expect(() =>
+        setupWithModule(uiSettingsStart({}, {}), {}, {}, (setup) => {
+          setup.addMiddleware(createInitialMiddleware(), { id: ' ' });
+        })
+      ).toThrow('nonempty id');
+    });
+
+    test('requires the owning encryption provider and captures rotated keys on every dispatch', async () => {
+      const { setup, getInitFor } = setupWithModule(
+        uiSettingsStart({}, {}),
+        {},
+        { taskManager: true }
+      );
+      await expect(getInitFor('test:module')).rejects.toThrow(
+        'encryption settings have not been registered'
+      );
+      const keys = jest
+        .fn()
+        .mockReturnValue({ encryptionKey: 'a'.repeat(32), decryptionOnlyKeys: [] });
+      setup.registerTaskProcessEncryptionKeys(keys);
+      expect((await getInitFor('test:module')).encryptedSavedObjects).toEqual(keys());
+      keys.mockReturnValue({ encryptionKey: 'b'.repeat(32), decryptionOnlyKeys: ['a'.repeat(32)] });
+      expect((await getInitFor('test:module')).encryptedSavedObjects).toEqual(keys());
+    });
+
     test("sends Kibana's ui settings overrides and what it registered, read for each run", async () => {
       const { getInitFor, setConnectorTypes } = setupWithModule(
         uiSettingsStart({ 'dateFormat:tz': 'UTC', removed: null }, { 'global:flag': true })
@@ -511,6 +615,40 @@ describe('TaskManagerPlugin', () => {
       expect((await getInitFor('test:module')).parity).toEqual([
         { kind: 'connectorTypes', ids: ['.email', '.later'] },
       ]);
+    });
+
+    test('awaits file-backed settings and snapshots their current value on each dispatch', async () => {
+      const pending = Promise.withResolvers<{ material: string }>();
+      const getSettings = jest.fn().mockReturnValue(pending.promise);
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}), { material: getSettings });
+      let ready = false;
+      const first = getInitFor('test:module').then(
+        (init: { settings: { material: { material: string } } }) => {
+          ready = true;
+          return init;
+        }
+      );
+      await Promise.resolve();
+      expect(ready).toBe(false);
+      pending.resolve({ material: 'first' });
+      expect((await first).settings.material).toEqual({ material: 'first' });
+      getSettings.mockResolvedValue({ material: 'second' });
+      expect((await getInitFor('test:module')).settings.material).toEqual({ material: 'second' });
+      expect(getSettings).toHaveBeenCalledTimes(2);
+    });
+
+    test('rejects a failed settings read and retries the getter on the next dispatch', async () => {
+      const error = new Error('Registry material could not be read');
+      const getSettings = jest
+        .fn()
+        .mockRejectedValueOnce(error)
+        .mockResolvedValue({ material: 'recovered' });
+      const { getInitFor } = setupWithModule(uiSettingsStart({}, {}), { material: getSettings });
+      await expect(getInitFor('test:module')).rejects.toBe(error);
+      expect((await getInitFor('test:module')).settings.material).toEqual({
+        material: 'recovered',
+      });
+      expect(getSettings).toHaveBeenCalledTimes(2);
     });
 
     test('sends the public base URL as Core has it: none when Kibana has none', async () => {

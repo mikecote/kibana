@@ -21,11 +21,8 @@ import {
   createFeatureKnowledgeIndicatorTool,
   SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATOR_CREATE_FEATURE_TOOL_ID,
 } from './tool';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 describe('ki_feature_create tool', () => {
   const logger = loggingSystemMock.createLogger();
@@ -63,6 +60,7 @@ describe('ki_feature_create tool', () => {
   it('uses the expected tool id', () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -76,6 +74,7 @@ describe('ki_feature_create tool', () => {
   it('uses always confirmation policy with custom prompt', async () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -116,6 +115,7 @@ describe('ki_feature_create tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -134,6 +134,7 @@ describe('ki_feature_create tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -154,6 +155,7 @@ describe('ki_feature_create tool', () => {
     const getScopedClients = createScopedClients(featureClient);
 
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -195,6 +197,7 @@ describe('ki_feature_create tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -233,6 +236,7 @@ describe('ki_feature_create tool', () => {
     const getScopedClients = createScopedClients(featureClient);
 
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -258,6 +262,7 @@ describe('ki_feature_create tool', () => {
 
     const featureClient = { bulk: jest.fn() };
     const tool = createFeatureKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: createScopedClients(featureClient),
       server: createSignificantEventsServer({ featurePrivilege: 'read' }),
       logger,

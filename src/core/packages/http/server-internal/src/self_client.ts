@@ -16,6 +16,7 @@ import type {
   HttpSelfResponse,
   HttpSelfScopedClient,
   HttpSelfService,
+  HttpSelfClientSslConfig,
   HttpSelfUnauthorizedErrorHandler,
   HttpSelfUnauthorizedErrorHandlerResult,
   HttpSelfUnauthorizedErrorHandlerToolkit,
@@ -79,6 +80,7 @@ interface HttpSelfClientParams {
   readonly kibanaVersion: string;
   readonly log: Logger;
   readonly target: 'auto' | 'local';
+  readonly ssl?: Readonly<Record<'local' | 'public', HttpSelfClientSslConfig>>;
   readonly getUiamAttestationGetter?: () => SelfClientUiamAttestationGetter | undefined;
   readonly getUnauthorizedErrorHandler?: () => HttpSelfUnauthorizedErrorHandler | undefined;
 }
@@ -103,8 +105,45 @@ export const createInternalHttpSelfClient = (
   const dispatcherProvider = new SelfHttpDispatcherProvider(params);
   return {
     asScoped: (request) => new InternalHttpSelfScopedClient(params, request, dispatcherProvider),
+    getDispatchConfig: () => {
+      const target = getEffectiveTarget(params);
+      const config = {
+        target: params.target,
+        serverInfo: { ...params.getServerInfo() },
+        basePath: params.basePath.serverBasePath,
+        publicBaseUrl: params.basePath.publicBaseUrl,
+        ssl: {
+          local: dispatcherProvider.getSslConfig('local'),
+          public: dispatcherProvider.getSslConfig('public'),
+        },
+      };
+      if (target === 'local' && config.serverInfo.protocol === 'socket') return config;
+      const url = getSelfClientBaseUrl(params);
+      if (target === 'local') url.pathname = params.basePath.serverBasePath;
+      return { ...config, url: url.toString().replace(/\/$/, '') };
+    },
     close: () => dispatcherProvider.close(),
   };
+};
+
+const getEffectiveTarget = (params: HttpSelfClientParams, target?: 'local'): 'local' | 'public' => {
+  if (target === 'local') return 'local';
+  return params.target === 'auto' && params.basePath.publicBaseUrl ? 'public' : 'local';
+};
+
+const getSelfClientBaseUrl = (params: HttpSelfClientParams, target?: 'local'): URL => {
+  if (getEffectiveTarget(params, target) === 'public' && params.basePath.publicBaseUrl) {
+    return new URL(params.basePath.publicBaseUrl);
+  }
+  const serverInfo = params.getServerInfo();
+  if (serverInfo.protocol === 'socket') {
+    throw new Error('Cannot call Kibana self HTTP APIs when the server protocol is "socket".');
+  }
+  const hostname =
+    serverInfo.hostname === '0.0.0.0' || serverInfo.hostname === '::'
+      ? 'localhost'
+      : formatUrlHostname(serverInfo.hostname);
+  return new URL(`${serverInfo.protocol}://${hostname}:${serverInfo.port}`);
 };
 
 class InternalHttpSelfScopedClient implements HttpSelfScopedClient {
@@ -285,10 +324,11 @@ class InternalHttpSelfScopedClient implements HttpSelfScopedClient {
 
     const { ssl } = this.params.getHttpConfig();
     if (
-      ssl.enabled &&
-      ssl.requestCert &&
-      ssl.rejectUnauthorized &&
-      this.getEffectiveTarget(target) === 'local'
+      this.params.ssl?.[this.getEffectiveTarget(target)].clientCertificateRequired ||
+      (ssl.enabled &&
+        ssl.requestCert &&
+        ssl.rejectUnauthorized &&
+        this.getEffectiveTarget(target) === 'local')
     ) {
       throw new Error(SELF_CALL_MTLS_ERROR);
     }
@@ -348,8 +388,7 @@ class InternalHttpSelfScopedClient implements HttpSelfScopedClient {
   }
 
   private getEffectiveTarget(target?: 'local'): 'local' | 'public' {
-    if (target === 'local') return 'local';
-    return this.params.target === 'auto' && this.params.basePath.publicBaseUrl ? 'public' : 'local';
+    return getEffectiveTarget(this.params, target);
   }
 
   private getRequestBasePath(): string {
@@ -360,21 +399,7 @@ class InternalHttpSelfScopedClient implements HttpSelfScopedClient {
   }
 
   private getBaseUrl(target?: 'local'): URL {
-    if (this.getEffectiveTarget(target) === 'public' && this.params.basePath.publicBaseUrl) {
-      return new URL(this.params.basePath.publicBaseUrl);
-    }
-
-    const serverInfo = this.params.getServerInfo();
-    if (serverInfo.protocol === 'socket') {
-      throw new Error('Cannot call Kibana self HTTP APIs when the server protocol is "socket".');
-    }
-
-    const hostname =
-      serverInfo.hostname === '0.0.0.0' || serverInfo.hostname === '::'
-        ? 'localhost'
-        : formatUrlHostname(serverInfo.hostname);
-
-    return new URL(`${serverInfo.protocol}://${hostname}:${serverInfo.port}`);
+    return getSelfClientBaseUrl(this.params, target);
   }
 
   private createHeaders<TRequestBody>(

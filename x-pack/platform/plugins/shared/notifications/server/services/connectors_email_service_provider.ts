@@ -10,11 +10,8 @@ import type { PluginSetupContract, PluginStartContract } from '@kbn/actions-plug
 import type { LicensingPluginSetup, LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { EmailService, EmailServiceStart, IEmailServiceProvider } from './types';
 import type { NotificationsConfigType } from '../config';
-import { LicensedEmailService } from './licensed_email_service';
-import { ConnectorsEmailService } from './connectors_email_service';
-import { PLUGIN_ID } from '../../common';
-
-const MINIMUM_LICENSE = 'platinum';
+import { createEmailService } from './create_email_service';
+import type { NotificationsTaskProcessSettings } from '../types';
 
 export interface EmailServiceSetupDeps {
   actions?: PluginSetupContract;
@@ -61,7 +58,9 @@ export class EmailServiceProvider
     this.setupError = '';
   }
 
-  public start(plugins: EmailServiceStartDeps): EmailServiceStart {
+  public start(plugins: EmailServiceStartDeps): EmailServiceStart & {
+    getTaskProcessSettings: () => NotificationsTaskProcessSettings;
+  } {
     const { actions, licensing } = plugins;
 
     let email: EmailService;
@@ -70,17 +69,12 @@ export class EmailServiceProvider
 
       try {
         const unsecuredActionsClient = actions.getUnsecuredActionsClient();
-        email = new LicensedEmailService(
-          new ConnectorsEmailService(
-            PLUGIN_ID,
-            emailConnector,
-            unsecuredActionsClient,
-            this.logger
-          ),
-          licensing.license$,
-          MINIMUM_LICENSE,
-          this.logger
-        );
+        email = createEmailService({
+          connectorId: emailConnector,
+          actionsClient: unsecuredActionsClient,
+          license$: licensing.license$,
+          logger: this.logger,
+        });
       } catch (err) {
         this._registerInitializationError(err);
       }
@@ -88,6 +82,9 @@ export class EmailServiceProvider
 
     return {
       isEmailServiceAvailable: () => !!email,
+      getTaskProcessSettings: () => ({
+        emailConnectorId: email ? this.config.connectors?.default?.email : undefined,
+      }),
       getEmailService: () => {
         if (!email) {
           throw new Error(this.setupError);

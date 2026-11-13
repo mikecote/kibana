@@ -26,7 +26,7 @@ import type { PolicyData, PromiseResolvedValue } from '../../../../../common/end
 import { UnifiedManifestClient } from '../unified_manifest_client';
 import { stringify } from '../../../utils/stringify';
 import { QueueProcessor } from '../../../utils/queue_processor';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service/product_features_reader';
 import type { ExperimentalFeatures } from '../../../../../common';
 import type { LicenseService } from '../../../../../common/license';
 import type { ManifestSchemaVersion } from '../../../../../common/endpoint/schema/common';
@@ -100,7 +100,7 @@ export interface ManifestManagerContext {
   experimentalFeatures: ExperimentalFeatures;
   packagerTaskPackagePolicyUpdateBatchSize: number;
   esClient: ElasticsearchClient;
-  productFeaturesService: ProductFeaturesService;
+  productFeaturesService: ProductFeaturesReader;
   licenseService: LicenseService;
 }
 
@@ -123,7 +123,7 @@ export class ManifestManager {
   protected cachedExceptionsListsByOs: Map<string, ExceptionListItemSchema[]>;
   protected packagerTaskPackagePolicyUpdateBatchSize: number;
   protected esClient: ElasticsearchClient;
-  protected productFeaturesService: ProductFeaturesService;
+  protected productFeaturesService: ProductFeaturesReader;
   protected licenseService: LicenseService;
   protected savedObjectsClientFactory: SavedObjectsClientFactory;
 

@@ -5,9 +5,14 @@
  * 2.0.
  */
 
+import type { WorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import { ExecutionError } from '@kbn/workflows/server';
+import type {
+  AlertTriageAlertsClient,
+  AlertTriageAlertsClientFactory,
+} from '../../alert_triage/alerts_client';
 import {
   triageHeadroomStepCommonDefinition,
   triageLoadAlertsStepCommonDefinition,
@@ -27,6 +32,8 @@ import {
 
 export interface AlertTriageStepDependencies {
   getTaskManager: () => Pick<TaskManagerStartContract, 'aggregate'>;
+  getWorkflowExecutionReader: () => WorkflowExecutionReader;
+  getTriageAlertsClient: AlertTriageAlertsClientFactory;
 }
 
 const toApiError = (error: unknown, action: string): ExecutionError =>
@@ -37,7 +44,10 @@ const toApiError = (error: unknown, action: string): ExecutionError =>
         message: error instanceof Error ? error.message : `Failed to ${action}`,
       });
 
-export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageStepDependencies) =>
+export const getTriageHeadroomStepDefinition = ({
+  getTaskManager,
+  getWorkflowExecutionReader,
+}: Pick<AlertTriageStepDependencies, 'getTaskManager' | 'getWorkflowExecutionReader'>) =>
   createServerStepDefinition({
     ...triageHeadroomStepCommonDefinition,
     handler: async ({ input, contextManager, logger }) => {
@@ -46,6 +56,7 @@ export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageS
           readTmLagMs: () => readWorkflowRunLagMs(getTaskManager(), Date.now()),
           countInFlight: async () => {
             const live = await listLiveExecutionIds(
+              getWorkflowExecutionReader(),
               contextManager,
               input.batch_workflow_id,
               logger
@@ -68,7 +79,10 @@ export const getTriageHeadroomStepDefinition = ({ getTaskManager }: AlertTriageS
     },
   });
 
-export const getTriagePlanSweepStepDefinition = () =>
+export const getTriagePlanSweepStepDefinition = ({
+  getWorkflowExecutionReader,
+  getTriageAlertsClient,
+}: Pick<AlertTriageStepDependencies, 'getWorkflowExecutionReader' | 'getTriageAlertsClient'>) =>
   createServerStepDefinition({
     ...triagePlanSweepStepCommonDefinition,
     handler: async ({ input, contextManager, logger }) => {
@@ -82,6 +96,9 @@ export const getTriagePlanSweepStepDefinition = () =>
             ? { status: 'behind', lagMs: given.lag_ms ?? 0 }
             : { status: 'unknown' };
 
+        let alertsClient: Promise<AlertTriageAlertsClient> | undefined;
+        const getAlertsClient = () =>
+          (alertsClient ??= getTriageAlertsClient(contextManager.getFakeRequest()));
         const now = Date.now();
         const filters = {
           minSeverity: input.min_severity,
@@ -91,23 +108,28 @@ export const getTriagePlanSweepStepDefinition = () =>
         const plan = await planSweep(
           {
             readHeadroom: async () => headroom,
-            countAgedOutAlerts: () =>
+            countAgedOutAlerts: async () =>
               countAgedOutAlerts(
-                contextManager,
+                await getAlertsClient(),
                 input.analysis_tag_prefix,
                 now - input.lookback_hours * 60 * 60 * 1000,
                 filters
               ),
-            fetchAlerts: () =>
+            fetchAlerts: async () =>
               fetchTriageAlerts(
-                contextManager,
+                await getAlertsClient(),
                 input.analysis_tag_prefix,
                 now - input.lookback_hours * 60 * 60 * 1000,
                 filters
               ),
             listLiveExecutionIds: () =>
-              listLiveExecutionIds(contextManager, input.batch_workflow_id, logger),
-            tagAlerts: tagAlerts(contextManager),
+              listLiveExecutionIds(
+                getWorkflowExecutionReader(),
+                contextManager,
+                input.batch_workflow_id,
+                logger
+              ),
+            tagAlerts: async (params) => tagAlerts(await getAlertsClient())(params),
           },
           {
             now,
@@ -145,12 +167,17 @@ export const getTriagePlanSweepStepDefinition = () =>
     },
   });
 
-export const getTriageLoadAlertsStepDefinition = () =>
+export const getTriageLoadAlertsStepDefinition = ({
+  getTriageAlertsClient,
+}: Pick<AlertTriageStepDependencies, 'getTriageAlertsClient'>) =>
   createServerStepDefinition({
     ...triageLoadAlertsStepCommonDefinition,
     handler: async ({ input, contextManager }) => {
       try {
-        const { alerts, missingAlertIds } = await loadAlertsByIds(contextManager, input.alert_ids);
+        const { alerts, missingAlertIds } = await loadAlertsByIds(
+          await getTriageAlertsClient(contextManager.getFakeRequest()),
+          input.alert_ids
+        );
         return { output: { alerts, missing_alert_ids: missingAlertIds } };
       } catch (error) {
         throw toApiError(error, 'load triage batch alerts');

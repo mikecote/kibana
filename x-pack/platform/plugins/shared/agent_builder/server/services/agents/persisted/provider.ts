@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/logging';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { KibanaRequest } from '@kbn/core-http-server';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
+
 import {
   agentBuilderDefaultAgentId,
   chatAgentTypeId,
@@ -17,6 +17,7 @@ import {
   SYSTEM_USER_ID,
 } from '@kbn/agent-builder-common';
 import type { AgentAvailabilityConfig } from '@kbn/agent-builder-server/agents';
+import type { AgentBuilderElasticsearch } from '../../runtime_ports';
 import type { GetAgentOptions, WritableAgentProvider, AgentProviderFn } from '../agent_source';
 import type { ToolsServiceStart } from '../../tools';
 import { AgentAvailabilityCache } from '../builtin/availability_cache';
@@ -28,7 +29,7 @@ import { getDefaultAgentCreateRequest } from '../default_agent_definition';
 
 export const createPersistedProviderFn = (opts: {
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   toolsService: ToolsServiceStart;
   logger: Logger;
   availabilityByAgentId: Map<string, AgentAvailabilityConfig>;
@@ -65,7 +66,7 @@ const createPersistedProvider = async ({
   space: string;
   request: KibanaRequest;
   security: SecurityServiceStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   toolsService: ToolsServiceStart;
   logger: Logger;
   availabilityByAgentId: Map<string, AgentAvailabilityConfig>;

@@ -287,7 +287,7 @@ const toNotifiableInvestigation = (
 
 export interface NightshiftInvestigationsClientDeps {
   request: KibanaRequest;
-  workflowsManagement?: WorkflowsServerPluginSetup;
+  workflowsManagement?: Pick<WorkflowsServerPluginSetup, 'management'>;
   spaces?: SpacesPluginStart;
   logger: Logger;
   /**
@@ -297,30 +297,36 @@ export interface NightshiftInvestigationsClientDeps {
   spaceIdOverride?: string;
   agentBuilder?: AgentBuilderPluginStart;
   /** Stores investigations: subjects, claims, and the open-investigation lookup. */
-  agenticInvestigations?: AgenticInvestigationsPluginStart;
+  agenticInvestigations?: Pick<
+    AgenticInvestigationsPluginStart,
+    'getSubjectsClient' | 'getInvestigationsClient'
+  >;
   /** Passed through to `agents.ensure` so a pre-installed agent is hidden while unavailable. */
   agentAvailability: AgentAvailabilityConfig;
   investigationQuotaCallback?: InvestigationQuotaCallback;
   inference?: InferenceServerStart;
-  savedObjects?: CoreStart['savedObjects'];
-  uiSettings?: CoreStart['uiSettings'];
+  savedObjects?: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+  uiSettings?: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
   isAvailable: (connectorId?: string) => Promise<boolean>;
   isInfrastructureAvailable: () => Promise<boolean>;
 }
 
 export class NightshiftInvestigationsClient {
   private readonly request: KibanaRequest;
-  private readonly workflowsManagement: WorkflowsServerPluginSetup | undefined;
+  private readonly workflowsManagement: Pick<WorkflowsServerPluginSetup, 'management'> | undefined;
   private readonly spaces: SpacesPluginStart | undefined;
   private readonly logger: Logger;
   private readonly spaceIdOverride?: string;
   private readonly agentBuilder?: AgentBuilderPluginStart;
-  private readonly agenticInvestigations?: AgenticInvestigationsPluginStart;
+  private readonly agenticInvestigations?: Pick<
+    AgenticInvestigationsPluginStart,
+    'getSubjectsClient' | 'getInvestigationsClient'
+  >;
   private readonly agentAvailability: AgentAvailabilityConfig;
   private readonly investigationQuotaCallback?: InvestigationQuotaCallback;
   private readonly inference?: InferenceServerStart;
-  private readonly savedObjects?: CoreStart['savedObjects'];
-  private readonly uiSettings?: CoreStart['uiSettings'];
+  private readonly savedObjects?: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+  private readonly uiSettings?: Pick<CoreStart['uiSettings'], 'asScopedToClient'>;
   private readonly checkAvailability: (connectorId?: string) => Promise<boolean>;
   private readonly checkInfrastructureAvailability: () => Promise<boolean>;
 
@@ -616,7 +622,10 @@ export class NightshiftInvestigationsClient {
     assertCanOpenNew,
   }: {
     conversations: ConversationPublicClient;
-    agenticInvestigations: AgenticInvestigationsPluginStart;
+    agenticInvestigations: Pick<
+      AgenticInvestigationsPluginStart,
+      'getSubjectsClient' | 'getInvestigationsClient'
+    >;
     subjects: WorkflowSubjectInput[];
     newInvestigationId: string;
     /** Throws when this start may not open a new investigation. Runs before any claim. */
@@ -1050,7 +1059,10 @@ export class NightshiftInvestigationsClient {
     threadKey,
   }: {
     conversations: ConversationPublicClient;
-    agenticInvestigations: AgenticInvestigationsPluginStart;
+    agenticInvestigations: Pick<
+      AgenticInvestigationsPluginStart,
+      'getSubjectsClient' | 'getInvestigationsClient'
+    >;
     threadKey: string;
   }): Promise<InvestigationConversation | undefined> {
     const ids = await agenticInvestigations
@@ -1104,9 +1116,12 @@ export class NightshiftInvestigationsClient {
   }
 
   private requireWriteDeps(): {
-    workflowsManagement: WorkflowsServerPluginSetup;
+    workflowsManagement: Pick<WorkflowsServerPluginSetup, 'management'>;
     agentBuilder: AgentBuilderPluginStart;
-    agenticInvestigations: AgenticInvestigationsPluginStart;
+    agenticInvestigations: Pick<
+      AgenticInvestigationsPluginStart,
+      'getSubjectsClient' | 'getInvestigationsClient'
+    >;
   } {
     if (!this.workflowsManagement) {
       throw new InvestigationUnavailableError('workflowsManagement is not available');

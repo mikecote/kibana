@@ -20,11 +20,8 @@ import {
   createQueryKnowledgeIndicatorTool,
   SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATOR_CREATE_QUERY_TOOL_ID,
 } from './tool';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 describe('ki_query_create tool', () => {
   const logger = loggingSystemMock.createLogger();
@@ -65,6 +62,7 @@ describe('ki_query_create tool', () => {
   it('uses the expected tool id', () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -78,6 +76,7 @@ describe('ki_query_create tool', () => {
   it('uses always confirmation policy with custom prompt', async () => {
     const getScopedClients = jest.fn() as unknown as jest.MockedFunction<GetScopedClients>;
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -120,6 +119,7 @@ describe('ki_query_create tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -138,6 +138,7 @@ describe('ki_query_create tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -158,6 +159,7 @@ describe('ki_query_create tool', () => {
     const getScopedClients = createScopedClients(queryClient);
 
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -187,6 +189,7 @@ describe('ki_query_create tool', () => {
     const getScopedClients = createScopedClients(queryClient);
 
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server,
       logger,
@@ -212,6 +215,7 @@ describe('ki_query_create tool', () => {
 
     const queryClient = { upsertQuery: jest.fn() };
     const tool = createQueryKnowledgeIndicatorTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients: createScopedClients(queryClient),
       server: createSignificantEventsServer({ featurePrivilege: 'read' }),
       logger,

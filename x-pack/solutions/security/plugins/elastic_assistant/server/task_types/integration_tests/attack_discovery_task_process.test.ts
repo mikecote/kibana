@@ -24,6 +24,9 @@ import type { TestElasticsearchUtils } from '@kbn/core-test-helpers-kbn-server';
 import { configSchema as alertingConfigSchema } from '@kbn/alerting-plugin/server/config';
 import { configSchema as actionsConfigSchema } from '@kbn/actions-plugin/server/config';
 import { searchConfigSchema } from '@kbn/data-plugin/server/config';
+import { TaskSchedulingDefinitions } from '@kbn/task-manager-plugin/server/task_scheduling_definition_registry';
+import { createTaskSchedulingSnapshot } from '@kbn/task-manager-plugin/server/task_scheduling_snapshot';
+import { WORKFLOW_TASK_SCHEDULING_DEFINITIONS } from '@kbn/workflows-execution-engine/server/workflow_task_manager/task_scheduling_definitions';
 import { elasticsearchConfigFromEnv } from '@kbn/task-manager-plugin/server/task_process/es_config';
 import { startTaskProcessCore } from '@kbn/task-manager-plugin/server/task_process/core_process';
 import { RemoteTaskRunner } from '@kbn/task-manager-plugin/server/task_process/remote_task_runner';
@@ -36,6 +39,8 @@ import {
 } from '@kbn/security-plugin/server/config';
 import { License } from '@kbn/licensing-plugin/common/license';
 import { getTaskProcessSettings as getSecurityTaskProcessSettings } from '@kbn/security-plugin/server/task_plugin';
+import { installWorkflowDataStreamTemplates } from '@kbn/workflows-execution-engine/server/data_streams';
+import { WORKFLOWS_EXECUTIONS_DATA_STREAM } from '@kbn/workflows-execution-engine/server/repositories/data_access_layer/implementations/data_stream/constants';
 import { parseYamlToJSONWithoutValidation } from '@kbn/workflows-yaml';
 import {
   ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID,
@@ -76,7 +81,30 @@ const WORKFLOW_RULE_ID = 'workflow-rule';
  * Runs the attack discovery rule type from its own bundle, forked by the supervisor the way Kibana
  * does, against a real Elasticsearch and a local server that plays the model of a `.gen-ai` connector.
  */
-describe('the attack discovery rule type served from a bundle', () => {
+let sharedBundle: Promise<string> | undefined;
+
+const buildBundle = async (): Promise<string> => {
+  const prebuilt = process.env.KBN_TASK_BUNDLE_TEST_DIR;
+  if (prebuilt) return prebuilt;
+  const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
+  const entry = getTaskBundleEntries().find(
+    ({ name }: { name: string }) => name === 'elasticAssistant__attack_discovery'
+  );
+  if (!entry) throw new Error('The attack-discovery task bundle entry is missing');
+  const built = await buildTaskBundle({ entry, outDir: bundleDir });
+  writeFileSync(
+    join(bundleDir, 'manifest.json'),
+    JSON.stringify({
+      bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: TASK_TYPE } },
+    })
+  );
+  return bundleDir;
+};
+
+const getBundleDir = (): Promise<string> => (sharedBundle ??= buildBundle());
+
+const executionStorageSources = ['plain_index', 'data_stream'] as const;
+describe.each(executionStorageSources)('attack discovery with %s storage', (storageSource) => {
   let esServer: TestElasticsearchUtils;
   let es: Client;
   let supervisor: TaskProcessSupervisor;
@@ -85,6 +113,8 @@ describe('the attack discovery rule type served from a bundle', () => {
   let llmUrl: string;
   const llmRequests: string[] = [];
 
+  const taskSchedulingDefinitions = new TaskSchedulingDefinitions();
+  taskSchedulingDefinitions.registerTaskDefinitions(WORKFLOW_TASK_SCHEDULING_DEFINITIONS);
   const settings = () => ({
     alerting: alertingConfigSchema.validate({}),
     alertingRun: {
@@ -97,9 +127,19 @@ describe('the attack discovery rule type served from a bundle', () => {
       enableFooterInEmail: false,
     }),
     cases: { isCasesAttachmentsEnabled: true, isTemplatesEnabled: false },
-    taskManager: { api_key_type: 'es', grant_uiam_api_keys: false },
+    taskManager: {
+      api_key_type: 'es',
+      grant_uiam_api_keys: false,
+      scheduling: {
+        taskManagerId: `kibana:${KIBANA_UUID}`,
+        securityEnabled: true,
+        middlewareIds: [],
+        allowReadingInvalidState: false,
+        definitions: createTaskSchedulingSnapshot(taskSchedulingDefinitions),
+      },
+    },
     workflowsExecutionEngine: {
-      storage: { source: 'plain_index', dataRetention: '90d' },
+      storage: { source: storageSource, dataRetention: '90d' },
       eventDriven: { enabled: true, logEvents: true, maxChainDepth: 10 },
     },
     security: getSecurityTaskProcessSettings({
@@ -133,6 +173,7 @@ describe('the attack discovery rule type served from a bundle', () => {
     ) as never,
   });
 
+  const onDispatchFailure = jest.fn();
   const run = (ruleId: string, timeoutMs = 180000) =>
     new RemoteTaskRunner({
       route: supervisor.getRoute(TASK_TYPE)!,
@@ -155,6 +196,7 @@ describe('the attack discovery rule type served from a bundle', () => {
         kibanaVersion: KIBANA_VERSION,
       },
       timeoutMs,
+      onDispatchFailure,
       setCustomTaskRunEventFields: jest.fn(),
       fetchFn: undiciFetch as unknown as typeof fetch,
     }).run();
@@ -216,7 +258,10 @@ describe('the attack discovery rule type served from a bundle', () => {
     const indexMappings = new Map<string, Record<string, unknown>>();
     for (const type of taskType.savedObjectTypes ?? []) {
       const index = type.indexPattern ?? '.kibana';
-      indexMappings.set(index, { ...(indexMappings.get(index) ?? {}), [type.name]: type.mappings });
+      indexMappings.set(index, {
+        ...(indexMappings.get(index) ?? {}),
+        [type.name]: type.mappings,
+      });
     }
     indexMappings.set('.kibana', {
       ...(indexMappings.get('.kibana') ?? {}),
@@ -433,6 +478,11 @@ describe('the attack discovery rule type served from a bundle', () => {
       mappings: WORKFLOWS_STEP_EXECUTIONS_INDEX_MAPPINGS,
       logger: loggingSystemMock.createLogger(),
     });
+    await installWorkflowDataStreamTemplates({
+      esClient: es,
+      logger: loggingSystemMock.createLogger(),
+      storage: { source: storageSource, dataRetention: '90d' },
+    });
     const workflowStorage = createStorage({
       logger: loggingSystemMock.createLogger(),
       esClient: es,
@@ -472,19 +522,7 @@ describe('the attack discovery rule type served from a bundle', () => {
       });
     }
 
-    const bundleDir = mkdtempSync(join(tmpdir(), 'task-bundles-'));
-    const entries = getTaskBundleEntries().filter(
-      ({ name }: { name: string }) => name === 'elasticAssistant__attack_discovery'
-    );
-    const [built] = await Promise.all(
-      entries.map((entry: unknown) => buildTaskBundle({ entry, outDir: bundleDir }))
-    );
-    writeFileSync(
-      join(bundleDir, 'manifest.json'),
-      JSON.stringify({
-        bundles: { [built.name]: { file: `${built.name}.mjs`, taskType: TASK_TYPE } },
-      })
-    );
+    const bundleDir = await getBundleDir();
     supervisor = new TaskProcessSupervisor({
       settings: {
         bundle_dir: bundleDir,
@@ -518,7 +556,7 @@ describe('the attack discovery rule type served from a bundle', () => {
   });
 
   it('workflow path: schedules a workflow:run task that carries a clone of the API key of the rule', async () => {
-    // The pipeline schedules the generation workflow and then waits for Kibana to run it, which
+    // The pipeline schedules the alert retrieval workflow and then waits for Kibana to run it, which
     // nothing does here: the run is cut off, and what it scheduled is what is checked.
     await run(WORKFLOW_RULE_ID, 45000).catch(() => undefined);
 
@@ -533,5 +571,22 @@ describe('the attack discovery rule type served from a bundle', () => {
     const { task } = tasks.hits.hits[0]._source!;
     expect(task.apiKey).toEqual(expect.any(String));
     expect(task.userScope).toEqual(expect.objectContaining({ apiKeyId: expect.any(String) }));
+    expect(onDispatchFailure).not.toHaveBeenCalled();
+    const params = JSON.parse(task.params) as { workflowRunId: string };
+    const index =
+      storageSource === 'data_stream'
+        ? WORKFLOWS_EXECUTIONS_DATA_STREAM
+        : WORKFLOWS_EXECUTIONS_INDEX;
+    await es.indices.refresh({ index });
+    const executions = await es.search<{ id: string; workflowId: string; status: string }>({
+      index,
+      query: { ids: { values: [params.workflowRunId] } },
+    });
+    expect(executions.hits.hits).toHaveLength(1);
+    expect(executions.hits.hits[0]._source).toMatchObject({
+      id: params.workflowRunId,
+      workflowId: ATTACK_DISCOVERY_ALERT_RETRIEVAL_WORKFLOW_ID,
+      status: 'pending',
+    });
   });
 });

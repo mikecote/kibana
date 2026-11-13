@@ -12,10 +12,10 @@ import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import { ML_ANOMALY_SEVERITY } from '@kbn/ml-anomaly-utils/anomaly_severity';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../data_registry/data_registry';
 import { timeRangeSchemaOptional } from '../../utils/tool_schemas';
 import { MAX_KQL_FILTER_LENGTH } from '../../utils/schema_limits';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
@@ -57,9 +57,9 @@ export function createGetServicesTool({
   dataRegistry,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
+  dataRegistry: ObservabilityDataRegistryClient;
   logger: Logger;
 }): StaticToolRegistration<typeof getServicesSchema> {
   const toolDefinition: BuiltinToolDefinition<typeof getServicesSchema> = {

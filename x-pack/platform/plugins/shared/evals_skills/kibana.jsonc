@@ -8,6 +8,9 @@
     "id": "evalsSkills",
     "server": true,
     "browser": false,
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "requiredPlugins": ["agentBuilder", "workflowsManagement", "evals"],
     "optionalPlugins": ["spaces", "security"]
   }

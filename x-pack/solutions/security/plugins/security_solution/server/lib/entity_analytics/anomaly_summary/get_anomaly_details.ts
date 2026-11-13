@@ -13,7 +13,7 @@ import type {
 } from '@kbn/core/server';
 import type { MitreAttackDataClient } from '@kbn/mitre-attack-plugin/server';
 import type { Entity, EntityType } from '@kbn/entity-store/common';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
+import type { EntityAnalyticsMlServices } from '../ml_anomaly_detection/ml_services';
 import type {
   AnomalyScoreRange,
   AnomalySummaryEntry,
@@ -70,7 +70,7 @@ interface GetEntityAnomaliesParams {
   jobIds?: string[];
   threatTactics?: string[];
   logger: Logger;
-  ml: MlPluginSetup;
+  ml: EntityAnalyticsMlServices;
   offset?: number;
   pageSize?: number;
   request: KibanaRequest;

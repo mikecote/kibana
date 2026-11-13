@@ -12,12 +12,14 @@ import { TaskRoot } from '@kbn/core-root-server-internal';
 import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import { config as esoConfig } from '@kbn/encrypted-saved-objects-plugin/server';
 import { taskPlugin as esoTaskPlugin } from '@kbn/encrypted-saved-objects-plugin/server/task_plugin';
+import type { FakeRequestEnricher } from '@kbn/core-security-server';
 import { buildCoreConfig } from './core_config';
 import { setTaskProcessContext } from './context';
 import type { TaskProcessContext } from './context';
 import { createTaskManagerStaticPlugin } from './task_manager_task_plugin';
 import { createModuleStaticPlugin } from './module_plugin';
 import { runFlushers } from './run_context';
+import { reviveSettingsByPlugin } from './settings';
 import type { TaskProcessInit } from './wire';
 import type { TaskHost, TaskTypeModule } from '../task_type_module';
 import type { TaskRegisterDefinition } from '../task_type_dictionary';
@@ -28,7 +30,11 @@ import type { TaskRegisterDefinition } from '../task_type_dictionary';
  */
 const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): TaskStaticPlugin[] => {
   const plugins: TaskStaticPlugin[] = [createTaskManagerStaticPlugin(kibanaVersion)];
-  if (module.encryptedSavedObjectTypes?.length) {
+  if (
+    module.encryptedSavedObjectTypes?.length ||
+    module.createSavedObjectTypes ||
+    module.taskManager
+  ) {
     plugins.push({
       manifest: {
         id: 'encryptedSavedObjects',
@@ -58,6 +64,7 @@ const getStaticPlugins = (module: TaskTypeModule, kibanaVersion: string): TaskSt
 };
 
 export interface TaskProcessCore {
+  enrichFakeRequest: FakeRequestEnricher;
   /** The task definitions plugins registered, which the process serves. */
   definitions: Map<string, TaskRegisterDefinition>;
   /** What the module's runner gets, which is also how a test seeds data the way a run reads it. */
@@ -67,7 +74,7 @@ export interface TaskProcessCore {
    * Finishes what the run left to do before the process answers, such as shipping its analytics
    * events. Bounded: a slow endpoint holds a run for a few seconds at most.
    */
-  flush: () => Promise<void>;
+  flush: () => Promise<boolean>;
   stop: () => Promise<void>;
 }
 
@@ -86,7 +93,8 @@ export const startTaskProcessCore = async ({
 }): Promise<TaskProcessCore> => {
   const definitions = new Map<string, TaskRegisterDefinition>();
   // The module with what plugins contributed to it declared: saved object types and the like.
-  const applied = module.contributions?.apply?.(contributions) ?? module;
+  const applied =
+    module.contributions?.apply?.(contributions, reviveSettingsByPlugin(init.settings)) ?? module;
   const context: TaskProcessContext = {
     init,
     module: applied,
@@ -130,7 +138,8 @@ export const startTaskProcessCore = async ({
   const root = new TaskRoot(
     { getConfig$: () => new BehaviorSubject(settings) },
     env,
-    getStaticPlugins(applied, init.kibanaVersion)
+    getStaticPlugins(applied, init.kibanaVersion),
+    { httpSelfClient: init.server?.selfHttp }
   );
   try {
     await root.preboot();
@@ -146,7 +155,17 @@ export const startTaskProcessCore = async ({
   }
 
   const logger = root.logger.get('task-process');
+  const { enrichFakeRequest } = context;
+  if (!enrichFakeRequest) {
+    try {
+      await root.shutdown();
+    } finally {
+      cleanup();
+    }
+    throw new Error('Task process Core did not acquire request enrichment');
+  }
   return {
+    enrichFakeRequest,
     definitions,
     host: (await context.host)!,
     logger,

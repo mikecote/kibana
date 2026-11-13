@@ -15,8 +15,8 @@ import type {
   SavedObjectsClientContract,
 } from '@kbn/core/server';
 import type { InferenceChatModel } from '@kbn/inference-langchain';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
 import type { RelationshipsClient } from '@kbn/entity-store/server';
+import type { EntityAnalyticsMlServices } from '../ml_anomaly_detection/ml_services';
 
 import type { LeadGenerationMode } from '../../../../common/entity_analytics/lead_generation/constants';
 import { LEAD_GENERATION_EXECUTION_EVENT } from '../../telemetry/event_based/events';
@@ -41,10 +41,10 @@ export interface RunPipelineParams {
   readonly riskScoreDataClient: RiskScoreDataClient;
   readonly executionId?: string;
   readonly sourceType: LeadGenerationMode;
-  readonly analytics?: AnalyticsServiceStart;
+  readonly analytics?: Pick<AnalyticsServiceStart, 'reportEvent'>;
   readonly chatModel: InferenceChatModel;
   /** Optional ML deps; when present the anomaly module is enabled. */
-  readonly ml?: MlPluginSetup;
+  readonly ml?: EntityAnalyticsMlServices;
   readonly request?: KibanaRequest;
   readonly soClient?: SavedObjectsClientContract;
   readonly relationshipsClient: RelationshipsClient;

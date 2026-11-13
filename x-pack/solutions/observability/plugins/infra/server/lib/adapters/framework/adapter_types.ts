@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { estypes } from '@elastic/elasticsearch';
 import type { Lifecycle } from '@hapi/hapi';
 import type { SharePluginSetup } from '@kbn/share-plugin/server';
@@ -61,6 +62,7 @@ export interface InfraServerPluginSetupDeps {
   apmDataAccess: ApmDataAccessPluginSetup;
   serverless?: ServerlessPluginStart;
   observabilityAgentBuilder?: ObservabilityAgentBuilderPluginSetup;
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   cps?: CPSServerSetup;
 }
 

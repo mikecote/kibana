@@ -9,7 +9,7 @@
 
 import pLimit from 'p-limit';
 import { v4 as generateUuid } from 'uuid';
-import type { CoreStart, KibanaRequest, Logger } from '@kbn/core/server';
+import type { KibanaRequest, Logger } from '@kbn/core/server';
 import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 import type {
@@ -48,6 +48,7 @@ import {
 import { WorkflowExecutionTelemetryClient } from '../lib/telemetry/workflow_execution_telemetry_client';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 import type { ScheduleWorkflow } from '../types';
+import type { WorkflowCoreStart } from '../workflow_core_services';
 
 export interface EmitEventParams {
   triggerId: string;
@@ -58,15 +59,16 @@ export interface EmitEventParams {
 export type EmitEvent = (params: EmitEventParams) => Promise<void>;
 
 export interface TriggerEventHandlerDeps {
-  coreStart: CoreStart;
+  coreStart: WorkflowCoreStart;
   workflowRepository: WorkflowRepository;
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart;
-  spaces: SpacesServiceStart | undefined;
+  workflowsExtensions: Pick<WorkflowsExtensionsServerPluginStart, 'getTriggerDefinition'>;
+  spaces: Pick<SpacesServiceStart, 'getSpaceId'> | undefined;
   scheduleWorkflow: ScheduleWorkflow;
   config: EventTriggersConfig;
   logger: Logger;
   triggerEventsClientPromise?: Promise<TriggerEventsDataStreamClient | undefined>;
   workflowExecutionRepository: WorkflowExecutionRepository;
+  getEventChainContext?: (request: KibanaRequest) => EventChainContext | undefined;
 }
 
 const SCHEDULE_CONCURRENCY = 20;
@@ -166,15 +168,22 @@ type ScheduleContextSkipReason = 'workflow_events_ignore' | 'depth' | 'cycle';
 export class TriggerEventHandler {
   private readonly workflowRepository: WorkflowRepository;
   private readonly workflowExecutionRepository: WorkflowExecutionRepository;
-  private readonly workflowsExtensions: WorkflowsExtensionsServerPluginStart;
+  private readonly workflowsExtensions: Pick<
+    WorkflowsExtensionsServerPluginStart,
+    'getTriggerDefinition'
+  >;
   private readonly scheduleWorkflow: ScheduleWorkflow;
   private readonly telemetryClient: WorkflowExecutionTelemetryClient;
-  private readonly spaces: SpacesServiceStart | undefined;
+  private readonly spaces: Pick<SpacesServiceStart, 'getSpaceId'> | undefined;
   private readonly config: EventTriggersConfig;
   private readonly logger: Logger;
   private readonly triggerEventsClientPromise: Promise<TriggerEventsDataStreamClient | undefined>;
+  private readonly readEventChainContext: NonNullable<
+    TriggerEventHandlerDeps['getEventChainContext']
+  >;
 
   constructor(deps: TriggerEventHandlerDeps) {
+    this.readEventChainContext = deps.getEventChainContext ?? getEventChainContext;
     this.scheduleWorkflow = deps.scheduleWorkflow;
     this.workflowRepository = deps.workflowRepository;
     this.spaces = deps.spaces;
@@ -204,7 +213,7 @@ export class TriggerEventHandler {
     const timestamp = new Date().toISOString();
     const eventId = generateUuid();
 
-    let eventChainContext = getEventChainContext(request);
+    let eventChainContext = this.readEventChainContext(request);
     if (eventChainContext === undefined) {
       eventChainContext = await this.resolveEventChainContextFromEmitterExecution(
         request,

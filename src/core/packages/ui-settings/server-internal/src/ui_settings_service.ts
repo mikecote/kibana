@@ -62,6 +62,7 @@ export class UiSettingsService
   private overrides: Record<string, any> = {};
   private globalOverrides: Record<string, any> = {};
   private allowlist: Set<string> | null = null;
+  private useSharedUserProvidedCache = true;
   private readonly sharedUserProvidedCache = new NamespacedCache<Record<string, any>>();
 
   constructor(private readonly coreContext: CoreContext) {
@@ -105,6 +106,8 @@ export class UiSettingsService
   public async setupTask(
     deps: Pick<SetupDeps, 'savedObjects'>
   ): Promise<InternalUiSettingsServiceSetup> {
+    // Retained workers must observe settings written by Kibana before their next execution.
+    this.useSharedUserProvidedCache = false;
     return this.setupInternal(deps);
   }
 
@@ -181,7 +184,9 @@ export class UiSettingsService
           : mapToObject(this.uiSettingsGlobalDefaults),
         overrides: isNamespaceScope ? this.overrides : this.globalOverrides,
         log: this.log,
-        sharedUserProvidedCache: this.sharedUserProvidedCache,
+        sharedUserProvidedCache: this.useSharedUserProvidedCache
+          ? this.sharedUserProvidedCache
+          : undefined,
         namespace,
       };
       return UiSettingsClientFactory.create(options) as ClientType<T>;

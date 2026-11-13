@@ -11,9 +11,12 @@ const fs = require('fs');
 const { createRequire } = require('module');
 const path = require('path');
 const { build } = require('esbuild');
+const MagicString = require('magic-string');
+const remapping = require('@ampproject/remapping');
 const { REPO_ROOT } = require('@kbn/repo-info');
 const { getPackages } = require('@kbn/repo-packages');
 const { escapeNonLatin1 } = require('./escape_non_latin1');
+const { copyTaskRuntimeDependencies } = require('./copy_runtime_dependencies');
 
 const OUT_DIR = path.join(REPO_ROOT, 'target', 'task_bundles');
 const RUNTIME_ENTRY = path.join(
@@ -21,20 +24,89 @@ const RUNTIME_ENTRY = path.join(
   'x-pack/platform/plugins/shared/task_manager/server/task_process/main'
 );
 
-/** Loads a task type file, which needs the transpiler; undefined when it cannot be loaded here. */
-const loadTaskType = (file) => {
-  try {
-    return createRequire(__filename)(file).taskType;
-  } catch (error) {
-    return undefined;
-  }
-};
+/** Loads a task type file using the registered transpiler. */
+const loadTaskType = (file) => createRequire(__filename)(file).taskType;
 
 /**
  * Native modules stay out of the bundle and resolve from node_modules at run time. `canvas` is the
  * optional native dependency of jsdom, which jsdom loads inside a try/catch.
  */
 const EXTERNALS = ['re2', 'canvas'];
+
+// The Node resolver selects EUI's CommonJS entry. A server task that uses one palette helper then
+// retains EUI's entire UI library. Resolve the package entry to its declared ES module instead.
+const euiModulePlugin = {
+  name: 'eui-esm-entry',
+  setup(b) {
+    b.onResolve({ filter: /^@elastic\/eui$/ }, () => {
+      const manifestFile = require.resolve('@elastic/eui/package.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+      return { path: path.resolve(path.dirname(manifestFile), manifest.module, 'index.js') };
+    });
+  },
+};
+
+// ECS exposes EcsVersion beside its full field schema. The ESM entry lets esbuild retain only
+// the version when a task process uses JSON logging.
+const ecsModulePlugin = {
+  name: 'ecs-esm-entry',
+  setup(b) {
+    b.onResolve({ filter: /^@elastic\/ecs$/ }, () => ({
+      path: require.resolve('@elastic/ecs/build/esm/index.js'),
+    }));
+  },
+};
+
+/** Share the CommonJS Lodash namespace between imports without changing other interop modules. */
+const memoizeLodashNamespaces = (result, outDir) => {
+  const helperFile = path.join(outDir, 'lodash_namespace.mjs');
+  const helperKey = path.relative(REPO_ROOT, helperFile);
+  let replaced = 0;
+  for (const [outputFile, output] of Object.entries(result.metafile.outputs)) {
+    if (!outputFile.endsWith('.mjs')) continue;
+    const file = path.resolve(REPO_ROOT, outputFile);
+    const original = fs.readFileSync(file, 'utf8');
+    const call = /__toESM\(require_lodash\(\)(?:,\s*([01]))?\)/g;
+    const edits = new MagicString(original);
+    let match;
+    let count = 0;
+    while ((match = call.exec(original))) {
+      edits.overwrite(
+        match.index,
+        match.index + match[0].length,
+        `__kbnLodashToESM(require_lodash()${match[1] ? `, ${match[1]}` : ''})`
+      );
+      count++;
+    }
+    if (!count) continue;
+    replaced += count;
+    const relativeHelper = `./${path
+      .relative(path.dirname(file), helperFile)
+      .replaceAll(path.sep, '/')}`;
+    edits.prepend(`import { toESM as __kbnLodashToESM } from ${JSON.stringify(relativeHelper)};\n`);
+    fs.writeFileSync(file, edits.toString());
+    const mapFile = `${file}.map`;
+    if (fs.existsSync(mapFile)) {
+      const nextMap = edits.generateMap({
+        file: path.basename(file),
+        source: path.basename(file),
+        hires: true,
+      });
+      const originalMap = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+      fs.writeFileSync(mapFile, JSON.stringify(remapping([nextMap, originalMap], () => null)));
+    }
+    output.imports.push({ path: helperKey, kind: 'import-statement' });
+  }
+  if (replaced) {
+    fs.copyFileSync(path.join(__dirname, 'lodash_namespace.mjs'), helperFile);
+    result.metafile.outputs[helperKey] = {
+      bytes: fs.statSync(helperFile).size,
+      imports: [],
+      inputs: {},
+    };
+  }
+  return replaced;
+};
 
 /**
  * The files plugins contribute under a key (`plugin.taskTypeContributions` in `kibana.jsonc`), such as
@@ -49,6 +121,43 @@ const getContributionFiles = (key, packages = getPackages(REPO_ROOT)) =>
       )
     )
     .sort();
+
+/** Resolves contribution keys added by native runtimes until the declaration graph is complete. */
+const resolveTaskContributions = (
+  taskType,
+  additionalContributions = {},
+  getFiles = getContributionFiles,
+  loadContribution = (file) => createRequire(__filename)(file).contribution
+) => {
+  const filesByKey = {};
+  const contributions = {};
+  const keys = new Set(taskType.contributions?.keys ?? []);
+  while ([...keys].some((key) => !(key in filesByKey))) {
+    for (const key of keys) {
+      if (key in filesByKey) continue;
+      const files = [...new Set([...getFiles(key), ...(additionalContributions[key] ?? [])])];
+      filesByKey[key] = files;
+      contributions[key] = files.map((file) => {
+        const contribution = loadContribution(file);
+        if (!contribution) throw new Error(`Task contribution ${file} has no contribution export`);
+        for (const dependency of contribution.declares?.contributionKeys ?? [])
+          keys.add(dependency);
+        return contribution;
+      });
+    }
+    const applied = taskType.contributions?.apply?.(contributions) ?? taskType;
+    for (const key of applied.contributions?.keys ?? []) keys.add(key);
+  }
+  return filesByKey;
+};
+
+/** Collects the flag defaults of the module and every contributed native SDK. */
+const collectTaskFeatureFlags = (taskType, contributions) =>
+  Object.assign(
+    {},
+    taskType.featureFlags,
+    ...contributions.map((item) => item.declares?.featureFlags)
+  );
 
 /** Every task type file declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`). */
 const getTaskBundleEntries = (packages = getPackages(REPO_ROOT)) =>
@@ -115,6 +224,22 @@ const uiSharedDepsStubPlugin = {
   },
 };
 
+/** The native APM agent loads instrumentation files relative to its installed package. */
+const nativeApmAgentPlugin = {
+  name: 'native-apm-agent',
+  setup(b) {
+    b.onResolve({ filter: /^elastic-apm-node$/ }, (args) =>
+      args.namespace === 'task-process-native-apm'
+        ? { path: args.path, external: true }
+        : { path: args.path, namespace: 'task-process-native-apm' }
+    );
+    b.onLoad({ filter: /.*/, namespace: 'task-process-native-apm' }, () => ({
+      contents: `module.exports = require('elastic-apm-node');`,
+      loader: 'js',
+    }));
+  },
+};
+
 /** Imports kept for their side effects, which the pure workspace plugin would otherwise drop. */
 const SIDE_EFFECT_FILES = /hapi_request_refs|[\\/]kbn-security-hardening[\\/]prototype\.[jt]s$/;
 
@@ -159,7 +284,7 @@ const peggyPlugin = {
   },
 };
 
-/** Returns the output files loaded before any asynchronous import is evaluated. */
+/** Returns static startup imports and the generated entry's imports awaited before readiness. */
 const getStartupOutputs = (metafile, outfile) => {
   const outputs = new Map(
     Object.entries(metafile.outputs).map(([file, output]) => [
@@ -167,6 +292,8 @@ const getStartupOutputs = (metafile, outfile) => {
       output,
     ])
   );
+  const entryFile = path.resolve(outfile);
+  const taskEntry = outputs.get(entryFile)?.entryPoint?.endsWith('.entry.ts') === true;
   const loaded = new Set();
   const visit = (file) => {
     if (loaded.has(file)) return;
@@ -174,54 +301,166 @@ const getStartupOutputs = (metafile, outfile) => {
     if (!output) return;
     loaded.add(file);
     for (const dependency of output.imports) {
-      if (dependency.external || dependency.kind === 'dynamic-import') continue;
+      if (dependency.external) continue;
+      if (dependency.kind === 'dynamic-import' && !(taskEntry && file === entryFile)) continue;
       visit(path.resolve(REPO_ROOT, dependency.path));
     }
   };
-  visit(path.resolve(outfile));
+  visit(entryFile);
+  if (taskEntry) {
+    for (const [file, output] of outputs) {
+      if (
+        Object.keys(output.inputs ?? {}).some((input) =>
+          input.endsWith('/task_process/instrumentation.ts')
+        )
+      )
+        visit(file);
+    }
+  }
   return [...loaded];
 };
 
-/**
- * Bundles a task type and its process entry, leaving asynchronous imports in separate chunks.
- */
-const buildTaskBundle = async ({
-  entry,
+/** Attributes generated startup bytes to packages and lists workspace imports of EUI. */
+const getStartupAnalysis = (metafile, outfile) => {
+  const bytesByPackage = new Map();
+  const euiImporters = new Set();
+  const startupFiles = getStartupOutputs(metafile, outfile);
+  for (const file of startupFiles) {
+    const output = metafile.outputs[path.relative(REPO_ROOT, file)] ?? metafile.outputs[file];
+    for (const [input, { bytesInOutput }] of Object.entries(output?.inputs ?? {})) {
+      const parts = input
+        .replace(/^node_modules\//, '')
+        .split('/node_modules/')
+        .pop()
+        .split('/');
+      let name = 'workspace';
+      if (input.includes('/node_modules/') || input.startsWith('node_modules/')) {
+        name = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+      }
+      bytesByPackage.set(name, (bytesByPackage.get(name) ?? 0) + bytesInOutput);
+      if (
+        name === 'workspace' &&
+        metafile.inputs[input]?.imports?.some(
+          ({ path: imported }) =>
+            imported === 'node_modules/@elastic/eui/lib/index.js' ||
+            imported === 'node_modules/@elastic/eui/es/index.js'
+        )
+      ) {
+        euiImporters.add(input);
+      }
+    }
+  }
+  return {
+    packages: Object.fromEntries([...bytesByPackage].sort((a, b) => b[1] - a[1])),
+    euiImporters: [...euiImporters].sort(),
+  };
+};
+
+/** Lists the complete reachable code and source maps belonging to one native task entry. */
+const getBundleOutputs = (metafile, outfile) => {
+  const outputs = new Map(
+    Object.entries(metafile.outputs).map(([file, metadata]) => [
+      path.resolve(REPO_ROOT, file),
+      metadata,
+    ])
+  );
+  const files = new Set();
+  const visit = (file) => {
+    if (files.has(file) || !outputs.has(file)) return;
+    files.add(file);
+    if (outputs.has(`${file}.map`)) files.add(`${file}.map`);
+    for (const dependency of outputs.get(file).imports ?? []) {
+      if (!dependency.external) visit(path.resolve(REPO_ROOT, dependency.path));
+    }
+  };
+  visit(path.resolve(outfile));
+  return [...files];
+};
+
+// Syntax minification drops cross-entry imports backing namespace getters in the pinned esbuild.
+const TASK_BUNDLE_OPTIMIZATION = {
+  minifyWhitespace: true,
+  minifySyntax: false,
+  keepNames: true,
+};
+
+/** Builds native task entries in one graph, sharing their common runtime chunks. */
+const buildTaskBundles = async ({
+  entries,
   outDir = OUT_DIR,
   kibanaVersion,
   sourcemap = true,
   metafile = false,
+  additionalContributions = {},
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
-  const outfile = path.join(outDir, `${entry.name}.mjs`);
-  const loaded = loadTaskType(entry.file);
-  // What the module says it takes from other plugins: every plugin's file under each key.
-  const contributions = Object.fromEntries(
-    (loaded?.contributions?.keys ?? []).map((key) => [key, getContributionFiles(key)])
-  );
-  const contributionImports = Object.values(contributions).flat();
-  const result = await build({
-    stdin: {
+  const runtime = copyTaskRuntimeDependencies(outDir);
+  const prepared = entries.map((entry) => {
+    const loaded = loadTaskType(entry.file);
+    if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
+    // What the module says it takes from other plugins: every plugin's file under each key.
+    const declarations = new Map();
+    const contributions = resolveTaskContributions(
+      loaded,
+      additionalContributions,
+      getContributionFiles,
+      (file) => {
+        const contribution = createRequire(__filename)(file).contribution;
+        declarations.set(file, contribution);
+        return contribution;
+      }
+    );
+    const featureFlags = collectTaskFeatureFlags(loaded, [...declarations.values()]);
+    const contributionImports = Object.values(contributions).flat();
+    return {
+      entry,
+      featureFlags,
       contents: [
-        `import { runTaskProcess } from ${JSON.stringify(RUNTIME_ENTRY)};`,
-        `import { taskType } from ${JSON.stringify(entry.file)};`,
-        ...contributionImports.map(
-          (file, i) => `import { contribution as contribution${i} } from ${JSON.stringify(file)};`
-        ),
-        `runTaskProcess(taskType, { contributions: {`,
+        `import { bootstrapTaskProcess } from ${JSON.stringify(
+          path.join(path.dirname(RUNTIME_ENTRY), 'bootstrap')
+        )};`,
+        `const initialization = await bootstrapTaskProcess();`,
+        `const [runtime, taskModule, ${contributionImports
+          .map((_, i) => `contributionModule${i}`)
+          .join(', ')}] = await Promise.all([`,
+        `  import(${JSON.stringify(RUNTIME_ENTRY)}),`,
+        `  import(${JSON.stringify(entry.file)}),`,
+        ...contributionImports.map((file) => `  import(${JSON.stringify(file)}),`),
+        `]);`,
+        `runtime.runTaskProcess(taskModule.taskType, { ...initialization, contributions: {`,
         ...Object.entries(contributions).map(([key, files]) => {
-          const names = files.map((file) => `contribution${contributionImports.indexOf(file)}`);
+          const names = files.map(
+            (file) => `contributionModule${contributionImports.indexOf(file)}.contribution`
+          );
           return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
         }),
         `} });`,
       ].join('\n'),
-      resolveDir: REPO_ROOT,
-      sourcefile: `${entry.name}.entry.ts`,
-      loader: 'ts',
+    };
+  });
+  const sources = new Map(prepared.map((item) => [`${item.entry.name}.entry.ts`, item.contents]));
+  const taskEntriesPlugin = {
+    name: 'native-task-entries',
+    setup(buildApi) {
+      buildApi.onResolve({ filter: /^task-entry:/ }, ({ path: file }) => ({
+        path: file.slice('task-entry:'.length),
+        namespace: 'task-entry',
+      }));
+      buildApi.onLoad({ filter: /.*/, namespace: 'task-entry' }, ({ path: file }) => ({
+        contents: sources.get(file),
+        resolveDir: REPO_ROOT,
+        loader: 'ts',
+      }));
     },
+  };
+  const result = await build({
+    entryPoints: prepared.map(({ entry }) => ({
+      in: `task-entry:${entry.name}.entry.ts`,
+      out: entry.name,
+    })),
     outdir: outDir,
-    entryNames: entry.name,
-    chunkNames: `chunks/${entry.name}/[name]-[hash]`,
+    entryNames: '[name]',
+    chunkNames: `chunks/${entries.length === 1 ? entries[0].name : 'shared'}/[name]-[hash]`,
     outExtension: { '.js': '.mjs' },
     bundle: true,
     platform: 'node',
@@ -233,9 +472,7 @@ const buildTaskBundle = async ({
     logLevel: 'silent',
     logLimit: 0,
     metafile: true,
-    minifyWhitespace: true,
-    minifySyntax: true,
-    keepNames: true,
+    ...TASK_BUNDLE_OPTIMIZATION,
     sourcemap: sourcemap ? 'linked' : false,
     sourcesContent: false,
     external: EXTERNALS,
@@ -257,6 +494,7 @@ const buildTaskBundle = async ({
     loader: {
       '.md': 'text',
       '.txt': 'text',
+      '.text': 'text',
       '.html': 'text',
       '.yaml': 'text',
       '.css': 'empty',
@@ -264,28 +502,51 @@ const buildTaskBundle = async ({
       '.png': 'empty',
       '.node': 'empty',
     },
-    plugins: [uiSharedDepsStubPlugin, pureWorkspacePlugin, peggyPlugin, repoInfoPlugin(version)],
+    plugins: [
+      taskEntriesPlugin,
+      euiModulePlugin,
+      ecsModulePlugin,
+      uiSharedDepsStubPlugin,
+      nativeApmAgentPlugin,
+      pureWorkspacePlugin,
+      peggyPlugin,
+      repoInfoPlugin(version),
+    ],
   });
+  memoizeLodashNamespaces(result, outDir);
   const files = Object.keys(result.metafile.outputs).map((file) => path.resolve(REPO_ROOT, file));
   for (const file of files) {
     if (!file.endsWith('.mjs')) continue;
     // V8 retains each loaded chunk's source; keep every chunk at one byte per character.
     fs.writeFileSync(file, escapeNonLatin1(fs.readFileSync(file, 'utf8')));
   }
-  return {
-    name: entry.name,
-    outfile,
-    bytes: files
-      .filter((file) => file.endsWith('.mjs'))
-      .reduce((total, file) => total + fs.statSync(file).size, 0),
-    files,
-    startupBytes: getStartupOutputs(result.metafile, outfile).reduce(
-      (total, file) => total + fs.statSync(file).size,
-      0
-    ),
-    entry,
-    ...(metafile ? { metafile: result.metafile } : {}),
-  };
+  return prepared.map(({ entry, featureFlags }) => {
+    const outfile = path.join(outDir, `${entry.name}.mjs`);
+    const bundleFiles = getBundleOutputs(result.metafile, outfile);
+    return {
+      name: entry.name,
+      runtime,
+      outfile,
+      bytes: bundleFiles
+        .filter((file) => file.endsWith('.mjs'))
+        .reduce((total, file) => total + fs.statSync(file).size, 0),
+      files: bundleFiles,
+      startupBytes: getStartupOutputs(result.metafile, outfile).reduce(
+        (total, file) => total + fs.statSync(file).size,
+        0
+      ),
+      startupAnalysis: getStartupAnalysis(result.metafile, outfile),
+      entry,
+      featureFlags,
+      ...(metafile ? { metafile: result.metafile } : {}),
+    };
+  });
+};
+
+/** Builds one task entry with the same graph and metadata as a complete package. */
+const buildTaskBundle = async ({ entry, ...options }) => {
+  const [result] = await buildTaskBundles({ entries: [entry], ...options });
+  return result;
 };
 
 /** The task type a file exports as `taskType`; loads it, so it needs the transpiler. */
@@ -295,17 +556,22 @@ const readTaskType = (file) => createRequire(__filename)(file).taskType.type;
 const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
   const manifest = {
     kibanaVersion: kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version,
+    runtime: results[0]?.runtime,
     bundles: Object.fromEntries(
-      results.map(({ entry, name, bytes, outfile, files, startupBytes }) => [
-        name,
-        {
-          file: path.relative(outDir, outfile),
-          files: files.map((file) => path.relative(outDir, file)),
-          taskType: readTaskType(entry.file),
-          bytes,
-          startupBytes,
-        },
-      ])
+      results.map(
+        ({ entry, name, bytes, outfile, files, startupBytes, startupAnalysis, featureFlags }) => [
+          name,
+          {
+            file: path.relative(outDir, outfile),
+            files: files.map((file) => path.relative(outDir, file)),
+            taskType: readTaskType(entry.file),
+            bytes,
+            startupBytes,
+            startupAnalysis,
+            featureFlags,
+          },
+        ]
+      )
     ),
   };
   fs.writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -313,10 +579,19 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
 };
 
 module.exports = {
+  TASK_BUNDLE_OPTIMIZATION,
+  euiModulePlugin,
+  ecsModulePlugin,
+  memoizeLodashNamespaces,
   OUT_DIR,
   getTaskBundleEntries,
   getContributionFiles,
+  resolveTaskContributions,
+  collectTaskFeatureFlags,
   getStartupOutputs,
+  getStartupAnalysis,
   buildTaskBundle,
+  buildTaskBundles,
+  getBundleOutputs,
   writeManifest,
 };

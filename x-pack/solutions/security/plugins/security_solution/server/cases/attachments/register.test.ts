@@ -40,7 +40,7 @@ describe('registerCaseAttachments', () => {
     attackAttachmentsEnabled: false,
   } as ExperimentalFeatures;
 
-  const deps = { getStartServices: jest.fn(), logger: loggerMock.create() };
+  const deps = { getScopedElasticsearchClient: jest.fn(), logger: loggerMock.create() };
 
   const buildFramework = () => ({
     registerAttachment: jest.fn(),

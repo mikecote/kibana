@@ -7,12 +7,19 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { CoreSetup, Logger } from '@kbn/core/server';
+import type { ElasticsearchClient, Logger } from '@kbn/core/server';
 import type { LockId } from './lock_manager_client';
 import { withLock, getLock } from './lock_manager_client';
 
 export class LockManagerService {
-  constructor(private readonly coreSetup: CoreSetup<any>, private readonly logger: Logger) {}
+  constructor(
+    private readonly coreSetup: {
+      getStartServices: () => Promise<{
+        readonly 0: { elasticsearch: { client: { asInternalUser: ElasticsearchClient } } };
+      }>;
+    },
+    private readonly logger: Logger
+  ) {}
 
   /**
    * Acquires a lock with the given ID and executes the callback function.
@@ -34,7 +41,7 @@ export class LockManagerService {
       metadata?: Record<string, any>;
     } = {}
   ) {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
     const esClient = coreStart.elasticsearch.client.asInternalUser;
     const logger = this.logger.get('lock-manager');
 
@@ -42,7 +49,7 @@ export class LockManagerService {
   }
 
   async getLock(lockId: LockId) {
-    const [coreStart] = await this.coreSetup.getStartServices();
+    const coreStart = (await this.coreSetup.getStartServices())[0];
     const esClient = coreStart.elasticsearch.client.asInternalUser;
     const logger = this.logger.get('lock-manager');
 

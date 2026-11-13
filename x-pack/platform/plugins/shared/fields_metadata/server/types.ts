@@ -6,6 +6,7 @@
  */
 
 import type { CoreSetup } from '@kbn/core/server';
+import type { FieldsMetadataTaskProcessSettings } from './task_process_settings';
 
 import type {
   FieldsMetadataServiceSetup,
@@ -20,6 +21,7 @@ export type FieldsMetadataPluginStartServicesAccessor =
   FieldsMetadataPluginCoreSetup['getStartServices'];
 
 export interface FieldsMetadataServerSetup {
+  getTaskProcessSettings: () => FieldsMetadataTaskProcessSettings;
   registerIntegrationFieldsExtractor: FieldsMetadataServiceSetup['registerIntegrationFieldsExtractor'];
   registerIntegrationListExtractor: FieldsMetadataServiceSetup['registerIntegrationListExtractor'];
   registerStreamsFieldsExtractor: FieldsMetadataServiceSetup['registerStreamsFieldsExtractor'];

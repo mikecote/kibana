@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/core/server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { ToolAvailabilityResult } from '@kbn/agent-builder-server';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from '../tools/core_services';
 
 /**
  * Availability handler for Security Agent Builder resources.
@@ -20,7 +20,7 @@ export async function getAgentBuilderResourceAvailability({
   request,
   logger,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: SecurityCoreToolServices;
   request: KibanaRequest;
   logger: Logger;
 }): Promise<ToolAvailabilityResult> {

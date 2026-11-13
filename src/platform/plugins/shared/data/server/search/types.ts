@@ -132,6 +132,7 @@ export interface ISearchStart<
 
 /** What a task process is sent to search as Kibana does: plain data. */
 export interface SearchTaskProcessSettings {
+  uiSettingsValidationsEnabled?: boolean;
   searchConfig: SearchConfigSchema;
   elasticsearchTimeouts?: { shardTimeout?: number; requestTimeout?: number };
   rollupsEnabled: boolean;

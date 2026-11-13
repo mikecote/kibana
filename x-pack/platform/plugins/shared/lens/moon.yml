@@ -168,6 +168,7 @@ dependsOn:
   - '@kbn/app-header'
   - '@kbn/managed-content-badge'
   - '@kbn/core-http-common'
+  - '@kbn/workflows-extensions'
 tags:
   - plugin
   - prod

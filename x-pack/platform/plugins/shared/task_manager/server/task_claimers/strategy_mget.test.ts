@@ -175,7 +175,7 @@ describe('TaskClaiming', () => {
       excludedTaskTypes = [],
       unusedTaskTypes = [],
     }: {
-      storeOpts: Partial<StoreOpts>;
+      storeOpts: Partial<Omit<StoreOpts, 'definitions'>> & { definitions?: TaskTypeDictionary };
       taskClaimingOpts: Partial<TaskClaimingOpts>;
       hits?: ConcreteTaskInstance[][];
       versionMaps?: Array<Map<string, ConcreteTaskInstanceVersion>>;
@@ -234,7 +234,7 @@ describe('TaskClaiming', () => {
       hits = [generateFakeTasks(1)],
       excludedTaskTypes = [],
     }: {
-      storeOpts: Partial<StoreOpts>;
+      storeOpts: Partial<Omit<StoreOpts, 'definitions'>> & { definitions?: TaskTypeDictionary };
       taskClaimingOpts: Partial<TaskClaimingOpts>;
       claimingOpts: Omit<OwnershipClaimingOpts, 'size' | 'taskTypes'>;
       hits?: ConcreteTaskInstance[][];

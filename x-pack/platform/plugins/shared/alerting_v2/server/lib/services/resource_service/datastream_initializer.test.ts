@@ -58,6 +58,99 @@ describe('DatastreamInitializer', () => {
     esClient.indices.putDataLifecycle.mockResolvedValue({ acknowledged: true });
   });
 
+  describe('existing resources', () => {
+    const existing = () =>
+      new DatastreamInitializer(mockLogger, esClient, resourceDefinition, false);
+
+    const ready = () => {
+      esClient.indices.getDataStream.mockResolvedValue({
+        data_streams: [
+          {
+            name: resourceDefinition.dataStreamName,
+            _meta: { version: 1 },
+            generation: 1,
+            hidden: true,
+            next_generation_managed_by: 'Data stream lifecycle',
+            prefer_ilm: false,
+            indices: [],
+            rollover_on_write: false,
+            settings: {},
+            status: 'GREEN',
+            template: resourceDefinition.dataStreamName,
+            timestamp_field: { name: '@timestamp' },
+          },
+        ],
+      });
+      esClient.indices.getIndexTemplate.mockResolvedValue({
+        index_templates: [
+          {
+            name: resourceDefinition.dataStreamName,
+            index_template: {
+              index_patterns: [resourceDefinition.dataStreamName],
+              composed_of: [],
+              _meta: { version: 1 },
+            },
+          },
+        ],
+      });
+      esClient.ingest.getPipeline.mockResolvedValue({
+        [resourceDefinition.finalPipeline.id]: {
+          version: resourceDefinition.finalPipeline.version,
+        },
+      });
+      esClient.indices.getSettings.mockResolvedValue({
+        '.ds-alerting-test': {
+          settings: { 'index.final_pipeline': resourceDefinition.finalPipeline.id },
+        },
+      });
+    };
+
+    it('checks deployed resources without changing them', async () => {
+      ready();
+      await existing().initialize();
+      expect(esClient.indices.putIndexTemplate).not.toHaveBeenCalled();
+      expect(esClient.indices.createDataStream).not.toHaveBeenCalled();
+      expect(esClient.indices.deleteDataStream).not.toHaveBeenCalled();
+      expect(esClient.indices.putSettings).not.toHaveBeenCalled();
+      expect(esClient.ingest.putPipeline).not.toHaveBeenCalled();
+      expect(esClient.indices.putDataLifecycle).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing data stream', async () => {
+      await expect(existing().initialize()).rejects.toThrow('is missing');
+    });
+
+    it('rejects an outdated pipeline', async () => {
+      ready();
+      esClient.ingest.getPipeline.mockResolvedValue({
+        [resourceDefinition.finalPipeline.id]: { version: 1 },
+      });
+      await expect(existing().initialize()).rejects.toThrow('missing or outdated');
+    });
+
+    it('rejects an unfinished destructive reset', async () => {
+      ready();
+      const initializer = new DatastreamInitializer(
+        mockLogger,
+        esClient,
+        {
+          ...resourceDefinition,
+          version: 3,
+          forceReset: { version: 2 },
+        },
+        false
+      );
+      await expect(initializer.initialize()).rejects.toThrow('has not completed its reset');
+      expect(esClient.indices.deleteDataStream).not.toHaveBeenCalled();
+    });
+
+    it('rejects a backing index without the final pipeline', async () => {
+      ready();
+      esClient.indices.getSettings.mockResolvedValue({ '.ds-alerting-test': { settings: {} } });
+      await expect(existing().initialize()).rejects.toThrow('incorrect final pipeline');
+    });
+  });
+
   describe('data stream lifecycle', () => {
     const managedDefinition: ResourceDefinition = { ...resourceDefinition, manageLifecycle: true };
 

@@ -13,7 +13,7 @@ import { ReadOperations } from '../../authorization';
 import { WriteOperations, AlertingAuthorizationEntity } from '../../authorization';
 import type { BulkAction, RuleBulkOperationAggregation } from '../types';
 import { MAX_RULES_NUMBER_FOR_BULK_OPERATION } from '../common/constants';
-import type { RulesClientContext } from '../types';
+import type { RulesReadContext } from '../rules_read_context';
 import { ruleAuditEvent, RuleAuditAction } from '../common/audit_events';
 import { RULE_SAVED_OBJECT_TYPE } from '../../saved_objects';
 import { RulesNotFoundError } from './rules_not_found_error';
@@ -60,7 +60,7 @@ const actionToConstantsMapping: Record<
 };
 
 export const checkAuthorizationAndGetTotal = async (
-  context: RulesClientContext,
+  context: RulesReadContext,
   {
     filter,
     baseFilter,

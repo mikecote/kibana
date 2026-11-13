@@ -10,6 +10,8 @@
 import type { AgentConfigOptions } from 'elastic-apm-node';
 import { getConfigurationFilePaths, getConfigFromFiles, applyConfigOverrides } from './utils';
 import { ApmConfiguration } from './config';
+import { captureTelemetryConfiguration } from './telemetry_configuration';
+import type { TelemetryConfiguration } from './telemetry_configuration';
 
 let apmConfig: ApmConfiguration | undefined;
 
@@ -44,3 +46,9 @@ export const getConfiguration = (serviceName: string): AgentConfigOptions | unde
   }
   return undefined;
 };
+
+/** Returns the instrumentation settings that Kibana actually initialized at bootstrap. */
+export const getTelemetryConfiguration = (
+  serviceName: string
+): TelemetryConfiguration | undefined =>
+  apmConfig ? captureTelemetryConfiguration(apmConfig, serviceName) : undefined;

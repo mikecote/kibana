@@ -72,6 +72,27 @@ describe('File', () => {
     sandbox.restore();
   });
 
+  it.each([true, false])(
+    'deletes file contents only after an upload (uploaded: %s)',
+    async (uploaded) => {
+      const createBlobSpy = sandbox.spy(blobStorageService, 'createBlobStorageClient');
+      const fileSO = { id: 'file-1', attributes: { Status: 'AWAITING_UPLOAD' } };
+      (soClient.create as jest.Mock).mockResolvedValue(fileSO);
+      (soClient.update as jest.Mock).mockResolvedValue(fileSO);
+      jest
+        .mocked(soClient.find)
+        .mockResolvedValue({ saved_objects: [], total: 0, page: 1, per_page: 100 });
+      const file = await fileService.createFile({ name: 'evidence.txt', fileKind });
+      const [{ returnValue: blobStore }] = createBlobSpy.getCalls();
+      const deleteContent = sandbox.spy(blobStore, 'delete');
+      if (uploaded) await file.uploadContent(Readable.from(['evidence']));
+      await file.delete();
+      expect(file.data.status).toBe('DELETED');
+      expect(deleteContent.callCount).toBe(uploaded ? 1 : 0);
+      if (uploaded) expect(deleteContent.calledWithExactly('file-1')).toBe(true);
+    }
+  );
+
   it('deletes file content when an upload fails', async () => {
     const createBlobSpy = sandbox.spy(blobStorageService, 'createBlobStorageClient');
 

@@ -35,6 +35,62 @@ interface Logging {
 }
 
 describe('buildCoreConfig', () => {
+  it('enables native UI settings for config-dependent registration hooks', () => {
+    const { settings, cleanup } = buildCoreConfig(init(), { registerUiSettings: () => {} });
+    expect(settings.uiSettings).toEqual({ overrides: {}, globalOverrides: {} });
+    cleanup();
+  });
+
+  it('configures native encryption for saved object migration factories without encrypted declarations', () => {
+    const encryptionKey = 'k'.repeat(32);
+    const { settings, cleanup } = buildCoreConfig(
+      init({ encryptedSavedObjects: { encryptionKey, decryptionOnlyKeys: [] } }),
+      { createSavedObjectTypes: () => [] }
+    );
+    expect(settings.xpack).toEqual({
+      encryptedSavedObjects: { encryptionKey, keyRotation: { decryptionOnlyKeys: [] } },
+    });
+    cleanup();
+  });
+
+  it('configures native encryption for scheduling without extra encrypted declarations', () => {
+    const encryptionKey = 'k'.repeat(32);
+    const { settings, cleanup } = buildCoreConfig(
+      init({ encryptedSavedObjects: { encryptionKey, decryptionOnlyKeys: ['r'.repeat(32)] } }),
+      { taskManager: true }
+    );
+    expect(settings.xpack).toEqual({
+      encryptedSavedObjects: {
+        encryptionKey,
+        keyRotation: { decryptionOnlyKeys: ['r'.repeat(32)] },
+      },
+    });
+    cleanup();
+  });
+
+  it('disables eager data stream installation and migrations in task workers', () => {
+    const { settings, cleanup } = buildCoreConfig(init(), {});
+    expect(settings.dataStreams).toEqual({ migrations: { skip: true } });
+    cleanup();
+  });
+
+  it.each([false, true])(
+    'preserves Core FIPS mode alongside UIAM authentication (enabled: %s)',
+    (enabled) => {
+      const uiam = { enabled: true, sharedSecret: 'test-secret' };
+      const { settings, cleanup } = buildCoreConfig(
+        init({
+          settings: {
+            security: { fipsMode: { enabled }, uiam },
+          },
+        }),
+        {}
+      );
+      expect(settings.xpack).toEqual({ security: { fipsMode: { enabled }, uiam } });
+      cleanup();
+    }
+  );
+
   it('gives Core the ui settings overrides and global overrides Kibana has', () => {
     const { settings, cleanup } = buildCoreConfig(
       init({

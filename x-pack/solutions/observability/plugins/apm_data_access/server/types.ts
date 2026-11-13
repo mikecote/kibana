@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { SavedObjectsClientContract } from '@kbn/core-saved-objects-api-server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type {
@@ -21,6 +22,7 @@ export interface ApmDataAccessPluginSetup {
 }
 
 export interface ApmDataAccessServerSetupDependencies {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
   apmSourcesAccess: ApmSourcesAccessPluginSetup;
 }
 

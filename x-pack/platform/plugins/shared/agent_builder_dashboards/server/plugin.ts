@@ -18,9 +18,8 @@ import type {
   AgentBuilderDashboardsPluginSetup,
   AgentBuilderDashboardsPluginStart,
 } from './types';
-import { registerSkills } from './skills';
-import { createDashboardAttachmentType } from './attachment_types';
-import { createDashboardSmlType } from './sml_types';
+import { registerDashboardsAgentBuilder } from './register_agent_builder';
+import { DASHBOARDS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { createDashboardAppStateValidator } from './tools/generate/validate_dashboard_app_state';
 
 export class AgentBuilderDashboardsPlugin
@@ -54,15 +53,15 @@ export class AgentBuilderDashboardsPlugin
       return createDashboardAppStateValidator(startDeps.embeddable);
     };
 
-    setupDeps.agentBuilder.attachments.registerType(
-      createDashboardAttachmentType({
-        logger: this.logger,
-        getDashboardClient,
-      }) as Parameters<typeof setupDeps.agentBuilder.attachments.registerType>[0]
+    // What a task process needs to register what this Kibana registers: the plugin is enabled.
+    setupDeps.agentBuilder.taskProcess?.registerSettings(
+      DASHBOARDS_AGENT_BUILDER_SETTINGS_ID,
+      () => ({})
     );
-    setupDeps.agentBuilderSml.registerType(createDashboardSmlType({ getDashboardClient }));
-
-    registerSkills(setupDeps.agentBuilder, { getDashboardValidator });
+    registerDashboardsAgentBuilder(
+      { agentBuilder: setupDeps.agentBuilder, agentBuilderSml: setupDeps.agentBuilderSml },
+      { logger: this.logger, getDashboardClient, getDashboardValidator }
+    );
 
     return {};
   }

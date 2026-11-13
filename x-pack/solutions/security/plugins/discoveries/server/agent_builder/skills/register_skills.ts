@@ -5,10 +5,10 @@
  * 2.0.
  */
 
-import type { CoreStart, Logger } from '@kbn/core/server';
+import type { Logger } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-plugin/server';
 
-import type { DiscoveriesPluginStartDeps } from '../../types';
+import type { GetStepServices } from '../../workflows/step_services';
 import { alertRetrievalBuilderSkill } from './alert_retrieval_builder';
 import { createAttackDiscoveryGeneratorSkill } from './attack_discovery_generator';
 import type { WorkflowExecutionLookup } from './tools/get_attack_discovery_status_tool';
@@ -17,11 +17,10 @@ import type { RunAttackDiscoveryToolDeps } from './tools/run_attack_discovery_to
 import { createWorkflowTroubleshootingSkill } from './workflow_troubleshooting';
 
 interface RegisterSkillsOptions {
+  skillIds?: readonly string[];
+  onRegistered?: (id: string) => void;
   getEventLogIndex?: () => Promise<string>;
-  getStartServices?: () => Promise<{
-    coreStart: CoreStart;
-    pluginsStart: DiscoveriesPluginStartDeps;
-  }>;
+  getStartServices?: GetStepServices;
   runAttackDiscoveryToolDeps?: RunAttackDiscoveryToolDeps;
   workflowExecutionLookup?: WorkflowExecutionLookup;
   workflowFetcher?: WorkflowFetcher;
@@ -38,10 +37,17 @@ export const registerSkills = async (
   logger: Logger,
   options?: RegisterSkillsOptions
 ): Promise<void> => {
-  await agentBuilder.skills.register(alertRetrievalBuilderSkill);
+  const registerSkill = async (
+    skill: Parameters<AgentBuilderPluginSetup['skills']['register']>[0]
+  ) => {
+    if (options?.skillIds && !options.skillIds.includes(skill.id)) return;
+    await agentBuilder.skills.register(skill);
+    options?.onRegistered?.(skill.id);
+  };
+  await registerSkill(alertRetrievalBuilderSkill);
 
   if (options?.getEventLogIndex != null && options.workflowExecutionLookup != null) {
-    await agentBuilder.skills.register(
+    await registerSkill(
       createAttackDiscoveryGeneratorSkill({
         getEventLogIndex: options.getEventLogIndex,
         getStartServices: options.getStartServices,
@@ -57,7 +63,7 @@ export const registerSkills = async (
   }
 
   if (options?.workflowFetcher != null) {
-    await agentBuilder.skills.register(createWorkflowTroubleshootingSkill(options.workflowFetcher));
+    await registerSkill(createWorkflowTroubleshootingSkill(options.workflowFetcher));
   }
 
   logger.debug(() => 'discoveries: Skills registration complete');

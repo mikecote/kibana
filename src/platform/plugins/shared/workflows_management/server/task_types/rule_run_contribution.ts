@@ -8,17 +8,42 @@
  */
 
 import type { RuleRunContribution } from '@kbn/alerting-plugin/server/task_types/rule_run_contribution';
-import type { WorkflowsManagementApi } from '../api/workflows_management_api';
+import { taskType } from '@kbn/workflows-execution-engine/server/task_types/workflow_run.task';
+import type { WorkflowsExtensionsServerPluginStart } from '@kbn/workflows-extensions/server';
 import { getConnectorType, getWorkflowsConnectorAdapter } from '../connectors/workflows';
+import type { WorkflowConnectorManagement } from '../connectors/workflows';
 
-/**
- * The `.workflows` system action and its adapter, so a rule run can enqueue the workflows it was
- * configured with. Running them is Kibana's job when it executes the enqueued action, which is why
- * the connector type here has no API behind it.
- */
+/** Registers the system connector with the management API of the executing workflow. */
 export const contribution: RuleRunContribution = {
-  register: ({ actions, alerting }) => {
-    actions.registerType(getConnectorType({} as WorkflowsManagementApi) as never);
+  declares: { featureFlags: taskType.featureFlags },
+  executionServices: {
+    ids: ['workflows.management', 'workflows.extensions'],
+    requirements: taskType,
+    isEnabled: (settings) => settings.workflowsManagementRuntime !== undefined,
+    create: async ({ host }) => {
+      const { createWorkflowRuntimeFromHost } = await import(
+        '@kbn/workflows-execution-engine/server/task_types/process_runtime'
+      );
+      return createWorkflowRuntimeFromHost(host);
+    },
+  },
+  getWorkflowsClient: (request, context) => {
+    if (!context.getService) throw new Error('Native workflow services are required');
+    return context
+      .getService<WorkflowsExtensionsServerPluginStart>('workflows.extensions')
+      .getClient(request);
+  },
+  register: ({ actions, alerting }, context) => {
+    actions.registerType(
+      getConnectorType(() => {
+        if (!context.getService) {
+          throw new Error(
+            'Workflow execution services are required to execute the workflows connector'
+          );
+        }
+        return context.getService<WorkflowConnectorManagement>('workflows.management');
+      })
+    );
     alerting.registerConnectorAdapter(getWorkflowsConnectorAdapter());
   },
 };

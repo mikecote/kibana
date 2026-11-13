@@ -70,3 +70,9 @@ export type ObservabilityAgentBuilderCoreSetup = CoreSetup<
   ObservabilityAgentBuilderPluginStartDependencies,
   ObservabilityAgentBuilderPluginStart
 >;
+
+export type {
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
+  ObservabilityAgentBuilderRunStartDependencies,
+} from './run_services/types';

@@ -12,7 +12,7 @@ import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityWatchlistToolServices } from './services';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
 import { createEntitySourcesService } from '../../../../lib/entity_analytics/watchlists/entity_sources/entity_sources_service';
 import { watchlistEntitySourceTypeName } from '../../../../lib/entity_analytics/watchlists/entity_sources/infra';
@@ -35,7 +35,7 @@ const schema = lazySchema(() =>
 export const SECURITY_DELETE_WATCHLIST_TOOL_ID = securityTool('delete_watchlist');
 
 export const deleteWatchlistTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityWatchlistToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   hasEncryptionKey: boolean

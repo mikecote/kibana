@@ -58,7 +58,10 @@ const setupPlugin = ({ escalationsEnabled }: { escalationsEnabled?: boolean } = 
   const coreSetup = coreMock.createSetup();
   const features = { registerKibanaFeature: jest.fn() };
 
-  const workflowsExtensions = { registerStepDefinition: jest.fn() };
+  const workflowsExtensions = {
+    registerStepDefinition: jest.fn(),
+    registerTaskProcessSettings: jest.fn(),
+  };
   const agentBuilder = {
     attachments: { registerType: jest.fn() },
     conversationEvents: { register: jest.fn() },

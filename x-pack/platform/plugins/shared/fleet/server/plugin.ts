@@ -43,6 +43,7 @@ import type {
 } from '@kbn/security-plugin/server';
 import type { FeaturesPluginSetup } from '@kbn/features-plugin/server';
 import type { FieldsMetadataServerSetup } from '@kbn/fields-metadata-plugin/server';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type {
   TaskManagerSetupContract,
   TaskManagerStartContract,
@@ -179,9 +180,12 @@ import {
 } from './services/agentless/agentless_policies';
 import { registerReassignAgentsToVersionSpecificPoliciesTask } from './services/agent_policies/reassign_agents_to_version_specific_policies_task';
 import { VersionSpecificPolicyAssignmentTask } from './tasks/version_specific_policy_assignment_task';
+import { FLEET_PACKAGE_METADATA_SETTINGS_ID } from './package_metadata_task_process_settings';
+import { getFleetPackageMetadataTaskProcessSettings } from './services/run_time/package_metadata_settings';
 
 export interface FleetSetupDeps {
   alerting?: Pick<AlertingServerSetup, 'registerTaskProcessSettings'>;
+  workflowsExtensions?: Pick<WorkflowsExtensionsServerPluginSetup, 'registerTaskProcessSettings'>;
   security: SecurityPluginSetup;
   features?: FeaturesPluginSetup;
   encryptedSavedObjects: EncryptedSavedObjectsPluginSetup;
@@ -397,7 +401,21 @@ export class FleetPlugin
     const config = this.configInitialValue;
 
     // What a task process that runs a rule with response actions reads of Fleet's configuration.
-    deps.alerting?.registerTaskProcessSettings('fleet', () => config);
+    const getFleetConfig = () => {
+      const current = appContextService.getConfig();
+      if (!current) throw new Error('Fleet execution settings are unavailable before Fleet starts');
+      return current;
+    };
+    deps.alerting?.registerTaskProcessSettings('fleet', getFleetConfig);
+    deps.alerting?.registerTaskProcessSettings(
+      FLEET_PACKAGE_METADATA_SETTINGS_ID,
+      getFleetPackageMetadataTaskProcessSettings
+    );
+    deps.workflowsExtensions?.registerTaskProcessSettings('fleet', getFleetConfig);
+    deps.workflowsExtensions?.registerTaskProcessSettings(
+      FLEET_PACKAGE_METADATA_SETTINGS_ID,
+      getFleetPackageMetadataTaskProcessSettings
+    );
 
     core.status.set(this.fleetStatus$.asObservable());
 

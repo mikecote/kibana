@@ -10,12 +10,17 @@
  * the task process can bundle it without pulling in the rest of Task Manager.
  */
 
+import type { TelemetryFileMaterial } from '@kbn/apm-config-loader';
+import type { HttpSelfClientDispatchConfig } from '@kbn/core-http-server';
+import type { TaskRunTrace } from '../task_running/task_tracing';
 import type { SerializedTaskRunError } from '../task_running/errors';
 import { deserializeTaskRunError, serializeTaskRunError } from '../task_running/errors';
-import type { ConcreteTaskInstance, RunResult } from '../task';
+import type { ConcreteTaskInstance, RunResult, TaskRunAs } from '../task';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { SerializedValue } from './settings';
 import type { TaskProcessParity } from './parity';
+import type { TASK_PROCESS_PROTOCOL_VERSION } from './protocol';
+import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 
 /**
  * The longest a timer can wait: Node treats anything above 2^31-1 ms (about 24.8 days) as 1 ms and
@@ -30,6 +35,15 @@ export const MAX_TIMER_MS = 2 ** 31 - 1;
  */
 export interface TaskProcessInit {
   kind: 'init';
+  executionContext?: { enabled: boolean };
+  instrumentation?: {
+    files: readonly TelemetryFileMaterial[];
+    environment: Record<string, string>;
+    apm: SerializedValue;
+    redactUsers: boolean;
+    telemetry: SerializedValue;
+    monitoringCollection: SerializedValue;
+  };
   elasticsearch: SerializedElasticsearchConfig;
   kibanaVersion: string;
   authToken: string;
@@ -58,10 +72,17 @@ export interface TaskProcessServerInfo {
    * builds are empty exactly when Kibana's are. Never the address a process reaches Kibana at.
    */
   publicBaseUrl?: string;
+  /**
+   * Where a process reaches this Kibana over HTTP: its public URL, or its own address when none is
+   * configured. Core's self client calls it with the run's credentials (it is the `publicBaseUrl` of
+   * the process's Core, which a run never reads for links: those use `publicBaseUrl` above).
+   */
+  kibanaUrl?: string;
+  selfHttp?: HttpSelfClientDispatchConfig;
   isServerless: boolean;
   /**
-   * Kibana's `server.basePath`, which Core requires a `publicBaseUrl` with a path to contain; the
-   * process serves nothing, so it is only there for that validation.
+   * Kibana's `server.basePath`, which the self client prefixes to every path and which Core requires
+   * a `publicBaseUrl` with a path to contain.
    */
   basePath?: string;
   /** Kibana runs from source, which loosens a few of Core's config checks. */
@@ -72,14 +93,31 @@ export interface TaskProcessServerInfo {
 export interface TaskProcessReady {
   kind: 'ready';
   port: number;
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
+  capabilities: readonly string[];
+  featureFlags?: TaskFeatureFlagDefinitions;
+}
+
+/** Configuration and registrations captured for one dispatch in either process mode. */
+export interface TaskProcessDispatchSnapshot {
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
+  init: Omit<TaskProcessInit, 'kind' | 'authToken'>;
+  featureFlags?: Record<string, boolean | string | number>;
 }
 
 export interface TaskProcessRunRequest {
+  protocolVersion: typeof TASK_PROCESS_PROTOCOL_VERSION;
+  tracing?: TaskRunTrace;
   taskType: string;
   /** `ConcreteTaskInstance` with credential fields stripped; dates are ISO strings. */
   taskInstance: Record<string, unknown>;
   executionUuid: string;
+  snapshot?: TaskProcessDispatchSnapshot;
+  /** Bounded time for this task type to persist cancellation before forced termination. */
+  cancelGracePeriodMs?: number;
   apiKey?: string;
+  /** Verified workload identity; the process resolves its scoped service-account request. */
+  runAs?: TaskRunAs;
   spaceId?: string;
   uiamApiKeyExternal?: boolean;
   userProfileId?: string;
@@ -107,10 +145,28 @@ export interface SerializedRunResult {
   taskRunError?: SerializedTaskRunError;
 }
 
+export interface TaskProcessMetricSnapshot {
+  sequence: number;
+  encoded: string;
+}
+
+export interface TaskProcessRunMetrics {
+  prometheus?: TaskProcessMetricSnapshot;
+  createdTaskCount?: number;
+  activePoolRequestIds?: string[];
+}
+
 export type TaskProcessRunResponse = (
   | { kind: 'result'; result?: SerializedRunResult }
   | { kind: 'thrown'; error: SerializedTaskRunError }
-) & { customTaskRunEventFields?: Record<string, unknown> };
+) & {
+  /** Native tasks created during this execution, including before a run error. */
+  createdTaskCount?: number;
+  prometheus?: TaskProcessMetricSnapshot;
+  customTaskRunEventFields?: Record<string, unknown>;
+  /** True only when this process supports reuse and the run's cleanup and flush succeeded. */
+  reusable?: boolean;
+};
 
 const TASK_INSTANCE_DATE_FIELDS = ['scheduledAt', 'startedAt', 'retryAt', 'runAt'] as const;
 
@@ -147,7 +203,7 @@ export const deserializeRunResult = (serialized?: SerializedRunResult): RunResul
   } as unknown as RunResult;
 };
 
-/** Body of the response (status 422) to a run the process declines; Kibana runs it itself. */
+/** Body of a capability failure (status 422), reported without local execution. */
 export interface TaskProcessDeclinedResponse {
   kind: 'declined';
   reason: string;

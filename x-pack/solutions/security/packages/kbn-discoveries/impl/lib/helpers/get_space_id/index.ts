@@ -6,12 +6,12 @@
  */
 
 import type { KibanaRequest } from '@kbn/core/server';
-import type { SpacesServiceStart } from '@kbn/spaces-plugin/server';
 
 export const getSpaceId = ({
   request,
   spaces,
 }: {
   request: KibanaRequest;
-  spaces: SpacesServiceStart | undefined | null;
+  /** The spaces service of the spaces plugin, or what a task process answers with. */
+  spaces: { getSpaceId: (request: KibanaRequest) => string } | undefined | null;
 }): string => spaces?.getSpaceId(request) ?? 'default';

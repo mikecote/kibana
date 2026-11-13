@@ -21,8 +21,8 @@ export const resolveModelStepDefinition = ({
   logger,
 }: {
   getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
   logger: Logger;
 }) =>
   createServerStepDefinition({

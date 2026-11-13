@@ -14,10 +14,11 @@ import type {
   SmlDeleteAttachmentParams,
 } from './types';
 import type { SmlService } from './services/sml/types';
+import { resolveSmlAttachItems } from './services/sml/execute_sml_attach_items';
 
 interface StartContractDeps {
   smlService: SmlService;
-  elasticsearch: CoreStart['elasticsearch'];
+  elasticsearch: { client: Pick<CoreStart['elasticsearch']['client'], 'asInternalUser'> };
   savedObjects: CoreStart['savedObjects'];
   spaces: AgentBuilderSmlStartDependencies['spaces'];
   logger: Logger;
@@ -81,3 +82,18 @@ export const buildDeleteAttachment =
       ...(params.strict !== undefined ? { strict: params.strict } : {}),
     });
   };
+
+/**
+ * The start contract of the plugin, built from explicit dependencies: the plugin's `start()` calls it
+ * with Kibana's services and a task process with the host's.
+ */
+export const createSmlStartContract = ({
+  smlService,
+  ...deps
+}: StartContractDeps): AgentBuilderSmlPluginStart => ({
+  search: smlService.search,
+  getTypeDefinition: smlService.getTypeDefinition,
+  resolveSmlAttachItems: (params) => resolveSmlAttachItems({ ...params, sml: smlService }),
+  indexAttachment: buildIndexAttachment({ smlService, ...deps }),
+  deleteAttachment: buildDeleteAttachment({ smlService, ...deps }),
+});

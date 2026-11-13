@@ -17,6 +17,9 @@
     "@kbn/zod",
     "@kbn/core-http-server-mocks",
     "@kbn/core-logging-server-mocks",
-    "@kbn/evals-common"
+    "@kbn/evals-common",
+    "@kbn/inference-plugin",
+    "@kbn/security-plugin",
+    "@kbn/task-manager-plugin"
   ]
 }

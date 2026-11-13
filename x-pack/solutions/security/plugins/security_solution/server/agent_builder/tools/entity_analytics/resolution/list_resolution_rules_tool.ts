@@ -11,7 +11,7 @@ import type { BuiltinToolDefinition, ToolAvailabilityContext } from '@kbn/agent-
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
 import { checkResolutionAccess } from './check_resolution_access';
@@ -22,7 +22,7 @@ const schema = z.object({});
 export const SECURITY_LIST_RESOLUTION_RULES_TOOL_ID = securityTool('list_resolution_rules');
 
 export const listResolutionRulesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

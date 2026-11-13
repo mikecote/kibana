@@ -15,7 +15,7 @@ import { MessageRole } from '@kbn/inference-common';
 import dedent from 'dedent';
 import moment from 'moment';
 import type { Observable } from 'rxjs';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../../data_registry/data_registry';
 import { createAiInsightResult, type AiInsightResult } from '../types';
 import type {
   ObservabilityAgentBuilderCoreSetup,
@@ -52,7 +52,7 @@ interface GetAlertAiInsightParams {
   inferenceClient: InferenceClient;
   connectorId: string;
   connector: InferenceConnector;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   request: KibanaRequest;
   logger: Logger;
 }

@@ -19,7 +19,7 @@ import type { Filter } from '@kbn/es-query';
 import type { DashboardState } from '@kbn/as-code-dashboard-schema';
 import { migrateLegacyQuery } from '../../../../common';
 import type { DashboardSavedObjectAttributes } from '../../../dashboard_saved_object';
-import { logger } from '../../../kibana_services';
+import { getDashboardReadServices } from '../../../dashboard_read_services';
 import type { getDashboardStateSchema } from '../../dashboard_state_schemas';
 import type { Warnings } from '../../types';
 
@@ -38,7 +38,9 @@ export function transformSearchSourceOut(
   try {
     parsedSearchSource = parseSearchSourceJSON(searchSourceJSON);
   } catch (parseError) {
-    logger.warn(`Unable to parse searchSourceJSON. Error: ${parseError.message}`);
+    getDashboardReadServices().logger.warn(
+      `Unable to parse searchSourceJSON. Error: ${parseError.message}`
+    );
     return { warnings };
   }
 
@@ -46,7 +48,7 @@ export function transformSearchSourceOut(
   try {
     searchSource = injectReferences(parsedSearchSource, references);
   } catch (injectError) {
-    logger.warn(
+    getDashboardReadServices().logger.warn(
       `Unable to transform filter and query state on read. Error: ${injectError.message}`
     );
     // fallback to parsed if injection fails
@@ -57,7 +59,7 @@ export function transformSearchSourceOut(
   const invalidFilters: Array<{ filter: Filter; message: string }> = [];
   searchSource.filter?.forEach((storedFilter) => {
     try {
-      let asCodeFilter = fromStoredFilter(storedFilter, logger);
+      let asCodeFilter = fromStoredFilter(storedFilter, getDashboardReadServices().logger);
       asCodeFilter = asCodeFilterSchema.parse(asCodeFilter);
       validFilters.push(asCodeFilter);
     } catch (error) {
@@ -72,7 +74,7 @@ export function transformSearchSourceOut(
     const warningMessage = `Unexpected error transforming filter state on read.\n\n${invalidFilters
       .map(({ message }, index) => `[filters.${index + 1}]: ${message}`)
       .join('\n\n')}`;
-    logger.warn(warningMessage);
+    getDashboardReadServices().logger.warn(warningMessage);
     warnings.push({
       type: 'dropped_property',
       message: warningMessage,
@@ -89,7 +91,7 @@ export function transformSearchSourceOut(
     const warningMessage = `Unexpected error transforming query state on read.\n\n${prettifyError(
       error
     )}`;
-    logger.warn(warningMessage);
+    getDashboardReadServices().logger.warn(warningMessage);
     warnings.push({
       type: 'dropped_property',
       message: warningMessage,

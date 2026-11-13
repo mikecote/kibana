@@ -7,7 +7,7 @@
 
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityReadinessToolServices } from './services';
 import { getCoverageTool } from './get_coverage_tool';
 import { getQualityTool } from './get_quality_tool';
 import { getContinuityTool } from './get_continuity_tool';
@@ -15,7 +15,7 @@ import { getRetentionTool } from './get_retention_tool';
 
 export const registerSiemReadinessTools = (
   agentBuilder: AgentBuilderPluginSetup,
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityReadinessToolServices,
   logger: Logger,
   isServerless: boolean
 ) => {

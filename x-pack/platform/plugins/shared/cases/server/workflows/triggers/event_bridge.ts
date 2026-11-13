@@ -8,7 +8,7 @@
 import type { Logger } from '@kbn/core/server';
 import {
   createWorkflowTriggerForwarder,
-  type WorkflowsExtensionsServerPluginStart,
+  type WorkflowTriggerEmitterSource,
 } from '@kbn/workflows-extensions/server';
 import type { CasesEventBus } from '../../events/event_bus';
 import {
@@ -33,7 +33,7 @@ const normalizeAttachmentType = (attachmentType: string): string =>
  */
 export function registerCasesWorkflowEventBridge(
   casesEventBus: CasesEventBus,
-  workflowsExtensions: WorkflowsExtensionsServerPluginStart | undefined,
+  workflowsExtensions: WorkflowTriggerEmitterSource | undefined,
   logger: Logger
 ): void {
   if (!workflowsExtensions) {

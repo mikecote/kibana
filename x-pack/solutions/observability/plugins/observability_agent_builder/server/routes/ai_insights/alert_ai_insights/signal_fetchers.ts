@@ -8,7 +8,7 @@
 import type { IScopedClusterClient, KibanaRequest, Logger } from '@kbn/core/server';
 import { compact, isEmpty } from 'lodash';
 import moment from 'moment';
-import type { ObservabilityAgentBuilderDataRegistry } from '../../../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../../../data_registry/data_registry';
 import type {
   ObservabilityAgentBuilderCoreSetup,
   ObservabilityAgentBuilderPluginSetupDependencies,
@@ -22,7 +22,7 @@ import { getServiceTopology } from '../../../tools/get_service_topology/get_serv
 export interface SignalFetcherDeps {
   core: ObservabilityAgentBuilderCoreSetup;
   plugins: ObservabilityAgentBuilderPluginSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
   esClient: IScopedClusterClient;
   request: KibanaRequest;
   logger: Logger;

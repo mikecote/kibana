@@ -64,6 +64,7 @@
     "@kbn/usage-api-plugin",
     "@kbn/core-security-server",
     "@kbn/core-test-helpers-model-versions",
+    "@kbn/core-saved-objects-server-mocks",
   ],
   "exclude": [
     "target/**/*",

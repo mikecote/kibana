@@ -9,6 +9,10 @@
     "id": "customContent",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "embeddables": ["server/embeddable_contribution.ts"],
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "requiredPlugins": [
       "embeddable",
       "data",

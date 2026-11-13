@@ -14,7 +14,7 @@ import type {
 } from '@kbn/core/server';
 import { isSavedObjectErrorResult } from '@kbn/core-saved-objects-api-server';
 import type { SanitizedRule } from '@kbn/alerting-types';
-import type { RulesClient } from '@kbn/alerting-plugin/server';
+import type { RulesReadClient } from '@kbn/alerting-plugin/server/rules_client/create_rules_read_client';
 import type {
   AttachmentLink,
   AttachmentDocument,
@@ -158,7 +158,7 @@ export const getRulesByIds = async ({
   rulesClient,
   ids,
 }: {
-  rulesClient: RulesClient;
+  rulesClient: RulesReadClient;
   ids: string[];
 }): Promise<AttachmentData[]> => {
   try {
@@ -262,7 +262,7 @@ export const getSuggestedRules = async ({
   limit,
   excludeIds,
 }: {
-  rulesClient: RulesClient;
+  rulesClient: RulesReadClient;
   query: string;
   tags?: string[];
   limit: number;

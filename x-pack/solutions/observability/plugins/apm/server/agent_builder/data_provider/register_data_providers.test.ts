@@ -66,14 +66,18 @@ describe('registerDataProviders (apmServiceSummary / apmServiceChangePoints / ap
   });
 
   it('registers all three providers', () => {
-    expect(registerDataProvider).toHaveBeenCalledWith('apmServiceSummary', expect.any(Function));
+    expect(registerDataProvider).toHaveBeenCalledWith('apmServiceSummary', expect.any(Function), {
+      owner: 'apm',
+    });
     expect(registerDataProvider).toHaveBeenCalledWith(
       'apmExitSpanChangePoints',
-      expect.any(Function)
+      expect.any(Function),
+      { owner: 'apm' }
     );
     expect(registerDataProvider).toHaveBeenCalledWith(
       'apmServiceChangePoints',
-      expect.any(Function)
+      expect.any(Function),
+      { owner: 'apm' }
     );
   });
 

@@ -9,7 +9,8 @@
 
 import { i18n } from '@kbn/i18n';
 import { schema } from '@kbn/config-schema';
-import type { DocLinksServiceSetup, UiSettingsParams } from '@kbn/core/server';
+import { dataViewServiceUiSettings } from '@kbn/data-views-plugin/server';
+import type { UiSettingsParams } from '@kbn/core/server';
 import { DEFAULT_HISTOGRAM_BAR_TARGET, DEFAULT_QUERY_LANGUAGE, UI_SETTINGS } from '../common';
 
 const luceneQueryLanguageLabel = i18n.translate('data.advancedSettings.searchQueryLanguageLucene', {
@@ -32,22 +33,22 @@ const requestPreferenceOptionLabels = {
   }),
 };
 
+export interface DataUiSettingsDocLinks {
+  links: {
+    query: { luceneQuery: string };
+    apis: { searchPreference: string; multiSearch: string };
+    date: { dateMath: string };
+    elasticsearch: Record<string, string>;
+    kibana: { autocompleteSuggestions: string };
+  };
+}
+
 export function getUiSettings(
-  docLinks: DocLinksServiceSetup,
+  docLinks: DataUiSettingsDocLinks,
   enableValidations: boolean
 ): Record<string, UiSettingsParams<unknown>> {
   return {
-    [UI_SETTINGS.META_FIELDS]: {
-      name: i18n.translate('data.advancedSettings.metaFieldsTitle', {
-        defaultMessage: 'Meta fields',
-      }),
-      value: ['_source', '_id', '_index', '_score', '_ignored'],
-      description: i18n.translate('data.advancedSettings.metaFieldsText', {
-        defaultMessage:
-          'Fields that exist outside of _source to merge into our document when displaying it',
-      }),
-      schema: schema.arrayOf(schema.string(), { maxSize: 100 }),
-    },
+    ...dataViewServiceUiSettings,
     [UI_SETTINGS.DOC_HIGHLIGHT]: {
       name: i18n.translate('data.advancedSettings.docTableHighlightTitle', {
         defaultMessage: 'Highlight results',
@@ -165,17 +166,6 @@ export function getUiSettings(
         unmapped_type: schema.string(),
       }),
     },
-    defaultIndex: {
-      name: i18n.translate('data.advancedSettings.defaultIndexTitle', {
-        defaultMessage: 'Default data view',
-      }),
-      value: '',
-      type: 'string',
-      description: i18n.translate('data.advancedSettings.defaultIndexText', {
-        defaultMessage: 'Used by discover and visualizations when a data view is not set.',
-      }),
-      schema: schema.string(),
-    },
     [UI_SETTINGS.COURIER_IGNORE_FILTER_IF_FIELD_NOT_IN_INDEX]: {
       name: i18n.translate('data.advancedSettings.courier.ignoreFilterTitle', {
         defaultMessage: 'Ignore filter(s)',
@@ -251,38 +241,8 @@ export function getUiSettings(
       category: ['search'],
       schema: schema.string(),
     },
-    [UI_SETTINGS.COURIER_MAX_CONCURRENT_SHARD_REQUESTS]: {
-      name: i18n.translate('data.advancedSettings.courier.maxRequestsTitle', {
-        defaultMessage: 'Max Concurrent Shard Requests',
-      }),
-      value: 0,
-      type: 'number',
-      description: i18n.translate('data.advancedSettings.courier.maxRequestsText', {
-        defaultMessage:
-          'Controls the {maxRequestsLink} setting used for _msearch requests sent by Kibana. ' +
-          'Set to 0 to disable this config and use the Elasticsearch default.',
-        values: {
-          maxRequestsLink: `<a href=${docLinks.links.apis.multiSearch}
-            target="_blank" rel="noopener" >max_concurrent_shard_requests</a>`,
-        },
-      }),
-      category: ['search'],
-      schema: schema.number(),
-    },
-    [UI_SETTINGS.SEARCH_INCLUDE_FROZEN]: {
-      name: 'Search in frozen indices',
-      description: `Will include frozen indices in results if enabled. Searching through frozen indices
-        might increase the search time.`,
-      value: false,
-      deprecation: {
-        message: i18n.translate('data.advancedSettings.search.includeFrozenTextDeprecation', {
-          defaultMessage: 'This setting is deprecated and will be removed in Kibana 9.1.',
-        }),
-        docLinksKey: 'kibanaSearchSettings',
-      },
-      category: ['search'],
-      schema: schema.boolean(),
-    },
+    ...getSearchMaxConcurrentShardUiSettings(docLinks.links.apis.multiSearch),
+    ...searchIncludeFrozenUiSettings,
     [UI_SETTINGS.HISTOGRAM_BAR_TARGET]: {
       name: i18n.translate('data.advancedSettings.histogram.barTargetTitle', {
         defaultMessage: 'Target buckets',
@@ -644,3 +604,43 @@ export function getUiSettings(
     },
   };
 }
+
+export const searchIncludeFrozenUiSettings: Record<string, UiSettingsParams> = {
+  [UI_SETTINGS.SEARCH_INCLUDE_FROZEN]: {
+    name: 'Search in frozen indices',
+    description: `Will include frozen indices in results if enabled. Searching through frozen indices
+        might increase the search time.`,
+    value: false,
+    deprecation: {
+      message: i18n.translate('data.advancedSettings.search.includeFrozenTextDeprecation', {
+        defaultMessage: 'This setting is deprecated and will be removed in Kibana 9.1.',
+      }),
+      docLinksKey: 'kibanaSearchSettings',
+    },
+    category: ['search'],
+    schema: schema.boolean(),
+  },
+};
+
+export const getSearchMaxConcurrentShardUiSettings = (
+  multiSearchDocLink: string
+): Record<string, UiSettingsParams> => ({
+  [UI_SETTINGS.COURIER_MAX_CONCURRENT_SHARD_REQUESTS]: {
+    name: i18n.translate('data.advancedSettings.courier.maxRequestsTitle', {
+      defaultMessage: 'Max Concurrent Shard Requests',
+    }),
+    value: 0,
+    type: 'number',
+    description: i18n.translate('data.advancedSettings.courier.maxRequestsText', {
+      defaultMessage:
+        'Controls the {maxRequestsLink} setting used for _msearch requests sent by Kibana. ' +
+        'Set to 0 to disable this config and use the Elasticsearch default.',
+      values: {
+        maxRequestsLink: `<a href=${multiSearchDocLink}
+            target="_blank" rel="noopener" >max_concurrent_shard_requests</a>`,
+      },
+    }),
+    category: ['search'],
+    schema: schema.number(),
+  },
+});

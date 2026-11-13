@@ -18,17 +18,14 @@ import { PROPOSALS_MANAGED_WORKFLOW_OWNER_ID } from './constants';
 import { registerFeatures } from './features';
 import { initializeManagedWorkflows } from './managed_workflows/initialize_managed_workflows';
 import { registerRoutes } from './routes/register_routes';
-import { ProposalsService } from './services/proposals_service';
+import type { ProposalsService } from './services/proposals_service';
 import { createProposalPrivilegesChecker } from './services/check_proposal_privileges';
 import type { ProposalPrivilegesChecker } from './services/check_proposal_privileges';
-import { createProposalUserResolver } from './services/resolve_proposal_user';
 import type { ResolveProposalUser } from './services/resolve_proposal_user';
-import { registerProposalAttachment } from './attachments';
-import { reviseProposalTool } from './agent_builder/tools/revise_proposal_tool';
-import { createProposalManagementSkill } from './agent_builder/skills/proposal_management';
+import { registerProposalsAgentBuilder } from './agent_builder/register_agent_builder';
+import { PROPOSALS_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 import { registerStepDefinitions } from './step_types';
-import { createProposalsStorageClient } from './storage/proposals_storage';
-import { createProposalTool } from './tools/create_proposal_tool';
+import { createProposalsRunServices } from './task_types/create_proposals_run_services';
 import type {
   ProposalsPluginSetup,
   ProposalsPluginStart,
@@ -67,37 +64,16 @@ export class ProposalsPlugin
 
     registerFeatures({ features });
 
-    const privileges = this.getProposalPrivilegesChecker(coreSetup);
-    agentBuilder.tools.register(
-      reviseProposalTool({
-        getProposalsService: () => this.requireProposalsService(),
-        privileges,
-      })
-    );
-    agentBuilder.skills.register(
-      createProposalManagementSkill((request) => privileges.canManage(request))
-    );
-
-    // The service only exists from start() onwards, but `format()` is never
-    // called before then, so it is resolved lazily rather than captured here.
-    registerProposalAttachment(agentBuilder, {
+    // What a task process needs to register what this Kibana registers: the plugin is enabled.
+    agentBuilder.taskProcess?.registerSettings(PROPOSALS_AGENT_BUILDER_SETTINGS_ID, () => ({}));
+    // The services only exist from start() onwards, but the tools and the attachment are never
+    // called before then, so they are resolved lazily rather than captured here.
+    registerProposalsAgentBuilder(agentBuilder, {
       getProposalsService: () => this.requireProposalsService(),
-      // Reads go through the internal user, so the formatter has to check the
-      // caller's privilege itself — same as every other proposal read surface.
+      getWorkflowsApi: () => this.requireWorkflowsApi(),
       privileges: this.getProposalPrivilegesChecker(coreSetup),
       logger: this.logger,
     });
-
-    // Lets an agent propose an action in its own conversation through the gate workflow.
-    // Registered in setup but run only after start, so the service is resolved per call.
-    agentBuilder.tools.register(
-      createProposalTool({
-        getProposalsService: () => this.requireProposalsService(),
-        getWorkflowsApi: () => this.requireWorkflowsApi(),
-        privileges: this.getProposalPrivilegesChecker(coreSetup),
-        logger: this.logger,
-      })
-    );
 
     // Declares ownership of this plugin's managed workflows. Without it the
     // startup orphan sweep treats every workflow we installed as owned by an
@@ -127,26 +103,17 @@ export class ProposalsPlugin
 
   start(coreStart: CoreStart, plugins: ProposalsStartDependencies): ProposalsPluginStart {
     this.spaces = plugins.spaces;
-    this.resolveUser = createProposalUserResolver({
+    const { resolveUser, getProposalsService } = createProposalsRunServices({
       userProfile: coreStart.userProfile,
       security: coreStart.security,
       logger: this.logger,
-    });
-
-    // Reads and writes go through the internal user; authorization is enforced
-    // at the API layer.
-    const storage = createProposalsStorageClient({
       esClient: coreStart.elasticsearch.client.asInternalUser,
-      logger: this.logger,
-    });
-
-    this.proposalsService = new ProposalsService({
-      storage,
-      logger: this.logger,
       getWorkflowsApi: () => this.requireWorkflowsApi(),
       getAttachmentsClient: (request) =>
         plugins.agentBuilder.attachments.getScopedClient({ request }),
     });
+    this.resolveUser = resolveUser;
+    this.proposalsService = getProposalsService();
 
     void initializeManagedWorkflows({
       workflowsExtensions: plugins.workflowsExtensions,

@@ -6,8 +6,13 @@
  */
 
 import { set } from '@kbn/safer-lodash-set';
+import { ExecutionStatus } from '@kbn/workflows';
+import type { estypes } from '@elastic/elasticsearch';
+import type { JsonObject, JsonValue } from '@kbn/utility-types';
 import type { StepHandlerContext } from '@kbn/workflows-extensions/server';
+import type { WorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
+import type { AlertTriageAlertsClient } from '../../alert_triage/alerts_client';
 import {
   ALERT_FETCH_LIMIT,
   ALERT_SEVERITIES,
@@ -22,24 +27,17 @@ import {
 import type { SweepPorts } from '../../alert_triage/plan_sweep';
 import type { TriageAlert } from '../../alert_triage/types';
 
-type KibanaApi = Pick<StepHandlerContext['contextManager'], 'callKibanaApi'>;
-
-// Security Solution's detection-engine routes. Hard-coded because alertzero cannot import the
-// security_solution constants.
-const SIGNALS_SEARCH_PATH = '/api/detection_engine/signals/search';
-const SIGNALS_TAGS_PATH = '/api/detection_engine/signals/tags';
-
 const WORKFLOW_RUN_TASK_TYPE = 'workflow:run';
 
 /** Statuses in which a batch holds or waits for work, as `coverage_worker.yaml` lists them. */
 const LIVE_STATUSES = [
-  'pending',
-  'queued',
-  'waiting',
-  'waiting_for_input',
-  'waiting_for_child',
-  'running',
-];
+  ExecutionStatus.PENDING,
+  ExecutionStatus.QUEUED,
+  ExecutionStatus.WAITING,
+  ExecutionStatus.WAITING_FOR_INPUT,
+  ExecutionStatus.WAITING_FOR_CHILD,
+  ExecutionStatus.RUNNING,
+] as const;
 
 const ALERT_FIELDS = {
   ruleId: 'kibana.alert.rule.uuid',
@@ -50,25 +48,23 @@ const ALERT_FIELDS = {
   timestamp: '@timestamp',
 } as const;
 
-const readField = (source: Record<string, unknown>, field: string): unknown => {
+const readField = (source: JsonObject, field: string): JsonValue | undefined => {
   if (field in source) return source[field];
   return field
     .split('.')
-    .reduce<unknown>(
+    .reduce<JsonValue | undefined>(
       (value, key) =>
-        typeof value === 'object' && value !== null
-          ? (value as Record<string, unknown>)[key]
+        typeof value === 'object' && value !== null && !Array.isArray(value)
+          ? value[key]
           : undefined,
       source
     );
 };
 
-interface AlertHit {
-  _id: string;
-  _source?: Record<string, unknown>;
-}
+type AlertHit = estypes.SearchHit<JsonObject>;
 
 const toTriageAlert = ({ _id, _source = {} }: AlertHit): TriageAlert => {
+  if (!_id) throw new Error('A Security alert search hit has no id');
   const tags = readField(_source, ALERT_FIELDS.tags);
   const timestamp = readField(_source, ALERT_FIELDS.timestamp);
   return {
@@ -83,19 +79,19 @@ const toTriageAlert = ({ _id, _source = {} }: AlertHit): TriageAlert => {
 };
 
 export const listLiveExecutionIds = async (
-  { callKibanaApi }: KibanaApi,
+  reader: WorkflowExecutionReader,
+  context: Pick<StepHandlerContext['contextManager'], 'getFakeRequest'>,
   batchWorkflowId: string,
   logger?: Pick<StepHandlerContext['logger'], 'warn'>
 ): Promise<Set<string> | undefined> => {
   try {
-    const statuses = LIVE_STATUSES.map((status) => `statuses=${status}`).join('&');
-    const { body } = await callKibanaApi<{ results?: Array<{ id: string }> }>({
-      method: 'GET',
-      path: `/api/workflows/workflow/${encodeURIComponent(
-        batchWorkflowId
-      )}/executions?${statuses}&size=100`,
+    const body = await reader.getWorkflowExecutions({
+      workflowId: batchWorkflowId,
+      statuses: [...LIVE_STATUSES],
+      size: 100,
+      request: context.getFakeRequest(),
     });
-    return Array.isArray(body?.results) ? new Set(body.results.map(({ id }) => id)) : undefined;
+    return new Set(body.results.map(({ id }) => id));
   } catch (error) {
     logger?.warn(
       `Could not list live executions of ${batchWorkflowId}: ${
@@ -129,23 +125,22 @@ export const readWorkflowRunLagMs = async (
 };
 
 /** Most urgent first: highest risk, then oldest. */
-const URGENCY_SORT = [{ [ALERT_FIELDS.riskScore]: 'desc' }, { [ALERT_FIELDS.timestamp]: 'asc' }];
+const URGENCY_SORT: estypes.Sort = [
+  { [ALERT_FIELDS.riskScore]: 'desc' },
+  { [ALERT_FIELDS.timestamp]: 'asc' },
+];
 
 const searchAlerts = async (
-  { callKibanaApi }: KibanaApi,
-  query: Record<string, unknown>
+  client: AlertTriageAlertsClient,
+  query: estypes.QueryDslQueryContainer
 ): Promise<TriageAlert[]> => {
-  const { body } = await callKibanaApi<{ hits?: { hits?: AlertHit[] } }>({
-    method: 'POST',
-    path: SIGNALS_SEARCH_PATH,
-    body: {
-      size: ALERT_FETCH_LIMIT,
-      _source: Object.values(ALERT_FIELDS),
-      sort: URGENCY_SORT,
-      query,
-    },
+  const body = await client.search({
+    size: ALERT_FETCH_LIMIT,
+    _source: Object.values(ALERT_FIELDS),
+    sort: URGENCY_SORT,
+    query,
   });
-  return (body.hits?.hits ?? []).map(toTriageAlert);
+  return body.hits.hits.map(toTriageAlert);
 };
 
 /**
@@ -154,33 +149,32 @@ const searchAlerts = async (
  * cannot fill the result and crowd quieter rules out of the plan.
  */
 const searchAlertsPerRule = async (
-  { callKibanaApi }: KibanaApi,
-  query: Record<string, unknown>
+  client: AlertTriageAlertsClient,
+  query: estypes.QueryDslQueryContainer
 ): Promise<TriageAlert[]> => {
-  const { body } = await callKibanaApi<{
-    aggregations?: { rules?: { buckets?: Array<{ top?: { hits?: { hits?: AlertHit[] } } }> } };
-  }>({
-    method: 'POST',
-    path: SIGNALS_SEARCH_PATH,
-    body: {
-      size: 0,
-      query,
-      aggs: {
-        rules: {
-          terms: {
-            field: ALERT_FIELDS.ruleId,
-            size: RULE_FETCH_LIMIT,
-            order: [{ most_urgent_risk: 'desc' }, { oldest: 'asc' }],
-          },
-          aggs: {
-            most_urgent_risk: { max: { field: ALERT_FIELDS.riskScore } },
-            oldest: { min: { field: ALERT_FIELDS.timestamp } },
-            top: {
-              top_hits: {
-                size: BATCH_ALERT_CAP,
-                _source: Object.values(ALERT_FIELDS),
-                sort: URGENCY_SORT,
-              },
+  const body = await client.search<
+    JsonObject,
+    {
+      rules?: { buckets?: Array<{ top?: { hits?: { hits?: AlertHit[] } } }> };
+    }
+  >({
+    size: 0,
+    query,
+    aggs: {
+      rules: {
+        terms: {
+          field: ALERT_FIELDS.ruleId,
+          size: RULE_FETCH_LIMIT,
+          order: [{ most_urgent_risk: 'desc' }, { oldest: 'asc' }],
+        },
+        aggs: {
+          most_urgent_risk: { max: { field: ALERT_FIELDS.riskScore } },
+          oldest: { min: { field: ALERT_FIELDS.timestamp } },
+          top: {
+            top_hits: {
+              size: BATCH_ALERT_CAP,
+              _source: Object.values(ALERT_FIELDS),
+              sort: URGENCY_SORT,
             },
           },
         },
@@ -230,13 +224,13 @@ const severityFilter = (minSeverity: AlertSeverity) =>
 
 /** Claimed alerts the settings now exclude, so a stale claim is released but not planned again. */
 const searchExcludedClaims = async (
-  api: KibanaApi,
+  client: AlertTriageAlertsClient,
   filters: TriageFilters
 ): Promise<Set<string>> => {
   const severity = severityFilter(filters.minSeverity);
   const excluded = excludedByFilters(filters);
   if (severity.length === 0 && excluded.length === 0) return new Set();
-  const alerts = await searchAlerts(api, {
+  const alerts = await searchAlerts(client, {
     bool: {
       filter: [
         { terms: { [ALERT_FIELDS.status]: [...OPEN_ALERT_STATUSES] } },
@@ -257,14 +251,14 @@ const searchExcludedClaims = async (
  * can be reclaimed. Claims the settings now exclude are flagged so they are released, not re-planned.
  */
 export const fetchTriageAlerts = async (
-  api: KibanaApi,
+  client: AlertTriageAlertsClient,
   analysisTagPrefix: string,
   windowStart: number,
   filters: TriageFilters
 ): Promise<TriageAlert[]> => {
   const openStatus = { terms: { [ALERT_FIELDS.status]: [...OPEN_ALERT_STATUSES] } };
   const [unclaimed, claimed, excludedClaimIds] = await Promise.all([
-    searchAlertsPerRule(api, {
+    searchAlertsPerRule(client, {
       bool: {
         filter: [
           openStatus,
@@ -274,10 +268,10 @@ export const fetchTriageAlerts = async (
         must_not: [...UNTRIAGED_MUST_NOT(analysisTagPrefix), ...excludedByFilters(filters)],
       },
     }),
-    searchAlerts(api, {
+    searchAlerts(client, {
       bool: { filter: [openStatus, { term: { [ALERT_FIELDS.tags]: TRIAGE_PENDING_TAG } }] },
     }),
-    searchExcludedClaims(api, filters),
+    searchExcludedClaims(client, filters),
   ]);
   return [
     ...unclaimed,
@@ -287,23 +281,16 @@ export const fetchTriageAlerts = async (
   ];
 };
 
-/** The tags route returns Elasticsearch's update-by-query response, which can be a 200 with gaps. */
-interface UpdateByQueryResult {
-  timed_out?: boolean;
-  failures?: unknown[];
-}
-
 /**
  * Throws unless the whole update was applied: a claim or release that was only partly stored would
  * otherwise be reported as done, and the next sweep could plan the same alerts again.
  */
 export const tagAlerts =
-  ({ callKibanaApi }: KibanaApi): SweepPorts['tagAlerts'] =>
+  (client: AlertTriageAlertsClient): SweepPorts['tagAlerts'] =>
   async ({ alertIds, add, remove }) => {
-    const { body } = await callKibanaApi<UpdateByQueryResult>({
-      method: 'POST',
-      path: SIGNALS_TAGS_PATH,
-      body: { ids: alertIds, tags: { tags_to_add: add, tags_to_remove: remove } },
+    const body = await client.updateTags({
+      ids: [...alertIds],
+      tags: { tags_to_add: [...add], tags_to_remove: [...remove] },
     });
     const failureCount = body.failures?.length ?? 0;
     if (body.timed_out === true || failureCount > 0) {
@@ -317,26 +304,22 @@ export const tagAlerts =
 
 /** One count query, no writes: open alerts older than the look-back that were never triaged. */
 export const countAgedOutAlerts = async (
-  { callKibanaApi }: KibanaApi,
+  client: AlertTriageAlertsClient,
   analysisTagPrefix: string,
   windowStart: number,
   filters: TriageFilters
 ): Promise<number> => {
-  const { body } = await callKibanaApi<{ hits?: { total?: { value?: number } | number } }>({
-    method: 'POST',
-    path: SIGNALS_SEARCH_PATH,
-    body: {
-      size: 0,
-      track_total_hits: true,
-      query: {
-        bool: {
-          filter: [
-            { terms: { [ALERT_FIELDS.status]: [...OPEN_ALERT_STATUSES] } },
-            { range: { [ALERT_FIELDS.timestamp]: { lt: new Date(windowStart).toISOString() } } },
-            ...severityFilter(filters.minSeverity),
-          ],
-          must_not: [...UNTRIAGED_MUST_NOT(analysisTagPrefix), ...excludedByFilters(filters)],
-        },
+  const body = await client.search({
+    size: 0,
+    track_total_hits: true,
+    query: {
+      bool: {
+        filter: [
+          { terms: { [ALERT_FIELDS.status]: [...OPEN_ALERT_STATUSES] } },
+          { range: { [ALERT_FIELDS.timestamp]: { lt: new Date(windowStart).toISOString() } } },
+          ...severityFilter(filters.minSeverity),
+        ],
+        must_not: [...UNTRIAGED_MUST_NOT(analysisTagPrefix), ...excludedByFilters(filters)],
       },
     },
   });
@@ -347,7 +330,7 @@ export const countAgedOutAlerts = async (
 };
 
 export interface LoadedAlerts {
-  alerts: Array<Record<string, unknown>>;
+  alerts: JsonObject[];
   missingAlertIds: string[];
 }
 
@@ -355,8 +338,8 @@ export interface LoadedAlerts {
  * The alerts index stores `kibana.*` as flat dotted keys next to nested ECS objects. Alert
  * Analysis requires the nested `kibana.alert.rule.uuid` shape, so dotted keys are expanded.
  */
-const expandDottedKeys = (source: Record<string, unknown>): Record<string, unknown> =>
-  Object.entries(source).reduce<Record<string, unknown>>((expanded, [key, value]) => {
+const expandDottedKeys = (source: JsonObject): JsonObject =>
+  Object.entries(source).reduce<JsonObject>((expanded, [key, value]) => {
     if (key.includes('.')) {
       set(expanded, key, value);
     } else {
@@ -367,24 +350,20 @@ const expandDottedKeys = (source: Record<string, unknown>): Record<string, unkno
 
 /** Loads a batch's alert documents by id, as `{ _id, _index, ...source }` for Alert Analysis. */
 export const loadAlertsByIds = async (
-  { callKibanaApi }: KibanaApi,
+  client: AlertTriageAlertsClient,
   alertIds: readonly string[]
 ): Promise<LoadedAlerts> => {
-  const { body } = await callKibanaApi<{
-    hits?: { hits?: Array<AlertHit & { _index?: string }> };
-  }>({
-    method: 'POST',
-    path: SIGNALS_SEARCH_PATH,
-    body: { size: alertIds.length, query: { ids: { values: alertIds } } },
+  const body = await client.search({
+    size: alertIds.length,
+    query: { ids: { values: [...alertIds] } },
   });
-  const hits = body.hits?.hits ?? [];
+  const hits = body.hits.hits;
   const found = new Set(hits.map(({ _id }) => _id));
   return {
-    alerts: hits.map(({ _id, _index, _source = {} }) => ({
-      ...expandDottedKeys(_source),
-      _id,
-      _index,
-    })),
+    alerts: hits.map(({ _id, _index, _source = {} }) => {
+      if (!_id) throw new Error('A Security alert search hit has no id');
+      return { ...expandDottedKeys(_source), _id, _index };
+    }),
     missingAlertIds: alertIds.filter((id) => !found.has(id)),
   };
 };

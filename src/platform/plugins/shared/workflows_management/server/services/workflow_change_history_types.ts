@@ -23,6 +23,7 @@ import type {
 
 export interface WorkflowChangeHistoryServiceInitializeParams {
   elasticsearchClient: ElasticsearchClient;
+  install?: boolean;
   authService: CoreAuthenticationService;
   userProfileService: UserProfileServiceStart;
 }

@@ -5,51 +5,63 @@
  * 2.0.
  */
 
-import { filter, firstValueFrom } from 'rxjs';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { CoreAuditService } from '@kbn/core-security-server';
+import { defer, filter, firstValueFrom } from 'rxjs';
 import { SavedObjectsClient } from '@kbn/core/server';
 import type { RuleTypeModuleDeps } from '@kbn/alerting-plugin/server/task_types/rule_task_type';
-import { ML_JOB_SAVED_OBJECT_TYPE } from '@kbn/ml-common-types/saved_objects';
-import type { CompatibleModule, MlFeatures } from '../../common/constants/app';
+import { createWorkflowSpacesServices } from '@kbn/workflows-extensions/server/spaces_runtime_contribution';
+import { getSpaceSavedObjectType } from '@kbn/spaces-plugin/server/saved_objects/saved_objects_service';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
+import type { SpacesTaskProcessSettings } from '@kbn/spaces-plugin/server/task_process_settings';
+import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import { MlLicense } from '../../common/license';
 import { createMlRunServices } from '../ml_run_services';
 import { getMlSavedObjectTypes } from '../saved_objects';
+import { createSnapshotModuleFiles } from '../models/data_recognizer/module_files';
+import { createInProcessMlCapabilitiesResolver } from '../lib/capabilities/resolve_ml_capabilities_in_process';
+import { createMlTaskAuthorization } from './create_ml_task_authorization';
+import { createMlTaskSpaceCapabilities } from './create_ml_task_space_capabilities';
+import type { MlWorkflowSettings } from './workflow_services_contribution';
 
 /** What the plugin registers with `registerTaskProcessSettings('ml', ...)`. */
-export interface MlTaskProcessSettings {
-  cpsEnabled: boolean;
-  /** The features this Kibana has enabled (`xpack.ml.ad`, `dfa` and `nlp`). */
-  enabledFeatures?: MlFeatures;
-  /** `xpack.ml.compatibleModuleType`. */
-  compatibleModuleType?: CompatibleModule | null;
+export interface MlTaskProcessSettings extends MlWorkflowSettings {
+  spaces?: SpacesTaskProcessSettings;
 }
 
 export const ML_TASK_PROCESS_SETTINGS_ID = 'ml';
 
 /** The saved object types the ML services read, for the `savedObjectTypes` option of a module. */
-export const getMlTaskProcessSavedObjectTypes = () =>
-  getMlSavedObjectTypes().filter(({ name }) => name === ML_JOB_SAVED_OBJECT_TYPE);
-
-// What a process falls back to when it is not sent the features (a remote process without settings).
-const DEFAULT_ENABLED_FEATURES: MlFeatures = Object.freeze({ ad: true, dfa: true, nlp: true });
-
-const kibanaOnly = (what: string) => () => {
-  throw new Error(`${what} is only available in Kibana, not in a task process`);
-};
+export const getMlTaskProcessSavedObjectTypes = () => [
+  ...getMlSavedObjectTypes(),
+  getSpaceSavedObjectType(),
+];
 
 /**
  * The ML services a rule type of a task process uses, built from what the host gives the module. They
- * are what Kibana has, for rules, which ask with a fake request: whatever acts for a user (the
- * capabilities, spaces and cloud of a request) throws when used. Nothing is read from the host
- * before a rule runs, so a module can build its rule type without one.
+ * use the native authorization, Spaces and captured Cloud and module services of Kibana.
  */
 export const createMlTaskProcessServices = (
-  deps: Pick<RuleTypeModuleDeps, 'host' | 'runtime' | 'fieldFormats' | 'isServerless' | 'settings'>
+  deps: Pick<RuleTypeModuleDeps, 'host' | 'fieldFormats' | 'isServerless' | 'settings'> & {
+    runtime: Pick<RuleTypeModuleDeps['runtime'], 'uiSettings' | 'dataViews'>;
+  }
 ) => {
   const mlLicense = new MlLicense();
   const settings = deps.settings[ML_TASK_PROCESS_SETTINGS_ID] as MlTaskProcessSettings | undefined;
+  if (!settings) throw new Error('ML rule execution requires its dispatch settings');
   let licensed: Promise<void> | undefined;
+  let spaces: SpacesPluginStart | undefined;
+  const authorization = createMlTaskAuthorization(deps.host);
+  const { cloud } = settings;
+  const getSpacesSettings = () => {
+    if (!settings.spaces) throw new Error('ML rule execution requires its Spaces settings');
+    return settings.spaces;
+  };
+  const getSpaces = async () => {
+    spaces ??= createWorkflowSpacesServices({
+      ...deps.host,
+      settings: { ...deps.settings, [SPACES_TASK_PROCESS_SETTINGS_ID]: getSpacesSettings() },
+    });
+    return spaces;
+  };
 
   const services = createMlRunServices({
     mlLicense,
@@ -59,18 +71,29 @@ export const createMlTaskProcessServices = (
     getUiSettings: () => deps.runtime.uiSettings,
     getFieldsFormat: () => deps.fieldFormats,
     getDataViews: () => deps.runtime.dataViews,
-    getAuditService: () => deps.host.security.audit as CoreAuditService,
+    getAuditService: () => deps.host.security.audit,
     // A task process has no startup to wait for: the job saved objects are Kibana's to initialize.
     isMlReady: () => Promise.resolve(),
-    compatibleModuleType: settings?.compatibleModuleType ?? null,
-    enabledFeatures: settings?.enabledFeatures ?? DEFAULT_ENABLED_FEATURES,
-    serverless: { isServerless: deps.isServerless, cpsEnabled: settings?.cpsEnabled ?? false },
-    // A process runs for a space with the user of a fake request; the spaces plugin is Kibana's.
-    getSpaces: kibanaOnly('The spaces plugin'),
-    cloud: new Proxy({} as CloudSetup, {
-      get: (_, property) => kibanaOnly(`The cloud plugin (${String(property)})`)(),
+    compatibleModuleType: settings.compatibleModuleType,
+    enabledFeatures: settings.enabledFeatures,
+    serverless: { isServerless: deps.isServerless, cpsEnabled: settings.cpsEnabled },
+    ...(settings.spacesEnabled ? { getSpaces } : {}),
+    cloud: { cloudId: cloud.cloudId, baseUrl: cloud.baseUrl, isInTrial: () => cloud.isInTrial },
+    authorization,
+    resolveMlCapabilities: createInProcessMlCapabilitiesResolver({
+      authorization,
+      license$: defer(() => {
+        if (!deps.host.licensing)
+          throw new Error('ML rule execution requires the native licensing service');
+        return deps.host.licensing.license$;
+      }),
+      enabledFeatures: settings.enabledFeatures,
+      isServerless: deps.isServerless,
+      spaceCapabilities: settings.spacesEnabled
+        ? createMlTaskSpaceCapabilities(deps.host, getSpaces, getSpacesSettings)
+        : undefined,
     }),
-    resolveMlCapabilities: kibanaOnly('Resolving the capabilities of a request'),
+    moduleFiles: createSnapshotModuleFiles(settings.moduleFiles),
   });
 
   /** Resolves once the license is known, which the license checks of the services need. */

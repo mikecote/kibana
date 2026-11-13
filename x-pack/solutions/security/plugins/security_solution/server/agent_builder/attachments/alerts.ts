@@ -17,7 +17,7 @@ import {
   SECURITY_ATTACK_DISCOVERY_SEARCH_TOOL_ID,
   SECURITY_LABS_SEARCH_TOOL_ID,
 } from '../tools';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityAttachmentsServices } from './services';
 import { getAlertsById } from '../tools/get_alerts_by_id';
 import { securityAttachmentDataSchema } from './security_attachment_data_schema';
 
@@ -35,7 +35,7 @@ const REPRESENTATION_CACHE_MAX_SIZE = 500;
 const representationCache = new Map<string, string>();
 
 export const createBulkAlertsAttachmentType = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAttachmentsServices,
   logger: Logger
 ): AttachmentTypeDefinition => ({
   id: SecurityAgentBuilderAttachments.alerts,

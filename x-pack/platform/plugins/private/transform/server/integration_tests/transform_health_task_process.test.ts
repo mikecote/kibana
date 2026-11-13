@@ -64,8 +64,8 @@ describe('the transform_health rule type served from a bundle', () => {
 
   it('alerts for a transform that is not started, as Kibana does', async () => {
     const forkedId = 'transform-alerting';
-    const { fallback, result } = await harness.run(forkedId, RULE_TYPE);
-    expect(fallback).not.toHaveBeenCalled();
+    const { onDispatchFailure, result } = await harness.run(forkedId, RULE_TYPE);
+    expect(onDispatchFailure).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty('taskRunError');
     expect(await harness.getAlertDocs(ALERTS_INDEX, forkedId)).toHaveLength(1);
 

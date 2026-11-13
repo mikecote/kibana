@@ -27,7 +27,7 @@ export type {
   WorkflowsExtensionsServerPluginStartDeps,
 } from './types';
 
-export type { EventChainContext } from './event_chain_context';
+export type { EventChainContext, EventChainContextStore } from './event_chain_context';
 
 export {
   EVENT_CHAIN_DEPTH_HEADER,
@@ -37,6 +37,8 @@ export {
   WORKFLOW_EVENT_CHAIN_CONTEXT,
   X_ELASTIC_INTERNAL_ORIGIN_REQUEST,
   getEmitterWorkflowExecutionIdFromRequest,
+  createEventChainContextStore,
+  defaultEventChainContextStore,
   getEventChainContext,
   getEventChainDepthFromHeaders,
   getOutboundEventChainHeaders,
@@ -79,3 +81,19 @@ export { WORKFLOW_EXECUTION_FAILED_TRIGGER_ID } from './triggers';
 export type { WorkflowExecutionFailedEvent } from './triggers';
 
 export { createWorkflowTriggerForwarder } from './create_workflow_trigger_forwarder';
+export type { WorkflowTriggerEmitterSource } from './create_workflow_trigger_forwarder';
+
+export {
+  createServerStepRegistry,
+  WORKFLOW_STEPS_CONTRIBUTIONS,
+} from './create_server_step_registry';
+export type {
+  WorkflowStepRunCheck,
+  WorkflowStepsContribution,
+  WorkflowStepsContributionContext,
+  WorkflowStepsContributionServices,
+  WorkflowStepsRegistry,
+  WorkflowStepsRegistryView,
+} from './create_server_step_registry';
+
+export { createPluginScopedManagedWorkflowsClient } from './create_plugin_scoped_managed_workflows_client';

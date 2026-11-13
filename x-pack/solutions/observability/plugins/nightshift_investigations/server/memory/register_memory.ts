@@ -182,8 +182,8 @@ export const runMemoryOptimize = async ({
   signal?: AbortSignal;
   getAgentBuilder: () => AgentBuilderPluginStart | undefined;
   getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
   logger: Logger;
   requestedConnectorId?: string;
   roundConnectorId?: string;

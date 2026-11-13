@@ -14,6 +14,7 @@ import type { RuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/
 import { startRuleProcessHarness } from '@kbn/alerting-plugin/server/task_types/testing/rule_process_harness';
 import { ML_ALERT_TYPES } from '../../common/constants/alerts';
 import { taskType } from '../task_types/anomaly_detection_alert.task';
+import { getMlRuleTestSettings } from './fixtures/ml_rule_test_settings';
 
 const RULE_TYPE = ML_ALERT_TYPES.ANOMALY_DETECTION;
 const ALERTS_INDEX = '.alerts-*';
@@ -41,7 +42,7 @@ describe('the anomaly detection alert rule type served from a bundle', () => {
     harness = await startRuleProcessHarness({
       rules: [{ taskType, bundle: 'ml__anomaly_detection_alert' }],
       // What Kibana sends for the ML plugin.
-      settings: { ml: { cpsEnabled: false } },
+      settings: { ml: await getMlRuleTestSettings() },
     });
     await harness.es.ml.putJob({
       job_id: JOB_ID,

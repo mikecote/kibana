@@ -5,6 +5,7 @@
   },
   "include": ["common/**/*", "public/**/*", "server/**/*", "test/scout/**/*"],
   "kbn_references": [
+    "@kbn/core-ui-settings-common",
     "@kbn/core",
     "@kbn/app-header",
     "@kbn/management-plugin",

@@ -6,6 +6,9 @@
   "visibility": "shared",
   "plugin": {
     "id": "contextEngineAgentBuilder",
+    "taskTypeContributions": {
+      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
+    },
     "browser": true,
     "server": true,
     "requiredPlugins": ["agentBuilder", "contextEngine", "workflowsManagement", "security"],

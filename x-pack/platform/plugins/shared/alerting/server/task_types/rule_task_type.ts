@@ -9,6 +9,8 @@ import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { UiSettingsParams } from '@kbn/core-ui-settings-common';
 import { stateSchemaByVersion } from '@kbn/alerting-state-types';
 import { kibanaPackageJson } from '@kbn/repo-info';
+import { TASK_SCHEDULING_CONTRIBUTIONS_KEY } from '@kbn/task-manager-plugin/server/task_scheduling_contribution';
+import { SPACES_TASK_PROCESS_SETTINGS_ID } from '@kbn/spaces-plugin/server/task_process_settings';
 import { createSecurityTaskPlugin } from '@kbn/security-plugin/server/task_plugin';
 import { CONNECTOR_TYPES_PARITY_KIND } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import { events as actionsEventTypes } from '@kbn/actions-plugin/server/lib/event_based_telemetry';
@@ -23,7 +25,7 @@ import {
 import { TaskTypeGroup } from '@kbn/task-manager-plugin/server/task';
 import type { CancellableTask } from '@kbn/task-manager-plugin/server/task';
 import { createStandaloneEventLog } from '@kbn/event-log-plugin/server/standalone_event_log';
-import { UrlService } from '@kbn/share-plugin/common/url_service';
+import { createServerUrlService, createUrlServiceSavedObjectType } from '@kbn/share-plugin/server';
 import type { LocatorClient, LocatorDefinition } from '@kbn/share-plugin/common/url_service';
 import {
   EVENT_LOG_ACTIONS as ACTIONS_EVENT_LOG_ACTIONS,
@@ -31,6 +33,7 @@ import {
 } from '@kbn/actions-plugin/server/constants/event_log';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { FieldFormatsStart } from '@kbn/field-formats-plugin/server';
+import { RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID } from './rule_data_views_settings';
 import type { ConnectorAdapter } from '../connector_adapters/types';
 import type { AlertingConfig } from '../config';
 import { EVENT_LOG_ACTIONS, EVENT_LOG_PROVIDER } from '../constants/event_log';
@@ -39,7 +42,15 @@ import type { UntypedNormalizedRuleType } from '../rule_type_registry';
 import { RULE_SAVED_OBJECT_TYPE } from '../saved_objects';
 import { TaskRunner } from '../task_runner/task_runner';
 import type { RuleRunRuntime } from '../task_runner/types';
-import type { UntypedRuleType } from '../types';
+import type {
+  RuleType,
+  UntypedRuleType,
+  RuleTypeParams,
+  RuleTypeState,
+  AlertInstanceState,
+  AlertInstanceContext,
+  RuleAlertData,
+} from '../types';
 import { ruleTaskParamsSchema } from './rule_task_params_schema';
 import { getRuleRunDeclarations } from './rule_run_saved_object_types';
 import { getRuleRunUiSettings } from './rule_run_ui_settings';
@@ -48,6 +59,7 @@ import { CONNECTOR_ADAPTERS_PARITY_KIND } from './parity_kinds';
 import { ALERTING_RUN_SETTINGS_ID } from './rule_run_settings';
 import { observeRemoteRuleRun } from './remote_run_metrics';
 import type { RuleRunContribution } from './rule_run_contribution';
+import { extendRuleTaskRequirements } from './extend_rule_task_requirements';
 
 export { ruleTaskParamsSchema };
 
@@ -86,6 +98,8 @@ export interface RuleTaskTypeOptions {
   connectorAdapters?: ConnectorAdapter[];
   /** A task process only: saved object types the executor reads, besides what every rule run reads. */
   savedObjectTypes?: SavedObjectsType[];
+  createSavedObjectTypes?: TaskTypeModule['createSavedObjectTypes'];
+  createDataStreams?: TaskTypeModule['createDataStreams'];
   /** A task process only: encrypted saved objects the executor reads, besides what every rule run reads. */
   encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];
   /** A task process only: event log providers the executor writes with, besides alerting's own. */
@@ -97,6 +111,8 @@ export interface RuleTaskTypeOptions {
   analyticsEventTypes?: TaskTypeModule['analyticsEventTypes'];
   /** A task process only: ids of plugins whose config the executor reads, besides alerting and actions. */
   settings?: string[];
+  /** Settings from optional plugins, captured when those plugins are enabled. */
+  optionalSettings?: string[];
   /** A task process only: ui settings defaults the executor reads, besides those every rule run reads. */
   uiSettings?: Array<Record<string, UiSettingsParams>>;
   /**
@@ -111,9 +127,8 @@ export interface RuleTaskTypeOptions {
    */
   schedulableTaskTypes?: RegExp[];
   /**
-   * A task process only: says why this process cannot serve this rule, so Kibana runs it instead
-   * (`DeclinedRunError`, before the run has side effects). It reads the settings Kibana sent and the
-   * rule's parameters; a string is the reason, nothing means the process serves the rule.
+   * Validates process execution prerequisites before side effects; a returned reason fails the run.
+   * It reads the dispatch settings and rule parameters.
    */
   declineRun?: (info: {
     settings: Record<string, unknown>;
@@ -137,42 +152,22 @@ interface PreparedRuleRun {
   unsupportedActionTypes?: (ids: string[]) => string[];
   connectorTypeIds?: () => string[];
   connectorAdapterIds?: () => string[];
+  runWithServices?: <T>(run: () => Promise<T>) => Promise<T>;
 }
 
 const createUrlService = (
-  host: Pick<TaskHost, 'server'>,
+  config: Parameters<typeof createServerUrlService>[0],
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   locators: Array<LocatorDefinition<any>> = [],
   registerLocators?: (locators: LocatorClient) => void
 ) => {
-  const urlService = new UrlService({
-    baseUrl: host.server.publicBaseUrl ?? '',
-    version: host.server.version,
-    navigate: async () => {
-      throw new Error('Locator .navigate() is not supported in a task process.');
-    },
-    getUrl: async () => {
-      throw new Error('Locator .getUrl() is not supported in a task process.');
-    },
-    // Built when the service is, but only failing when a short URL is used.
-    shortUrls: () => ({
-      get: () =>
-        new Proxy(
-          {},
-          {
-            get: () => () => {
-              throw new Error('Short URLs are not supported in a task process.');
-            },
-          }
-        ),
-    }),
-  } as never);
+  const urlService = createServerUrlService(config);
   locators.forEach((locator) => urlService.locators.create(locator));
   registerLocators?.(urlService.locators);
   return urlService;
 };
 
-type HostForRuleType = Pick<TaskHost, 'logger' | 'server' | 'settings'>;
+type HostForRuleType = Pick<TaskHost, 'logger' | 'server' | 'settings' | 'http' | 'onRunEnd'>;
 
 /** A rule task type module, which also says which rule type it builds. */
 export type RuleTaskTypeModule = TaskTypeModule & {
@@ -188,21 +183,76 @@ export type RuleTaskTypeModule = TaskTypeModule & {
  */
 export function createRuleTaskType(
   source: RuleTypeSource,
+  options?: RuleTaskTypeOptions,
+  contributions?: RuleRunContribution[]
+): RuleTaskTypeModule;
+export function createRuleTaskType<
+  Params extends RuleTypeParams,
+  ExtractedParams extends RuleTypeParams,
+  State extends RuleTypeState,
+  InstanceState extends AlertInstanceState,
+  InstanceContext extends AlertInstanceContext,
+  ActionGroupIds extends string,
+  RecoveryActionGroupId extends string,
+  AlertData extends RuleAlertData
+>(
+  source: {
+    ruleTypeId: string;
+    getRuleType: (
+      deps: RuleTypeModuleDeps
+    ) => RuleType<
+      Params,
+      ExtractedParams,
+      State,
+      InstanceState,
+      InstanceContext,
+      ActionGroupIds,
+      RecoveryActionGroupId,
+      AlertData
+    >;
+  },
+  options?: RuleTaskTypeOptions,
+  contributions?: RuleRunContribution[]
+): RuleTaskTypeModule;
+export function createRuleTaskType(
+  source: InternalRuleTypeSource,
   options: RuleTaskTypeOptions = {},
-  /** A task process: what other plugins add to a rule run, such as connector types of system actions. */
   contributions: RuleRunContribution[] = []
 ): RuleTaskTypeModule {
+  return createRuleTaskTypeInternal(source, options, contributions);
+}
+
+type InternalRuleTypeSource =
+  | { ruleType: UntypedNormalizedRuleType }
+  | { ruleTypeId: string; getRuleType: (deps: RuleTypeModuleDeps) => object };
+
+const createRuleTaskTypeInternal = (
+  source: InternalRuleTypeSource,
+  options: RuleTaskTypeOptions,
+  contributions: RuleRunContribution[]
+): RuleTaskTypeModule => {
   const kibanaRuleType = 'ruleType' in source ? source.ruleType : undefined;
   const id = kibanaRuleType ? kibanaRuleType.id : (source as { ruleTypeId: string }).ruleTypeId;
   const cost = RULE_TYPES_WITH_CUSTOM_COST[id];
 
   let ruleType: UntypedNormalizedRuleType | undefined = kibanaRuleType;
-  let urlService: UrlService | undefined;
+  let urlService: ReturnType<typeof createServerUrlService> | undefined;
   const buildRuleType = (
     host: HostForRuleType,
     services: Partial<Pick<RuleTypeModuleDeps, 'runtime' | 'fieldFormats'>> = {}
   ) => {
-    urlService ??= createUrlService(host, options.locators, options.registerLocators);
+    urlService ??= createUrlService(
+      {
+        baseUrl: host.server.publicBaseUrl || host.http.basePath.serverBasePath,
+        version: host.server.version,
+        onBackgroundTask: (task) => {
+          if (!host.onRunEnd) throw new Error('Native short URLs require run completion tracking');
+          host.onRunEnd(() => task);
+        },
+      },
+      options.locators,
+      options.registerLocators
+    );
     ruleType ??= normalizeRuleType(
       (source as { getRuleType: (deps: RuleTypeModuleDeps) => UntypedRuleType }).getRuleType({
         logger: host.logger,
@@ -229,7 +279,19 @@ export function createRuleTaskType(
       ? options.getRuntime().then((runtime): PreparedRuleRun => ({ runtime }))
       : import('./standalone/create_standalone_rule_run_runtime').then(
           ({ createStandaloneRuleRunRuntime }) => {
-            urlService ??= createUrlService(host, options.locators, options.registerLocators);
+            urlService ??= createUrlService(
+              {
+                baseUrl: host.server.publicBaseUrl || host.http.basePath.serverBasePath,
+                version: host.server.version,
+                onBackgroundTask: (task) => {
+                  if (!host.onRunEnd)
+                    throw new Error('Native short URLs require run completion tracking');
+                  host.onRunEnd(() => task);
+                },
+              },
+              options.locators,
+              options.registerLocators
+            );
             // The runtime first, so the factory of the rule type can build its services from it.
             const standalone = createStandaloneRuleRunRuntime({
               host,
@@ -251,15 +313,12 @@ export function createRuleTaskType(
               unsupportedActionTypes: standalone.getUnsupportedActionTypes,
               connectorTypeIds: standalone.getRegisteredConnectorTypeIds,
               connectorAdapterIds: standalone.getRegisteredConnectorAdapterIds,
+              runWithServices: standalone.runWithServices,
             };
           }
         ));
 
-  /**
-   * A rule that uses a connector type or connector adapter this process does not know cannot be
-   * served here; saying so before anything is written lets Kibana run the rule instead. This is the
-   * check of one rule; `parity` below is the check, once per process, of everything Kibana has.
-   */
+  /** Rejects unsupported per-rule capabilities before writes, in addition to process-wide parity. */
   const declineIfUnsupported = async (
     { runtime, unsupportedActionTypes }: PreparedRuleRun,
     context: RunContext,
@@ -306,6 +365,7 @@ export function createRuleTaskType(
 
   const taskType = defineTaskType({
     type: `alerting:${id}`,
+    cancelGracePeriodMs: 5000,
     ...(kibanaRuleType
       ? {
           title: kibanaRuleType.name,
@@ -315,6 +375,8 @@ export function createRuleTaskType(
         }
       : {}),
     stateSchemaByVersion,
+    createSavedObjectTypes: options.createSavedObjectTypes,
+    createDataStreams: options.createDataStreams,
     // When a task process serves the run, Kibana still counts it for the `node_rules` usage collector.
     ...(kibanaRuleType && options.getRuntime
       ? {
@@ -365,6 +427,13 @@ export function createRuleTaskType(
               ...(options.settings ?? []),
             ]),
           ],
+          optionalSettings: [
+            ...new Set([
+              RULE_DATA_VIEWS_CAPABILITIES_SETTINGS_ID,
+              SPACES_TASK_PROCESS_SETTINGS_ID,
+              ...(options.optionalSettings ?? []),
+            ]),
+          ],
           // Kibana sends the connector types and adapters it registered; the process must have
           // registered the same, or it declines the run: a rule would otherwise behave differently.
           parity: [
@@ -394,7 +463,11 @@ export function createRuleTaskType(
         });
       });
       return {
-        run: async () => (await runner).run(),
+        run: async () => {
+          const services = await prepare(host);
+          const run = async () => (await runner).run();
+          return services.runWithServices ? services.runWithServices(run) : run();
+        },
         cancel: async () => (await runner).cancel(),
       };
     },
@@ -409,6 +482,13 @@ export function createRuleTaskType(
         enumerable: true,
         get: () => [
           ...getDeclarations().savedObjectTypes,
+          createUrlServiceSavedObjectType(
+            createUrlService(
+              { baseUrl: '', version: kibanaPackageJson.version },
+              options.locators,
+              options.registerLocators
+            )
+          ),
           ...(options.savedObjectTypes ?? []),
           ...contributions.flatMap((contribution) => contribution.declares?.savedObjectTypes ?? []),
         ],
@@ -454,15 +534,37 @@ export function createRuleTaskType(
     Object.assign(taskType, {
       // A task process hands over what plugins contribute; the module is built again with it.
       contributions: {
-        keys: [RULE_RUN_CONTRIBUTIONS],
-        apply: (contributed: Record<string, unknown[]>) =>
-          createRuleTaskType(
+        keys: [
+          ...new Set([
+            RULE_RUN_CONTRIBUTIONS,
+            TASK_SCHEDULING_CONTRIBUTIONS_KEY,
+            ...contributions.flatMap(
+              (contribution) =>
+                contribution.executionServices?.requirements.contributions?.keys ?? []
+            ),
+          ]),
+        ],
+        apply: (contributed: Record<string, unknown[]>, settings: TaskHost['settings'] = {}) => {
+          const ruleContributions = (contributed[RULE_RUN_CONTRIBUTIONS] ??
+            []) as RuleRunContribution[];
+          let module: TaskTypeModule = createRuleTaskTypeInternal(
             source,
             options,
-            (contributed[RULE_RUN_CONTRIBUTIONS] ?? []) as RuleRunContribution[]
-          ),
+            ruleContributions
+          );
+          for (const contribution of ruleContributions) {
+            const provider = contribution.executionServices;
+            if (!provider?.isEnabled(settings)) continue;
+            const { requirements } = provider;
+            module = extendRuleTaskRequirements(
+              module,
+              requirements.contributions?.apply?.(contributed, settings) ?? requirements
+            );
+          }
+          return module;
+        },
       },
     });
   }
   return Object.assign(taskType, { buildRuleType });
-}
+};

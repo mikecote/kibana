@@ -6,6 +6,7 @@
   "visibility": "shared",
   "description": "The Controls Plugin contains embeddable components intended to create a simple query interface for end users, and a powerful editing suite that allows dashboard authors to build controls",
   "plugin": {
+    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
     "id": "controls",
     "browser": true,
     "server": true,

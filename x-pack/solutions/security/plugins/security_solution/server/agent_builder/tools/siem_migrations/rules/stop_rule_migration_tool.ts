@@ -12,8 +12,8 @@ import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
 import { SIEM_RULE_MIGRATION_STOP_PATH } from '../../../../../common/siem_migrations/constants';
 import type { StopRuleMigrationResponse } from '../../../../../common/siem_migrations/model/api/rules/rule_migration.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { SecurityAccessToolServices } from '../../access_services';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service';
 import { createSelfClient, type SelfClient } from '../../../../common/self_client/self_client';
 import { createSiemMigrationAvailability } from '../common/availability';
 import { hasRuleMigrationPrivileges } from '../common/privileges';
@@ -32,9 +32,9 @@ const buildPath = (migrationId: string): string =>
   SIEM_RULE_MIGRATION_STOP_PATH.replace('{migration_id}', encodeURIComponent(migrationId));
 
 export const stopRuleMigrationTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   logger: Logger,
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): BuiltinToolDefinition<typeof schema> => {
   const callSelfClient: SelfClient = createSelfClient({ core, logger });
 

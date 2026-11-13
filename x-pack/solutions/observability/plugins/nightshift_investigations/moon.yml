@@ -17,6 +17,7 @@ project:
   owner: '@elastic/nightshift'
   sourceRoot: x-pack/solutions/observability/plugins/nightshift_investigations
 dependsOn:
+  - '@kbn/task-manager-plugin'
   - '@kbn/share-plugin'
   - '@kbn/deeplinks-observability'
   - '@kbn/nightshift-decision-trees'
@@ -69,6 +70,7 @@ dependsOn:
   - '@kbn/core-security-common'
   - '@kbn/eval-kql'
   - '@kbn/rrule'
+  - '@kbn/repo-info'
 tags:
   - plugin
   - prod

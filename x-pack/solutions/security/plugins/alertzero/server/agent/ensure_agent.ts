@@ -10,7 +10,7 @@ import type { Logger } from '@kbn/logging';
 import { createAgentRequest, ALERTZERO_THIN_AGENT_ID } from './agent';
 
 interface EnsureAgentParams {
-  agentBuilder: AgentBuilderPluginStart;
+  agentBuilder: { agents: Pick<AgentBuilderPluginStart['agents'], 'ensure'> };
   spaceId: string;
 }
 

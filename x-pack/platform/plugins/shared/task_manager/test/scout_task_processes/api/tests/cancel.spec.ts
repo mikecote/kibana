@@ -49,12 +49,14 @@ apiTest.describe(
         interval: '5s',
       });
       ruleIds.push(ruleId);
-      // Kibana cancels the task once it has expired, while its process is still working on it
+      // A short deadline can expire during startup before the pool's next cancellation sweep.
       await waitFor(
         () =>
           readKibanaLog().some(
             (r) =>
-              r.message.startsWith(`Cancelling task ${TASK_TYPE} "${ruleId}"`) &&
+              (r.message.startsWith(`Cancelling task ${TASK_TYPE} "${ruleId}"`) ||
+                (r.message.startsWith(`Task ${TASK_TYPE} "${ruleId}" failed:`) &&
+                  r.message.includes('cancelled or timed out before dispatch'))) &&
               Date.parse(r['@timestamp']) >= Date.parse(since)
           ),
         { message: 'Kibana to cancel the run', intervalMs: 500, timeoutMs: 120_000 }

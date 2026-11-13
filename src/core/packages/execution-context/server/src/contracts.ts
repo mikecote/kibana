@@ -14,6 +14,8 @@ import type { KibanaExecutionContext } from '@kbn/core-execution-context-common'
  * @public
  */
 export interface ExecutionContextSetup {
+  /** Returns the current settings used by the native execution-context service. */
+  getConfig(): { enabled: boolean };
   /**
    * Keeps track of execution context while the passed function is executed.
    * Data are carried over all async operations spawned by the passed function.

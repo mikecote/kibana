@@ -7,12 +7,21 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import { MetricReader, AggregationTemporality } from '@opentelemetry/sdk-metrics';
+import {
+  MetricReader,
+  AggregationTemporality,
+  DataPointType,
+  InstrumentType,
+} from '@opentelemetry/sdk-metrics';
+import type { ScopeMetrics } from '@opentelemetry/sdk-metrics';
 import {
   PrometheusExporter as OpenTelemetryPrometheusExporter,
   PrometheusSerializer,
 } from '@opentelemetry/exporter-prometheus';
 import type { KibanaResponseFactory } from '@kbn/core-http-server';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import { combineMetricCollections } from './metric_collection';
+import type { MetricResourceSnapshot } from './metric_collection';
 
 /**
  * Prometheus exporter for OpenTelemetry with a custom extension to collect the metrics whenever
@@ -50,6 +59,34 @@ export class PrometheusExporter extends MetricReader {
   private readonly prefix: string;
   private readonly appendTimestamp: boolean;
   private serializer: PrometheusSerializer;
+  private externalMetrics: ScopeMetrics[] = [];
+  private readonly gaugeSources = new Set<() => Promise<MetricResourceSnapshot[]>>();
+  private readonly gaugeSerializer: PrometheusSerializer;
+
+  /** Registers an actual live-worker collection source for this node's Prometheus endpoint. */
+  public registerGaugeSource(source: () => Promise<MetricResourceSnapshot[]>): () => void {
+    this.gaugeSources.add(source);
+    return () => {
+      this.gaugeSources.delete(source);
+    };
+  }
+
+  /** Adds native execution deltas to this node's cumulative Prometheus collection. */
+  public addMetrics(metrics: readonly ScopeMetrics[]): void {
+    if (
+      metrics.some((scope) =>
+        scope.metrics.some((metric) => metric.dataPointType === DataPointType.GAUGE)
+      )
+    ) {
+      throw new Error('Live gauges require native resource collection');
+    }
+    this.externalMetrics = combineMetricCollections(
+      this.externalMetrics,
+      metrics,
+      'add',
+      this.selectCardinalityLimit(InstrumentType.COUNTER)
+    );
+  }
 
   private constructor() {
     super();
@@ -57,6 +94,11 @@ export class PrometheusExporter extends MetricReader {
     this.appendTimestamp = OpenTelemetryPrometheusExporter.DEFAULT_OPTIONS.appendTimestamp;
 
     this.serializer = new PrometheusSerializer(this.prefix, this.appendTimestamp);
+    this.gaugeSerializer = new PrometheusSerializer(
+      this.prefix,
+      this.appendTimestamp,
+      /^service\.instance\.id$/
+    );
   }
 
   /**
@@ -88,7 +130,10 @@ export class PrometheusExporter extends MetricReader {
    */
   public async exportMetrics(res: KibanaResponseFactory) {
     try {
-      const collectionResult = await this.collect();
+      const [collectionResult, sources] = await Promise.all([
+        this.collect(),
+        Promise.all([...this.gaugeSources].map((source) => source())),
+      ]);
       const { resourceMetrics, errors } = collectionResult;
       if (errors.length) {
         return res.customError({
@@ -96,7 +141,43 @@ export class PrometheusExporter extends MetricReader {
           body: `PrometheusExporter: Metrics collection errors ${errors}`,
         });
       }
-      const result = this.serializer.serialize(resourceMetrics);
+      const parts = [
+        this.serializer.serialize({
+          ...resourceMetrics,
+          scopeMetrics: combineMetricCollections(
+            this.externalMetrics,
+            resourceMetrics.scopeMetrics
+          ),
+        }),
+      ];
+      for (const source of sources.flat()) {
+        if (
+          typeof source.resourceAttributes['service.instance.id'] !== 'string' ||
+          source.scopeMetrics.some((scope) =>
+            scope.metrics.some((metric) => metric.dataPointType !== DataPointType.GAUGE)
+          )
+        ) {
+          throw new Error('Live worker gauge collection has invalid native resource metadata');
+        }
+        parts.push(
+          this.gaugeSerializer.serialize({
+            resource: resourceFromAttributes(source.resourceAttributes),
+            scopeMetrics: source.scopeMetrics,
+          })
+        );
+      }
+      const headers = new Set<string>();
+      const result = parts
+        .flatMap((part) =>
+          part.split('\n').filter((line) => {
+            const header = line.match(/^# (?:HELP|TYPE) \S+/)?.[0];
+            if (!header) return true;
+            if (headers.has(header)) return false;
+            headers.add(header);
+            return true;
+          })
+        )
+        .join('\n');
       if (result === '') {
         return res.noContent();
       }

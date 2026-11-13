@@ -8,7 +8,8 @@
 import { platformCoreTools } from '@kbn/agent-builder-common';
 import type { SkillDefinition } from '@kbn/agent-builder-server/skills';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
-import type { EndpointAppContextService } from '../../../endpoint/endpoint_app_context_services';
+import { createEndpointInlineTools } from '../endpoint_skill_services';
+import type { EndpointSkillServices } from '../endpoint_skill_services';
 import { COMPARE_POLICIES_TOOL_ID, createComparePoliciesTool } from './tools/compare_policies';
 import { GET_POLICY_TOOL_ID, createGetPolicyTool } from './tools/get_policy';
 import {
@@ -34,7 +35,7 @@ export const ELASTIC_DEFEND_POLICY_MANAGEMENT_SKILL_ID = 'elastic-defend-policy-
 export const createElasticDefendPolicyManagementSkill = ({
   endpointAppContextService,
 }: {
-  endpointAppContextService: EndpointAppContextService;
+  endpointAppContextService: EndpointSkillServices;
 }): SkillDefinition<typeof ELASTIC_DEFEND_POLICY_MANAGEMENT_SKILL_ID, 'skills/security/endpoint'> =>
   defineSkillType({
     id: ELASTIC_DEFEND_POLICY_MANAGEMENT_SKILL_ID,
@@ -293,13 +294,13 @@ Every guidance phase must state in user-facing language that broken-host, missed
 - Prefer \`${platformCoreTools.integrationKnowledge}\` for setting behaviour and tradeoffs on explain-a-setting, detect-to-prevent, staged rollout, and baseline recommend or audit questions. Do not call it for an exact proposed-change assessment-report.
 `,
     getRegistryTools: () => [platformCoreTools.integrationKnowledge],
-    getInlineTools: () => [
-      createGetPolicyFieldReferenceTool({ endpointAppContextService }),
-      createListPoliciesTool({ endpointAppContextService }),
-      createGetPolicyTool({ endpointAppContextService }),
-      createComparePoliciesTool({ endpointAppContextService }),
-      createGetPolicyRolloutStatusTool({ endpointAppContextService }),
-      createAssessPolicyChangeTool({ endpointAppContextService }),
-      createApplyPolicyChangeTool({ endpointAppContextService }),
-    ],
+    getInlineTools: createEndpointInlineTools(endpointAppContextService, (endpointServices) => [
+      createGetPolicyFieldReferenceTool({ endpointAppContextService: endpointServices }),
+      createListPoliciesTool({ endpointAppContextService: endpointServices }),
+      createGetPolicyTool({ endpointAppContextService: endpointServices }),
+      createComparePoliciesTool({ endpointAppContextService: endpointServices }),
+      createGetPolicyRolloutStatusTool({ endpointAppContextService: endpointServices }),
+      createAssessPolicyChangeTool({ endpointAppContextService: endpointServices }),
+      createApplyPolicyChangeTool({ endpointAppContextService: endpointServices }),
+    ]),
   });

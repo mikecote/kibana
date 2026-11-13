@@ -35,3 +35,6 @@ export type {
   StoredInvestigationAttachment,
   InvestigationAttachmentDocument,
 } from '../common/investigation_attachments';
+
+export { getAgenticInvestigationsTaskProcessServices } from './task_types/create_agentic_investigations_task_process_services';
+export type { AgenticInvestigationsTaskProcessServices } from './task_types/create_agentic_investigations_task_process_services';

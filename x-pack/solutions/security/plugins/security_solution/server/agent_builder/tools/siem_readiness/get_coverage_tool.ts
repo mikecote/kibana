@@ -12,7 +12,7 @@ import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import { enrichFindings } from '@kbn/siem-readiness';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityReadinessToolServices } from './services';
 import { getCoverage } from '../../../lib/siem_readiness/dimensions';
 import {
   getSiemReadinessSharedContext,
@@ -23,7 +23,7 @@ import { SIEM_READINESS_COVERAGE_TOOL_ID } from './tool_ids';
 const schema = lazySchema(() => z.object({}));
 
 export const getCoverageTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityReadinessToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof schema> => ({
   id: SIEM_READINESS_COVERAGE_TOOL_ID,

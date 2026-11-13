@@ -74,6 +74,15 @@ export class WorkflowsPlugin
   ) {
     this.logger.debug('Workflows Management: Setup');
 
+    let managedWorkflowPluginIds: string[] = [];
+    void core.getStartServices().then(([, started]) => {
+      managedWorkflowPluginIds = started.workflowsExtensions.getManagedWorkflowPluginIds();
+    });
+    plugins.workflowsExtensions.registerTaskProcessSettings('workflowsManagementRuntime', () => ({
+      available: this.config.available,
+      managedWorkflowPluginIds,
+    }));
+
     registerUISettings(core, plugins);
 
     plugins.features?.registerKibanaFeature(WorkflowsManagementFeatureConfig);

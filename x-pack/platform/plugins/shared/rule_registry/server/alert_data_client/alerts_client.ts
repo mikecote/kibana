@@ -129,6 +129,8 @@ const getAlertAuthField = (
   return fromSource == null ? undefined : String(fromSource);
 };
 
+export type AlertsRuleTypeList = () => Pick<ReturnType<RuleTypeRegistry['list']>, 'keys'>;
+
 export interface ConstructorOptions {
   logger: Logger;
   authorization: PublicMethodsOf<AlertingAuthorization>;
@@ -136,8 +138,7 @@ export interface ConstructorOptions {
   esClient: ElasticsearchClient;
   esClientScoped: ElasticsearchClient;
   ruleDataService: IRuleDataService;
-  getRuleType: RuleTypeRegistry['get'];
-  getRuleList: RuleTypeRegistry['list'];
+  getRuleList: AlertsRuleTypeList;
   getAlertIndicesAlias: AlertingServerStart['getAlertIndicesAlias'];
 }
 
@@ -254,7 +255,7 @@ export class AlertsClient {
   private readonly esClientScoped: ElasticsearchClient;
   private readonly spaceId: string | undefined;
   private readonly ruleDataService: IRuleDataService;
-  private readonly getRuleList: RuleTypeRegistry['list'];
+  private readonly getRuleList: AlertsRuleTypeList;
   private getAlertIndicesAlias!: AlertingServerStart['getAlertIndicesAlias'];
 
   constructor(options: ConstructorOptions) {

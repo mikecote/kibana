@@ -6,6 +6,7 @@
  * your election, the "Elastic License 2.0", the "GNU Affero General Public
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
+import type { AgentConfigOptions } from 'elastic-apm-node';
 import { loadConfiguration } from './config_loader';
 import { piiFilter } from './filters/pii_filter';
 import { patchMocha } from './patch_mocha';
@@ -18,10 +19,19 @@ export const initApm = (
 ) => {
   const apmConfigLoader = loadConfiguration(argv, rootDir, isDistributable);
 
-  const apmConfig = apmConfigLoader.getConfig(serviceName);
+  initApmFromConfiguration(
+    apmConfigLoader.getConfig(serviceName),
+    apmConfigLoader.isUsersRedactionEnabled(),
+    serviceName
+  );
+};
 
-  const shouldRedactUsers = apmConfigLoader.isUsersRedactionEnabled();
-
+/** Starts the native APM agent with resolved settings and the same privacy filters as Kibana. */
+export const initApmFromConfiguration = (
+  apmConfig: AgentConfigOptions,
+  shouldRedactUsers: boolean,
+  serviceName: string
+): void => {
   // we want to only load the module when effectively used
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const apm = require('elastic-apm-node') as typeof import('elastic-apm-node');

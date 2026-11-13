@@ -223,6 +223,7 @@ export function createPluginSetupContext<TPlugin, TPluginDependencies>({
       setUnauthorizedErrorHandler: deps.elasticsearch.setUnauthorizedErrorHandler,
     },
     executionContext: {
+      getConfig: deps.executionContext.getConfig,
       withContext: deps.executionContext.withContext,
       getAsLabels: deps.executionContext.getAsLabels,
     },

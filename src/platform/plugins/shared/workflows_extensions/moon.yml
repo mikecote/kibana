@@ -17,6 +17,7 @@ project:
   owner: '@elastic/workflows-eng'
   sourceRoot: src/platform/plugins/shared/workflows_extensions
 dependsOn:
+  - '@kbn/core-data-streams-server'
   - '@kbn/core'
   - '@kbn/workflows'
   - '@kbn/zod'
@@ -34,6 +35,12 @@ dependsOn:
   - '@kbn/logging-mocks'
   - '@kbn/logging'
   - '@kbn/core-http-common'
+  - '@kbn/core-ui-settings-common'
+  - '@kbn/encrypted-saved-objects-plugin'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/security-plugin'
+  - '@kbn/core-spaces-common'
+  - '@kbn/core-ui-settings-server'
 tags:
   - plugin
   - prod

@@ -13,14 +13,22 @@ import type {
   Plugin,
   PluginInitializerContext,
 } from '@kbn/core/server';
-import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { SandboxPluginConfig } from './config';
-import { SandboxApiClient } from './grpc_client';
-import { SandboxSessionImpl } from './sandbox_session';
 import type { SandboxSession } from './sandbox_session';
 import { readTlsCredentials } from './tls_credentials';
 import type { SandboxTlsCredentials } from './tls_credentials';
+import { createSandboxRunServices } from './create_sandbox_run_services';
+import type { SandboxRunServices } from './create_sandbox_run_services';
+import {
+  SANDBOX_TASK_PROCESS_SETTINGS_ID,
+  getSandboxTaskProcessSettings,
+} from './task_process_settings';
+
+interface SandboxPluginSetupDeps {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
+}
 
 interface SandboxPluginStartDeps {
   spaces?: SpacesPluginStart;
@@ -95,19 +103,22 @@ export interface SandboxPluginStart {
 }
 
 export class SandboxPlugin
-  implements Plugin<SandboxPluginSetup, SandboxPluginStart, {}, SandboxPluginStartDeps>
+  implements
+    Plugin<SandboxPluginSetup, SandboxPluginStart, SandboxPluginSetupDeps, SandboxPluginStartDeps>
 {
   private readonly logger: Logger;
-  private apiClient?: SandboxApiClient;
-  private readonly sessions = new Map<string, SandboxSession>();
-  private spaces?: SpacesPluginStart;
+  private runServices?: SandboxRunServices;
+  private spacesEnabled = false;
   private tlsCredentials?: SandboxTlsCredentials;
 
   constructor(private readonly ctx: PluginInitializerContext<SandboxPluginConfig>) {
     this.logger = ctx.logger.get();
   }
 
-  setup(_core: CoreSetup): SandboxPluginSetup {
+  setup(_core: CoreSetup, plugins: SandboxPluginSetupDeps): SandboxPluginSetup {
+    plugins.workflowsExtensions?.registerTaskProcessSettings(SANDBOX_TASK_PROCESS_SETTINGS_ID, () =>
+      getSandboxTaskProcessSettings(this.ctx.config.get(), this.tlsCredentials, this.spacesEnabled)
+    );
     const config = this.ctx.config.get();
     if (config.enabled) {
       this.tlsCredentials = readTlsCredentials(config.ssl);
@@ -123,61 +134,17 @@ export class SandboxPlugin
   }
 
   start(_core: CoreStart, { spaces }: SandboxPluginStartDeps): SandboxPluginStart {
-    this.spaces = spaces;
-    const pluginConfig = this.ctx.config.get();
-    const { tlsCredentials } = this;
-
-    if (!pluginConfig.enabled || !pluginConfig.api_key || !tlsCredentials) {
-      if (pluginConfig.enabled) {
-        this.logger.warn(
-          'xpack.sandbox.enabled is true but api_key is not configured — sandbox is disabled'
-        );
-      }
-      const reason = !pluginConfig.enabled
-        ? 'xpack.sandbox.enabled is false'
-        : 'xpack.sandbox.api_key is required when enabled';
-      const throwNotConfigured = (): never => {
-        throw new Error(`Sandbox is not configured in this deployment: ${reason}`);
-      };
-      return {
-        getSession: throwNotConfigured,
-        getSessionForSpace: throwNotConfigured,
-      };
-    }
-
-    const { host, port, api_key: apiKey } = pluginConfig;
-
-    this.apiClient = new SandboxApiClient({ host, port, apiKey, ...tlsCredentials });
-
-    const apiClient = this.apiClient;
-    const sessions = this.sessions;
-    const logger = this.logger;
-
-    const getOrCreateSession = (spaceId: string, sessionId: string): SandboxSession => {
-      // `:` is not a legal space-ID character so this cache key is unambiguous.
-      const cacheKey = `${spaceId}:${sessionId}`;
-      // `__` stays within [a-zA-Z0-9_.-]: the sandbox service passes this value as the
-      // Docker container name and rejects anything outside that character set.
-      const conversationId = `${spaceId}__${sessionId}`;
-      let session = sessions.get(cacheKey);
-      if (!session) {
-        session = new SandboxSessionImpl(conversationId, apiClient, logger.get('session'));
-        sessions.set(cacheKey, session);
-      }
-      return session;
-    };
-
-    return {
-      getSession: (request, sessionId) => {
-        const spaceId = this.spaces?.spacesService.getSpaceId(request) ?? DEFAULT_SPACE_ID;
-        return getOrCreateSession(spaceId, sessionId);
-      },
-      getSessionForSpace: (spaceId, sessionId) => getOrCreateSession(spaceId, sessionId),
-    };
+    this.spacesEnabled = Boolean(spaces);
+    this.runServices = createSandboxRunServices({
+      config: this.ctx.config.get(),
+      tlsCredentials: this.tlsCredentials,
+      spaces: spaces?.spacesService,
+      logger: this.logger,
+    });
+    return this.runServices.sandbox;
   }
 
   stop(): void {
-    this.apiClient?.close();
-    this.sessions.clear();
+    this.runServices?.stop();
   }
 }

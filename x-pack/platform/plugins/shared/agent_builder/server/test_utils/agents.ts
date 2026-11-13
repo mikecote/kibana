@@ -73,6 +73,7 @@ export const createAgentsServiceStartMock = (): AgentsServiceStartMock => {
   return {
     getRegistry: jest.fn().mockImplementation(() => createMockedAgentRegistry()),
     ensure: jest.fn(),
+    setAgentAvailability: jest.fn(),
     resolveAgentConfiguration: jest.fn(),
     resolveAgentBaseConfiguration: jest.fn().mockResolvedValue({}),
     removeToolRefsFromAgents: jest.fn(),

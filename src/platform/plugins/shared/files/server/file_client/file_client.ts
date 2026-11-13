@@ -80,9 +80,9 @@ export class FileClientImpl implements FileClient {
   /**
    * A usage counter instance that is shared across all FileClient instances.
    */
-  private static usageCounter: undefined | UsageCounter;
+  private static usageCounter: undefined | Pick<UsageCounter, 'incrementCounter'>;
 
-  public static configureUsageCounter(uc: UsageCounter) {
+  public static configureUsageCounter(uc: Pick<UsageCounter, 'incrementCounter'>) {
     FileClientImpl.usageCounter = uc;
   }
 

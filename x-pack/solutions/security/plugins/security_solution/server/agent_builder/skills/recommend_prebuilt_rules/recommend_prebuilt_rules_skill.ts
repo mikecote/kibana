@@ -5,21 +5,20 @@
  * 2.0.
  */
 
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import type { SkillDefinition } from '@kbn/agent-builder-server/skills';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
-import type { EntityAnalyticsRoutesDeps } from '../../../lib/entity_analytics/types';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
+import type { SecuritySkillServices } from '../services';
+import type { EntityAnalyticsMlServices } from '../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
 import { createFindPrebuiltRulesInlineTool } from './find_prebuilt_rules_tool';
 import { createGetUserDataInventoryTool } from './get_user_data_inventory_tool';
 import { createGetInstallableCatalogOverviewTool } from './get_installable_catalog_overview_tool';
 import { createGetInstalledRulesMitreCoverageTool } from './get_installed_rules_mitre_coverage_tool';
 
 interface RecommendPrebuiltRulesSkillDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
-  ml: EntityAnalyticsRoutesDeps['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
 }
 
 const RECOMMEND_PREBUILT_RULES_CONTENT = `# Recommend Prebuilt Rules

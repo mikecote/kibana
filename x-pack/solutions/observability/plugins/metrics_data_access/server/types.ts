@@ -5,8 +5,13 @@
  * 2.0.
  */
 
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import type { SavedObjectsClientContract } from '@kbn/core-saved-objects-api-server';
 import type { PluginStart as DataPluginStart } from '@kbn/data-plugin/server';
+
+export interface MetricsDataPluginSetupDeps {
+  workflowsExtensions?: WorkflowsExtensionsServerPluginSetup;
+}
 
 export interface MetricsDataPluginStartDeps {
   data: DataPluginStart;

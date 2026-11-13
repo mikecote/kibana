@@ -44,6 +44,8 @@ describe('initTelemetry', () => {
         false
       );
 
+      // An omitted native APM `active` option defaults to true, independently of CI's environment.
+      jest.spyOn(apmConfig, 'getConfig').mockReturnValue({});
       const { loadConfiguration } = jest.requireMock('@kbn/apm-config-loader');
       loadConfiguration.mockImplementationOnce(() => apmConfig);
 

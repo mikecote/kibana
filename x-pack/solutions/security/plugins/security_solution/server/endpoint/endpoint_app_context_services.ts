@@ -90,7 +90,7 @@ import type { EndpointAuthz } from '../../common/endpoint/types/authz';
 import { calculateEndpointAuthz } from '../../common/endpoint/service/authz';
 import type { FeatureUsageService } from './services/feature_usage/service';
 import type { ExperimentalFeatures } from '../../common/experimental_features';
-import type { ProductFeaturesService } from '../lib/product_features_service/product_features_service';
+import type { ProductFeaturesReader } from '../lib/product_features_service/product_features_reader';
 import type { ResponseActionAgentType } from '../../common/endpoint/service/response_actions/constants';
 import { ScopedEndpointArtifactListClient } from './services/scoped_endpoint_artifact_list_client';
 import { SimpleMemCache } from './lib/simple_mem_cache';
@@ -111,7 +111,7 @@ export type EndpointAppContextServiceRunConfig = Pick<
 export interface EndpointAppContextServiceSetupContract {
   /** Used by the Fleet callbacks, which only Kibana registers */
   securitySolutionRequestContextFactory?: IRequestContextFactory;
-  cloud?: CloudSetup;
+  cloud?: Pick<CloudSetup, 'isCloudEnabled' | 'isServerlessEnabled'>;
   loggerFactory: LoggerFactory;
   telemetry: Pick<AnalyticsServiceSetup, 'reportEvent'>;
 }
@@ -120,7 +120,27 @@ export interface EndpointAppContextServiceSetupContract {
  * What the response actions need of the app context, which Kibana's `start()` and a task process
  * (`createEndpointResponseActionsRunServices`) both provide through `initialize()`.
  */
-export interface EndpointAppContextServiceInitializeContract {
+export type EndpointScopedSearchClient = Pick<IScopedSearchClient, 'search' | 'cancel' | 'extend'>;
+
+export interface EndpointAppContextServiceExecutionServices {
+  productFeaturesService: ProductFeaturesReader;
+  telemetryConfigProvider: TelemetryConfigProvider;
+  clusterClient: Pick<IClusterClient, 'asScoped'>;
+  dataStart: {
+    search: {
+      asScoped: (
+        request: KibanaRequest,
+        options?: Parameters<DataPluginStart['search']['asScoped']>[1]
+      ) => EndpointScopedSearchClient;
+    };
+  };
+  isCpsActive: (request: KibanaRequest) => Promise<boolean>;
+  spacesService: SpacesServiceStart | undefined;
+  agentBuilder?: AgentBuilderPluginStart | (() => AgentBuilderPluginStart);
+}
+
+export interface EndpointAppContextServiceInitializeContract
+  extends Partial<EndpointAppContextServiceExecutionServices> {
   fleetStartServices: EndpointFleetStartServices &
     Pick<FleetStartContract, 'messageSigningService' | 'createFleetActionsClient'> &
     Partial<Pick<FleetStartContract, 'createFilesClient' | 'authz' | 'registerExternalCallback'>>;
@@ -133,7 +153,7 @@ export interface EndpointAppContextServiceInitializeContract {
   esClient: ElasticsearchClient;
   savedObjectsServiceStart: Pick<SavedObjectsServiceStart, 'getScopedClient'>;
   /** Only the response actions of 3rd party EDRs use it, and only Kibana has it */
-  connectorActions?: ActionsPluginStartContract;
+  connectorActions?: Pick<ActionsPluginStartContract, 'getUnsecuredActionsClient'>;
 }
 
 export interface EndpointAppContextServiceStartContract
@@ -153,7 +173,7 @@ export interface EndpointAppContextServiceStartContract
    * `defendCrossProjectSearch` flag AND at least one visible linked project.
    */
   isCpsActive: (request: KibanaRequest) => Promise<boolean>;
-  productFeaturesService: ProductFeaturesService;
+  productFeaturesService: ProductFeaturesReader;
   savedObjectsServiceStart: SavedObjectsServiceStart;
   telemetryConfigProvider: TelemetryConfigProvider;
   spacesService: SpacesServiceStart | undefined;
@@ -180,7 +200,7 @@ export interface ScopedEndpointServices {
   /** The client for reads against Defend-owned indices. Fleet-owned ones stay on the internal client */
   getEsClient: () => ElasticsearchClient;
   /** The search client the Defend search strategies dispatch through */
-  getSearchClient: () => IScopedSearchClient;
+  getSearchClient: () => EndpointScopedSearchClient;
   /** The active space, which is also what bounds the set of projects a fanned-out read reaches */
   getSpaceId: () => string;
   /** Resolves the active space, rejecting when it does not exist on this project */
@@ -511,7 +531,7 @@ export class EndpointAppContextService {
    * The search client the Defend search strategies dispatch through. Carries the same routing as
    * `getReadEsClient()` when CPS is on, so callers do not branch on the flag themselves.
    */
-  public async getScopedSearchClient(request: KibanaRequest): Promise<IScopedSearchClient> {
+  public async getScopedSearchClient(request: KibanaRequest): Promise<EndpointScopedSearchClient> {
     if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
     }
@@ -563,7 +583,8 @@ export class EndpointAppContextService {
     if (this.startDependencies.agentBuilder == null) {
       throw new EndpointAppContentServicesKibanaOnlyError('agentBuilder');
     }
-    return this.startDependencies.agentBuilder;
+    const { agentBuilder } = this.startDependencies;
+    return typeof agentBuilder === 'function' ? agentBuilder() : agentBuilder;
   }
 
   private getFleetAuthzService(): FleetStartContract['authz'] {
@@ -649,7 +670,7 @@ export class EndpointAppContextService {
     return this.startDependencies.licenseService;
   }
 
-  public getProductFeaturesService(): ProductFeaturesService {
+  public getProductFeaturesService(): ProductFeaturesReader {
     if (!this.startDependencies) {
       throw new EndpointAppContentServicesNotStartedError();
     }
@@ -660,7 +681,7 @@ export class EndpointAppContextService {
     return this.startDependencies.productFeaturesService;
   }
 
-  public getCloudSetup(): CloudSetup {
+  public getCloudSetup(): Pick<CloudSetup, 'isCloudEnabled' | 'isServerlessEnabled'> {
     if (!this.setupDependencies) {
       throw new EndpointAppContentServicesNotSetUpError();
     }

@@ -21,8 +21,12 @@ import {
 } from '../constants';
 import { InvestigationsForbiddenError } from './investigations_forbidden_error';
 
+interface InvestigationsSecurity {
+  authz: Pick<SecurityPluginStart['authz'], 'actions' | 'checkPrivilegesDynamicallyWithRequest'>;
+}
+
 export interface InvestigationsPrivilegesDeps {
-  getSecurity: () => Promise<SecurityPluginStart | undefined>;
+  getSecurity: () => Promise<InvestigationsSecurity | undefined>;
   /**
    * `xpack.agenticInvestigations.escalations.enabled`. When false, escalations are reported as
    * not held even if another feature grants their API privileges, because nothing serves them.
@@ -86,7 +90,7 @@ export const createInvestigationsPrivilegesReader = ({
  * operation names, so they are turned into `api:` actions before `checkPrivileges` sees them.
  */
 export interface InvestigationsPrivilegesCheckerDeps {
-  getSecurity: () => Promise<SecurityPluginStart | undefined>;
+  getSecurity: () => Promise<InvestigationsSecurity | undefined>;
   logger: Logger;
 }
 

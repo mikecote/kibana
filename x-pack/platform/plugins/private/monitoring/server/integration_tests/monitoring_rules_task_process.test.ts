@@ -83,8 +83,8 @@ describe('the stack monitoring rule types served from bundles', () => {
     'runs %s in the process to a successful execution, as Kibana does',
     async (type) => {
       const ruleTypeId = type.replace('alerting:', '');
-      const { result, fallback } = await harness.run(type, ruleTypeId);
-      expect(fallback).not.toHaveBeenCalled();
+      const { result, onDispatchFailure } = await harness.run(type, ruleTypeId);
+      expect(onDispatchFailure).not.toHaveBeenCalled();
       expect(result).not.toHaveProperty('taskRunError');
 
       const events = await harness.getEventDocs(type);

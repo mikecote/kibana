@@ -8,15 +8,50 @@
 import { existsSync } from 'fs';
 import { dirname } from 'path';
 import { firstValueFrom } from 'rxjs';
+import moment from 'moment';
 import { TaskRoot } from '@kbn/core-root-server-internal';
 import { defineTaskType } from '../task_type_module';
 import { startTaskProcessCore } from './core_process';
 import { elasticsearchConfigFromEnv } from './es_config';
+import { serializeSettings } from './settings';
 
 jest.mock('@kbn/core-root-server-internal');
 
 describe('failed task Core startup', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it('applies native requirements with revived dispatch settings before Core setup', async () => {
+    const error = new Error('Stop before Core setup');
+    jest.mocked(TaskRoot.prototype.setup).mockRejectedValueOnce(error);
+    const module = defineTaskType({
+      type: 'test:requirements',
+      title: 'Native requirements',
+      createTaskRunner: () => ({ run: async () => ({ state: {} }) }),
+    });
+    const apply = jest.fn(() => module);
+    module.contributions = { keys: ['native'], apply };
+    const settings = { enabled: true, timeout: moment.duration(1200) };
+    const contributions = { native: [{ name: 'native-services' }] };
+    await expect(
+      startTaskProcessCore({
+        init: {
+          kind: 'init',
+          kibanaVersion: '9.6.0',
+          authToken: 'test',
+          elasticsearch: elasticsearchConfigFromEnv({
+            ES_URL: 'http://localhost:9200',
+            ES_USERNAME: 'kibana_system',
+            ES_PASSWORD: 'test-password',
+          }),
+          settings: { nativeRuntime: serializeSettings(settings) },
+        },
+        module,
+        contributions,
+      })
+    ).rejects.toBe(error);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(contributions, { nativeRuntime: settings });
+  });
 
   it.each(['preboot', 'setup', 'start'] as const)(
     'closes Core and removes private settings files when %s fails',

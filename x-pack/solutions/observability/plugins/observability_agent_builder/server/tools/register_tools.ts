@@ -9,10 +9,10 @@ import type { Logger } from '@kbn/core/server';
 import { platformCoreTools, platformSignificantEventsTools } from '@kbn/agent-builder-common';
 import type { StaticToolRegistration } from '@kbn/agent-builder-server';
 import type {
-  ObservabilityAgentBuilderCoreSetup,
-  ObservabilityAgentBuilderPluginSetupDependencies,
+  ObservabilityAgentBuilderRunCore,
+  ObservabilityAgentBuilderRunSetupDependencies,
 } from '../types';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import {
   OBSERVABILITY_RUN_LOG_RATE_ANALYSIS_TOOL_ID,
   createRunLogRateAnalysisTool,
@@ -92,11 +92,15 @@ export async function registerTools({
   plugins,
   dataRegistry,
   logger,
+  toolIds,
+  onRegistered,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
-  plugins: ObservabilityAgentBuilderPluginSetupDependencies;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  core: ObservabilityAgentBuilderRunCore;
+  plugins: ObservabilityAgentBuilderRunSetupDependencies;
+  dataRegistry: ObservabilityDataRegistryClient;
   logger: Logger;
+  toolIds?: readonly string[];
+  onRegistered?: (id: string) => void;
 }) {
   const observabilityTools: StaticToolRegistration<any>[] = [
     createRunLogRateAnalysisTool({ core, logger }),
@@ -118,6 +122,8 @@ export async function registerTools({
   ];
 
   for (const tool of observabilityTools) {
+    if (toolIds && !toolIds.includes(tool.id)) continue;
     plugins.agentBuilder.tools.register(tool);
+    onRegistered?.(tool.id);
   }
 }

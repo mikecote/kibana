@@ -8,32 +8,28 @@
 import type { CoreSetup, Plugin } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
 import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
-import { CUSTOM_CONTENT_EMBEDDABLE_TYPE } from '@kbn/custom-content-common';
-import { createCustomContentContextAttachmentType } from './attachment_types/custom_content_context';
-import { createUpdateCustomContentTool } from './tools/update_custom_content_tool';
-import { customContentEmbeddableSchema } from './embeddable/schemas';
+
+import { registerCustomContentAgentBuilder } from './register_agent_builder';
+import { CUSTOM_CONTENT_AGENT_BUILDER_SETTINGS_ID } from './task_types/agent_builder_contribution';
 
 interface SetupDeps {
   embeddable: EmbeddableSetup;
   agentBuilder?: AgentBuilderPluginSetup;
 }
 
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
+
 export class CustomContentPlugin implements Plugin<void, void, SetupDeps> {
   setup(_core: CoreSetup, { embeddable, agentBuilder }: SetupDeps) {
-    embeddable.registerEmbeddableServerDefinition(CUSTOM_CONTENT_EMBEDDABLE_TYPE, {
-      title: 'Custom panel',
-      getSchema: () => customContentEmbeddableSchema,
-    });
+    registerEmbeddableDefinitions(embeddable);
 
     if (agentBuilder) {
-      agentBuilder.attachments.registerType(
-        createCustomContentContextAttachmentType() as Parameters<
-          typeof agentBuilder.attachments.registerType
-        >[0]
+      // What a task process needs to register what this Kibana registers: the plugin is enabled.
+      agentBuilder.taskProcess?.registerSettings(
+        CUSTOM_CONTENT_AGENT_BUILDER_SETTINGS_ID,
+        () => ({})
       );
-      agentBuilder.tools.register(
-        createUpdateCustomContentTool() as Parameters<typeof agentBuilder.tools.register>[0]
-      );
+      registerCustomContentAgentBuilder(agentBuilder);
     }
   }
 

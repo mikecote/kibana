@@ -10,7 +10,6 @@ import { chunk, flatten, omit } from 'lodash';
 import agent from 'elastic-apm-node';
 import type { Logger } from '@kbn/core/server';
 import { SavedObjectsErrorHelpers } from '@kbn/core/server';
-import { isEqual } from 'lodash';
 import type { Middleware } from './lib/middleware';
 import { parseIntervalAsMillisecond } from './lib/intervals';
 import {
@@ -27,12 +26,11 @@ import {
 } from './task';
 import type { TaskStore } from './task_store';
 import { ensureDeprecatedFieldsAreCorrected } from './lib/correct_deprecated_fields';
+import { updateTaskSchedules } from './update_task_schedules';
 import { retryableBulkUpdate } from './lib/retryable_bulk_update';
 import type { ErrorOutput } from './lib/bulk_operation_buffer';
-import { calculateNextRunAtFromSchedule } from './lib/get_next_run_at';
 import { TaskAlreadyRunningError } from './lib/errors';
-import type { TaskPollingLifecycle } from './polling_lifecycle';
-import type { TaskTypeDictionary } from './task_type_dictionary';
+import type { TaskSchedulingDefinitionRegistry } from './task_scheduling_definition_registry';
 import { getExecutionId } from './lib/get_execution_id';
 import { credentialMatchesRunAs } from './lib/service_account_credential';
 import type { TaskManagerClaimNudgeService } from './claim_nudge/claim_nudge_service';
@@ -69,13 +67,17 @@ const scheduleOptionsToStoreApiKeyOptions = (
 const VERSION_CONFLICT_STATUS = 409;
 const NOT_FOUND_STATUS = 404;
 const BULK_ACTION_SIZE = 100;
+export interface TaskExecutionPool {
+  getCurrentTasksInPool: () => readonly string[] | Promise<readonly string[]>;
+}
+
 export interface TaskSchedulingOpts {
   logger: Logger;
   taskStore: TaskStore;
   middleware: Middleware;
   taskManagerId: string;
-  definitions: TaskTypeDictionary;
-  taskPollingLifecycle?: TaskPollingLifecycle; // subscribe to task lifecycle events
+  definitions: TaskSchedulingDefinitionRegistry;
+  taskPollingLifecycle?: TaskExecutionPool;
   claimNudgeService?: TaskManagerClaimNudgeService;
 }
 
@@ -131,11 +133,12 @@ export interface RunNowResult {
 }
 
 export class TaskScheduling {
+  private readonly pendingClaimNudges = new Set<Promise<void>>();
   private store: TaskStore;
   private logger: Logger;
   private middleware: Middleware;
-  private readonly definitions: TaskTypeDictionary;
-  private readonly taskPolling: TaskPollingLifecycle | undefined;
+  private readonly definitions: TaskSchedulingDefinitionRegistry;
+  private readonly taskPolling: TaskExecutionPool | undefined;
   private readonly claimNudgeService: TaskManagerClaimNudgeService | undefined;
 
   /**
@@ -328,44 +331,12 @@ export class TaskScheduling {
     schedule: IntervalSchedule | RruleSchedule,
     options?: BulkUpdateSchedulesOptions
   ): Promise<BulkUpdateTaskResult> {
-    const { includeRunningTasks = false, ...apiKeyOptions } = options ?? {};
-    const shouldRegenerateApiKey = apiKeyOptions.regenerateApiKey === true;
-    const updatableStatuses = includeRunningTasks
-      ? new Set([TaskStatus.Idle, TaskStatus.Running, TaskStatus.Claiming])
-      : new Set([TaskStatus.Idle]);
-
-    return retryableBulkUpdate({
+    return updateTaskSchedules({
       taskIds,
+      schedule,
+      options,
       store: this.store,
-      getTasks: async (ids) => await this.bulkGetTasksHelper(ids),
-      filter: (task) =>
-        updatableStatuses.has(task.status) &&
-        (shouldRegenerateApiKey || !isEqual(task.schedule, schedule)),
-      map: (task) => {
-        if (isEqual(task.schedule, schedule)) {
-          return task;
-        }
-
-        // For a running/claiming task `runAt` is the time the current execution was due; the task
-        // runner computes the next `runAt` from it and the new schedule once the run completes.
-        if (task.status !== TaskStatus.Idle) {
-          return { ...task, schedule };
-        }
-
-        const newRunAtInMs = calculateNextRunAtFromSchedule({
-          schedule,
-          startDate: task.scheduledAt,
-        });
-
-        return { ...task, schedule, runAt: new Date(newRunAtInMs) };
-      },
-      validate: false,
-      /**
-       * Because the schedule can be converted from Interval to Rrule and vice versa we want to a void a situation
-       * where both are defined by passing mergeAttributes: false here.
-       */
-      mergeAttributes: false,
-      options: apiKeyOptions,
+      getTasks: (ids) => this.bulkGetTasksHelper(ids),
     });
   }
 
@@ -417,7 +388,7 @@ export class TaskScheduling {
       }
 
       // check if task is currently running
-      const currentTaskIds = this.taskPolling?.getCurrentTasksInPool() || [];
+      const currentTaskIds = (await this.taskPolling?.getCurrentTasksInPool()) ?? [];
       const currentExecutionIds = currentTaskIds.map((executionId) => getExecutionId(executionId));
 
       if (currentExecutionIds.includes(taskId)) {
@@ -451,10 +422,17 @@ export class TaskScheduling {
     }
 
     if (!conflict && nudge) {
-      void this.notifyClaimNudge(taskId, 'run_soon');
+      const pending = this.notifyClaimNudge(taskId, 'run_soon');
+      this.pendingClaimNudges.add(pending);
+      void pending.finally(() => this.pendingClaimNudges.delete(pending));
     }
 
     return conflict ? { id: task.id, forced, conflict: true } : { id: task.id, forced };
+  }
+
+  /** Waits for native claim notifications started by completed scheduling operations. */
+  public async flushClaimNudges(): Promise<void> {
+    await Promise.all([...this.pendingClaimNudges]);
   }
 
   /**

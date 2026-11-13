@@ -16,16 +16,10 @@ import {
   SIGNIFICANT_EVENTS_FEATURE_SIMILARITY_SEARCH_TOOL_ID,
 } from './register_tools';
 import { createMockGetScopedClients } from '../utils/test_helpers';
-import type { SignificantEventsServer } from '../../types';
+import { securityMock } from '@kbn/security-plugin/server/mocks';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
 
-const createMockServer = (): Pick<SignificantEventsServer, 'isServerless' | 'core'> => ({
-  isServerless: false,
-  core: {
-    elasticsearch: { client: { asInternalUser: {} } },
-    security: {},
-  } as SignificantEventsServer['core'],
-});
+const createMockServer = () => ({ security: securityMock.createStart() });
 
 describe('registerAgentBuilderTools', () => {
   const telemetry = {
@@ -37,9 +31,10 @@ describe('registerAgentBuilderTools', () => {
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });
@@ -58,9 +53,10 @@ describe('registerAgentBuilderTools', () => {
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });
@@ -72,14 +68,58 @@ describe('registerAgentBuilderTools', () => {
     }
   });
 
+  it('registers precisely the dispatched tool set and reports successful registrations', () => {
+    const agentBuilder = agentBuilderMocks.createSetup();
+    const onRegistered = jest.fn();
+    registerAgentBuilderTools({
+      agentBuilder,
+      getScopedClients: jest.fn(),
+      server: createMockServer(),
+      assertAccess: jest.fn(),
+      logger: loggerMock.create(),
+      telemetry,
+      toolIds: [SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID],
+      onRegistered,
+    });
+    expect(agentBuilder.tools.register.mock.calls.map(([tool]) => tool.id)).toEqual([
+      SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID,
+    ]);
+    expect(onRegistered.mock.calls).toEqual([[SIGNIFICANT_EVENTS_SEARCH_EVENTS_TOOL_ID]]);
+  });
+
+  it('does not advertise a failed native registration or any tool after it', () => {
+    const agentBuilder = agentBuilderMocks.createSetup();
+    const onRegistered = jest.fn();
+    agentBuilder.tools.register
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw new Error('Registry failed');
+      });
+    expect(() =>
+      registerAgentBuilderTools({
+        agentBuilder,
+        getScopedClients: jest.fn(),
+        server: createMockServer(),
+        assertAccess: jest.fn(),
+        logger: loggerMock.create(),
+        telemetry,
+        onRegistered,
+      })
+    ).toThrow('Registry failed');
+    expect(onRegistered.mock.calls).toEqual([
+      [SIGNIFICANT_EVENTS_KNOWLEDGE_INDICATORS_SEARCH_TOOL_ID],
+    ]);
+  });
+
   it('does not register any tools when agentBuilder is falsy', () => {
     const agentBuilder = agentBuilderMocks.createSetup();
     const { getScopedClients } = createMockGetScopedClients();
 
     registerAgentBuilderTools({
+      assertAccess: jest.fn(),
       agentBuilder: undefined!,
       getScopedClients,
-      server: createMockServer() as SignificantEventsServer,
+      server: createMockServer(),
       logger: loggerMock.create(),
       telemetry,
     });

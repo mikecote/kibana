@@ -38,7 +38,9 @@ function removeNullAuthorFromSecurityRules(
   };
 }
 
-export const getMigrations7140 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations7140 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc): doc is SavedObjectUnsanitizedDoc<RawRule> => isSiemSignalsRuleType(doc),

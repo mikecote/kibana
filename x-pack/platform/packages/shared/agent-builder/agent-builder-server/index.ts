@@ -181,6 +181,7 @@ export type {
 } from './conversation_events';
 export type {
   AgentBuilderPluginSetup,
+  TaskProcessSetup,
   AgentBuilderPluginStart,
   TopSnippetsConfig,
   ToolsSetup,
@@ -240,3 +241,11 @@ export {
   getAgentConnectorDetail,
   resolveAllowedConnectorIds,
 } from './agent_connectors';
+export { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './task_process';
+export type {
+  AgentBuilderContribution,
+  AgentBuilderContributionContext,
+  AgentBuilderContributionDeclares,
+  AgentBuilderContributionServices,
+  AgentBuilderContributionStart,
+} from './task_process';

@@ -52,10 +52,15 @@ export interface CustomContextClient {
 }
 
 export interface CustomContextClientDeps {
-  featureFlags?: CoreStart['featureFlags'];
-  savedObjects?: CoreStart['savedObjects'];
-  security?: CoreStart['security'];
-  securityPlugin?: SecurityPluginStart;
+  featureFlags?: Pick<CoreStart['featureFlags'], 'getBooleanValue$'>;
+  savedObjects?: Pick<CoreStart['savedObjects'], 'getScopedClient'>;
+  security?: Pick<CoreStart['security'], 'authc'>;
+  securityPlugin?: {
+    authz: Pick<
+      SecurityPluginStart['authz'],
+      'mode' | 'actions' | 'checkPrivilegesDynamicallyWithRequest'
+    >;
+  };
   spaces?: SpacesPluginStart;
 }
 

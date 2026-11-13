@@ -19,7 +19,7 @@ import type { Logger } from '@kbn/logging';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import { getAgentBuilderResourceAvailability } from '../../utils/get_agent_builder_resource_availability';
 import type { ExperimentalFeatures } from '../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityEntityToolServices } from './entity_services';
 import { AssetCriticalityLevelsForBulkUpload } from '../../../../common/api/entity_analytics/asset_criticality/bulk_upload_asset_criticality.gen';
 import { securityTool } from '../constants';
 import { IdentifierType } from '../../../../common/api/entity_analytics/common/common.gen';
@@ -36,7 +36,7 @@ const checkAssetCriticalityAccess = async ({
   spaceId,
 }: {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   spaceId: string;
 }): Promise<{ allowed: true } | { allowed: false; result: ErrorResult }> => {
   const {
@@ -83,7 +83,7 @@ const schema = lazySchema(() =>
 );
 
 export const setAssetCriticalityTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   kibanaVersion: string

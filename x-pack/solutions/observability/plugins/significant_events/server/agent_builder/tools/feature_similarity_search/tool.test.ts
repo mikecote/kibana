@@ -8,7 +8,6 @@
 import { forbidden } from '@hapi/boom';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import type { GetScopedClients, RouteHandlerScopedClients } from '../../../routes/types';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
 import {
   createMockToolContext,
   createSignificantEventsServer,
@@ -20,9 +19,7 @@ import {
   SIGNIFICANT_EVENTS_FEATURE_SIMILARITY_SEARCH_TOOL_ID,
 } from './tool';
 
-jest.mock('../../../routes/utils/assert_significant_events_access', () => ({
-  assertSignificantEventsAccess: jest.fn(),
-}));
+const assertSignificantEventsAccess = jest.fn();
 
 describe('ki_feature_similarity_search tool', () => {
   const logger = loggingSystemMock.createLogger();
@@ -47,6 +44,7 @@ describe('ki_feature_similarity_search tool', () => {
     }) as unknown as jest.MockedFunction<GetScopedClients>;
 
     const tool = createFeatureSimilaritySearchTool({
+      assertAccess: assertSignificantEventsAccess,
       getScopedClients,
       server: toolServer,
       logger,

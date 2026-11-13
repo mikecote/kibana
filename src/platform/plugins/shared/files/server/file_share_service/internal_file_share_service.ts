@@ -132,9 +132,9 @@ function validateCreateArgs({ validUntil }: CreateShareArgs): void {
  * @internal
  */
 export class InternalFileShareService implements FileShareServiceStart {
-  private static usageCounter: undefined | UsageCounter;
+  private static usageCounter: undefined | Pick<UsageCounter, 'incrementCounter'>;
 
-  public static configureUsageCounter(uc: UsageCounter) {
+  public static configureUsageCounter(uc: Pick<UsageCounter, 'incrementCounter'>) {
     InternalFileShareService.usageCounter = uc;
   }
 

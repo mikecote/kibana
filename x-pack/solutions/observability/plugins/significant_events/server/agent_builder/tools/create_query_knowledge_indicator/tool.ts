@@ -17,10 +17,10 @@ import type {
 import type { Logger } from '@kbn/core/server';
 import { MAX_ID_LENGTH, upsertStreamQueryRequestSchema } from '@kbn/significant-events-schema';
 import dedent from 'dedent';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanManageSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import { createQueryKnowledgeIndicatorToolHandler } from './handler';
 import {
@@ -56,11 +56,13 @@ const createQueryKnowledgeIndicatorSchema = lazySchema(() =>
 export function createQueryKnowledgeIndicatorTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
   telemetry,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof createQueryKnowledgeIndicatorSchema> {
@@ -105,10 +107,7 @@ export function createQueryKnowledgeIndicatorTool({
       cacheMode: 'space',
       handler: async (): Promise<ToolAvailabilityResult> => {
         try {
-          await assertSignificantEventsAccess({
-            server,
-            licensing: server.licensing,
-          });
+          await assertAccess();
           return { status: 'available' };
         } catch (error) {
           if (error instanceof Error) {
@@ -135,10 +134,7 @@ export function createQueryKnowledgeIndicatorTool({
           request,
         });
 
-        await assertSignificantEventsAccess({
-          server,
-          licensing: scopedClients.licensing,
-        });
+        await assertAccess(scopedClients.licensing);
         await assertCanManageSignificantEvents({ request, server });
 
         const catalog = await loadSourceCatalog(scopedClients.sourcesClient);

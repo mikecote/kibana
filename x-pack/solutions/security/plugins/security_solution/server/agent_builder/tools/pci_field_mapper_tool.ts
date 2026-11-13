@@ -9,7 +9,7 @@ import { z } from '@kbn/zod';
 import { ToolType, ToolResultType } from '@kbn/agent-builder-common';
 import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import type { Logger } from '@kbn/logging';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from './core_services';
 import { getAgentBuilderResourceAvailability } from '../utils/get_agent_builder_resource_availability';
 import { securityTool } from './constants';
 import {
@@ -146,7 +146,7 @@ const defaultTimeRange = (): { from: string; to: string } => {
 };
 
 export const pciFieldMapperTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof pciFieldMapperSchema> => {
   return {

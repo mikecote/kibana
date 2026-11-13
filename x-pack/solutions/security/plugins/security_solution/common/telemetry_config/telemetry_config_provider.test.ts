@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { Observable } from 'rxjs';
+import { firstValueFrom, Observable } from 'rxjs';
 import { TelemetryConfigProvider } from './telemetry_config_provider';
 
 describe('TelemetryConfigProvider', () => {
@@ -16,6 +16,17 @@ describe('TelemetryConfigProvider', () => {
   });
 
   describe('getIsOptedIn()', () => {
+    it.each([true, false])(
+      'restores the current value and observable from snapshot %s',
+      async (value) => {
+        const provider = new TelemetryConfigProvider(value);
+        const observable = provider.getObservable();
+        if (!observable) throw new Error('A captured telemetry value must have an observable');
+        expect(provider.getIsOptedIn()).toBe(value);
+        expect(await firstValueFrom(observable)).toBe(value);
+        provider.stop();
+      }
+    );
     it('returns undefined when object is uninitialized', () => {
       expect(telemetryConfigProvider.getIsOptedIn()).toBe(undefined);
     });

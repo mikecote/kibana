@@ -23,6 +23,7 @@ import type {
   ProductDocBaseStartDependencies,
   InternalServices,
 } from './types';
+import { PRODUCT_DOC_READ_SETTINGS_ID } from './create_product_doc_read_services';
 import { productDocInstallStatusSavedObjectType } from './saved_objects';
 import { PackageInstaller } from './services/package_installer';
 import { ProductDocInstallClient } from './services/doc_install_status';
@@ -56,9 +57,14 @@ export class ProductDocBasePlugin
   }
   setup(
     coreSetup: CoreSetup<ProductDocBaseStartDependencies, ProductDocBaseStartContract>,
-    { taskManager, cloud }: ProductDocBaseSetupDependencies
+    { taskManager, cloud, workflowsExtensions }: ProductDocBaseSetupDependencies
   ): ProductDocBaseSetupContract {
     this.cloud = cloud;
+    workflowsExtensions?.registerTaskProcessSettings(PRODUCT_DOC_READ_SETTINGS_ID, () => {
+      const { artifactRepositoryUrl, artifactRepositoryProxyUrl, elserInferenceId } =
+        this.context.config.get();
+      return { artifactRepositoryUrl, artifactRepositoryProxyUrl, elserInferenceId };
+    });
 
     const getServices = () => {
       if (!this.internalServices) {

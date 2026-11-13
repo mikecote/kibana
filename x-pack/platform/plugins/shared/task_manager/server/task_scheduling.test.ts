@@ -1877,6 +1877,41 @@ describe('TaskScheduling', () => {
       await expect(result).rejects.toEqual(404);
     });
 
+    test('waits for the live dispatch pool before deciding whether a running task can be forced', async () => {
+      const pool = Promise.withResolvers<readonly string[]>();
+      const id = 'other-worker-task';
+      mockTaskStore.get.mockResolvedValueOnce(
+        taskManagerMock.createTask({ id, status: TaskStatus.Running })
+      );
+      const scheduling = new TaskScheduling({
+        ...taskSchedulingOpts,
+        taskPollingLifecycle: { getCurrentTasksInPool: () => pool.promise },
+      });
+      const running = scheduling.runSoon(id, true);
+      await Promise.resolve();
+      expect(mockTaskStore.update).not.toHaveBeenCalled();
+      pool.resolve([`${id}::another-worker-execution`]);
+      await expect(running).rejects.toThrow('cannot be forced');
+      expect(mockTaskStore.update).not.toHaveBeenCalled();
+    });
+
+    test('does not force a task when the dispatch pool cannot be read', async () => {
+      const error = new Error('Dispatch pool unavailable');
+      mockTaskStore.get.mockResolvedValueOnce(
+        taskManagerMock.createTask({ id: 'other-worker-task', status: TaskStatus.Running })
+      );
+      const scheduling = new TaskScheduling({
+        ...taskSchedulingOpts,
+        taskPollingLifecycle: {
+          getCurrentTasksInPool: async () => {
+            throw error;
+          },
+        },
+      });
+      await expect(scheduling.runSoon('other-worker-task', true)).rejects.toBe(error);
+      expect(mockTaskStore.update).not.toHaveBeenCalled();
+    });
+
     test('awaits persistence and refresh but returns while notification is still pending', async () => {
       const id = 'async-nudge';
       const task = taskManagerMock.createTask({ id, status: TaskStatus.Idle });
@@ -1910,7 +1945,13 @@ describe('TaskScheduling', () => {
       });
       expect(onResult).toHaveBeenCalledWith({ id, forced: false });
       expect(recordClaimNudgeSpy).toHaveBeenCalledTimes(1);
+      const onFlushed = jest.fn();
+      const flushing = taskScheduling.flushClaimNudges().then(onFlushed);
+      await Promise.resolve();
+      expect(onFlushed).not.toHaveBeenCalled();
       failNotification(new Error('late notification failure'));
+      await flushing;
+      expect(onFlushed).toHaveBeenCalledTimes(1);
       await Promise.resolve();
       await Promise.resolve();
       expect(taskSchedulingOpts.logger.warn).toHaveBeenCalledWith(

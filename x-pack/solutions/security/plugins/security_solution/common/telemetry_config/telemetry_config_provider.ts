@@ -5,13 +5,17 @@
  * 2.0.
  */
 
-import type { Observable, Subscription } from 'rxjs';
+import { of, type Observable, type Subscription } from 'rxjs';
 
 export class TelemetryConfigProvider {
   private isOptedIn$?: Observable<boolean>;
   private _isOptedIn?: boolean;
 
   private subscription?: Subscription;
+
+  constructor(initialOptIn?: boolean) {
+    if (initialOptIn !== undefined) this.start(of(initialOptIn));
+  }
 
   public start(isOptedIn$: Observable<boolean>) {
     this.isOptedIn$ = isOptedIn$;

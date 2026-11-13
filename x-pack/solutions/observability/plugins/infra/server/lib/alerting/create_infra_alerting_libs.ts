@@ -46,13 +46,16 @@ export type InfraAlertingLibs = Pick<
  */
 export const createInfraSources = ({ metricsClient }: { metricsClient: MetricsDataClient }) => {
   const sources = new InfraSources({ metricsClient });
-  metricsClient.setDefaultMetricIndicesHandler(async (options: GetMetricIndicesOptions) => {
-    const sourceConfiguration = await sources.getInfraSourceConfiguration(
-      options.savedObjectsClient,
-      'default'
-    );
-    return sourceConfiguration.configuration.metricAlias;
-  });
+  metricsClient.setDefaultMetricIndicesHandler(
+    async (options: GetMetricIndicesOptions) => {
+      const sourceConfiguration = await sources.getInfraSourceConfiguration(
+        options.savedObjectsClient,
+        'default'
+      );
+      return sourceConfiguration.configuration.metricAlias;
+    },
+    { owner: 'infra' }
+  );
   return sources;
 };
 

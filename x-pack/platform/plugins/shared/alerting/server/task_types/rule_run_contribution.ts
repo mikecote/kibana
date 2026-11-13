@@ -9,7 +9,7 @@ import type { Logger, SavedObjectsType } from '@kbn/core/server';
 import type { EncryptedSavedObjectTypeRegistration } from '@kbn/encrypted-saved-objects-plugin/server';
 import type { RuleRunActionsSetup } from '@kbn/actions-plugin/server/task_types/rule_run_actions';
 import type { KibanaRequest } from '@kbn/core/server';
-import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/task_type_module';
 import type { AlertingServerSetup } from '../plugin';
 import type { GetAlertStatusChangedWorkflowsClient } from '../lib/workflow_extensions/alert_status_changed_emitter';
 
@@ -29,12 +29,20 @@ export interface RuleRunContributionContext {
    * flags Kibana sent, `host.featureFlags`), not while it registers.
    */
   host: TaskHost;
+  /** Resolves execution services lazily, after all workflow contributions have registered. */
+  getService?: <T extends object>(id: string) => T;
 }
 
 /** The parts of the actions and alerting setup contracts a plugin registers its connectors through. */
 export interface RuleRunRegistries {
   actions: RuleRunActionsSetup;
   alerting: Pick<AlertingServerSetup, 'registerConnectorAdapter' | 'enableAlertStatusChanged'>;
+}
+
+/** Native services owned by one rule execution and released before it completes. */
+export interface RuleExecutionServices {
+  getService: <T extends object>(id: string) => T;
+  stop: () => Promise<void>;
 }
 
 /**
@@ -44,6 +52,12 @@ export interface RuleRunRegistries {
  * `kibana.jsonc`, so a rule type never has to know about the plugins that add connectors.
  */
 export interface RuleRunContribution {
+  executionServices?: {
+    ids: readonly string[];
+    requirements: TaskTypeModule;
+    isEnabled: (settings: NonNullable<TaskHost['settings']>) => boolean;
+    create: (context: RuleRunContributionContext) => Promise<RuleExecutionServices>;
+  };
   declares?: {
     savedObjectTypes?: SavedObjectsType[];
     encryptedSavedObjectTypes?: EncryptedSavedObjectTypeRegistration[];

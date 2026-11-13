@@ -18,3 +18,6 @@ export async function plugin(initializerContext: PluginInitializerContext) {
   const { LogsDataAccessPlugin } = await import('./plugin');
   return new LogsDataAccessPlugin(initializerContext);
 }
+
+export { registerServices as createLogsDataAccessServices } from './services/register_services';
+export type { LogsDataAccessServices, RegisterServicesParams } from './services/register_services';

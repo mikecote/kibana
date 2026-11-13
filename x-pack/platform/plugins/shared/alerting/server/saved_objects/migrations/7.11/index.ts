@@ -185,14 +185,18 @@ function restructureConnectorsThatSupportIncident(
   };
 }
 
-export const getMigrations7110 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations7110 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc): doc is SavedObjectUnsanitizedDoc<RawRule> => true,
     pipeMigrations(setAlertUpdatedAtDate, setNotifyWhen)
   );
 
-export const getMigrations7112 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) =>
+export const getMigrations7112 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) =>
   createEsoMigration(
     encryptedSavedObjects,
     (doc): doc is SavedObjectUnsanitizedDoc<RawRule> => isAnyActionSupportIncidents(doc),

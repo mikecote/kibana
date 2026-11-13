@@ -11,6 +11,7 @@ import { AlertsLocatorDefinition } from '@kbn/observability-plugin/common/locato
 import {
   createMlTaskProcessServices,
   getMlTaskProcessSavedObjectTypes,
+  ML_TASK_PROCESS_SETTINGS_ID,
 } from '@kbn/ml-plugin/server/task_types/ml_task_process_services';
 import { uptimeRequests } from '../legacy_uptime/lib/requests';
 import { licenseCheck } from '../legacy_uptime/lib/domains';
@@ -32,7 +33,10 @@ export const createUptimeRuleTaskType = (
       ruleTypeId,
       getRuleType: (deps) => {
         const { publicBaseUrl, locators } = deps;
-        const ml = options.usesMl ? createMlTaskProcessServices(deps) : undefined;
+        const ml =
+          options.usesMl && deps.settings[ML_TASK_PROCESS_SETTINGS_ID]
+            ? createMlTaskProcessServices(deps)
+            : undefined;
         const ruleType = factory(
           {
             basePath: { publicBaseUrl },
@@ -47,6 +51,7 @@ export const createUptimeRuleTaskType = (
     },
     {
       locators: [new AlertsLocatorDefinition()],
+      optionalSettings: options.usesMl ? [ML_TASK_PROCESS_SETTINGS_ID] : [],
       ...(options.usesMl ? { savedObjectTypes: getMlTaskProcessSavedObjectTypes() } : {}),
     }
   );

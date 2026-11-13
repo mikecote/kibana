@@ -22,7 +22,7 @@ import {
   getMaxSignalsWarning,
   mergeReturns,
 } from '../utils/utils';
-import type { SetupPlugins } from '../../../../plugin';
+import type { EntityAnalyticsMlServices } from '../../../entity_analytics/ml_anomaly_detection/ml_services';
 import { withSecuritySpan } from '../../../../utils/with_security_span';
 import type { AnomalyResults } from '../../../machine_learning';
 import { bulkCreateSuppressedAlertsInMemory } from '../utils/bulk_create_suppressed_alerts_in_memory';
@@ -33,7 +33,7 @@ import { getDataStreamNamespaceFilter } from '../utils/get_data_stream_namespace
 
 interface MachineLearningRuleExecutorParams {
   sharedParams: SecuritySharedParams<MachineLearningRuleParams>;
-  ml: SetupPlugins['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
   services: SecurityRuleServices;
   wrapSuppressedHits: WrapSuppressedHits;
   isAlertSuppressionActive: boolean;

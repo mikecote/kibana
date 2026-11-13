@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import { ALERTZERO_FRONTIER_INFERENCE_FEATURE_ID } from '@kbn/alertzero-common';
+import { createWorkflowExecutionReader } from '@kbn/workflows-management-plugin/server/api/create_workflow_execution_reader';
 import {
   DEFAULT_APP_CATEGORIES,
   type CoreSetup,
@@ -19,11 +19,9 @@ import { DEFAULT_SPACE_ID } from '@kbn/core-spaces-common';
 import type { PluginScopedManagedWorkflowsApi } from '@kbn/workflows/server/types';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
 import type { AgentService } from '@kbn/fleet-plugin/server';
-import {
-  ALERTZERO_ENABLED_SETTING_ID,
-  TEMPLATE_ID_ESCALATION,
-  TEMPLATE_ID_INVESTIGATION,
-} from '@kbn/alertzero-common';
+import { ALERTZERO_ENABLED_SETTING_ID } from '@kbn/alertzero-common';
+import type { Subscription } from 'rxjs';
+import type { AlertTriageAlertsClientFactory } from './alert_triage/alerts_client';
 import { getSubscriptionAvailability } from '../common/availability';
 import {
   ALERTZERO_API_PRIVILEGE_READ,
@@ -32,6 +30,7 @@ import {
   ALERTZERO_PLUGIN_NAME,
 } from '../common/constants';
 import type { AlertZeroConfig } from './config';
+import { createResolveSummaryConnectorId } from './services/investigation_summary/resolve_summary_connector';
 
 // The investigation and escalation flyouts and AlertZero's queue use the shared
 // `agenticInvestigations` routes, which require these API privileges. Cross-plugin server imports
@@ -63,11 +62,13 @@ import { WatchWorkflowsManagementClientImpl } from './services/watches/watch_wor
 import { ScanFailuresService } from './services/scan_failures/scan_failures_service';
 import { ActionsService } from './services/actions/actions_service';
 import type { HuntServices } from './services/watches/hunt';
-import { listActionsTool } from './agent_builder_tools/list_actions_tool';
 import { createAssertAlertZeroAccess } from './agent_builder_tools/assert_alertzero_access';
-import { agentType, ensureAgent, ensureAgentSafe, registerAgentType } from './agent';
-import { createActionDiscoverySkill } from './agent_builder/skills/action_discovery';
-import { registerAttachments } from './agent_builder/attachments/register_attachments';
+import { agentType, ensureAgent, ensureAgentSafe } from './agent';
+import { registerAlertZeroAgentBuilder } from './agent_builder/register_agent_builder';
+import {
+  ALERTZERO_AGENT_BUILDER_SETTINGS_ID,
+  type AlertZeroAgentBuilderTaskProcessSettings,
+} from './task_types/alertzero_agent_builder_task_process_settings';
 import { makeIsContextEngineEnabled } from './step_types/is_context_engine_enabled';
 import { makeScopedResolveHostEnrollment } from './services/fleet/resolve_host_enrollment';
 import { enumerateSpaceIds } from './lib/enumerate_space_ids';
@@ -82,6 +83,10 @@ import {
   registerAlertZeroStepDefinitions,
   registerStepDefinitions,
 } from './step_types';
+import {
+  ALERTZERO_TASK_PROCESS_SETTINGS_ID,
+  type AlertZeroTaskProcessSettings,
+} from './task_types/alertzero_task_process_settings';
 
 export class AlertZeroPlugin
   implements
@@ -136,6 +141,11 @@ export class AlertZeroPlugin
 
   /** Set in start from `xpack.security.serviceAccounts.enabled`. False until then. */
   private serviceAccountsEnabled = false;
+  /** Whether the managed workflows client started: a task process is told, as it has no such client of its own. */
+  private managedWorkflowsReady = false;
+  /** The latest telemetry opt-in decision, which a task process is told when it is dispatched. */
+  private telemetryOptedIn = false;
+  private telemetryOptInSubscription?: Subscription;
 
   constructor(context: PluginInitializerContext<AlertZeroConfig>) {
     this.logger = context.logger.get();
@@ -149,8 +159,13 @@ export class AlertZeroPlugin
     this.threatIntelSupplyWorkflowInstaller = installer;
   };
 
+  private triageAlertsClientFactory?: AlertTriageAlertsClientFactory;
+
   private readonly alertZeroStartContract = (): AlertZeroPluginStart => ({
     registerThreatIntelSupplyWorkflowInstaller: this.registerThreatIntelSupplyWorkflowInstaller,
+    registerTriageAlertsClientFactory: (factory) => {
+      this.triageAlertsClientFactory = factory;
+    },
   });
 
   setup(
@@ -181,6 +196,21 @@ export class AlertZeroPlugin
 
     this.workflowsManagementApi = workflowsManagement.management;
 
+    // What the steps read of this plugin in a task process of the workflow task types, evaluated when
+    // a process is dispatched. Registered inside the config guard: a disabled plugin sends nothing.
+    workflowsExtensions.registerTaskProcessSettings(
+      ALERTZERO_TASK_PROCESS_SETTINGS_ID,
+      (): AlertZeroTaskProcessSettings => ({
+        serviceAccountsEnabled: this.serviceAccountsEnabled,
+        managedWorkflowsReady: this.managedWorkflowsReady,
+        telemetryOptedIn: this.telemetryOptedIn,
+        searchInferenceEndpointsAvailable: this.searchInferenceEndpoints !== undefined,
+        actionsServiceAvailable: this.actionsService !== undefined,
+        huntServicesReady: this.huntServices !== undefined,
+        fleetAgentServiceAvailable: this.fleetAgentService !== undefined,
+      })
+    );
+
     // Missing runtime dependencies must not make installed workflows eligible for orphan cleanup.
     registerOwner({ workflowsExtensions });
     if (contextEngine) {
@@ -209,25 +239,24 @@ export class AlertZeroPlugin
         const [core, { security }] = await coreSetup.getStartServices();
         return { core, security };
       });
-      registerAgentType(agentBuilder);
-      registerAttachments(agentBuilder);
-      // Registered in setup so the builtin tool is available to Agent Builder before
-      // the first agent run; the handler resolves the service lazily like the routes do.
-      agentBuilder.tools.register({
-        ...listActionsTool(() => this.requireActionsService(), assertAlertZeroAccess),
-      });
-      agentBuilder.skills.register(createActionDiscoverySkill(assertAlertZeroAccess));
-      // `ai.conversation.updated` is opt-in, so Agent Builder only emits it where a consumer
-      // subscribes. Scoped per space, like the routes, so spaces without AlertZero stay quiet.
-      agentBuilder.conversations.enableUpdatedTrigger({
-        templateIds: [TEMPLATE_ID_INVESTIGATION, TEMPLATE_ID_ESCALATION],
-        isEnabled: async (request) => {
+      registerAlertZeroAgentBuilder({
+        agentBuilder,
+        getActionsService: () => this.requireActionsService(),
+        assertAlertZeroAccess,
+        isEnabledForRequest: async (request) => {
           const [{ savedObjects, uiSettings }] = await coreSetup.getStartServices();
           return uiSettings
             .asScopedToClient(savedObjects.getScopedClient(request))
             .get<boolean>(ALERTZERO_ENABLED_SETTING_ID);
         },
       });
+      agentBuilder.taskProcess?.registerSettings(
+        ALERTZERO_AGENT_BUILDER_SETTINGS_ID,
+        (): AlertZeroAgentBuilderTaskProcessSettings => ({
+          actionsAvailable: this.actionsService !== undefined,
+          managementAvailable: this.workflowsManagementApi !== undefined,
+        })
+      );
     }
 
     registerAlertZeroInferenceFeatures(searchInferenceEndpoints, this.logger.get('inference'));
@@ -247,6 +276,16 @@ export class AlertZeroPlugin
       isContextEngineEnabled: makeIsContextEngineEnabled(() => this.requireCoreStart()),
       getInternalEsClient: () => this.requireCoreStart().elasticsearch.client.asInternalUser,
       getTaskManager: () => this.requireStarted(this.taskManager, 'Task Manager'),
+      getTriageAlertsClient: async (request) =>
+        this.requireStarted(this.triageAlertsClientFactory, 'Security alerts client')(request),
+      getWorkflowExecutionReader: () =>
+        createWorkflowExecutionReader({
+          getSpaceId: async (request) => this.getSpaceId(request),
+          getManagement: () =>
+            this.requireStarted(this.workflowsManagementApi, 'Workflows Management'),
+          getLicense: async () => (await coreSetup.getStartServices())[1].licensing.getLicense(),
+          getSecurity: async () => (await coreSetup.getStartServices())[1].security,
+        }),
       logger: stepsLogger,
     });
 
@@ -338,6 +377,10 @@ export class AlertZeroPlugin
     }
 
     this.serviceAccountsEnabled = core.security.serviceAccounts.isEnabled();
+    // The telemetry plugin replays its latest decision; a task process is told the current one.
+    this.telemetryOptInSubscription = plugins.telemetry?.isOptedIn$?.subscribe((optedIn) => {
+      this.telemetryOptedIn = optedIn === true;
+    });
 
     const { agentBuilder, agenticInvestigations, proposals } = plugins;
     // Optional dependencies allow the upgrade shell to load without starting feature work.
@@ -364,6 +407,9 @@ export class AlertZeroPlugin
       return undefined;
     });
     this.managedWorkflows = managedWorkflows;
+    void managedWorkflows.then((client) => {
+      this.managedWorkflowsReady = client !== undefined;
+    });
 
     this.conversationProposalsService = new ConversationProposalsService(
       proposals.getProposalsService(),
@@ -479,24 +525,10 @@ export class AlertZeroPlugin
   }
 
   private async resolveSummaryConnectorId(request: KibanaRequest): Promise<string | undefined> {
-    const searchInferenceEndpoints = this.searchInferenceEndpoints;
-    if (!searchInferenceEndpoints) {
-      return undefined;
-    }
-    try {
-      const { endpoints } = await searchInferenceEndpoints.endpoints.getForFeature(
-        ALERTZERO_FRONTIER_INFERENCE_FEATURE_ID,
-        request
-      );
-      return endpoints[0]?.connectorId;
-    } catch (error) {
-      this.logger.warn(
-        `AlertZero investigation summary connector could not be resolved. ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-      return undefined;
-    }
+    return createResolveSummaryConnectorId(
+      () => this.searchInferenceEndpoints,
+      this.logger
+    )(request);
   }
 
   private requireHuntServices(): HuntServices {
@@ -515,5 +547,7 @@ export class AlertZeroPlugin
     return this.spaces?.spacesService.getSpaceId(request) ?? 'default';
   }
 
-  stop() {}
+  stop() {
+    this.telemetryOptInSubscription?.unsubscribe();
+  }
 }

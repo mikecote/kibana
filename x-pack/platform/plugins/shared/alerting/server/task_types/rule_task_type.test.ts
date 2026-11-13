@@ -209,9 +209,18 @@ describe('createRuleTaskType', () => {
       });
     });
 
-    it('declares what a rule run needs from the host', () => {
-      const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
+    it('declares required and optional plugin settings separately', () => {
+      const taskType = createRuleTaskType(
+        { ruleTypeId: 'test.rule', getRuleType },
+        { optionalSettings: ['fleetPackageMetadata'] }
+      );
+      expect(taskType.cancelGracePeriodMs).toBe(5000);
       expect(taskType.settings).toEqual(['alerting', 'actions', 'security', 'alertingRun']);
+      expect(taskType.optionalSettings).toEqual([
+        'ruleDataViewsCapabilities',
+        'spacesRuntime',
+        'fleetPackageMetadata',
+      ]);
       // The privileges of a connector are checked when a run enqueues it, as in Kibana.
       expect(taskType.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',
@@ -264,7 +273,7 @@ describe('createRuleTaskType', () => {
 
     it('is built again with what other plugins contribute to rule runs', () => {
       const taskType = createRuleTaskType({ ruleTypeId: 'test.rule', getRuleType });
-      expect(taskType.contributions?.keys).toEqual([RULE_RUN_CONTRIBUTIONS]);
+      expect(taskType.contributions?.keys).toEqual([RULE_RUN_CONTRIBUTIONS, 'task-scheduling']);
 
       const contributedType = { name: 'contributed-type', hidden: true } as never;
       const applied = taskType.contributions!.apply!({
@@ -302,6 +311,35 @@ describe('createRuleTaskType', () => {
       expect(() => taskType.buildRuleType(createRuleTypeHostMock() as never)).toThrow(
         /declares rule type "declared.id" but its factory built "test.rule"/
       );
+    });
+
+    it('uses the server base path for native locator redirects without a public URL', () => {
+      const host = createRuleTypeHostMock();
+      let redirect: string | undefined;
+      const taskType = createRuleTaskType(
+        {
+          ruleTypeId: 'test.rule',
+          getRuleType: ({ locators }) => {
+            redirect = locators.get('BASE_PATH_LOCATOR')?.getRedirectUrl({});
+            return getRuleType();
+          },
+        },
+        {
+          locators: [
+            {
+              id: 'BASE_PATH_LOCATOR',
+              getLocation: async () => ({ app: 'test', path: '/', state: {} }),
+            },
+          ],
+        }
+      );
+      taskType.buildRuleType({
+        ...host,
+        server: { ...host.server, publicBaseUrl: undefined },
+        http: { ...host.http, basePath: { ...host.http.basePath, serverBasePath: '/kibana' } },
+      });
+      expect(redirect).toMatch(/^\/kibana\//);
+      expect(taskType.savedObjectTypes?.map(({ name }) => name)).toContain('url');
     });
 
     it('creates the locators the module lists for the factory to use', () => {

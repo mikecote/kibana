@@ -11,7 +11,7 @@ import type { BuiltinToolDefinition } from '@kbn/agent-builder-server';
 import { getToolResultId } from '@kbn/agent-builder-server/tools';
 import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityWatchlistToolServices } from './services';
 import { WatchlistConfigClient } from '../../../../lib/entity_analytics/watchlists/management/watchlist_config';
 import {
   WatchlistEntitySourceClient,
@@ -37,7 +37,7 @@ export const SECURITY_LIST_WATCHLIST_DATA_SOURCES_TOOL_ID = securityTool(
 );
 
 export const listWatchlistDataSourcesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityWatchlistToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures,
   hasEncryptionKey: boolean

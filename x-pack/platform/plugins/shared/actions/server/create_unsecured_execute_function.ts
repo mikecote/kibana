@@ -23,7 +23,7 @@ import type { ActionsConfigurationUtilities } from './actions_config';
 import { hasReachedTheQueuedActionsLimit } from './lib/has_reached_queued_actions_limit';
 
 interface CreateBulkUnsecuredExecuteFunctionOptions {
-  taskManager: TaskManagerStartContract;
+  taskManager: Pick<TaskManagerStartContract, 'aggregate' | 'bulkSchedule'>;
   connectorTypeRegistry: ConnectorTypeRegistryContract;
   inMemoryConnectors: InMemoryConnector[];
   configurationUtilities: ActionsConfigurationUtilities;

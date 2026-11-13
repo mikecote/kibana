@@ -52,6 +52,16 @@ describe('EsqlResponseFormatService', () => {
     expect(service.get()).toBe(arrowFormat);
   });
 
+  it('releases its subscription when an execution ends', () => {
+    const flagValue$ = new BehaviorSubject('json');
+    const { service } = setup(flagValue$);
+    expect(flagValue$.observed).toBe(true);
+    service.stop();
+    expect(flagValue$.observed).toBe(false);
+    flagValue$.next('arrow');
+    expect(service.get()).toBe(jsonFormat);
+  });
+
   it('falls back to the default format and warns on an unregistered variation', () => {
     const { service, mockLogger } = setup(new BehaviorSubject('csv'));
 

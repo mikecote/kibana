@@ -51,6 +51,9 @@ dependsOn:
   - '@kbn/config-schema'
   - '@kbn/zod'
   - '@kbn/esql-browser'
+  - '@kbn/workflows-extensions'
+  - '@kbn/core-feature-flags-server'
+  - '@kbn/task-manager-plugin'
 tags:
   - plugin
   - prod

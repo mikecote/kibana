@@ -8,13 +8,13 @@
 import type { Logger } from '@kbn/core/server';
 import { SavedObjectsClient } from '@kbn/core/server';
 
-import type { ObservabilityAgentBuilderCoreSetup } from '../types';
+import type { ObservabilityAgentBuilderRunCore } from '../types';
 
 export async function getLogsIndices({
   core,
   logger,
 }: {
-  core: ObservabilityAgentBuilderCoreSetup;
+  core: ObservabilityAgentBuilderRunCore;
   logger: Logger;
 }): Promise<string[]> {
   const [coreStart, pluginsStart] = await core.getStartServices();

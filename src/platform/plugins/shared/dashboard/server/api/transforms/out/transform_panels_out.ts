@@ -20,7 +20,7 @@ import type {
   DashboardState,
 } from '@kbn/as-code-dashboard-schema';
 import type { SavedDashboardPanel, SavedDashboardSection } from '../../../dashboard_saved_object';
-import { embeddableService, logger } from '../../../kibana_services';
+import { getDashboardReadServices } from '../../../dashboard_read_services';
 import type { Warnings } from '../../types';
 import { getPanelReferences } from './get_panel_references';
 import { panelBwc } from './panel_bwc';
@@ -50,7 +50,9 @@ export function transformPanelsOut(
   try {
     parsedPanels = JSON.parse(panelsJSON);
   } catch (parseError) {
-    logger.warn(`Unable to parse panelsJSON. Error: ${parseError.message}`);
+    getDashboardReadServices().logger.warn(
+      `Unable to parse panelsJSON. Error: ${parseError.message}`
+    );
     return { panels: [], warnings };
   }
 
@@ -125,7 +127,7 @@ function transformPanel(
   const transformType =
     type === LENS_EMBEDDABLE_TYPE && isDashboardAppRequest ? 'lens-dashboard-app' : type;
 
-  const transforms = embeddableService?.getTransforms(transformType);
+  const transforms = getDashboardReadServices().embeddable?.getTransforms(transformType);
   let transformedPanelConfig =
     transforms?.transformOut?.(embeddableConfig, panelReferences, containerReferences, undefined) ??
     defaultTransform(embeddableConfig);

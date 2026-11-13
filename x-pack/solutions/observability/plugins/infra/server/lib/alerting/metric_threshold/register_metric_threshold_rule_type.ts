@@ -5,13 +5,12 @@
  * 2.0.
  */
 
+import { getObservabilityRuleViewUrl } from '@kbn/observability-plugin/server/lib/rules/get_rule_view_url';
+
 import { DEFAULT_APP_CATEGORIES } from '@kbn/core/server';
 import { i18n } from '@kbn/i18n';
-import type {
-  GetViewInAppRelativeUrlFnOpts,
-  AlertingServerSetup,
-} from '@kbn/alerting-plugin/server';
-import { observabilityFeatureId, observabilityPaths } from '@kbn/observability-plugin/common';
+import type { AlertingServerSetup } from '@kbn/alerting-plugin/server';
+import { observabilityFeatureId } from '@kbn/observability-plugin/common';
 import { metricThresholdRuleParamsSchema } from '@kbn/response-ops-rule-params/metric_threshold';
 
 import type { InfraConfig } from '../../../../common/plugin_config_types';
@@ -123,7 +122,6 @@ export function registerMetricThresholdRuleType(
     producer: 'infrastructure',
     solution: observabilityFeatureId,
     alerts: MetricsRulesTypeAlertDefinition,
-    getViewInAppRelativeUrl: ({ rule }: GetViewInAppRelativeUrlFnOpts<{}>) =>
-      observabilityPaths.ruleDetails(rule.id),
+    getViewInAppRelativeUrl: getObservabilityRuleViewUrl,
   });
 }

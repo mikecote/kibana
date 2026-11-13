@@ -10,6 +10,7 @@ import type { TypeOf } from '@kbn/config-schema';
 import type { MlDataViews } from '../shared_services';
 import type { CompatibleModule } from '../../../common/constants/app';
 import type { GetGuards } from '../shared_services';
+import type { DataRecognizerModuleFiles } from '../../models/data_recognizer/module_files';
 import type { DataRecognizer } from '../../models/data_recognizer';
 import { dataRecognizerFactory } from '../../models/data_recognizer';
 import type { moduleIdParamSchema, setupModuleBodySchema } from '../../routes/schemas/modules';
@@ -34,7 +35,8 @@ export function getModulesProvider(
   getGuards: GetGuards,
   getDataViews: () => MlDataViews,
   compatibleModuleType: CompatibleModule | null,
-  serverless: ServerlessInfo
+  serverless: ServerlessInfo,
+  moduleFiles?: DataRecognizerModuleFiles
 ): ModulesProvider {
   return {
     modulesProvider(request: KibanaRequest, savedObjectsClient: SavedObjectsClientContract) {
@@ -54,7 +56,8 @@ export function getModulesProvider(
                 mlSavedObjectService,
                 request,
                 compatibleModuleType,
-                serverless
+                serverless,
+                moduleFiles
               );
               return dr.findMatches(...args);
             });
@@ -73,7 +76,8 @@ export function getModulesProvider(
                 mlSavedObjectService,
                 request,
                 compatibleModuleType,
-                serverless
+                serverless,
+                moduleFiles
               );
               return dr.getModule(...args);
             });
@@ -92,7 +96,8 @@ export function getModulesProvider(
                 mlSavedObjectService,
                 request,
                 compatibleModuleType,
-                serverless
+                serverless,
+                moduleFiles
               );
               return dr.listModules();
             });
@@ -111,7 +116,8 @@ export function getModulesProvider(
                 mlSavedObjectService,
                 request,
                 compatibleModuleType,
-                serverless
+                serverless,
+                moduleFiles
               );
               return dr.setup(
                 payload.moduleId,

@@ -20,6 +20,8 @@ import { LicenseService } from '../../../common/license';
 import {
   EndpointAppContextService,
   type EndpointAppContextServiceInitializeContract,
+  type EndpointAppContextServiceExecutionServices,
+  type EndpointAppContextServiceSetupContract,
   type EndpointAppContextServiceRunConfig,
 } from '../endpoint_app_context_services';
 import { FeatureUsageService, type FeatureUsageStart } from '../services/feature_usage/service';
@@ -30,6 +32,9 @@ import {
 import type { SetupPlugins } from '../../plugin_contract';
 
 export interface EndpointResponseActionsRunServicesDeps {
+  executionServices?: EndpointAppContextServiceExecutionServices;
+  cloud?: EndpointAppContextServiceSetupContract['cloud'];
+  connectorActions?: EndpointAppContextServiceInitializeContract['connectorActions'];
   /** `createFleetRunServices()` of Fleet */
   fleetRunServices: EndpointAppContextServiceInitializeContract['fleetStartServices'];
   elasticsearch: Pick<IClusterClient, 'asInternalUser'>;
@@ -76,6 +81,9 @@ export const createEndpointResponseActionsRunServices = async ({
   security,
   featureUsage,
   osqueryActionService,
+  executionServices,
+  cloud,
+  connectorActions,
 }: EndpointResponseActionsRunServicesDeps): Promise<EndpointResponseActionsRunServices> => {
   const licenseService = new LicenseService();
   licenseService.start(license$);
@@ -86,8 +94,10 @@ export const createEndpointResponseActionsRunServices = async ({
   featureUsageService.start({ featureUsage });
 
   const endpointAppContextService = new EndpointAppContextService();
-  endpointAppContextService.setup({ loggerFactory, telemetry: analytics });
+  endpointAppContextService.setup({ loggerFactory, telemetry: analytics, cloud });
   endpointAppContextService.initialize({
+    ...executionServices,
+    connectorActions,
     fleetStartServices: fleetRunServices,
     security,
     config,

@@ -13,8 +13,8 @@ import type { Logger } from '@kbn/logging';
 import { SIEM_RULE_MIGRATION_RULES_PATH } from '../../../../../common/siem_migrations/constants';
 import { SIEM_MIGRATION_RULE_UPDATED_TOOL_EVENT } from '../../../../../common/siem_migrations/rules/events';
 import type { GetRuleMigrationRulesResponse } from '../../../../../common/siem_migrations/model/api/rules/rule_migration.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
-import type { ProductFeaturesService } from '../../../../lib/product_features_service/product_features_service';
+import type { SecurityAccessToolServices } from '../../access_services';
+import type { ProductFeaturesReader } from '../../../../lib/product_features_service';
 import { createSelfClient, type SelfClient } from '../../../../common/self_client/self_client';
 import { createSiemMigrationAvailability } from '../common/availability';
 import { hasRuleMigrationPrivileges } from '../common/privileges';
@@ -79,9 +79,9 @@ const buildPath = (migrationId: string): string =>
   SIEM_RULE_MIGRATION_RULES_PATH.replace('{migration_id}', encodeURIComponent(migrationId));
 
 export const updateTranslatedRuleTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityAccessToolServices,
   logger: Logger,
-  productFeaturesService: ProductFeaturesService
+  productFeaturesService: ProductFeaturesReader
 ): BuiltinToolDefinition<typeof schema> => {
   const callSelfClient: SelfClient = createSelfClient({ core, logger });
   const validateEsql = getValidateEsql({ logger });

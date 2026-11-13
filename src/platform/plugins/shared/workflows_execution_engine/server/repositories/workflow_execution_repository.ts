@@ -307,6 +307,39 @@ export class WorkflowExecutionRepository {
     }
   }
 
+  /** Fails an abandoned execution only while its current document is still pending in the space. */
+  public async tryFailPendingWorkflowExecution(params: {
+    executionId: string;
+    spaceId: string;
+    error: NonNullable<EsWorkflowExecution['error']>;
+  }): Promise<boolean> {
+    const finishedAt = new Date().toISOString();
+    const { items } = await this.workflowExecutionsDataClient.bulk({
+      refresh: 'wait_for',
+      items: [
+        {
+          operation: 'update',
+          documentId: params.executionId,
+          sourceFields: ['status', 'spaceId'] as const,
+          retryOnConflict: UPDATE_RETRY_ON_CONFLICT,
+          updater: (current) => {
+            if (current.status !== ExecutionStatus.PENDING || current.spaceId !== params.spaceId) {
+              return 'noop';
+            }
+            return { status: ExecutionStatus.FAILED, error: params.error, finishedAt };
+          },
+        },
+      ],
+    });
+    const result = getBulkUpdaterWriteResult(items[0]);
+    if (result === 'conflict') {
+      throw new Error(
+        `Version conflict recovering pending workflow execution ${params.executionId}`
+      );
+    }
+    return result === 'updated';
+  }
+
   /**
    * Bulk updates multiple workflow executions in a single Elasticsearch request.
    * This is more efficient than individual updates, especially when cancelling multiple executions.

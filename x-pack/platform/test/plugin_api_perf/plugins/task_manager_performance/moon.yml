@@ -20,6 +20,10 @@ dependsOn:
   - '@kbn/core'
   - '@kbn/task-manager-plugin'
   - '@kbn/config-schema'
+  - '@kbn/sample-task-plugin'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/zod'
+  - '@kbn/core-logging-server-mocks'
 tags:
   - plugin
   - prod

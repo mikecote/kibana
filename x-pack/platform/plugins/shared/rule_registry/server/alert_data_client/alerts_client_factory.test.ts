@@ -27,7 +27,6 @@ const alertsClientFactoryParams: AlertsClientFactoryProps = {
   esClient: {} as ElasticsearchClient,
   getEsClientScoped: (_: KibanaRequest) => Promise.resolve({} as ElasticsearchClient),
   ruleDataService: ruleDataServiceMock.create(),
-  getRuleType: jest.fn(),
   getRuleList: jest.fn(),
   getAlertIndicesAlias: jest.fn(),
 };
@@ -57,7 +56,6 @@ describe('AlertsClientFactory', () => {
       esClient: {},
       ruleDataService: alertsClientFactoryParams.ruleDataService,
       getRuleList: alertsClientFactoryParams.getRuleList,
-      getRuleType: alertsClientFactoryParams.getRuleType,
       getAlertIndicesAlias: alertsClientFactoryParams.getAlertIndicesAlias,
       esClientScoped: {},
     });

@@ -33,6 +33,7 @@
     "@kbn/react-query",
     "@kbn/management-settings-ids",
     "@kbn/cloud-plugin",
-    "@kbn/lock-manager"
+    "@kbn/lock-manager",
+    "@kbn/workflows-extensions"
   ]
 }

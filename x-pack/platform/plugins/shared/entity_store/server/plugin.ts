@@ -34,12 +34,12 @@ import { EntityResolutionRuleType } from './domain/resolution/rules/saved_object
 import { CustomResolutionRuleType } from './domain/resolution/rules';
 import { registerEntityMaintainerTask } from './tasks/entity_maintainers';
 import type { RegisterEntityMaintainerConfig } from './tasks/entity_maintainers/types';
-import { getMaintainerStatus } from './domain/entity_maintainers';
 import { createEntityStoreRunServices } from './entity_store_run_services';
-import { EntityMetadataClient } from './domain/entity_metadata';
-import { RelationshipsClient } from './domain/relationships';
-import { ResolutionClient } from './domain/resolution';
-import { ResolutionRulesClient } from './domain/resolution/rules';
+import {
+  createEntityStoreClientServices,
+  ENTITY_STORE_RUNTIME_SETTINGS_ID,
+} from './create_entity_store_client_services';
+import { entityMaintainersRegistry } from './tasks/entity_maintainers/entity_maintainers_registry';
 import { registerTelemetry, createReportEvent } from './telemetry/events';
 import { registerEntityStoreUsageCollector } from './telemetry/usage_collector';
 import { automatedResolutionMaintainerConfig } from './domain/resolution/rules/maintainers/automated_resolution';
@@ -109,6 +109,12 @@ export class EntityStorePlugin
     registerTasks(plugins.taskManager, this.logger, core, this.isServerless);
     registerTriggers(plugins.workflowsExtensions);
     registerSteps(plugins.workflowsExtensions, core);
+    plugins.workflowsExtensions.registerTaskProcessSettings(
+      ENTITY_STORE_RUNTIME_SETTINGS_ID,
+      () => ({
+        maintainers: entityMaintainersRegistry.getAll(),
+      })
+    );
     this.logger.debug('Registering routes');
     registerRoutes(router);
 
@@ -181,21 +187,12 @@ export class EntityStorePlugin
     const { logger, entityDefinitionRegistry } = this;
     return {
       ...createEntityStoreRunServices({ logger }),
-      createEntityMetadataClient: (esClient, namespace) =>
-        new EntityMetadataClient({ logger, esClient, namespace }),
-      createRelationshipsClient: (esClient, namespace) =>
-        new RelationshipsClient({ logger, esClient, namespace }),
-      createResolutionClient: (esClient, namespace) =>
-        new ResolutionClient({
-          logger,
-          esClient,
-          namespace,
-          analytics: createReportEvent(core.analytics),
-        }),
-      createResolutionRulesClient: (savedObjectsClient, namespace) =>
-        new ResolutionRulesClient(savedObjectsClient, namespace, logger),
-      getMaintainerStatus: (namespace, ids) =>
-        getMaintainerStatus({ taskManager: plugins.taskManager, namespace, logger, ids }),
+      ...createEntityStoreClientServices({
+        logger,
+        analytics: core.analytics,
+        taskManager: plugins.taskManager,
+        getMaintainers: () => entityMaintainersRegistry.getAll(),
+      }),
       getEntityDefinitionsClient: (request) =>
         createEntityDefinitionsClient(
           entityDefinitionRegistry,

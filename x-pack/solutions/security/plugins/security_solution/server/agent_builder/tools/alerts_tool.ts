@@ -14,7 +14,7 @@ import type { Logger } from '@kbn/logging';
 import { getAgentBuilderResourceAvailability } from '../utils/get_agent_builder_resource_availability';
 import { DEFAULT_ALERTS_INDEX, ESSENTIAL_ALERT_FIELDS } from '../../../common/constants';
 import { securityTool } from './constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from './core_services';
 
 const alertsSchema = lazySchema(() =>
   z.object({
@@ -60,7 +60,7 @@ const enhanceQueryForAlerts = (nlQuery: string, isCount?: boolean): string => {
 };
 
 export const alertsTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof alertsSchema> => {
   return {

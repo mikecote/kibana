@@ -8,7 +8,6 @@
 import type { Logger } from '@kbn/logging';
 import type {
   SecurityServiceStart,
-  ElasticsearchServiceStart,
   KibanaRequest,
   UiSettingsServiceStart,
   SavedObjectsServiceStart,
@@ -21,6 +20,7 @@ import type {
 } from '@kbn/agent-builder-server/agents';
 import { chatAgentTypeId } from '@kbn/agent-builder-common';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { defaultAiIndices } from './default_ai_indices';
 import { createConfigurationResolver } from './resolve_configuration';
 import { getCurrentSpaceId } from '../../utils/spaces';
@@ -50,7 +50,7 @@ export interface AgentsServiceSetupDeps {
 export interface AgentsServiceStartDeps {
   security: SecurityServiceStart;
   spaces?: SpacesPluginStart;
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
   toolsService: ToolsServiceStart;
@@ -186,6 +186,15 @@ export class AgentsService {
       await systemClient.ensureAgent(agent);
     };
 
+    const setAgentAvailability: AgentsServiceStart['setAgentAvailability'] = ({
+      agentId,
+      availability,
+      hidden,
+    }) => {
+      if (availability) this.availabilityByAgentId.set(agentId, availability);
+      if (hidden !== undefined) this.hiddenByAgentId.set(agentId, hidden);
+    };
+
     const resolveAgentConfiguration: AgentsServiceStart['resolveAgentConfiguration'] = ({
       agent,
       request,
@@ -257,6 +266,7 @@ export class AgentsService {
     return {
       getRegistry,
       ensure,
+      setAgentAvailability,
       resolveAgentConfiguration,
       resolveAgentBaseConfiguration,
       removeToolRefsFromAgents,

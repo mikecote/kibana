@@ -5,13 +5,13 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import {
   entityAssetCriticalityUpdatedTriggerDefinition,
   entityRiskScoreChangedTriggerDefinition,
 } from '../../../common/workflow/triggers';
 
-export const registerTriggers = (workflowsExtensions: WorkflowsExtensionsServerPluginSetup) => {
+export const registerTriggers = (workflowsExtensions: WorkflowStepsRegistry) => {
   workflowsExtensions.registerTriggerDefinition(entityAssetCriticalityUpdatedTriggerDefinition);
   workflowsExtensions.registerTriggerDefinition(entityRiskScoreChangedTriggerDefinition);
 };

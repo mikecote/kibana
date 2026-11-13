@@ -7,8 +7,6 @@
 
 import type { CoreSetup, CoreStart, Plugin } from '@kbn/core/server';
 import type { EmbeddableSetup } from '@kbn/embeddable-plugin/server';
-import { URL_DRILLDOWN_SUPPORTED_TRIGGERS, URL_DRILLDOWN_TYPE } from '../common/constants';
-import { urlDrilldownSchema } from './schemas';
 
 interface SetupDependencies {
   embeddable: EmbeddableSetup;
@@ -17,14 +15,13 @@ interface SetupDependencies {
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface StartDependencies {}
 
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
+
 export class UrlDrilldownPlugin
   implements Plugin<void, void, SetupDependencies, StartDependencies>
 {
   public setup(core: CoreSetup, { embeddable }: SetupDependencies) {
-    embeddable.registerDrilldown(URL_DRILLDOWN_TYPE, {
-      schema: urlDrilldownSchema,
-      supportedTriggers: URL_DRILLDOWN_SUPPORTED_TRIGGERS,
-    });
+    registerEmbeddableDefinitions(embeddable);
   }
 
   public start(core: CoreStart) {}

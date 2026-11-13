@@ -6,19 +6,18 @@
  */
 
 import { z } from '@kbn/zod/v4';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
 import { getMitreFrameworkByThreatName } from '@kbn/security-mitre-attack-common';
+import type { SecuritySkillServices } from '../services';
+import type { EntityAnalyticsMlServices } from '../../../lib/entity_analytics/ml_anomaly_detection/ml_services';
 import type { RuleResponse } from '../../../../common/api/detection_engine';
 import { createPrebuiltRuleAssetsClient } from '../../../lib/detection_engine/prebuilt_rules/logic/rule_assets/prebuilt_rule_assets_client';
 import { createPrebuiltRuleObjectsClient } from '../../../lib/detection_engine/prebuilt_rules/logic/rule_objects/prebuilt_rule_objects_client';
 import { getInstallableRulesForReview } from '../../../lib/detection_engine/prebuilt_rules/logic/get_installable_rules_for_review';
 import { buildMlAuthz } from '../../../lib/machine_learning/authz';
-import type { EntityAnalyticsRoutesDeps } from '../../../lib/entity_analytics/types';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 import { buildPrebuiltRulesToolFilter } from './find_prebuilt_rules_filter';
 
 export const FIND_PREBUILT_RULES_INLINE_TOOL_ID = 'security.find_prebuilt_rules';
@@ -169,9 +168,9 @@ export const reduceMitreToTacticsOnly = (rule: RuleResponse) => ({
 });
 
 interface FindPrebuiltRulesToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
-  ml: EntityAnalyticsRoutesDeps['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
 }
 
 export const createFindPrebuiltRulesInlineTool = ({

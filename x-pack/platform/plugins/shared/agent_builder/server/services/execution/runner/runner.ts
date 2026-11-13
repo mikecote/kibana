@@ -6,14 +6,13 @@
  */
 
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
-import type { HttpServiceStart, KibanaRequest } from '@kbn/core-http-server';
+
+import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
-import type { PluginStartContract as ActionsPluginStart } from '@kbn/actions-plugin/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+
 import type {
   ChatCompletionReasoningEffort,
   ConnectorTelemetryMetadata,
@@ -65,6 +64,12 @@ import { createAttachmentStateManager } from '@kbn/agent-builder-server/attachme
 import type { TodoStateManager } from '@kbn/agent-builder-server/runner';
 import { createTodoStateManager } from '@kbn/agent-builder-server/runner';
 import type { AgentExecutionService } from '@kbn/agent-builder-server/execution';
+import type { AgentBuilderActionsStart } from '../../actions_services';
+import type {
+  AgentBuilderElasticsearch,
+  AgentBuilderHttp,
+  AgentBuilderLicensing,
+} from '../../runtime_ports';
 import { DEDUCTIVE_AGENT_ID, getDeductiveConfig } from '../run_agent/deductive/config';
 import type { ToolsServiceStart } from '../../tools';
 import type { AgentsServiceStart } from '../../agents';
@@ -92,15 +97,15 @@ import type { DeploymentInfo } from '../../../utils/deployment_info';
 
 export interface CreateScopedRunnerDeps {
   // core services
-  elasticsearch: ElasticsearchServiceStart;
-  http: HttpServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
+  http: AgentBuilderHttp;
   security: SecurityServiceStart;
   savedObjects: SavedObjectsServiceStart;
   uiSettings: UiSettingsServiceStart;
   // external plugin deps
   spaces: SpacesPluginStart | undefined;
-  actions: ActionsPluginStart;
-  licensing: LicensingPluginStart;
+  actions: AgentBuilderActionsStart;
+  licensing: AgentBuilderLicensing;
   // internal service deps
   modelProvider: ModelProvider;
   toolsService: ToolsServiceStart;

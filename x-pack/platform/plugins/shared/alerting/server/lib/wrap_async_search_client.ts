@@ -21,7 +21,7 @@ export function wrapAsyncSearchClient<P extends AsyncSearchParams>({
   rule,
 }: {
   strategy: AsyncSearchStrategies;
-  client: IScopedSearchClient;
+  client: Pick<IScopedSearchClient, 'search'>;
   abortController: AbortController;
   logger: Logger;
   rule: RuleInfo;

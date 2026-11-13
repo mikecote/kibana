@@ -5,7 +5,7 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { ALERT_ACTION_WORKFLOW_TRIGGERS } from '../events/alert_action_workflow_subscriber/triggers';
 import { RULE_WORKFLOW_TRIGGERS } from '../events/rule_workflow_subscriber/triggers';
 import { RULE_EXECUTOR_WORKFLOW_TRIGGERS } from '../events/rule_executor_workflow_subscriber/triggers';
@@ -19,9 +19,7 @@ import { RULE_EXECUTOR_WORKFLOW_TRIGGERS } from '../events/rule_executor_workflo
  *
  * Call once during plugin setup.
  */
-export function registerTriggerDefinitions(
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup
-): void {
+export function registerTriggerDefinitions(workflowsExtensions: WorkflowStepsRegistry): void {
   for (const trigger of ALERT_ACTION_WORKFLOW_TRIGGERS) {
     workflowsExtensions.registerTriggerDefinition(trigger.definition);
   }

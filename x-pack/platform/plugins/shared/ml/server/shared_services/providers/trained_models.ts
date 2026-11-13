@@ -6,12 +6,12 @@
  */
 
 import type { estypes } from '@elastic/elasticsearch';
-import type { CloudSetup } from '@kbn/cloud-plugin/server';
 import type { KibanaRequest, SavedObjectsClientContract } from '@kbn/core/server';
 import type {
   GetModelDownloadConfigOptions,
   ModelDefinitionResponse,
 } from '@kbn/ml-trained-models-utils';
+import type { MlCloud } from '../../ml_cloud';
 import type { MlFeatures } from '../../../common/constants/app';
 import type {
   MlInferTrainedModelRequest,
@@ -60,7 +60,7 @@ export interface TrainedModelsProvider {
 
 export function getTrainedModelsProvider(
   getGuards: GetGuards,
-  cloud: CloudSetup,
+  cloud: MlCloud,
   enabledFeatures: MlFeatures
 ): TrainedModelsProvider {
   return {

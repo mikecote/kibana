@@ -8,18 +8,12 @@
  */
 
 import type { CoreSetup, CoreStart, Plugin } from '@kbn/core/server';
-import { IMAGE_EMBEDDABLE_TYPE } from '../common/constants';
-import { getTransforms } from '../common/transforms';
+import { registerEmbeddableDefinitions } from './embeddable_contribution';
 import type { SetupDeps, StartDeps } from './types';
-import { getImageEmbeddableSchema } from './schemas';
 
 export class ImageEmbeddablePlugin implements Plugin<void, void, SetupDeps, StartDeps> {
   setup(core: CoreSetup<StartDeps>, plugins: SetupDeps) {
-    plugins.embeddable.registerEmbeddableServerDefinition(IMAGE_EMBEDDABLE_TYPE, {
-      title: 'Image',
-      getTransforms,
-      getSchema: (getDrilldownsSchemas) => getImageEmbeddableSchema(getDrilldownsSchemas),
-    });
+    registerEmbeddableDefinitions(plugins.embeddable);
   }
 
   start(core: CoreStart, plugins: StartDeps) {}

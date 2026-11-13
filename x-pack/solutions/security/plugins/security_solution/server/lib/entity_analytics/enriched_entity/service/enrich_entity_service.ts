@@ -22,7 +22,7 @@ import type { EntityStoreCRUDClient } from '@kbn/entity-store/server';
 import type { Entity } from '@kbn/entity-store/common';
 import type { MitreAttackDataClient } from '@kbn/mitre-attack-plugin/server';
 import type { EntityRiskScoreRecord } from '../../../../../common/api/entity_analytics/common';
-import type { EntityAnalyticsRoutesDeps } from '../../types';
+import type { EntityAnalyticsMlServices } from '../../ml_anomaly_detection/ml_services';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { getRiskScoreData, getAnomalyData, getVulnerabilityData } from './utils';
 import type { AnomalyRecord } from './utils/get_anomaly_data';
@@ -59,7 +59,7 @@ interface EnrichedEntityServiceOpts {
   experimentalFeatures: ExperimentalFeatures;
   logger: Logger;
   mitreDataClient?: MitreAttackDataClient;
-  ml: EntityAnalyticsRoutesDeps['ml'];
+  ml: EntityAnalyticsMlServices | undefined;
   request: KibanaRequest;
   soClient: SavedObjectsClientContract;
   spaceId: string;

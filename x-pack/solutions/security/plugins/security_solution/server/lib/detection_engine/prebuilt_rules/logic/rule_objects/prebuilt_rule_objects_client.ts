@@ -70,7 +70,7 @@ export interface IPrebuiltRuleObjectsClient {
 }
 
 export const createPrebuiltRuleObjectsClient = (
-  rulesClient: RulesClient
+  rulesClient: Pick<RulesClient, 'find'>
 ): IPrebuiltRuleObjectsClient => {
   return {
     fetchInstalledRulesByIds: ({ ruleIds, sortField = 'createdAt', sortOrder = 'desc' }) => {

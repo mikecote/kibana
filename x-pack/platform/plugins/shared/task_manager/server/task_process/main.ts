@@ -5,72 +5,16 @@
  * 2.0.
  */
 
-import { readFileSync } from 'fs';
-import { elasticsearchConfigFromEnv } from './es_config';
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
+import { getTaskProcessContext } from './context';
+import { TASK_PROCESS_PROTOCOL_VERSION, TASK_PROCESS_CAPABILITIES } from './protocol';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
-import { watchParent } from './parent_watch';
+import { createTaskProcessParentWatcher } from './parent_watch';
+import { readTaskProcessInit } from './main_init';
+import type { TaskProcessInstrumentation } from './instrumentation';
+export { initFromEnv } from './main_init';
 import type { TaskTypeModule } from '../task_type_module';
-
-const PARENT_GONE_STOP_TIMEOUT_MS = 5000;
-
-declare const __KBN_VERSION__: string | undefined;
-
-/**
- * What a remote process takes from its environment besides the Elasticsearch connection:
- * ESO_ENCRYPTION_KEY and ESO_DECRYPTION_ONLY_KEYS (comma separated), KIBANA_SERVER_UUID,
- * KIBANA_BUILD_NUM, KIBANA_PUBLIC_BASE_URL, KIBANA_BASE_PATH, KIBANA_SERVERLESS, and TASK_PROCESS_SETTINGS, the path
- * of a JSON file `{ "settings": { "<pluginId>": <config> }, "uiSettingsOverrides": {}, "uiSettingsGlobalOverrides": {}, "parity": [{ "kind": "...", "ids": [] }] }` whose
- * configs use the format of `serializeSettings` (a duration is `{"__kind":"duration","ms":1000}`).
- */
-export const initFromEnv = (env: NodeJS.ProcessEnv = process.env): TaskProcessInit => {
-  const file = env.TASK_PROCESS_SETTINGS
-    ? (JSON.parse(readFileSync(env.TASK_PROCESS_SETTINGS, 'utf8')) as Pick<
-        TaskProcessInit,
-        'settings' | 'uiSettingsOverrides' | 'uiSettingsGlobalOverrides' | 'parity'
-      >)
-    : {};
-  return {
-    kind: 'init',
-    elasticsearch: elasticsearchConfigFromEnv(env),
-    kibanaVersion: env.KIBANA_VERSION ?? __KBN_VERSION__ ?? 'unknown',
-    authToken: env.TASK_PROCESS_TOKEN ?? '',
-    server: {
-      uuid: env.KIBANA_SERVER_UUID ?? '',
-      buildNum: env.KIBANA_BUILD_NUM ? Number(env.KIBANA_BUILD_NUM) : Number.MAX_SAFE_INTEGER,
-      publicBaseUrl: env.KIBANA_PUBLIC_BASE_URL,
-      basePath: env.KIBANA_BASE_PATH,
-      isServerless: env.KIBANA_SERVERLESS === 'true',
-      isDev: env.KIBANA_DEV === 'true',
-    },
-    encryptedSavedObjects: env.ESO_ENCRYPTION_KEY
-      ? {
-          encryptionKey: env.ESO_ENCRYPTION_KEY,
-          decryptionOnlyKeys: (env.ESO_DECRYPTION_ONLY_KEYS ?? '')
-            .split(',')
-            .map((key) => key.trim())
-            .filter(Boolean),
-        }
-      : undefined,
-    settings: file.settings,
-    uiSettingsOverrides: file.uiSettingsOverrides,
-    uiSettingsGlobalOverrides: file.uiSettingsGlobalOverrides,
-    parity: file.parity,
-  };
-};
-
-/** Kibana, when it forked this process, sends `init` first; a remote process uses its environment. */
-const readInit = (): Promise<TaskProcessInit> => {
-  if (process.send) {
-    return new Promise<TaskProcessInit>((resolve) => {
-      process.on('message', (message: TaskProcessInit) => {
-        if (message?.kind === 'init') resolve(message);
-      });
-    });
-  }
-  return Promise.resolve(initFromEnv());
-};
 
 /**
  * Entry of a task process: Core and the plugins a task type needs, started the way Kibana starts
@@ -80,28 +24,42 @@ const readInit = (): Promise<TaskProcessInit> => {
  */
 export const runTaskProcess = async (
   module: TaskTypeModule,
-  { contributions }: { contributions?: Record<string, unknown[]> } = {}
-) => {
-  // Kibana forked this process: it ends with Kibana, however Kibana ends.
-  let stopCore: (() => Promise<void>) | undefined;
-  if (process.send) {
-    watchParent({
-      onParentGone: (reason) => {
-        process.stderr.write(`Task process stopping: its parent is gone (${reason})\n`);
-        // Closing Core is bounded: nothing is left to wait for a run for.
-        const forceExit = setTimeout(() => process.exit(1), PARENT_GONE_STOP_TIMEOUT_MS);
-        forceExit.unref();
-        (stopCore?.() ?? Promise.resolve()).finally(() => process.exit(0));
-      },
-    });
-  }
+  {
+    contributions,
+    init: providedInit,
+    instrumentation,
+    registerStop,
+  }: {
+    contributions?: Record<string, unknown[]>;
+    init?: TaskProcessInit;
+    instrumentation?: TaskProcessInstrumentation;
+    registerStop?: ReturnType<typeof createTaskProcessParentWatcher>;
+  } = {}
+): Promise<void> => {
+  const onCoreStarted = registerStop ?? createTaskProcessParentWatcher();
   try {
-    const init = await readInit();
+    const init = providedInit ?? (await readTaskProcessInit());
     const core = await startTaskProcessCore({ init, module, contributions });
-    stopCore = core.stop;
+    const stop = async (): Promise<void> => {
+      try {
+        await core.stop();
+      } finally {
+        await instrumentation?.shutdown();
+      }
+    };
+    onCoreStarted(stop);
+    if (instrumentation) {
+      const { onRunEnd } = core.host;
+      if (!onRunEnd)
+        throw new Error('Native instrumentation requires the worker run-end lifecycle');
+      onRunEnd(instrumentation.forceFlush);
+    }
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      executionContext: core.host.executionContext,
+      enrichFakeRequest: core.enrichFakeRequest,
+      getFeatureFlagDefinitions: () => getTaskProcessContext().module.featureFlags ?? {},
       port: Number(process.env.PORT ?? 0),
       // Only a forked process is Kibana's own; its runs carry credentials, so it is loopback only.
       host: process.send ? '127.0.0.1' : process.env.HOST || undefined,
@@ -110,15 +68,28 @@ export const runTaskProcess = async (
       authToken: init.authToken || undefined,
       onListening: (port) => {
         if (process.send) {
-          process.send({ kind: 'ready', port } satisfies TaskProcessReady);
+          process.send({
+            kind: 'ready',
+            port,
+            protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
+            capabilities: TASK_PROCESS_CAPABILITIES,
+            featureFlags: getTaskProcessContext().module.featureFlags ?? {},
+          } satisfies TaskProcessReady);
         } else {
           process.stdout.write(`READY ${port}\n`);
         }
       },
-      onShutdown: core.stop,
+      onShutdown: stop,
       flush: core.flush,
+      collectMetrics: instrumentation?.collectMetrics,
+      collectGauges: instrumentation?.collectGauges,
     });
   } catch (error) {
+    await instrumentation?.shutdown().catch((shutdownError: Error) => {
+      process.stderr.write(
+        `Task process instrumentation shutdown failed: ${shutdownError.message}\n`
+      );
+    });
     process.stderr.write(`Task process failed to start: ${(error as Error).stack ?? error}\n`);
     process.exit(1);
   }

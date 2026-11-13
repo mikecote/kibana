@@ -15,7 +15,7 @@ import type { Logger } from '@kbn/logging';
 import type { ExperimentalFeatures } from '../../../../../common';
 import { IdentifierType } from '../../../../../common/api/entity_analytics/common/common.gen';
 import { RESOLUTION_GROUP_UPDATED_TOOL_EVENT } from '../../../../../common/entity_analytics/tool_events';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../../plugin_contract';
+import type { SecurityEntityToolServices } from '../entity_services';
 import { securityTool } from '../../constants';
 import { requireResolvedEntity } from '../entity_resolution';
 import { createToolTelemetryTracker } from '../tool_telemetry_tracker';
@@ -65,7 +65,7 @@ const schema = z.object({
 export const SECURITY_LINK_ENTITIES_TOOL_ID = securityTool('link_entities');
 
 export const linkEntitiesTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

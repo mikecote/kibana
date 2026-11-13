@@ -6,7 +6,7 @@
  */
 
 module.exports = {
-  preset: '@kbn/jest/jest_integration',
+  preset: '@kbn/jest/jest_integration_node',
   rootDir: '../../../../..',
-  roots: ['<rootDir>/x-pack/platform/plugins/shared/ml'],
+  roots: ['<rootDir>/x-pack/platform/plugins/shared/ml/server'],
 };

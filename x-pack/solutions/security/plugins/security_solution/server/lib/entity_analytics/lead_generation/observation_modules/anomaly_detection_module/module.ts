@@ -6,7 +6,7 @@
  */
 
 import type { KibanaRequest, Logger, SavedObjectsClientContract } from '@kbn/core/server';
-import type { MlPluginSetup } from '@kbn/ml-plugin/server';
+import type { EntityAnalyticsMlServices } from '../../../ml_anomaly_detection/ml_services';
 import type { LeadEntity, Observation, ObservationModule } from '../../types';
 import { OBSERVATION_MODULE_WEIGHTS } from '../weights';
 import { MODULE_ID, MODULE_NAME, MODULE_PRIORITY } from './config';
@@ -15,7 +15,7 @@ import { buildAnomalyObservation } from './observations';
 
 interface AnomalyDetectionModuleDeps {
   readonly logger: Logger;
-  readonly ml?: MlPluginSetup;
+  readonly ml?: EntityAnalyticsMlServices;
   readonly request?: KibanaRequest;
   readonly soClient?: SavedObjectsClientContract;
 }

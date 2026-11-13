@@ -144,6 +144,9 @@ dependsOn:
   - '@kbn/app-header'
   - '@kbn/app-menu'
   - '@kbn/config'
+  - '@kbn/workflows-extensions'
+  - '@kbn/workflows'
+  - '@kbn/workflows-execution-engine'
 tags:
   - plugin
   - prod

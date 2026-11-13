@@ -19,7 +19,7 @@ jest.mock('undici', () => ({
 
 import { rootCertificates } from 'node:tls';
 import { Agent, getGlobalDispatcher } from 'undici';
-import type { IBasePath } from '@kbn/core-http-server';
+import type { IBasePath, HttpSelfClientSslConfig } from '@kbn/core-http-server';
 import type { HttpConfig } from './http_config';
 import { SelfHttpDispatcherProvider, withHeadersTimeout } from './self_client_dispatcher';
 
@@ -37,12 +37,14 @@ const createProvider = ({
   serverCertificate,
   target = 'auto',
   publicBaseUrl = PUBLIC_BASE_URL,
+  ssl,
 }: {
   verificationMode?: VerificationMode;
   certificateAuthorities?: string[];
   serverCertificate?: string;
   target?: 'auto' | 'local';
   publicBaseUrl?: string;
+  ssl?: Readonly<Record<'local' | 'public', HttpSelfClientSslConfig>>;
 } = {}) => {
   const getHttpConfig = jest.fn(
     () =>
@@ -56,6 +58,7 @@ const createProvider = ({
     basePath: { publicBaseUrl } as IBasePath,
     getHttpConfig,
     target,
+    ssl,
   });
 
   return { provider, getHttpConfig };
@@ -67,6 +70,34 @@ describe('SelfHttpDispatcherProvider', () => {
   beforeEach(() => {
     AgentMock.mockClear();
     getGlobalDispatcherMock.mockClear();
+  });
+
+  it('preserves exclusive listener certificate trust when a worker restores the captured profile', () => {
+    const leaf = '-----BEGIN CERTIFICATE-----\nlistener\n-----END CERTIFICATE-----';
+    const chain = `${leaf}\n-----BEGIN CERTIFICATE-----\nissuer\n-----END CERTIFICATE-----`;
+    const { provider: main } = createProvider({
+      serverCertificate: chain,
+      certificateAuthorities: ['unrelated Main CA'],
+    });
+    const snapshot = main.getSslConfig('local');
+    expect(snapshot).toEqual({
+      verificationMode: 'certificate',
+      certificateAuthorities: [leaf],
+      exclusiveTrust: true,
+      clientCertificateRequired: false,
+    });
+    const { provider: worker } = createProvider({
+      certificateAuthorities: ['unrelated worker CA'],
+      ssl: { local: snapshot, public: main.getSslConfig('public') },
+    });
+    worker.get(HTTPS_URL, 'local');
+    expect(connectOptionsOf(0)).toEqual({
+      ca: [leaf],
+      allowPartialTrustChain: true,
+      rejectUnauthorized: true,
+      checkServerIdentity: expect.any(Function),
+    });
+    expect(worker.getSslConfig('local')).toEqual(snapshot);
   });
 
   it('returns no dispatcher for plain HTTP targets regardless of verification mode', () => {

@@ -12,7 +12,7 @@ import type { AttachmentTypeDefinition } from '@kbn/agent-builder-server/attachm
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import { OBSERVABILITY_ERROR_ATTACHMENT_TYPE_ID } from '../../common';
-import type { ObservabilityAgentBuilderDataRegistry } from '../data_registry/data_registry';
+import type { ObservabilityDataRegistryClient } from '../data_registry/data_registry';
 import { MAX_SHORT_STRING_LENGTH } from '../utils/schema_limits';
 import { observabilityAttachmentDataSchema } from './observability_attachment_data_schema';
 
@@ -33,7 +33,7 @@ export function createErrorAttachmentType({
   dataRegistry,
 }: {
   logger: Logger;
-  dataRegistry: ObservabilityAgentBuilderDataRegistry;
+  dataRegistry: ObservabilityDataRegistryClient;
 }): AttachmentTypeDefinition<typeof OBSERVABILITY_ERROR_ATTACHMENT_TYPE_ID, ErrorAttachmentData> {
   return {
     id: OBSERVABILITY_ERROR_ATTACHMENT_TYPE_ID,

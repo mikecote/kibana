@@ -7,23 +7,19 @@
 
 import type { Logger } from '@kbn/core/server';
 import type { ToolAvailabilityResult } from '@kbn/agent-builder-server';
-import type { SignificantEventsServer } from '../../types';
-import { assertSignificantEventsAccess } from '../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../run_services/create_access_checker';
 
 export const createSignificantEventsAvailability = ({
-  server,
+  assertAccess,
   logger,
 }: {
-  server: SignificantEventsServer;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
 }) => ({
   cacheMode: 'space' as const,
   handler: async (): Promise<ToolAvailabilityResult> => {
     try {
-      await assertSignificantEventsAccess({
-        server,
-        licensing: server.licensing,
-      });
+      await assertAccess();
       return { status: 'available' };
     } catch (error) {
       if (error instanceof Error) {

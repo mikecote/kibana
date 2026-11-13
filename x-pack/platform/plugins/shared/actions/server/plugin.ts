@@ -16,7 +16,6 @@ import type {
   Logger,
   IContextProvider,
   SavedObjectsClientContract,
-  SavedObjectsBulkGetObject,
 } from '@kbn/core/server';
 import { SECURITY_EXTENSION_ID } from '@kbn/core-saved-objects-server';
 import type {
@@ -44,6 +43,7 @@ import type { AxiosInstance } from 'axios';
 import type { UsageApiSetup } from '@kbn/usage-api-plugin/server';
 import type { ConnectorSigningKey, CredentialAccessor } from '@kbn/connector-specs';
 import type { SpaceId } from '@kbn/core-spaces-common';
+import { createActionsEventLogSavedObjectProvider } from './lib/event_log_saved_object_provider';
 import { type ActionsConfig, type EnabledConnectorTypes } from './config';
 import { AllowedHosts, getValidatedConfig } from './config';
 import { resolveCustomHosts } from './lib/custom_host_settings';
@@ -765,21 +765,10 @@ export class ActionsPlugin
     const secureGetActionsClientWithRequest = (request: KibanaRequest) =>
       getActionsClientWithRequest(request);
 
-    this.eventLogService!.registerSavedObjectProvider('action', (request) => {
-      const client = secureGetActionsClientWithRequest(request);
-      return (objects?: SavedObjectsBulkGetObject[]) =>
-        objects
-          ? Promise.all(
-              objects.map(
-                async (objectItem) =>
-                  /**
-                   * TODO: Change with getBulk
-                   */
-                  await (await client).get({ id: objectItem.id, throwIfSystemAction: false })
-              )
-            )
-          : Promise.resolve([]);
-    });
+    this.eventLogService!.registerSavedObjectProvider(
+      'action',
+      createActionsEventLogSavedObjectProvider(secureGetActionsClientWithRequest)
+    );
 
     const getScopedSavedObjectsClientWithoutAccessToActions = (request: KibanaRequest) =>
       core.savedObjects.getScopedClient(request);

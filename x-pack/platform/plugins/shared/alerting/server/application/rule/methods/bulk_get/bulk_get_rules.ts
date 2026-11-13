@@ -13,7 +13,7 @@ import { isSavedObjectErrorResult } from '@kbn/core/server';
 import type { KueryNode } from '@kbn/es-query';
 import { nodeBuilder } from '@kbn/es-query';
 import { ruleAuditEvent, RuleAuditAction } from '../../../../rules_client/common/audit_events';
-import type { RulesClientContext } from '../../../../rules_client/types';
+import type { RulesReadContext } from '../../../../rules_client/rules_read_context';
 import { RULE_SAVED_OBJECT_TYPE } from '../../../../saved_objects';
 import type { BulkGetRulesParams } from './types';
 import { bulkGetRulesParamsSchema } from './schemas';
@@ -29,7 +29,7 @@ import {
 } from '../../../../rules_client/lib';
 
 export async function bulkGetRules<Params extends RuleParams = never>(
-  context: RulesClientContext,
+  context: RulesReadContext,
   params: BulkGetRulesParams
 ): Promise<BulkGetRulesResponse<Params>> {
   try {

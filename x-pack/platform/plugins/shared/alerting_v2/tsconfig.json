@@ -15,6 +15,7 @@
     "test/scout_alerting_v2_custom_config/**/*"
   ],
   "kbn_references": [
+    "@kbn/workflows-execution-engine",
     "@kbn/agent-builder-elastic-ai-index-ki-types",
     "@kbn/core",
     "@kbn/task-manager-plugin",
@@ -31,6 +32,8 @@
     "@kbn/core-di",
     "@kbn/core-di-browser",
     "@kbn/core-di-server",
+    "@kbn/core-di-server-internal",
+    "@kbn/repo-info",
     "@kbn/esql",
     "@kbn/esql-utils",
     "@kbn/response-ops-retry-service",

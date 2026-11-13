@@ -83,18 +83,30 @@ const toElasticsearchSettings = (
  */
 export const buildCoreConfig = (
   init: TaskProcessInit,
-  module: Pick<TaskTypeModule, 'uiSettings' | 'encryptedSavedObjectTypes'>
+  module: Pick<
+    TaskTypeModule,
+    | 'uiSettings'
+    | 'registerUiSettings'
+    | 'encryptedSavedObjectTypes'
+    | 'createSavedObjectTypes'
+    | 'taskManager'
+  >
 ): CoreConfig => {
   const dir = mkdtempSync(join(tmpdir(), 'kbn-task-process-'));
-  // The encrypted saved objects plugin only runs for a module that declares encrypted types, and Core
-  // rejects config for a plugin that is not there.
-  const keys = module.encryptedSavedObjectTypes?.length ? init.encryptedSavedObjects : undefined;
+  // Core rejects encryption config unless the module needs encrypted types or native migrations.
+  const keys =
+    module.encryptedSavedObjectTypes?.length || module.createSavedObjectTypes || module.taskManager
+      ? init.encryptedSavedObjects
+      : undefined;
   // Core reads the UIAM client authentication of Elasticsearch requests from `xpack.security.uiam`,
   // so the settings the security plugin registers for task processes carry it.
-  const uiam = (reviveSettingsByPlugin(init.settings).security as { uiam?: unknown } | undefined)
-    ?.uiam;
+  const { uiam, fipsMode } =
+    (reviveSettingsByPlugin(init.settings).security as
+      | { uiam?: unknown; fipsMode?: { enabled: boolean } }
+      | undefined) ?? {};
   const settings: Record<string, unknown> = {
     core: { lifecycle: { disablePreboot: true } },
+    ...(init.executionContext ? { execution_context: init.executionContext } : {}),
     elasticsearch: toElasticsearchSettings(init.elasticsearch, dir),
     path: { data: join(dir, 'data') },
     server: {
@@ -102,10 +114,14 @@ export const buildCoreConfig = (
       port: 0,
       ...(init.server?.uuid ? { uuid: init.server.uuid } : {}),
       ...(init.server?.basePath ? { basePath: init.server.basePath } : {}),
-      ...(init.server?.publicBaseUrl ? { publicBaseUrl: init.server.publicBaseUrl } : {}),
+      // Core's self client calls Kibana at this URL; what a run builds links with is `host.server`.
+      ...(init.server?.kibanaUrl ?? init.server?.publicBaseUrl
+        ? { publicBaseUrl: init.server?.kibanaUrl ?? init.server?.publicBaseUrl }
+        : {}),
     },
-    // Kibana owns the saved object indices and the data streams; a run only reads and writes documents.
+    // Kibana owns startup migrations; runs retain native lazy initialization of their declared storage.
     migrations: { skip: true },
+    dataStreams: { migrations: { skip: true } },
     plugins: { initialize: true },
     // No translation files: nothing in a run is rendered for a person.
     i18n: { locales: [] },
@@ -123,7 +139,10 @@ export const buildCoreConfig = (
       // error), which Kibana already logs for itself; a process that lives for one run says it every run.
       loggers: [{ name: 'status', level: 'off' }],
     },
-    ...(init.uiSettingsOverrides || init.uiSettingsGlobalOverrides || module.uiSettings
+    ...(init.uiSettingsOverrides ||
+    init.uiSettingsGlobalOverrides ||
+    module.uiSettings ||
+    module.registerUiSettings
       ? {
           uiSettings: {
             overrides: init.uiSettingsOverrides ?? {},
@@ -131,7 +150,7 @@ export const buildCoreConfig = (
           },
         }
       : {}),
-    ...(keys || uiam
+    ...(keys || uiam || fipsMode
       ? {
           xpack: {
             ...(keys
@@ -142,7 +161,9 @@ export const buildCoreConfig = (
                   },
                 }
               : {}),
-            ...(uiam ? { security: { uiam } } : {}),
+            ...(uiam || fipsMode
+              ? { security: { ...(uiam ? { uiam } : {}), ...(fipsMode ? { fipsMode } : {}) } }
+              : {}),
           },
         }
       : {}),

@@ -16,15 +16,15 @@ import {
   significantEventSchema,
   type SignificantEvent,
 } from '@kbn/significant-events-schema';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
 import { SIGNIFICANT_EVENT_ATTACHMENT_TYPE } from '../../../common';
 import type { GetScopedClients } from '../../routes/types';
 import { canReadSignificantEvents } from '../../routes/utils/assert_can_manage_significant_events';
-import type { SignificantEventsServer } from '../../types';
 
 interface CreateSignificantEventAttachmentTypeOptions {
   logger: Logger;
   getScopedClients: GetScopedClients;
-  server: Pick<SignificantEventsServer, 'security'>;
+  server: SignificantEventsAuthorizationServices;
 }
 
 const formatList = (values: string[] | undefined): string => {

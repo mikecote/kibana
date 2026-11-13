@@ -13,7 +13,7 @@ import { resolveRuleSavedObject } from '../../../../rules_client/lib';
 import { ruleAuditEvent, RuleAuditAction } from '../../../../rules_client/common/audit_events';
 import type { RuleTypeParams } from '../../../../types';
 import { ReadOperations, AlertingAuthorizationEntity } from '../../../../authorization';
-import type { RulesClientContext } from '../../../../rules_client/types';
+import type { RulesReadContext } from '../../../../rules_client/rules_read_context';
 import { formatLegacyActions } from '../../../../rules_client/lib';
 import { transformRuleAttributesToRuleDomain, transformRuleDomainToRule } from '../../transforms';
 import type { Rule } from '../../types';
@@ -26,7 +26,7 @@ export interface ResolveParams {
 }
 
 export async function resolveRule<Params extends RuleTypeParams = never>(
-  context: RulesClientContext,
+  context: RulesReadContext,
   { id }: ResolveParams
 ): // TODO (http-versioning): This should be of type Rule, change this when all rule types are fixed
 Promise<ResolvedSanitizedRule<Params>> {

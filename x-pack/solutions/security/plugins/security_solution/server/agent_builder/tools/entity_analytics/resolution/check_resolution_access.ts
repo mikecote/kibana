@@ -21,7 +21,7 @@ export const checkResolutionAccess = async ({
   privileges = ENTITY_ANALYTICS_KIBANA_FEATURE_PRIVILEGES,
 }: {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   action: string;
   /** Defaults to the read-level privileges; pass the manage list for routes that need it. */
   privileges?: readonly string[];

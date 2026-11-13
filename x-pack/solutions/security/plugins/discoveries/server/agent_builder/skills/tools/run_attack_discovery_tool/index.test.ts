@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { runInlineGeneration } from '../../../../workflows/generation_runner';
 import { ToolResultType, ToolType } from '@kbn/agent-builder-common';
 import type { ToolHandlerContext } from '@kbn/agent-builder-server';
 import { agentBuilderMocks } from '@kbn/agent-builder-plugin/server/mocks';
@@ -36,6 +37,7 @@ const FAKE_REQUEST = httpServerMock.createKibanaRequest();
 const SOFT_DEADLINE_MS = 90_000;
 
 const buildToolDeps = () => ({
+  runGeneration: runInlineGeneration,
   analytics: undefined,
   getEventLogIndex: jest.fn().mockResolvedValue('event-log-*'),
   getEventLogger: jest.fn().mockResolvedValue({}),

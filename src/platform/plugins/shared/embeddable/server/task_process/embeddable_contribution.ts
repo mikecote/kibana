@@ -1,0 +1,41 @@
+/*
+ * Copyright Elasticsearch B.V. and/or licensed to Elasticsearch B.V. under one
+ * or more contributor license agreements. Licensed under the "Elastic License
+ * 2.0", the "GNU Affero General Public License v3.0 only", and the "Server Side
+ * Public License v 1"; you may not use this file except in compliance with, at
+ * your election, the "Elastic License 2.0", the "GNU Affero General Public
+ * License v3.0 only", or the "Server Side Public License, v 1".
+ */
+
+import type { TaskHost } from '@kbn/task-manager-plugin/server/task_type_module';
+import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
+import type { EmbeddableSetup } from '../plugin';
+
+export const EMBEDDABLE_CONTRIBUTIONS_KEY = 'embeddables';
+export const EMBEDDABLE_RUNTIME_SETTINGS_ID = 'embeddableRuntime';
+
+export interface EmbeddableRegistrationIds {
+  factories: string[];
+  definitions: string[];
+  drilldowns: string[];
+  migrations?: Record<string, string[]>;
+}
+
+export interface EmbeddableContribution {
+  declares?: {
+    featureFlags?: Record<string, boolean | number | string>;
+    contributionKeys?: string[];
+    settings?: string[];
+  };
+  register: (
+    setup: EmbeddableSetup,
+    context: {
+      settings?: TaskHost['settings'];
+      getContributions?: <T extends object>(key: string) => readonly T[];
+      featureFlags?: Pick<
+        FeatureFlagsStart,
+        'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'
+      >;
+    }
+  ) => void;
+}

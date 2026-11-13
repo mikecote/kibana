@@ -8,9 +8,11 @@
  */
 
 import { execFileSync } from 'child_process';
-import { existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { basename, resolve } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
+import { CA_CERT_PATH } from '@kbn/dev-utils';
+import { getPackages } from '@kbn/repo-packages';
 import type { ScoutServerConfig } from '../../../../types';
 import { servers as defaultConfig } from '../default/stateful/classic.stateful.config';
 
@@ -22,30 +24,37 @@ export const TASK_PROCESSES_LOG_FILE = resolve(TASK_PROCESSES_DIR, 'kibana.log')
 /** The task process cap of this config set, which the concurrency test relies on. */
 export const TASK_PROCESSES_MAX_CONCURRENT = 2;
 
-/** The only task types the tests run in a process: the bundles are the slowest part to build. */
-const BUNDLES = ['es_query', 'index_threshold'];
+/** Every registered module needs a real bundle when Main is configured for process execution. */
+const BUNDLES = getPackages(REPO_ROOT).flatMap(({ manifest }) => {
+  if (manifest.type !== 'plugin') return [];
+  return (manifest.plugin.taskTypes ?? []).map(
+    (file) => `${manifest.plugin.id}__${basename(file).replace(/\.task\.[jt]s$/, '')}`
+  );
+});
 
 /**
  * Kibana reads the manifest of the bundles when it starts, so they are built when the config is
- * loaded, once (`TASK_PROCESSES_REBUILD=true` builds them again). Each takes about 35 s and 30 MB.
+ * loaded, once (`TASK_PROCESSES_REBUILD=true` builds them again).
  */
 export const ensureTaskBundles = () => {
-  if (
-    existsSync(resolve(TASK_PROCESSES_BUNDLE_DIR, 'manifest.json')) &&
-    process.env.TASK_PROCESSES_REBUILD !== 'true'
-  ) {
-    return;
+  const manifestFile = resolve(TASK_PROCESSES_BUNDLE_DIR, 'manifest.json');
+  if (existsSync(manifestFile) && process.env.TASK_PROCESSES_REBUILD !== 'true') {
+    const manifest = JSON.parse(readFileSync(manifestFile, 'utf8')) as {
+      bundles: Record<string, { file: string }>;
+    };
+    if (
+      BUNDLES.every(
+        (name) =>
+          manifest.bundles[name] &&
+          existsSync(resolve(TASK_PROCESSES_BUNDLE_DIR, manifest.bundles[name].file))
+      )
+    )
+      return;
   }
   mkdirSync(TASK_PROCESSES_BUNDLE_DIR, { recursive: true });
   execFileSync(
     process.execPath,
-    [
-      'scripts/task_bundle',
-      ...BUNDLES.flatMap((name) => ['--name', name]),
-      '--out',
-      TASK_PROCESSES_BUNDLE_DIR,
-      '--manifest',
-    ],
+    ['scripts/task_bundle', '--out', TASK_PROCESSES_BUNDLE_DIR, '--manifest'],
     { cwd: REPO_ROOT, stdio: 'inherit' }
   );
 };
@@ -70,16 +79,29 @@ const loggers = [
  * Task Manager runs the rule types that are task type modules in a process of their own
  * (`xpack.task_manager.task_execution.mode: child_process`), so the tests prove it in a real Kibana.
  */
-export const createTaskProcessesServers = (extraServerArgs: string[] = []): ScoutServerConfig => ({
-  ...defaultConfig,
+export const createTaskProcessesServers = (
+  extraServerArgs: string[] = [],
+  baseConfig: ScoutServerConfig = defaultConfig
+): ScoutServerConfig => ({
+  ...baseConfig,
+  http2: true,
   servers: {
-    elasticsearch: { ...defaultConfig.servers.elasticsearch, port: ES_PORT },
-    kibana: { ...defaultConfig.servers.kibana, port: KBN_PORT },
+    elasticsearch: { ...baseConfig.servers.elasticsearch, port: ES_PORT },
+    kibana: { ...baseConfig.servers.kibana, port: KBN_PORT, pathname: '/task-processes' },
   },
   kbnTestServer: {
-    ...defaultConfig.kbnTestServer,
+    ...baseConfig.kbnTestServer,
+    env: {
+      ...baseConfig.kbnTestServer.env,
+      NODE_TLS_REJECT_UNAUTHORIZED: '1',
+    },
     serverArgs: [
-      ...defaultConfig.kbnTestServer.serverArgs.map(withPorts),
+      ...baseConfig.kbnTestServer.serverArgs.map(withPorts),
+      '--server.basePath=/task-processes',
+      '--server.rewriteBasePath=true',
+      `--server.publicBaseUrl=https://localhost:${KBN_PORT}/task-processes`,
+      `--server.selfHttp.ssl.certificateAuthorities=${CA_CERT_PATH}`,
+      '--feature_flags.overrides.workflows.kibanaRequest.coreSelfClientEnabled=true',
       '--xpack.task_manager.task_execution.mode=child_process',
       `--xpack.task_manager.task_execution.bundle_dir=${TASK_PROCESSES_BUNDLE_DIR}`,
       `--xpack.task_manager.task_execution.max_concurrent_processes=${TASK_PROCESSES_MAX_CONCURRENT}`,

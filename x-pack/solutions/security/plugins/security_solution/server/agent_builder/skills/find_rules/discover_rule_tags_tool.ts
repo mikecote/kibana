@@ -6,22 +6,21 @@
  */
 
 import { z, lazySchema } from '@kbn/zod/v4';
-import type { StartServicesAccessor } from '@kbn/core/server';
 import type { Logger } from '@kbn/logging';
 import { ToolType } from '@kbn/agent-builder-common';
 import { ToolResultType } from '@kbn/agent-builder-common/tools/tool_result';
 import type { BuiltinSkillBoundedTool } from '@kbn/agent-builder-server/skills';
+import type { SecuritySkillServices } from '../services';
 import { TAGS_FIELD } from '../../../../common/detection_engine/rule_management/rule_fields';
 import { EXPECTED_MAX_TAGS } from '../../../lib/detection_engine/rule_management/constants';
 import { findRules } from '../../../lib/detection_engine/rule_management/logic/search/find_rules';
-import type { SecuritySolutionPluginStartDependencies } from '../../../plugin_contract';
 
 export const DISCOVER_RULE_TAGS_INLINE_TOOL_ID = 'security.discover_rule_tags';
 
 export const discoverRuleTagsSchema = lazySchema(() => z.object({}).strict());
 
 interface DiscoverRuleTagsToolDeps {
-  getStartServices: StartServicesAccessor<SecuritySolutionPluginStartDependencies>;
+  getStartServices: SecuritySkillServices['getStartServices'];
   logger: Logger;
 }
 

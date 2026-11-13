@@ -5,14 +5,13 @@
  * 2.0.
  */
 
-import type { Logger } from '@kbn/core/server';
+import type { CoreStart, Logger } from '@kbn/core/server';
 import type {
   HttpSelfFetchQuery,
   HttpSelfFetchHeaders,
   HttpSelfFetchOptions,
   KibanaRequest,
 } from '@kbn/core-http-server';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
 
 /**
  * A normalized response from a self-client call to an internal Kibana endpoint.
@@ -60,7 +59,11 @@ export const createSelfClient = ({
   core,
   logger,
 }: {
-  core: SecuritySolutionPluginCoreSetupDependencies;
+  core: {
+    getStartServices: () => Promise<
+      [{ http: Pick<CoreStart['http'], 'selfClient'> }, object, object?]
+    >;
+  };
   logger: Logger;
 }) => {
   return async <T = unknown, TRequestBody = unknown>(

@@ -28,7 +28,7 @@ import type { RuleParams } from '../../detection_engine/rule_schema';
 import { fetchCategories } from './fetch_categories';
 
 export interface FetchRulesReverseMapDeps {
-  rulesClient: RulesClient;
+  rulesClient: Pick<RulesClient, 'find'>;
   esClient: ElasticsearchClient;
   dataViewsService: DataViewsService;
   logger: Logger;

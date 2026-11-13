@@ -10,6 +10,7 @@ import type { RuleType, RuleTypeParams, RuleTypeState } from '@kbn/alerting-plug
 import { DEFAULT_AAD_CONFIG, AlertsClientError } from '@kbn/alerting-plugin/server';
 import { schema } from '@kbn/config-schema';
 import type { DefaultAlert } from '@kbn/alerts-as-data-utils';
+import { getAstrosRuleViewUrl } from './get_rule_view_url';
 import { Operator, Craft, ALERTING_EXAMPLE_APP_ID } from '../../common/constants';
 
 interface PeopleInSpace {
@@ -103,9 +104,7 @@ export const ruleType: RuleType<
   category: 'example',
   producer: ALERTING_EXAMPLE_APP_ID,
   solution: 'stack',
-  getViewInAppRelativeUrl({ rule }) {
-    return `/app/${ALERTING_EXAMPLE_APP_ID}/astros/${rule.id}`;
-  },
+  getViewInAppRelativeUrl: getAstrosRuleViewUrl,
   alerts: DEFAULT_AAD_CONFIG,
   validate: {
     params: schema.object({

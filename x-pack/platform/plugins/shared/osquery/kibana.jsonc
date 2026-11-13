@@ -7,6 +7,9 @@
   "plugin": {
     "id": "osquery",
     "server": true,
+    "taskTypeContributions": {
+      "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"]
+    },
     "browser": true,
     "configPath": [
       "xpack",

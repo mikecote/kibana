@@ -17,7 +17,7 @@ import type { KibanaRequest, SecurityServiceStart } from '@kbn/core/server';
  */
 export function getAuthenticatedUser(
   request: KibanaRequest,
-  security?: SecurityServiceStart
+  security?: Pick<SecurityServiceStart, 'authc'>
 ): string {
   if (!security) {
     return 'system';
@@ -44,7 +44,7 @@ export function getAuthenticatedUser(
  */
 export async function getDetailedUserInfo(
   request: KibanaRequest,
-  security?: SecurityServiceStart
+  security?: Pick<SecurityServiceStart, 'authc'>
 ): Promise<{
   username: string;
   full_name?: string;

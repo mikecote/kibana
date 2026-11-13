@@ -5,11 +5,11 @@
  * 2.0.
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { significantEventsTriggerCommonDefinitions } from '../../../common/workflows/triggers';
 
 export const registerSignificantEventsWorkflowTriggers = (
-  workflowsExtensions: WorkflowsExtensionsServerPluginSetup | undefined
+  workflowsExtensions: WorkflowStepsRegistry | undefined
 ): void => {
   if (!workflowsExtensions) {
     return;

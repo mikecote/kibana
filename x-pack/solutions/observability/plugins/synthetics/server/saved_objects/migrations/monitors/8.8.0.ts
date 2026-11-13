@@ -37,7 +37,9 @@ export type SyntheticsMonitor880 = Omit<
   ConfigKey.MAX_ATTEMPTS
 >;
 
-export const migration880 = (encryptedSavedObjects: EncryptedSavedObjectsPluginSetup) => {
+export const migration880 = (
+  encryptedSavedObjects: Pick<EncryptedSavedObjectsPluginSetup, 'createMigration'>
+) => {
   return encryptedSavedObjects.createMigration<SyntheticsMonitor880, SyntheticsMonitor880>({
     isMigrationNeededPredicate: function shouldBeMigrated(
       doc

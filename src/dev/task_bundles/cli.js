@@ -8,7 +8,7 @@
  */
 
 const path = require('path');
-const { OUT_DIR, getTaskBundleEntries, buildTaskBundle, writeManifest } = require('./build');
+const { OUT_DIR, getTaskBundleEntries, buildTaskBundles, writeManifest } = require('./build');
 
 // node scripts/task_bundle [--name <bundle>]... [--out <dir>] [--manifest]
 // Builds the task type files declared in `kibana.jsonc` (`plugin.taskTypes`) into one bundle each,
@@ -33,15 +33,13 @@ const main = async () => {
     );
     process.exit(1);
   }
-  const results = [];
-  for (const entry of selected) {
-    const started = Date.now();
-    const result = await buildTaskBundle({ entry, outDir });
-    results.push(result);
+  const started = Date.now();
+  const results = await buildTaskBundles({ entries: selected, outDir });
+  for (const result of results) {
     console.log(
       `${result.name}: ${(result.bytes / 1024).toFixed(0)} KB, ${
         Date.now() - started
-      } ms -> ${path.relative(process.cwd(), result.outfile)}`
+      } ms batch -> ${path.relative(process.cwd(), result.outfile)}`
     );
   }
   // A partial build must not replace the manifest of a full one, unless it goes to its own directory.

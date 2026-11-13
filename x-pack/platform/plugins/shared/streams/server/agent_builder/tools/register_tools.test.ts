@@ -12,7 +12,6 @@ import { registerAgentBuilderTools } from './register_tools';
 import { STREAMS_READ_TOOL_IDS, STREAMS_WRITE_TOOL_IDS } from './tool_ids';
 import { createMockGetScopedClients } from '../utils/test_helpers';
 import type { StreamsServer } from '../../types';
-import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
 
 const createMockServer = (): Pick<StreamsServer, 'isServerless' | 'core'> => ({
   isServerless: false,
@@ -28,8 +27,6 @@ const mockAvailability: ToolAvailabilityConfig = {
 };
 
 describe('registerAgentBuilderTools', () => {
-  const telemetry = {} as unknown as EbtTelemetryClient;
-
   it('registers all expected tools', () => {
     const agentBuilder = agentBuilderMocks.createSetup();
     const { getScopedClients } = createMockGetScopedClients();
@@ -39,7 +36,6 @@ describe('registerAgentBuilderTools', () => {
       getScopedClients,
       server: createMockServer() as StreamsServer,
       logger: loggerMock.create(),
-      telemetry,
       availability: mockAvailability,
     });
 
@@ -62,7 +58,6 @@ describe('registerAgentBuilderTools', () => {
       getScopedClients,
       server: createMockServer() as StreamsServer,
       logger: loggerMock.create(),
-      telemetry,
       availability: mockAvailability,
     });
 
@@ -82,7 +77,6 @@ describe('registerAgentBuilderTools', () => {
       getScopedClients,
       server: createMockServer() as StreamsServer,
       logger: loggerMock.create(),
-      telemetry,
       availability: mockAvailability,
     });
 
@@ -100,7 +94,6 @@ describe('registerAgentBuilderTools', () => {
       getScopedClients,
       server: createMockServer() as StreamsServer,
       logger: loggerMock.create(),
-      telemetry,
       availability: mockAvailability,
     });
 

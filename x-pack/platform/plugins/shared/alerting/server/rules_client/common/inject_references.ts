@@ -8,7 +8,6 @@
 import Boom from '@hapi/boom';
 import { omit } from 'lodash';
 import type { SavedObjectReference, SavedObjectAttributes } from '@kbn/core/server';
-import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
 import type { RawRule, RuleTypeParams } from '../../types';
 import type { RuleDomain } from '../../application/rule/types';
 import {
@@ -48,12 +47,18 @@ export function injectReferencesIntoActions(
   });
 }
 
+export interface RuleReferenceInjector {
+  useSavedObjectReferences?: {
+    injectReferences(params: RuleTypeParams, references: SavedObjectReference[]): RuleTypeParams;
+  };
+}
+
 export function injectReferencesIntoParams<
   Params extends RuleTypeParams,
   ExtractedParams extends RuleTypeParams
 >(
   ruleId: string,
-  ruleType: UntypedNormalizedRuleType,
+  ruleType: RuleReferenceInjector,
   ruleParams: SavedObjectAttributes | undefined,
   references: SavedObjectReference[]
 ): Params {

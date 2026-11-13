@@ -25,7 +25,7 @@ import type { WorkflowsExecutionEngineConfig } from '../config';
 import { emitWorkflowExecutionFailedEventIfFailed } from '../lib/emit_workflow_execution_failed_event';
 import { emitWorkflowIdentityFailureEvent } from '../lib/emit_workflow_identity_failure_event';
 import { hasWorkflowAccess } from '../lib/has_workflow_access';
-import type { WorkflowsMeteringService } from '../metering';
+import type { WorkflowsMeteringReporter } from '../metering';
 import type { StepExecutionRepository } from '../repositories/step_execution_repository';
 import type { WorkflowExecutionRepository } from '../repositories/workflow_execution_repository';
 import {
@@ -67,7 +67,7 @@ async function runWorkflowWithRequest({
   fakeRequest: KibanaRequest;
   dependencies: ContextDependencies;
   workflowsExecutionEngine: WorkflowsExecutionEnginePluginStart;
-  meteringService?: WorkflowsMeteringService;
+  meteringService?: WorkflowsMeteringReporter;
   internalResumeWorkflowExecution?: InternalResumeWorkflowExecution;
   workflowExecutionRepository: WorkflowExecutionRepository;
   stepExecutionRepository: StepExecutionRepository;
@@ -138,11 +138,17 @@ async function runWorkflowWithRequest({
     execution.isTestRun && execution.isEphemeral !== false ? 'edit' : 'execute';
   if (
     currentWorkflow &&
-    !(await hasWorkflowAccess(currentWorkflow, fakeRequest, dependencies.coreStart, {
-      id: execution.workflowId,
-      spaceId,
-      operation: requiredPermission,
-    }))
+    !(await hasWorkflowAccess(
+      currentWorkflow,
+      fakeRequest,
+      dependencies.coreStart,
+      {
+        id: execution.workflowId,
+        spaceId,
+        operation: requiredPermission,
+      },
+      dependencies.identityContexts
+    ))
   ) {
     await workflowExecutionRepository.updateWorkflowExecution({
       id: workflowRunId,
@@ -250,6 +256,7 @@ async function runWorkflowWithRequest({
       esClient,
       fakeRequest,
       coreStart: dependencies.coreStart,
+      hitlLifecycle: dependencies.hitlLifecycle,
       signal,
       workflowTaskManager,
     });
@@ -296,7 +303,10 @@ export const runWorkflow = async (
   if (isTerminalStatus(execution.status)) {
     await completeIdentityFailureCleanup(execution, {
       ...params,
-      workflowTaskManager: new WorkflowTaskManager(params.dependencies.taskManager),
+      workflowTaskManager: new WorkflowTaskManager(
+        params.dependencies.taskManager,
+        params.dependencies.identityContexts
+      ),
       cloudSetup: params.dependencies.cloudSetup,
     });
     return;
@@ -310,7 +320,8 @@ export const runWorkflow = async (
       (fakeRequest) => {
         enteredExecution = true;
         return runWorkflowWithRequest({ ...params, fakeRequest });
-      }
+      },
+      params.dependencies.identityContexts
     );
   } catch (error) {
     if (!enteredExecution && getExecutionServiceAccountId(execution)) {
@@ -330,11 +341,15 @@ export const runWorkflow = async (
           emitEvent: params.workflowsExecutionEngine.triggerEvents.emitEvent,
           logger: params.logger,
           maxEventChainDepth: params.config.eventDriven.maxChainDepth,
+          eventChainContext: params.dependencies.eventChainContext,
         });
       }
       await completeIdentityFailureCleanup(failedExecution, {
         ...params,
-        workflowTaskManager: new WorkflowTaskManager(params.dependencies.taskManager),
+        workflowTaskManager: new WorkflowTaskManager(
+          params.dependencies.taskManager,
+          params.dependencies.identityContexts
+        ),
         cloudSetup: params.dependencies.cloudSetup,
       });
     }

@@ -230,7 +230,7 @@ export class WorkflowExecutionTelemetryClient {
   }
 
   constructor(
-    protected readonly telemetry: AnalyticsServiceStart,
+    protected readonly telemetry: Pick<AnalyticsServiceStart, 'reportEvent'>,
     protected readonly logger: Logger
   ) {}
 

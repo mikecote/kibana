@@ -751,7 +751,7 @@ describe('checkAndSkipIfExistingScheduledExecution', () => {
       } as any);
       workflowExecutionsDataClient.bulk.mockResolvedValue({
         errors: false,
-        items: [{ id: 'mock-id', index: '.mock' }],
+        items: [{ id: 'mock-id', index: '.mock', result: 'updated' }],
       } as any);
 
       const result = await checkAndSkipIfExistingScheduledExecution(
@@ -769,13 +769,8 @@ describe('checkAndSkipIfExistingScheduledExecution', () => {
           items: [
             expect.objectContaining({
               operation: 'update',
-              document: expect.objectContaining({
-                id: 'abandoned-pending-id',
-                status: ExecutionStatus.FAILED,
-                error: expect.objectContaining({
-                  message: expect.stringContaining('later schedule tick superseded'),
-                }),
-              }),
+              documentId: 'abandoned-pending-id',
+              updater: expect.any(Function),
             }),
           ],
           refresh: 'wait_for',
@@ -787,6 +782,42 @@ describe('checkAndSkipIfExistingScheduledExecution', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('abandoned pending execution')
       );
+    });
+
+    it('preserves an execution completed after the pending search snapshot was refreshed', async () => {
+      const completed = { id: 'completed-id', spaceId, status: ExecutionStatus.COMPLETED };
+      workflowExecutionsDataClient.search.mockResolvedValue({
+        hits: {
+          hits: [
+            {
+              _source: {
+                ...completed,
+                status: ExecutionStatus.PENDING,
+                taskRunAt: '2024-01-01T09:00:00Z',
+              },
+            },
+          ],
+        },
+      } as never);
+      workflowExecutionsDataClient.bulk.mockResolvedValue({
+        errors: false,
+        items: [{ id: completed.id, index: '.workflows-executions', result: 'noop' }],
+      });
+      workflowExecutionsDataClient.getByIds.mockResolvedValue({
+        items: [{ index: '.workflows-executions', document: completed as never }],
+        missing: [],
+      });
+      const result = await checkAndSkipIfExistingScheduledExecution(
+        workflow,
+        spaceId,
+        workflowExecutionRepository,
+        stepExecutionRepository,
+        currentTaskInstance,
+        logger
+      );
+      expect(result).toEqual({ skipped: false });
+      expect(stepExecutionRepository.markNonTerminalStepsFailed).not.toHaveBeenCalled();
+      expect(workflowExecutionsDataClient.bulk).toHaveBeenCalledTimes(1);
     });
 
     it('does not treat RUNNING from a prior taskRunAt as abandoned pending', async () => {
@@ -908,7 +939,7 @@ describe('checkAndSkipIfExistingScheduledExecution', () => {
       } as any);
       workflowExecutionsDataClient.bulk.mockResolvedValue({
         errors: false,
-        items: [{ id: 'mock-id', index: '.mock' }],
+        items: [{ id: 'mock-id', index: '.mock', result: 'updated' }],
       } as any);
 
       const result = await checkAndSkipIfExistingScheduledExecution(
@@ -928,10 +959,8 @@ describe('checkAndSkipIfExistingScheduledExecution', () => {
           items: [
             expect.objectContaining({
               operation: 'update',
-              document: expect.objectContaining({
-                id: 'orphan-pending-id',
-                status: ExecutionStatus.FAILED,
-              }),
+              documentId: 'orphan-pending-id',
+              updater: expect.any(Function),
             }),
           ],
           refresh: 'wait_for',

@@ -8,7 +8,6 @@
 import type { Plugin, CoreSetup, CoreStart } from '@kbn/core/server';
 import { firstValueFrom, Subject } from 'rxjs';
 
-import { v4 as uuidv4 } from 'uuid';
 import _ from 'lodash';
 import stats from 'stats-lite';
 import prettyMilliseconds from 'pretty-ms';
@@ -18,6 +17,11 @@ import type {
   TaskManagerStartContract,
   ConcreteTaskInstance,
 } from '@kbn/task-manager-plugin/server';
+import {
+  createTaskManagerPerformanceMiddleware,
+  TASK_MANAGER_PERFORMANCE_MIDDLEWARE_ID,
+  measureTaskFromSchedule,
+} from './task_scheduling_middleware';
 import type { PerfState, PerfApi, PerfResult } from './types';
 import { initRoutes } from './init_routes';
 
@@ -102,17 +106,17 @@ export class SampleTaskManagerFixturePlugin
               };
 
               if (params.trackExecutionTimeline && state.perf && state.perf.id) {
-                performance.mark(`perfTask_run_${state.perf.id}_${counter}`);
+                const running = performance.mark(`perfTask_run_${state.perf.id}_${counter}`);
                 performance.measure(
                   'perfTask.markUntilRun',
                   `perfTask_markAsRunning_${state.perf.id}_${counter}`,
                   `perfTask_run_${state.perf.id}_${counter}`
                 );
                 if (counter === 1) {
-                  performance.measure(
+                  measureTaskFromSchedule(
                     'perfTask.firstRun',
-                    `perfTask_schedule_${state.perf.id}`,
-                    `perfTask_run_${state.perf.id}_${counter}`
+                    running.startTime,
+                    state.perf.scheduledAt
                   );
                   performance.measure(
                     'perfTask.firstMarkAsRunningTillRan',
@@ -132,61 +136,8 @@ export class SampleTaskManagerFixturePlugin
       },
     });
 
-    taskManager.addMiddleware({
-      async beforeSave({ taskInstance, ...opts }) {
-        const modifiedInstance = {
-          ...taskInstance,
-        };
-
-        if (taskInstance.params && taskInstance.params.trackExecutionTimeline) {
-          modifiedInstance.state = modifiedInstance.state || {};
-          modifiedInstance.state.perf = modifiedInstance.state.perf || {};
-          modifiedInstance.state.perf.id = uuidv4().replace(/-/gi, '_');
-          performance.mark(`perfTask_schedule_${modifiedInstance.state.perf.id}`);
-        }
-
-        return {
-          ...opts,
-          taskInstance: modifiedInstance,
-        };
-      },
-
-      async beforeRun(opts) {
-        return opts;
-      },
-
-      async beforeMarkRunning({ taskInstance, ...opts }) {
-        const modifiedInstance = {
-          ...taskInstance,
-        };
-
-        if (
-          modifiedInstance.state &&
-          modifiedInstance.state.perf &&
-          modifiedInstance.state.perf.id
-        ) {
-          const { counter = 1 } = modifiedInstance.state;
-          performance.mark(`perfTask_markAsRunning_${modifiedInstance.state.perf.id}_${counter}`);
-          if (counter === 1) {
-            performance.measure(
-              'perfTask.firstMarkAsRunning',
-              `perfTask_schedule_${modifiedInstance.state.perf.id}`,
-              `perfTask_markAsRunning_${modifiedInstance.state.perf.id}_${counter}`
-            );
-          } else if (counter > 1) {
-            performance.measure(
-              'perfTask.runUntilNextMarkAsRunning',
-              `perfTask_run_${modifiedInstance.state.perf.id}_${counter - 1}`,
-              `perfTask_markAsRunning_${modifiedInstance.state.perf.id}_${counter}`
-            );
-          }
-        }
-
-        return {
-          ...opts,
-          taskInstance: modifiedInstance,
-        };
-      },
+    taskManager.addMiddleware(createTaskManagerPerformanceMiddleware(), {
+      id: TASK_MANAGER_PERFORMANCE_MIDDLEWARE_ID,
     });
 
     const perfApi: PerfApi = {

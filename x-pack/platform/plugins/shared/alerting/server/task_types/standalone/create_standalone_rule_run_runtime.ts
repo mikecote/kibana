@@ -5,15 +5,14 @@
  * 2.0.
  */
 
-import { firstValueFrom, of, Subject } from 'rxjs';
-import type { Logger, SavedObjectsServiceStart, SecurityServiceStart } from '@kbn/core/server';
+import { firstValueFrom } from 'rxjs';
+import { AsyncLocalStorage } from 'async_hooks';
+import type { Logger } from '@kbn/core/server';
 import type { UiSettingsServiceStart } from '@kbn/core/server';
 import { SavedObjectsUtils } from '@kbn/core-saved-objects-utils-server';
 import type { TaskHost } from '@kbn/task-manager-plugin/server';
 import type { SharePluginStart } from '@kbn/share-plugin/server';
-import type { UrlService } from '@kbn/share-plugin/common/url_service';
 import type { IEventLogger } from '@kbn/event-log-plugin/server';
-import { dataViewsServiceFactory } from '@kbn/data-views-plugin/server/data_views_service_factory';
 import { createStandaloneSearch } from '@kbn/data-plugin/server/search/standalone_search';
 import { MaintenanceWindowClientFactory } from '@kbn/maintenance-windows-plugin/server/maintenance_window_client_factory';
 import type { UsageCounter } from '@kbn/usage-collection-plugin/server';
@@ -25,8 +24,7 @@ import {
   type ActionsTaskProcessSettings,
 } from '@kbn/actions-plugin/server/task_types/task_process_settings';
 import type { ActionsConfig } from '@kbn/actions-plugin/server/config';
-import { AlertsService } from '../../alerts_service/alerts_service';
-import { getDataStreamAdapter } from '../../alerts_service/lib/data_stream_adapter';
+import { createTaskProcessAlertsService } from './create_task_process_alerts_service';
 import type { AlertingConfig } from '../../config';
 import { ConnectorAdapterRegistry } from '../../connector_adapters/connector_adapter_registry';
 import type { ConnectorAdapter } from '../../connector_adapters/types';
@@ -44,11 +42,16 @@ import { ALERTING_FEATURE_ID } from '../../types';
 import type { RuleRunRuntime } from '../../task_runner/types';
 import { ApiKeyType } from '../../task_runner/types';
 import type { UntypedNormalizedRuleType } from '../../rule_type_registry';
-import type { RuleRunContribution } from '../rule_run_contribution';
+import type {
+  RuleExecutionServices,
+  RuleRunContribution,
+  RuleRunContributionContext,
+} from '../rule_run_contribution';
 import { ALERTING_RUN_SETTINGS_ID, DEFAULT_ALERTING_RUN_SETTINGS } from '../rule_run_settings';
 import type { AlertingRunSettings } from '../rule_run_settings';
 import { createSingleRuleTypeRegistry } from './single_rule_type_registry';
 import { createStandaloneFieldFormats } from './field_formats';
+import { createRuleDataViews } from './create_rule_data_views';
 
 export interface StandaloneRuleRunOptions {
   host: TaskHost;
@@ -56,7 +59,7 @@ export interface StandaloneRuleRunOptions {
   getRuleType: () => UntypedNormalizedRuleType;
   /** The locators the rule type's executor reads from `services.share.url.locators`. */
   /** The URL service the rule type was built with, so executors read the same locators. */
-  urlService: UrlService;
+  urlService: SharePluginStart['url'];
   /** The connector adapters that rules of this rule type may use through system actions. */
   connectorAdapters?: ConnectorAdapter[];
   /** What other plugins add to a rule run: connector types and adapters of system actions. */
@@ -64,17 +67,6 @@ export interface StandaloneRuleRunOptions {
   /** The rule type executes connectors in the process, so the actions executor is initialized. */
   executeConnectors?: boolean;
 }
-
-/**
- * What a data view service reads of the capabilities, only to know whether a request may save: a
- * process never resolves them, so nothing may be saved through the data views of a run.
- */
-const noCapabilities = {
-  resolveCapabilities: async () => ({
-    indexPatterns: { save: false },
-    advancedSettings: { save: false },
-  }),
-} as never;
 
 const spaceIdToNamespace = (spaceId?: string) =>
   spaceId ? SavedObjectsUtils.namespaceStringToId(spaceId) : undefined;
@@ -102,13 +94,14 @@ export const createStandaloneRuleRunRuntime = ({
   /** The ids of the connector types and connector adapters this process registered. */
   getRegisteredConnectorTypeIds: () => string[];
   getRegisteredConnectorAdapterIds: () => string[];
-  stop: () => void;
+  runWithServices: <T>(run: () => Promise<T>) => Promise<T>;
+  stop: () => Promise<void>;
 } => {
   const settings = host.settings ?? {};
   const config = settings.alerting as AlertingConfig;
   const actionsConfig = settings.actions as ActionsConfig;
   const logger: Logger = host.logger.get('plugins', 'alerting');
-  const { isServerless, publicBaseUrl, version: kibanaVersion, uuid: serverUuid } = host.server;
+  const { isServerless, publicBaseUrl, version: kibanaVersion } = host.server;
   const savedObjects = host.savedObjects;
   const uiSettings = host.uiSettings as UiSettingsServiceStart;
 
@@ -127,8 +120,8 @@ export const createStandaloneRuleRunRuntime = ({
   const rulesSettingsClientFactory = new RulesSettingsClientFactory();
   rulesSettingsClientFactory.initialize({
     logger,
-    savedObjectsService: savedObjects as SavedObjectsServiceStart,
-    securityService: host.security as SecurityServiceStart,
+    savedObjectsService: savedObjects,
+    securityService: host.security,
     isServerless,
   });
   const rulesSettingsService = new RulesSettingsService({
@@ -146,8 +139,8 @@ export const createStandaloneRuleRunRuntime = ({
   const maintenanceWindowClientFactory = new MaintenanceWindowClientFactory();
   maintenanceWindowClientFactory.initialize({
     logger,
-    savedObjectsService: savedObjects as SavedObjectsServiceStart,
-    securityService: host.security as SecurityServiceStart,
+    savedObjectsService: savedObjects,
+    securityService: host.security,
     uiSettings,
   });
   const maintenanceWindowsService = new MaintenanceWindowsService({
@@ -163,19 +156,7 @@ export const createStandaloneRuleRunRuntime = ({
   // Kibana installs the alerts resources and keeps them up to date; the process only needs the
   // service to hand out an alerts client once they exist. No cross-node lock: one process serves
   // one run, and installing a resource is idempotent.
-  const alertsService = config.enableFrameworkAlerts
-    ? new AlertsService({
-        logger,
-        pluginStop$: new Subject<void>(),
-        kibanaVersion,
-        serverUuid,
-        dataStreamAdapter: getDataStreamAdapter({ useDataStreamForAlerts: isServerless }),
-        elasticsearchClientPromise: Promise.resolve(host.elasticsearch.asInternalUser),
-        elasticsearchAndSOAvailability$: of(true),
-        isServerless,
-        totalFieldsLimit: config.alertsService.totalFieldsLimit,
-      })
-    : null;
+  const alertsService = createTaskProcessAlertsService(host, config, logger);
 
   const connectorAdapterRegistry = new ConnectorAdapterRegistry();
   connectorAdapters.forEach((adapter) => connectorAdapterRegistry.register(adapter));
@@ -186,13 +167,19 @@ export const createStandaloneRuleRunRuntime = ({
     | undefined;
   // The opt-ins of `alert.status.changed` the contributions register, as plugins do in Kibana.
   const alertStatusChangedOptIns: AlertStatusChangedOptIn[] = [];
-  const contributionContext = {
+  const executionServices = new AsyncLocalStorage<Map<string, RuleExecutionServices>>();
+  const contributionContext: RuleRunContributionContext = {
     logger,
     isServerless,
     kibanaVersion,
     publicBaseUrl,
     settings,
     host,
+    getService: <T extends object>(id: string): T => {
+      const services = executionServices.getStore()?.get(id);
+      if (!services) throw new Error(`No rule execution service registered for ${id}`);
+      return services.getService<T>(id);
+    },
   };
   const { actionsPlugin, hasActionType, getActionTypeIds, stop } = createRuleRunActions({
     logger: host.logger.get('plugins', 'actions'),
@@ -207,9 +194,10 @@ export const createStandaloneRuleRunRuntime = ({
     taskManager: host.taskManager!,
     publicBaseUrl,
     authorization: (host.plugins?.security as { authz?: never } | undefined)?.authz,
+    getAuditLoggerWithRequest: (request) => host.security.audit.asScoped(request),
     executor: executeConnectors
       ? {
-          security: host.security as SecurityServiceStart,
+          security: host.security,
           eventLogger: host.eventLog!.getLogger({
             event: { provider: ACTIONS_EVENT_LOG_PROVIDER },
           }) as IEventLogger,
@@ -235,18 +223,7 @@ export const createStandaloneRuleRunRuntime = ({
   });
 
   const fieldFormats = createStandaloneFieldFormats();
-  const dataViews = {
-    dataViewsServiceFactory: dataViewsServiceFactory({
-      logger,
-      uiSettings,
-      fieldFormats,
-      // A rule run never saves a data view, which is all Kibana reads capabilities for: it asks with
-      // a request, and the user of a rule can save none through a data view service of its run.
-      capabilities: noCapabilities,
-      scriptedFieldsEnabled: runSettings.dataViews.scriptedFieldsEnabled,
-      rollupsEnabled: runSettings.search?.rollupsEnabled ?? false,
-    }),
-  };
+  const dataViews = createRuleDataViews(host, runSettings, fieldFormats);
   const data = {
     search: createStandaloneSearch({
       logger,
@@ -265,7 +242,10 @@ export const createStandaloneRuleRunRuntime = ({
   };
 
   // Events go out with the workflows client the workflows plugins contribute; without one nothing is sent.
-  const workflowsContribution = contributions.find(({ getWorkflowsClient }) => getWorkflowsClient);
+  const workflowsContribution = contributions.find(
+    ({ getWorkflowsClient, executionServices: provider }) =>
+      getWorkflowsClient !== undefined && (!provider || provider.isEnabled(settings))
+  );
   const alertStatusChanged = workflowsContribution
     ? createWorkflowsAlertStatusChangedEmitter({
         getClient: (request) =>
@@ -302,7 +282,7 @@ export const createStandaloneRuleRunRuntime = ({
     rulesSettingsService,
     apiKeyType: (config.rules.apiKeyType as ApiKeyType) ?? ApiKeyType.ES,
     savedObjects,
-    share: { url: urlService } as unknown as SharePluginStart,
+    share: { url: urlService },
     spaceIdToNamespace,
     uiSettings,
     usageCounter,
@@ -313,14 +293,54 @@ export const createStandaloneRuleRunRuntime = ({
 
   return {
     runtime,
+    runWithServices: (run) =>
+      executionServices.run(new Map(), async () => {
+        const services = executionServices.getStore();
+        if (!services) throw new Error('Rule execution service context is missing');
+        const created: RuleExecutionServices[] = [];
+        const outcome = await (async () => {
+          try {
+            for (const contribution of contributions) {
+              const provider = contribution.executionServices;
+              if (!provider?.isEnabled(settings)) continue;
+              const instance = await provider.create(contributionContext);
+              created.push(instance);
+              for (const id of provider.ids) {
+                if (services.has(id)) throw new Error(`Duplicate rule execution service: ${id}`);
+                services.set(id, instance);
+              }
+            }
+            return { failed: false as const, value: await run() };
+          } catch (error) {
+            return { failed: true as const, error };
+          }
+        })();
+        const results = await Promise.allSettled(
+          created.reverse().map((service) => Promise.resolve().then(() => service.stop()))
+        );
+        const failures = results.flatMap((result) =>
+          result.status === 'rejected'
+            ? [result.reason instanceof Error ? result.reason : new Error(String(result.reason))]
+            : []
+        );
+        if (failures.length) {
+          if (outcome.failed)
+            failures.unshift(
+              outcome.error instanceof Error ? outcome.error : new Error(String(outcome.error))
+            );
+          throw new AggregateError(failures, 'Rule service cleanup failed');
+        }
+        if (outcome.failed) throw outcome.error;
+        return outcome.value;
+      }),
     fieldFormats,
     getRegisteredConnectorTypeIds: getActionTypeIds,
     getRegisteredConnectorAdapterIds: () => connectorAdapterRegistry.getIds(),
     getUnsupportedActionTypes: (actionTypeIds) =>
       actionTypeIds.filter((id) => !hasActionType(id) && !connectorAdapterRegistry.has(id)),
-    stop: () => {
-      stop();
+    stop: async () => {
       licenseState.clean();
+      await stop();
     },
   };
 };

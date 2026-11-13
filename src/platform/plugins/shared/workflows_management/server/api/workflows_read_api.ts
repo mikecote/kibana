@@ -10,13 +10,16 @@
 import type { ElasticsearchClient, KibanaRequest, Logger } from '@kbn/core/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type {
+  WorkflowAccessOperation,
   WorkflowDetailDto,
   WorkflowExecutionDto,
   WorkflowExecutionEngineModel,
 } from '@kbn/workflows';
+import { WorkflowNotFoundError } from '@kbn/workflows/common/errors';
 import type { ManagedWorkflowId } from '@kbn/workflows/managed';
 import type {
   GetManagedWorkflowStatusOptions,
+  ManagedWorkflowInstanceState,
   ManagedWorkflowStatusReport,
 } from '@kbn/workflows/server/types';
 import type {
@@ -25,9 +28,13 @@ import type {
   WorkflowsExecutionEnginePluginStart,
 } from '@kbn/workflows-execution-engine/server';
 import { getWorkflowExecution as readWorkflowExecution } from './lib/get_workflow_execution';
-import { getManagedWorkflowStatus as readManagedWorkflowStatus } from '../services/managed_workflow_status';
+import {
+  readInstalledManagedWorkflowState,
+  getManagedWorkflowStatus as readManagedWorkflowStatus,
+} from '../services/managed_workflow_status';
 import { WorkflowAccessControlService } from '../services/workflow_access_control';
 import type { WorkflowAccessCore } from '../services/workflow_access_control';
+import type { WorkflowExecutionStatusItem } from '../services/workflow_execution_query_service';
 import { WorkflowReadService } from '../services/workflow_read_service';
 import { createStorage } from '../storage/workflow_storage';
 
@@ -158,11 +165,30 @@ export interface WorkflowsReadApi {
       request: KibanaRequest;
     }
   ) => Promise<WorkflowExecutionDto | null>;
+  /** The status of each execution the request can read; an id that is missing, in another space or whose workflow it cannot read is left out. */
+  getWorkflowExecutionStatuses: (
+    executionIds: string[],
+    spaceId: string,
+    options: { request: KibanaRequest }
+  ) => Promise<WorkflowExecutionStatusItem[]>;
   getManagedWorkflowStatus: (
     id: ManagedWorkflowId,
     options: GetManagedWorkflowStatusOptions,
     registeredPluginId: string
   ) => Promise<ManagedWorkflowStatusReport>;
+  /** The state of a managed workflow that `pluginId` installed, or `null` (the owner-bound client's read). */
+  getInstalledManagedWorkflowState: (
+    workflowId: string,
+    spaceId: string,
+    pluginId: string
+  ) => Promise<ManagedWorkflowInstanceState | null>;
+  /** Throws when the request may not do the operation on the workflow (or the workflow does not exist). */
+  assertWorkflowAccess: (
+    id: string,
+    spaceId: string,
+    operation: WorkflowAccessOperation,
+    request: KibanaRequest
+  ) => Promise<void>;
 }
 
 /**
@@ -213,7 +239,39 @@ export const createWorkflowsReadApi = ({
         spaceId,
         options,
       }),
+    getWorkflowExecutionStatuses: async (executionIds, spaceId, { request }) => {
+      const ids = [...new Set(executionIds)];
+      if (ids.length === 0) return [];
+      const { items } = await workflowExecutionsDataClient.getByIds(ids, {
+        sourceIncludes: ['spaceId', 'workflowId', 'status'],
+      });
+      const executions = items
+        .map(({ document }) => document)
+        .filter((execution) => execution.spaceId === spaceId)
+        .map(({ id, workflowId, status }) => ({ id, workflowId, status }));
+      const readable = new Set<string>();
+      await Promise.all(
+        [...new Set(executions.map(({ workflowId }) => workflowId).filter(Boolean))].map(
+          async (workflowId) => {
+            const workflow = await reader.getWorkflow(workflowId, spaceId, {
+              includeDeleted: true,
+            });
+            if (workflow && (await access.checkAccess(workflow, 'read', request))) {
+              readable.add(workflowId);
+            }
+          }
+        )
+      );
+      return executions.filter(({ workflowId }) => readable.has(workflowId));
+    },
     getManagedWorkflowStatus: (id, options, registeredPluginId) =>
       readManagedWorkflowStatus({ reader, id, options, registeredPluginId }),
+    getInstalledManagedWorkflowState: (workflowId, spaceId, pluginId) =>
+      readInstalledManagedWorkflowState({ reader, id: workflowId, spaceId, pluginId }),
+    assertWorkflowAccess: async (id, spaceId, operation, request) => {
+      const workflow = await reader.getWorkflow(id, spaceId);
+      if (!workflow) throw new WorkflowNotFoundError(id);
+      await access.assertAccess(workflow, operation, request);
+    },
   };
 };

@@ -374,12 +374,19 @@ describe('generateLeadsTool', () => {
       });
 
       it('runs the pipeline with spaceId and sourceType adhoc', async () => {
+        const trackBackgroundTask = jest.fn();
+        const trackedTool = generateLeadsTool(
+          { ...mockCore, trackBackgroundTask },
+          mockLogger,
+          mockExperimentalFeatures,
+          mockGetStartServices,
+          undefined
+        );
         const ctx = acceptedCtx();
-        await tool.handler({ connectorName: CONNECTOR_NAME }, ctx);
+        await trackedTool.handler({ connectorName: CONNECTOR_NAME }, ctx);
 
-        // Let background IIFE resolve
-        await Promise.resolve();
-        await Promise.resolve();
+        expect(trackBackgroundTask).toHaveBeenCalledWith(expect.any(Promise));
+        await trackBackgroundTask.mock.calls[0][0];
 
         expect(mockRunLeadGenerationPipeline).toHaveBeenCalledWith(
           expect.objectContaining({

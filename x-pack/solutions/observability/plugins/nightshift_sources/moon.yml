@@ -31,6 +31,10 @@ dependsOn:
   - '@kbn/scout-oblt'
   - '@kbn/streams-schema'
   - '@kbn/zod'
+  - '@kbn/workflows-extensions'
+  - '@kbn/task-manager-plugin'
+  - '@kbn/workflows-execution-engine'
+  - '@kbn/workflows'
 tags:
   - plugin
   - prod

@@ -17,7 +17,6 @@ import type {
   Logger,
   LoggerFactory,
 } from '@kbn/core/server';
-import type { Capabilities as UICapabilities } from '@kbn/core/types';
 import type {
   FeaturesPluginSetup as FeaturesPluginSetup,
   FeaturesPluginStart as FeaturesPluginStart,
@@ -41,7 +40,7 @@ import { initAppAuthorization } from './app_authorization';
 import { checkPrivilegesFactory } from './check_privileges';
 import { checkPrivilegesDynamicallyWithRequestFactory } from './check_privileges_dynamically';
 import { checkSavedObjectsPrivilegesWithRequestFactory } from './check_saved_objects_privileges';
-import { disableUICapabilitiesFactory } from './disable_ui_capabilities';
+import { createSecurityCapabilitiesSwitcher } from './create_ui_capabilities_switcher';
 import { authorizationModeFactory } from './mode';
 import { registerPrivilegesWithCluster } from './register_privileges_with_cluster';
 import { validateFeaturePrivileges } from './validate_feature_privileges';
@@ -147,28 +146,13 @@ export class AuthorizationService {
     };
 
     capabilities.registerSwitcher(
-      async (request: KibanaRequest, uiCapabilities: UICapabilities) => {
-        // If we have a license which doesn't enable security, or we're a legacy user we shouldn't
-        // disable any ui capabilities
-        if (!mode.useRbacForRequest(request)) {
-          return {};
-        }
-
-        const disableUICapabilities = disableUICapabilitiesFactory(
-          request,
-          features.getKibanaFeatures(),
-          features.getElasticsearchFeatures(),
-          this.logger,
-          authz,
-          getCurrentUser(request)
-        );
-
-        if (!request.auth.isAuthenticated) {
-          return disableUICapabilities.all(uiCapabilities);
-        }
-
-        return await disableUICapabilities.usingPrivileges(uiCapabilities);
-      },
+      createSecurityCapabilitiesSwitcher({
+        authz,
+        getKibanaFeatures: () => features.getKibanaFeatures(),
+        getElasticsearchFeatures: () => features.getElasticsearchFeatures(),
+        getCurrentUser,
+        logger: this.logger,
+      }),
       {
         capabilityPath: '*',
       }

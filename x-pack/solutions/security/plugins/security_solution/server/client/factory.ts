@@ -40,6 +40,15 @@ export class AppClientFactory {
     this.buildFlavor = buildFlavor;
   }
 
+  public get isInitialized(): boolean {
+    return (
+      this.config != null &&
+      this.kibanaVersion != null &&
+      this.kibanaBranch != null &&
+      this.buildFlavor != null
+    );
+  }
+
   public create(request: KibanaRequest): AppClient {
     invariant(
       this.config != null,

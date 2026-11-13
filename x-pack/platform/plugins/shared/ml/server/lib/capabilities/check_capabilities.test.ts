@@ -526,8 +526,7 @@ describe('hasMlCapabilitiesProvider', () => {
     );
   });
 
-  test('authorizes fake requests via privileges and plugin features, ignoring resolved caps', async () => {
-    // Fake requests resolve all-false UI caps (including isADEnabled). Privilege + features must win.
+  test('rejects fake requests when native switchers disable a privileged capability', async () => {
     const resolveMlCapabilities = jest.fn().mockResolvedValue({
       ...getUserCapabilities(),
       canCreateJob: false,
@@ -542,9 +541,11 @@ describe('hasMlCapabilitiesProvider', () => {
       allFeaturesEnabled
     );
 
-    await expect(hasMlCapabilities(['canCreateJob'])).resolves.toBeUndefined();
+    await expect(hasMlCapabilities(['canCreateJob'])).rejects.toBeInstanceOf(
+      InsufficientMLCapabilities
+    );
     expect(authorization.checkPrivilegesDynamicallyWithRequest).toHaveBeenCalledWith(fakeRequest);
-    expect(resolveMlCapabilities).not.toHaveBeenCalled();
+    expect(resolveMlCapabilities).toHaveBeenCalledWith(fakeRequest);
   });
 
   test('rejects fake requests on basic license for full-license capabilities', async () => {

@@ -7,7 +7,7 @@
 
 import type { Logger } from '@kbn/core/server';
 import { defineSkillType } from '@kbn/agent-builder-server/skills/type_definition';
-import type { EntityAnalyticsRoutesDeps } from '../../../lib/entity_analytics/types';
+import type { SecuritySkillServices } from '../services';
 import { ENTITY_ANALYTICS_UI_NAVIGATION_CONTENT } from '../ui_navigation';
 import {
   getRiskScoreInlineTool,
@@ -33,7 +33,7 @@ export const FF_DYNAMICALLY_GENERATE_ESQL = false;
 const ENTITY_RISK_SCORE_SIGNIFICANT_CHANGE_THRESHOLD = 20; // Define a threshold for significant risk score change
 export interface EntityAnalyticsSkillsContext {
   isEntityStoreV2Enabled: boolean;
-  getStartServices: EntityAnalyticsRoutesDeps['getStartServices'];
+  getStartServices: SecuritySkillServices['getStartServices'];
   kibanaVersion: string;
   logger: Logger;
 }

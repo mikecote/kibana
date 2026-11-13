@@ -6,28 +6,28 @@
  */
 
 import type { Logger } from '@kbn/logging';
-import type { ElasticsearchServiceStart } from '@kbn/core-elasticsearch-server';
-import type { HttpServiceStart } from '@kbn/core-http-server';
+
 import type { UiSettingsServiceStart } from '@kbn/core-ui-settings-server';
 import type { SavedObjectsServiceStart } from '@kbn/core-saved-objects-server';
 import type { SecurityServiceStart } from '@kbn/core-security-server';
 import type { FeatureFlagsStart } from '@kbn/core-feature-flags-server';
 import type { InferenceServerStart } from '@kbn/inference-plugin/server';
 import type { SearchInferenceEndpointsPluginStart } from '@kbn/search-inference-endpoints/server';
-import type { DataStreamsStart } from '@kbn/core-data-streams-server';
 import type { TaskManagerStartContract } from '@kbn/task-manager-plugin/server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { CloudSetup } from '@kbn/cloud-plugin/server';
-import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
+
 import type { UsageApiSetup } from '@kbn/usage-api-plugin/server';
 import type { WorkflowsServerPluginSetup } from '@kbn/workflows-management-plugin/server';
-import type {
-  PluginSetupContract as ActionsPluginSetup,
-  PluginStartContract as ActionsPluginStart,
-} from '@kbn/actions-plugin/server';
 import type { SecurityPluginStart } from '@kbn/security-plugin-types-server';
 import type { HooksServiceSetup, HooksServiceStart } from '@kbn/agent-builder-server';
 import type { AgentExecutionService } from '@kbn/agent-builder-server/execution';
+import type { AgentBuilderActionsSetup, AgentBuilderActionsStart } from './actions_services';
+import type {
+  AgentBuilderElasticsearch,
+  AgentBuilderHttp,
+  AgentBuilderLicensing,
+} from './runtime_ports';
 import type { ToolsServiceSetup, ToolsServiceStart } from './tools';
 import type { RunnerFactory } from './execution/runner';
 import type { AgentsServiceSetup, AgentsServiceStart } from './agents';
@@ -80,7 +80,7 @@ export interface InternalStartServices {
   hooks: HooksServiceStart;
   auditLogService: AuditLogService;
   spaces?: SpacesPluginStart;
-  featureFlags: FeatureFlagsStart;
+  featureFlags: Pick<FeatureFlagsStart, 'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'>;
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
   execution: AgentExecutionService;
@@ -100,29 +100,28 @@ export interface ServiceSetupDeps {
   trackingService?: TrackingService;
   cloud?: CloudSetup;
   usageApi?: UsageApiSetup;
-  actions: ActionsPluginSetup;
+  actions: AgentBuilderActionsSetup;
 }
 
 export interface ServicesStartDeps {
   // core services
   logger: Logger;
-  elasticsearch: ElasticsearchServiceStart;
-  http: HttpServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
+  http: AgentBuilderHttp;
   security: SecurityServiceStart;
   uiSettings: UiSettingsServiceStart;
   savedObjects: SavedObjectsServiceStart;
-  featureFlags: FeatureFlagsStart;
-  dataStreams: DataStreamsStart;
+  featureFlags: Pick<FeatureFlagsStart, 'getBooleanValue$' | 'getStringValue$' | 'getNumberValue$'>;
   // plugin deps
   inference: InferenceServerStart;
   spaces?: SpacesPluginStart;
-  actions: ActionsPluginStart;
-  taskManager: TaskManagerStartContract;
+  actions: AgentBuilderActionsStart;
+  taskManager: Pick<TaskManagerStartContract, 'ensureScheduled' | 'runSoon'>;
   securityPlugin?: SecurityPluginStart;
   trackingService?: TrackingService;
   analyticsService?: AnalyticsService;
   searchInferenceEndpoints: SearchInferenceEndpointsPluginStart;
-  licensing: LicensingPluginStart;
+  licensing: AgentBuilderLicensing;
   deploymentInfo: DeploymentInfo;
   /** `xpack.agentBuilder.deductive.register` for this deployment. */
   deductiveRegister: boolean;

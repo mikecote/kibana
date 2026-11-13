@@ -8,30 +8,21 @@
  */
 
 import type { CoreSetup, CoreStart, Plugin, RequestHandlerContext } from '@kbn/core/server';
-import { identity } from 'lodash';
+import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
 import { distinctUntilChanged, skip } from 'rxjs';
 
 import type {
   PersistableStateService,
-  PersistableStateMigrateFn,
   MigrateFunctionsObject,
-  PersistableState,
 } from '@kbn/kibana-utils-plugin/common';
 import type { ZodObjectType } from '@kbn/zod';
-import type { EmbeddableFactoryRegistry, EmbeddableRegistryDefinition } from './types';
+import { EMBEDDABLE_RUNTIME_SETTINGS_ID } from './task_process/embeddable_contribution';
+import type { EmbeddableRegistryDefinition } from './types';
 import type { EmbeddableStateWithType } from './persistable_state/types';
-import {
-  getExtractFunction,
-  getInjectFunction,
-  getMigrateFunction,
-  getTelemetryFunction,
-} from './persistable_state';
-import { getAllMigrations } from './persistable_state/get_all_migrations';
 import type { EmbeddableTransforms } from '../common';
 import type { DrilldownSetup, DrilldownState } from './drilldowns/types';
-import { getDrilldownRegistry } from './drilldowns/registry';
 import type { EmbeddableServerDefinition } from './embeddable_transforms/types';
-import { getEmbeddableServerRegistry } from './embeddable_transforms/registry';
+import { createEmbeddableServices } from './create_embeddable_services';
 import { registerSearchRoute } from './search_route';
 
 export interface EmbeddableSetup extends PersistableStateService<EmbeddableStateWithType> {
@@ -72,85 +63,28 @@ export type EmbeddableStart = PersistableStateService<EmbeddableStateWithType> &
 };
 
 export class EmbeddableServerPlugin implements Plugin<EmbeddableSetup, EmbeddableStart> {
-  private readonly embeddableFactories: EmbeddableFactoryRegistry = new Map();
-  private migrateFn: PersistableStateMigrateFn | undefined;
-  private drilldownRegistry = getDrilldownRegistry();
-  private transformsRegistry = getEmbeddableServerRegistry(this.drilldownRegistry);
+  private readonly services = createEmbeddableServices();
 
-  public setup(core: CoreSetup): EmbeddableSetup {
-    this.migrateFn = getMigrateFunction(this.getEmbeddableFactory);
-
+  public setup(
+    core: CoreSetup,
+    plugins: { workflowsExtensions?: WorkflowsExtensionsServerPluginSetup } = {}
+  ): EmbeddableSetup {
+    plugins.workflowsExtensions?.registerTaskProcessSettings(
+      EMBEDDABLE_RUNTIME_SETTINGS_ID,
+      this.services.getRegistrationIds
+    );
     const unversionedRouter = core.http.createRouter<RequestHandlerContext>();
     registerSearchRoute(unversionedRouter);
-
-    return {
-      registerEmbeddableFactory: this.registerEmbeddableFactory,
-      registerDrilldown: this.drilldownRegistry
-        .registerDrilldown as EmbeddableSetup['registerDrilldown'],
-      registerEmbeddableServerDefinition:
-        this.transformsRegistry.registerEmbeddableServerDefinition,
-      telemetry: getTelemetryFunction(this.getEmbeddableFactory),
-      extract: getExtractFunction(this.getEmbeddableFactory),
-      inject: getInjectFunction(this.getEmbeddableFactory),
-      getAllMigrations: () =>
-        getAllMigrations(Array.from(this.embeddableFactories.values()), this.migrateFn!),
-    };
+    return this.services.setup;
   }
 
   public start(core: CoreStart): EmbeddableStart {
-    // Changing lens.apiFormat feature flag changes output of lens getSchema, so
-    // we cannot use the cached value.
-    // TODO: remove when lens.apiFormat feature flag is removed.
     core.featureFlags
       .getBooleanValue$('lens.apiFormat', false)
       .pipe(skip(1), distinctUntilChanged())
-      .subscribe((lensApiFormatFlag) => {
-        this.transformsRegistry.resetCache();
-      });
-
-    return {
-      getAllEmbeddableSchemas: this.transformsRegistry.getAllEmbeddableSchemas,
-      getTransforms: this.transformsRegistry.getEmbeddableTransforms,
-      telemetry: getTelemetryFunction(this.getEmbeddableFactory),
-      extract: getExtractFunction(this.getEmbeddableFactory),
-      inject: getInjectFunction(this.getEmbeddableFactory),
-      getAllMigrations: () =>
-        getAllMigrations(Array.from(this.embeddableFactories.values()), this.migrateFn!),
-    };
+      .subscribe(() => this.services.resetSchemaCache());
+    return this.services.start;
   }
 
   public stop() {}
-
-  private registerEmbeddableFactory = (factory: EmbeddableRegistryDefinition) => {
-    if (this.embeddableFactories.has(factory.id)) {
-      throw new Error(
-        `Embeddable factory [embeddableFactoryId = ${factory.id}] already registered in Embeddables API.`
-      );
-    }
-    this.embeddableFactories.set(factory.id, {
-      id: factory.id,
-      telemetry: factory.telemetry || ((state, stats) => stats),
-      inject: factory.inject || identity,
-      extract: factory.extract || ((state: EmbeddableStateWithType) => ({ state, references: [] })),
-      migrations: factory.migrations || {},
-    });
-  };
-
-  private getEmbeddableFactory = (
-    embeddableFactoryId: string
-  ): PersistableState<EmbeddableStateWithType> => {
-    return (
-      this.embeddableFactories.get(embeddableFactoryId) || {
-        telemetry: (
-          state: EmbeddableStateWithType,
-          stats: Record<string, string | number | boolean>
-        ) => stats,
-        inject: (state: EmbeddableStateWithType) => state,
-        extract: (state: EmbeddableStateWithType) => {
-          return { state, references: [] };
-        },
-        migrations: {},
-      }
-    );
-  };
 }

@@ -26,3 +26,5 @@ export async function plugin(context: PluginInitializerContext) {
   const { MetricsDataPlugin } = await import('./plugin');
   return new MetricsDataPlugin(context);
 }
+
+export type { MetricsDataDefaultIndicesProvider } from './task_types/metrics_data_task_process_settings';

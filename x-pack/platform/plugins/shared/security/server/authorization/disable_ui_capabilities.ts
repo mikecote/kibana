@@ -27,7 +27,7 @@ export function disableUICapabilitiesFactory(
   features: KibanaFeature[],
   elasticsearchFeatures: ElasticsearchFeature[],
   logger: Logger,
-  authz: AuthorizationServiceSetup,
+  authz: Pick<AuthorizationServiceSetup, 'actions' | 'checkPrivilegesDynamicallyWithRequest'>,
   user: AuthenticatedUser | null
 ) {
   // nav links are sourced from the apps property.

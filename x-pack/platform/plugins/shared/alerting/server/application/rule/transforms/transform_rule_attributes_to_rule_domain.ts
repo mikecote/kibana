@@ -11,7 +11,7 @@ import { ruleExecutionStatusValues } from '../constants';
 import { getRuleSnoozeEndTime } from '../../../lib';
 import type { RuleDomain, Monitoring, RuleParams } from '../types';
 import type { PartialRule, RawRule, RawRuleExecutionStatus, SanitizedRule } from '../../../types';
-import type { UntypedNormalizedRuleType } from '../../../rule_type_registry';
+import type { RuleReadTypeDescriptor } from '../../../rules_client/rules_read_context';
 import { injectReferencesIntoParams } from '../../../rules_client/common';
 import { getActiveScheduledSnoozes } from '../../../lib/is_rule_snoozed';
 import {
@@ -115,7 +115,7 @@ const transformEsMonitoring = (
 interface TransformEsToRuleParams {
   id: RuleDomain['id'];
   logger: Logger;
-  ruleType: UntypedNormalizedRuleType;
+  ruleType: RuleReadTypeDescriptor;
   references?: SavedObjectReference[];
 }
 

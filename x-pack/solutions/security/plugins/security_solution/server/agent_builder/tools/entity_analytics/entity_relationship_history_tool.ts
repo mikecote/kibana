@@ -22,7 +22,7 @@ import type { Logger } from '@kbn/logging';
 import type { SecurityPluginStart } from '@kbn/security-plugin/server';
 import type { ExperimentalFeatures } from '../../../../common';
 import { IdentifierType } from '../../../../common/api/entity_analytics/common/common.gen';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../../plugin_contract';
+import type { SecurityEntityToolServices } from './entity_services';
 import { securityTool } from '../constants';
 import { getEntityAnalyticsToolAvailability } from './entity_analytics_availability';
 import { requireResolvedEntity } from './entity_resolution';
@@ -113,7 +113,7 @@ const checkMetadataReadAccess = async ({
   spaceId,
 }: {
   request: KibanaRequest;
-  security: SecurityPluginStart;
+  security: Pick<SecurityPluginStart, 'authz'>;
   spaceId: string;
 }): Promise<{ allowed: true } | { allowed: false; result: ErrorResult }> => {
   const checkPrivileges = security.authz.checkPrivilegesDynamicallyWithRequest(request);
@@ -145,7 +145,7 @@ const checkMetadataReadAccess = async ({
 };
 
 export const entityRelationshipHistoryTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityEntityToolServices,
   logger: Logger,
   experimentalFeatures: ExperimentalFeatures
 ): BuiltinToolDefinition<typeof schema> => {

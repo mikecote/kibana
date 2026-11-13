@@ -10,7 +10,10 @@ import seedrandom from 'seedrandom';
 
 export type RandomSampler = Awaited<ReturnType<typeof getRandomSampler>>;
 
-export function getRandomSamplerSeed(coreStart: CoreStart, request: KibanaRequest): number {
+export function getRandomSamplerSeed(
+  coreStart: { security: { authc: Pick<CoreStart['security']['authc'], 'getCurrentUser'> } },
+  request: KibanaRequest
+): number {
   const username = coreStart.security.authc.getCurrentUser(request)?.username;
   return username ? Math.abs(seedrandom(username).int32()) : 1;
 }

@@ -11,6 +11,9 @@
     "id": "visTypeVega",
     "browser": true,
     "server": true,
+    "taskTypeContributions": {
+      "embeddables": ["server/embeddable_contribution.ts"]
+    },
     "requiredPlugins": [
       "data",
       "embeddable",

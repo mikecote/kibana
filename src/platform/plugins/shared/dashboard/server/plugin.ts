@@ -46,7 +46,8 @@ import type { DashboardPluginSetup, DashboardPluginStart } from './types';
 import { createDashboardSavedObjectType } from './dashboard_saved_object';
 import { registerDashboardUsageCollector } from './usage/register_collector';
 import { dashboardPersistableStateServiceFactory } from './dashboard_container/dashboard_container_embeddable_factory';
-import { registerRoutes, read } from './api';
+import { registerRoutes } from './api';
+import { createDashboardServerClient } from './create_dashboard_server_client';
 import { DashboardAppLocatorDefinition } from '../common/locator/locator';
 import { setKibanaServices } from './kibana_services';
 import { scanDashboards } from './scan_dashboards';
@@ -192,9 +193,6 @@ export class DashboardPlugin
         });
     }
 
-    // Do not call getDashboardStateSchema when registering plugin.
-    // Plugin is registered during setup and before all plugins have registered embeddable schemas.
-    // Instead, use once to only call getDashboardStateSchema the first time client is executed.
     const getCachedDashboardStateSchema = once(() => {
       return getDashboardStateSchema(false);
     });
@@ -205,11 +203,7 @@ export class DashboardPlugin
         page: number,
         perPage: number
       ) => scanDashboards(savedObjectsClient, page, perPage, getCachedDashboardStateSchema()),
-      client: {
-        read: async (savedObjectsClient: SavedObjectsClientContract, id: string) => {
-          return (await read(savedObjectsClient, getCachedDashboardStateSchema(), id)).body;
-        },
-      },
+      client: createDashboardServerClient(),
     };
   }
 

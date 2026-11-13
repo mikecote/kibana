@@ -8,7 +8,7 @@ import type { SavedObjectsClientContract } from '@kbn/core/server';
 import { isNotFoundError } from '@kbn/es-errors';
 import type { IStorageClient } from '@kbn/storage-adapter';
 import type { QueryDslQueryContainer } from '@elastic/elasticsearch/lib/api/types';
-import type { RulesClient } from '@kbn/alerting-plugin/server';
+import type { RulesReadClient } from '@kbn/alerting-plugin/server/rules_client/create_rules_read_client';
 import { groupBy } from 'lodash';
 import { AttachmentNotFoundError } from '../errors/attachment_not_found_error';
 import { AttachmentLinkNotFoundError } from '../errors/attachment_link_not_found_error';
@@ -49,7 +49,7 @@ export class AttachmentClient {
       storageClient: IStorageClient<AttachmentStorageSettings, AttachmentDocument>;
       soClient: SavedObjectsClientContract;
       internalSoClient: SavedObjectsClientContract;
-      rulesClient: RulesClient;
+      rulesClient: RulesReadClient;
     }
   ) {}
 

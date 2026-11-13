@@ -5,12 +5,7 @@
  * 2.0.
  */
 
-import type {
-  ElasticsearchServiceStart,
-  Logger,
-  SavedObjectsServiceStart,
-  UiSettingsServiceStart,
-} from '@kbn/core/server';
+import type { Logger, SavedObjectsServiceStart, UiSettingsServiceStart } from '@kbn/core/server';
 import type { KibanaRequest } from '@kbn/core-http-server';
 import type { SpacesPluginStart } from '@kbn/spaces-plugin/server';
 import type { SkillDefinition } from '@kbn/agent-builder-server/skills';
@@ -18,6 +13,7 @@ import { validateSkillDefinition } from '@kbn/agent-builder-server/skills';
 import { isAllowedSkillRegistration } from '@kbn/agent-builder-server/allow_lists';
 import type { ToolRegistry } from '@kbn/agent-builder-server';
 import { AGENT_BUILDER_EXPERIMENTAL_FEATURES_SETTING_ID } from '@kbn/management-settings-ids';
+import type { AgentBuilderElasticsearch } from '../runtime_ports';
 import { getCurrentSpaceId } from '../../utils/spaces';
 import { getSkillEntryPath } from '../execution/runner/store/volumes/skills/utils';
 import { AvailabilityCache } from '../common/availability_cache';
@@ -57,7 +53,7 @@ export interface SkillService {
 }
 
 export interface SkillServiceStartDeps {
-  elasticsearch: ElasticsearchServiceStart;
+  elasticsearch: AgentBuilderElasticsearch;
   spaces?: SpacesPluginStart;
   logger: Logger;
   getToolRegistry: (opts: { request: KibanaRequest }) => Promise<ToolRegistry>;

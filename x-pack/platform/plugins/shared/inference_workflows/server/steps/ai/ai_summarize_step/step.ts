@@ -6,7 +6,6 @@
  */
 
 import type { MessageFieldWithRole } from '@langchain/core/messages';
-import type { CoreSetup } from '@kbn/core/server';
 import { createServerStepDefinition } from '@kbn/workflows-extensions/server';
 import {
   buildDataPart,
@@ -15,15 +14,15 @@ import {
   buildSystemPart,
 } from './build_prompts';
 import { AiSummarizeStepCommonDefinition } from '../../../../common/steps/ai';
-import type { InferenceWorkflowsStartDeps } from '../../../types';
+import type { GetInferenceStepServices } from '../../../types';
 import { AI_SUMMARIZE_FEATURE_ID } from '../ai_feature_ids';
 import { resolveConnectorId } from '../utils/resolve_connector_id';
 
-export const aiSummarizeStepDefinition = (coreSetup: CoreSetup<InferenceWorkflowsStartDeps>) =>
+export const aiSummarizeStepDefinition = (getServices: GetInferenceStepServices) =>
   createServerStepDefinition({
     ...AiSummarizeStepCommonDefinition,
     handler: async (context) => {
-      const [, { inference, searchInferenceEndpoints }] = await coreSetup.getStartServices();
+      const { inference, searchInferenceEndpoints } = await getServices();
 
       const resolvedConnectorId = await resolveConnectorId(
         context.config['connector-id'],

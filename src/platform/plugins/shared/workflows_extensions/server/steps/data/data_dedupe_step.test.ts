@@ -25,6 +25,9 @@ describe('dataDedupeStepDefinition', () => {
     input,
     rawInput: input as OrStringRecursive<{ keys: string[] }>,
     contextManager: {
+      getExecutionMetadata: jest
+        .fn()
+        .mockReturnValue({ id: 'execution-1', workflowId: 'workflow-1' }),
       getContext: jest.fn(),
       getFakeRequest: jest.fn(),
       getScopedEsClient: jest.fn(),

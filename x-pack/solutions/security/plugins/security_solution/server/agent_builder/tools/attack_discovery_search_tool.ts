@@ -12,7 +12,7 @@ import { executeEsql } from '@kbn/agent-builder-genai-utils';
 import type { Logger } from '@kbn/logging';
 import { getAgentBuilderResourceAvailability } from '../utils/get_agent_builder_resource_availability';
 import { securityTool } from './constants';
-import type { SecuritySolutionPluginCoreSetupDependencies } from '../../plugin_contract';
+import type { SecurityCoreToolServices } from './core_services';
 
 const attackDiscoverySearchSchema = lazySchema(() =>
   z.object({
@@ -30,7 +30,7 @@ export const SECURITY_ATTACK_DISCOVERY_SEARCH_TOOL_ID = securityTool('attack_dis
 const SAFE_ID_PATTERN = /^[a-zA-Z0-9_\-.:]+$/;
 
 export const attackDiscoverySearchTool = (
-  core: SecuritySolutionPluginCoreSetupDependencies,
+  core: SecurityCoreToolServices,
   logger: Logger
 ): BuiltinToolDefinition<typeof attackDiscoverySearchSchema> => {
   return {

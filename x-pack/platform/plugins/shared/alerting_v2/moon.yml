@@ -17,6 +17,7 @@ project:
   owner: '@elastic/rna-project-team'
   sourceRoot: x-pack/platform/plugins/shared/alerting_v2
 dependsOn:
+  - '@kbn/workflows-execution-engine'
   - '@kbn/agent-builder-elastic-ai-index-ki-types'
   - '@kbn/core'
   - '@kbn/task-manager-plugin'
@@ -33,6 +34,8 @@ dependsOn:
   - '@kbn/core-di'
   - '@kbn/core-di-browser'
   - '@kbn/core-di-server'
+  - '@kbn/core-di-server-internal'
+  - '@kbn/repo-info'
   - '@kbn/esql'
   - '@kbn/esql-utils'
   - '@kbn/response-ops-retry-service'

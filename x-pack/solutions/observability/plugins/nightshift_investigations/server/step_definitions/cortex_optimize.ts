@@ -53,9 +53,9 @@ export const cortexOptimizeStepDefinition = ({
 }: {
   getAgentBuilder: () => AgentBuilderPluginStart | undefined;
   getInference: () => InferenceServerStart | undefined;
-  getSavedObjects: () => CoreStart['savedObjects'] | undefined;
-  getUiSettings: () => CoreStart['uiSettings'] | undefined;
-  analytics: AnalyticsServiceSetup;
+  getSavedObjects: () => Pick<CoreStart['savedObjects'], 'getScopedClient'> | undefined;
+  getUiSettings: () => Pick<CoreStart['uiSettings'], 'asScopedToClient'> | undefined;
+  analytics: Pick<AnalyticsServiceSetup, 'reportEvent'>;
   logger: Logger;
   isEnabled?: () => boolean;
 }) =>

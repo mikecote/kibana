@@ -8,6 +8,7 @@
   "visibility": "private",
   "description": "This plugin visualizes data from Heartbeat, and integrates with other Observability solutions.",
   "plugin": {
+    "taskTypeContributions": {"alerting-rule-read": ["server/task_types/rule_read_contribution.ts"]},
     "id": "uptime",
     "browser": true,
     "server": true,

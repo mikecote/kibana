@@ -14,10 +14,10 @@ import { lazySchema, z } from '@kbn/zod/v4';
 import dedent from 'dedent';
 import type { NightshiftSource } from '@kbn/nightshift-shared';
 import { significantEventSchema } from '@kbn/significant-events-schema';
-import type { SignificantEventsServer } from '../../../types';
+import type { SignificantEventsAuthorizationServices } from '../../../run_services/authorization';
 import type { GetScopedClients } from '../../../routes/types';
 import { assertCanReadSignificantEvents } from '../../../routes/utils/assert_can_manage_significant_events';
-import { assertSignificantEventsAccess } from '../../../routes/utils/assert_significant_events_access';
+import type { AssertSignificantEventsAccess } from '../../../run_services/create_access_checker';
 import type { EbtTelemetryClient } from '../../../lib/telemetry/ebt';
 import {
   DEFAULT_EVENTS_SEARCH_FROM,
@@ -215,11 +215,13 @@ function sourcesForSearchResult(
 export function createSearchEventsTool({
   getScopedClients,
   server,
+  assertAccess,
   logger,
   telemetry,
 }: {
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): StaticToolRegistration<typeof searchEventsSchema> {
@@ -256,7 +258,7 @@ export function createSearchEventsTool({
     },
     schema: searchEventsSchema,
     tags: ['streams', 'significant-events'],
-    availability: createSignificantEventsAvailability({ server, logger }),
+    availability: createSignificantEventsAvailability({ assertAccess, logger }),
     handler: async (toolParams, context) => {
       const { request } = context;
       const query = normalizeEventSearchQuery(toolParams.query);
@@ -265,7 +267,7 @@ export function createSearchEventsTool({
         const { getEventSearchClient, licensing, sourcesClient } = await getScopedClients({
           request,
         });
-        await assertSignificantEventsAccess({ server, licensing });
+        await assertAccess(licensing);
         await assertCanReadSignificantEvents({ request, server });
         const { slugs, ...searchParams } = toolParams;
         const catalog = await loadSourceCatalog(sourcesClient);

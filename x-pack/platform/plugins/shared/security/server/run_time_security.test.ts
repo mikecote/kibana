@@ -160,6 +160,28 @@ describe('createRunTimeSecurity', () => {
       expect(result).toEqual(expect.objectContaining({ id: 'id', api_key: 'essu_new' }));
     });
 
+    it('exposes the UIAM service the API keys use, and none without UIAM', () => {
+      const runTime = create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: uiamOptions,
+      });
+      expect(runTime.uiam).toBe(uiam);
+      expect(create().uiam).toBeUndefined();
+    });
+
+    it('hands the TLS contents it is given to the UIAM service', () => {
+      const tls = { certificate: 'CERT', key: 'KEY', certificateAuthorities: ['CA'] };
+      create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: { ...uiamOptions, tls },
+      });
+      expect(UiamService).toHaveBeenCalledWith(
+        expect.anything(),
+        uiamConfig,
+        expect.objectContaining({ tls })
+      );
+    });
+
     it('invalidates a UIAM API key through the UIAM service', async () => {
       const { authc } = create({
         config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
@@ -174,6 +196,22 @@ describe('createRunTimeSecurity', () => {
       );
 
       expect(uiam.revokeApiKey).toHaveBeenCalled();
+    });
+
+    it('serves the system identity when the dispatch carries its mTLS material', () => {
+      const runtime = create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: { ...uiamOptions, tls: { certificate: 'certificate-pem', key: 'key-pem' } },
+      });
+      expect(runtime.authc.systemIdentity).toBeDefined();
+    });
+
+    it('does not serve a system identity without a complete client certificate', () => {
+      const runtime = create({
+        config: { uiam: uiamConfig, serviceAccounts: { enabled: false } },
+        uiam: { ...uiamOptions, tls: { certificate: 'certificate-pem' } },
+      });
+      expect(runtime.authc.systemIdentity).toBeUndefined();
     });
 
     it('requires the options of the UIAM service', () => {

@@ -5,6 +5,7 @@
  * 2.0.
  */
 
+import { httpServiceMock } from '@kbn/core-http-server-mocks';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { configSchema } from '../config';
 import type { RuleTaskTypeModule } from './rule_task_type';
@@ -15,6 +16,7 @@ import type { UntypedRuleType } from '../types';
 /** The part of a task host that builds a rule type: what a module file's factory may read. */
 export const createRuleTypeHostMock = (settings: Record<string, unknown> = {}) => ({
   logger: loggingSystemMock.createLogger(),
+  http: httpServiceMock.createStartContract(),
   server: {
     uuid: 'test-uuid',
     version: '9.9.9',

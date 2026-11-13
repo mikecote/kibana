@@ -7,23 +7,24 @@
 
 import type { Logger } from '@kbn/core/server';
 import type { FieldMetadataPlain } from '@kbn/fields-metadata-plugin/common';
-import type { FieldsMetadataServerSetup } from '@kbn/fields-metadata-plugin/server';
+import type {
+  FieldsMetadataServerSetup,
+  StreamsFieldsExtractor,
+} from '@kbn/fields-metadata-plugin/server';
 import { Streams } from '@kbn/streams-schema';
 import { createStreamsStorageClient } from './lib/streams/storage/streams_storage_client';
 
 interface RegistrationDeps {
-  fieldsMetadata: FieldsMetadataServerSetup;
+  fieldsMetadata: Pick<FieldsMetadataServerSetup, 'registerStreamsFieldsExtractor'>;
   logger: Logger;
 }
 
-/**
- * Registers a streams field extractor with the fields_metadata service.
- * This allows the ESQL editor and field sidebar to display field descriptions
- * for streams. The extractor receives a request-scoped ES client so that
- * Elasticsearch-level read permissions are respected.
- */
-export const registerFieldsMetadataExtractors = ({ fieldsMetadata, logger }: RegistrationDeps) => {
-  fieldsMetadata.registerStreamsFieldsExtractor(async ({ streamName, esClient }) => {
+export const STREAMS_FIELDS_METADATA_EXTRACTOR_ID = 'streams';
+
+/** Creates the request-scoped stream field extractor shared by native and worker execution. */
+export const createStreamsFieldsMetadataExtractor =
+  ({ logger }: Pick<RegistrationDeps, 'logger'>): StreamsFieldsExtractor =>
+  async ({ streamName, esClient }) => {
     try {
       const storageClient = createStreamsStorageClient(esClient, logger);
 
@@ -69,5 +70,15 @@ export const registerFieldsMetadataExtractors = ({ fieldsMetadata, logger }: Reg
       logger.warn(`registerStreamsFieldsExtractor error: ${error}`);
       return {};
     }
-  });
+  };
+
+/** Registers the shared stream extractor with the native field metadata registry. */
+export const registerFieldsMetadataExtractors = ({
+  fieldsMetadata,
+  logger,
+}: RegistrationDeps): void => {
+  fieldsMetadata.registerStreamsFieldsExtractor(
+    createStreamsFieldsMetadataExtractor({ logger }),
+    STREAMS_FIELDS_METADATA_EXTRACTOR_ID
+  );
 };

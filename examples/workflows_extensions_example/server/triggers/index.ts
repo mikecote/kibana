@@ -7,11 +7,13 @@
  * License v3.0 only", or the "Server Side Public License, v 1".
  */
 
-import type { WorkflowsExtensionsServerPluginSetup } from '@kbn/workflows-extensions/server';
+import type { WorkflowStepsRegistry } from '@kbn/workflows-extensions/server';
 import { commonCustomTriggerDefinition } from '../../common/triggers/custom_trigger';
 import { commonLoopTriggerDefinition } from '../../common/triggers/loop_trigger';
 
-export const registerTriggers = (workflowsExtensions: WorkflowsExtensionsServerPluginSetup) => {
+export const registerTriggers = (
+  workflowsExtensions: Pick<WorkflowStepsRegistry, 'registerTriggerDefinition'>
+) => {
   workflowsExtensions.registerTriggerDefinition(commonCustomTriggerDefinition);
   workflowsExtensions.registerTriggerDefinition(commonLoopTriggerDefinition);
 };

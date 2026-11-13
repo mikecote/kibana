@@ -9,3 +9,19 @@
 
 export { initMetrics, type InitMetricsOptions } from './src/init_metrics';
 export { PrometheusExporter } from './src/prometheus_exporter';
+
+export { DeltaMetricReader, DEFAULT_METRIC_CARDINALITY_LIMIT } from './src/delta_metric_reader';
+export { combineMetricCollections } from './src/metric_collection';
+export type { ScopeMetrics } from '@opentelemetry/sdk-metrics';
+
+export type { MetricResourceSnapshot } from './src/metric_collection';
+
+export {
+  encodeMetricScopes,
+  decodeMetricScopes,
+  encodeMetricResources,
+  decodeMetricResources,
+  METRIC_SERIALIZATION_VERSION,
+} from './src/metric_codec';
+
+export { GaugeMetricReader } from './src/gauge_metric_reader';

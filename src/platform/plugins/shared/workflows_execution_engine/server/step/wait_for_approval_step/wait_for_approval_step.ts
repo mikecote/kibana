@@ -152,6 +152,7 @@ export class WaitForApprovalStepImpl implements NodeImplementation, CancellableN
       executionId: this.workflowRuntime.getWorkflowExecution().id,
       stepExecutionId: this.stepExecutionRuntime.stepExecutionId,
       stepType: this.node.stepType,
+      registry: this.dependencies.hitlLifecycle,
     });
   }
 
@@ -224,6 +225,7 @@ export class WaitForApprovalStepImpl implements NodeImplementation, CancellableN
         stepExecutionRuntime: this.stepExecutionRuntime,
         executionId: execution.id,
         stepType: this.node.stepType,
+        registry: this.dependencies.hitlLifecycle,
         error: new ExecutionError({
           type: 'TimeoutError',
           message: `Approval wait exceeded the configured timeout of ${timeout}.`,

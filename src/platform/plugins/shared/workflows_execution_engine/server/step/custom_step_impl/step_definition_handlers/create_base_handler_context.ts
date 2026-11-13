@@ -25,6 +25,7 @@ export function createBaseHandlerContext(
     rawInput: rawInput || {},
     config: config || {}, // TODO: pick only the config properties that are defined in the step definition
     contextManager: {
+      getExecutionMetadata: () => stepExecutionRuntime.contextManager.getExecutionMetadata(),
       getContext: () => {
         return stepExecutionRuntime.contextManager.getContext();
       },

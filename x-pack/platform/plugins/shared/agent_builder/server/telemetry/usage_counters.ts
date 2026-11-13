@@ -33,7 +33,7 @@ export function createAgentBuilderUsageCounter(
  * @param source - Tool call source
  */
 export function trackToolCall(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   source: 'default_agent' | 'custom_agent' | 'mcp' | 'api' | 'a2a'
 ): void {
   if (!usageCounter) return;
@@ -52,7 +52,7 @@ export function trackToolCall(
  * @param model - Model identifier
  */
 export function trackLLMUsage(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   provider: string,
   model: string
 ): void {
@@ -77,7 +77,7 @@ export function trackLLMUsage(
  * @param roundNumber - Current round number
  */
 export function trackConversationRound(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   roundNumber: number
 ): void {
   if (!usageCounter) return;
@@ -108,7 +108,7 @@ export function trackConversationRound(
  * @param durationMs - Duration in milliseconds
  */
 export function trackQueryToResultTime(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   durationMs: number
 ): void {
   if (!usageCounter) return;
@@ -137,7 +137,7 @@ export function trackQueryToResultTime(
  * Helper to track skill invocations by origin
  */
 export function trackSkillInvocation(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   origin: 'builtin' | 'custom' | 'plugin'
 ): void {
   if (!usageCounter) return;
@@ -153,7 +153,7 @@ export function trackSkillInvocation(
  * Helper to track plugin imports by source type
  */
 export function trackPluginImport(
-  usageCounter: UsageCounter | undefined,
+  usageCounter: Pick<UsageCounter, 'incrementCounter'> | undefined,
   sourceType: 'url' | 'upload'
 ): void {
   if (!usageCounter) return;

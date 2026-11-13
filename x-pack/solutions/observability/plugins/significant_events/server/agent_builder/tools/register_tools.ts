@@ -7,7 +7,8 @@
 
 import type { Logger } from '@kbn/core/server';
 import type { AgentBuilderPluginSetup } from '@kbn/agent-builder-server';
-import type { SignificantEventsServer } from '../../types';
+import type { SignificantEventsAuthorizationServices } from '../../run_services/authorization';
+import type { AssertSignificantEventsAccess } from '../../run_services/create_access_checker';
 import type { EbtTelemetryClient } from '../../lib/telemetry/ebt';
 import type { GetScopedClients } from '../../routes/types';
 import { createFeatureSimilaritySearchTool } from './feature_similarity_search/tool';
@@ -34,12 +35,18 @@ export function registerAgentBuilderTools({
   agentBuilder,
   getScopedClients,
   server,
+  assertAccess,
+  toolIds,
+  onRegistered,
   logger,
   telemetry,
 }: {
   agentBuilder: AgentBuilderPluginSetup;
   getScopedClients: GetScopedClients;
-  server: SignificantEventsServer;
+  server: SignificantEventsAuthorizationServices;
+  assertAccess: AssertSignificantEventsAccess;
+  toolIds?: readonly string[];
+  onRegistered?: (id: string) => void;
   logger: Logger;
   telemetry: EbtTelemetryClient;
 }): void {
@@ -52,58 +59,69 @@ export function registerAgentBuilderTools({
     createSearchKnowledgeIndicatorsTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('ki_search_tool'),
     }),
     createFeatureSimilaritySearchTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('ki_feature_similarity_search_tool'),
     }),
     createFeatureKnowledgeIndicatorTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('ki_feature_create_tool'),
       telemetry,
     }),
     createQueryKnowledgeIndicatorTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('ki_query_create_tool'),
       telemetry,
     }),
     createSearchEventsTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('event_search_tool'),
       telemetry,
     }),
     createEventTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('event_create_tool'),
       telemetry,
     }),
     createEventStatusUpdateTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('event_status_update_tool'),
       telemetry,
     }),
     createEventInvestigationAttachTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('event_investigation_attach_tool'),
       telemetry,
     }),
     createEventsWriteTool({
       getScopedClients,
       server,
+      assertAccess,
       logger: logger.get('events_write_tool'),
       telemetry,
     }),
   ];
 
   for (const tool of tools) {
+    if (toolIds && !toolIds.includes(tool.id)) continue;
     agentBuilder.tools.register(tool as Parameters<typeof agentBuilder.tools.register>[0]);
+    onRegistered?.(tool.id);
   }
 }
