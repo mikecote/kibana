@@ -9,7 +9,7 @@
 
 import { join } from 'node:path';
 import { REPO_ROOT } from '@kbn/repo-info';
-import { getBundleOutputs, getStartupOutputs } from './build';
+import { getBundleOutputs, getStartupAnalysis, getStartupOutputs } from './build';
 
 it('packages every reachable shared and deferred chunk for each task without including another entry', () => {
   const metafile = {
@@ -77,4 +77,36 @@ it('counts the generated bootstrap imports awaited before READY while keeping bu
       'context.mjs',
     ].map((file) => join(REPO_ROOT, file))
   );
+});
+
+it('attributes only loaded startup inputs and identifies EUI import paths', () => {
+  const metafile = {
+    inputs: {
+      'src/server/palette.ts': {
+        imports: [{ path: 'node_modules/@elastic/eui/es/index.js', kind: 'import-statement' }],
+      },
+    },
+    outputs: {
+      'entry.mjs': {
+        entryPoint: 'test__task.entry.ts',
+        imports: [{ path: 'startup.mjs', kind: 'import-statement' }],
+        inputs: {},
+      },
+      'startup.mjs': {
+        imports: [{ path: 'deferred.mjs', kind: 'dynamic-import' }],
+        inputs: {
+          'src/server/palette.ts': { bytesInOutput: 100 },
+          'node_modules/@elastic/eui/es/index.js': { bytesInOutput: 25 },
+        },
+      },
+      'deferred.mjs': {
+        imports: [],
+        inputs: { 'node_modules/jsdom/lib/api.js': { bytesInOutput: 200 } },
+      },
+    },
+  };
+  expect(getStartupAnalysis(metafile, join(REPO_ROOT, 'entry.mjs'))).toEqual({
+    packages: { workspace: 100, '@elastic/eui': 25 },
+    euiImporters: ['src/server/palette.ts'],
+  });
 });

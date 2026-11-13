@@ -18,7 +18,6 @@ import type {
   SavedObjectsEsqlOptions,
   SavedObjectsEsqlResponse,
 } from '@kbn/core-saved-objects-api-server';
-import { esql, Walker, SOURCE_COMMANDS } from '@elastic/esql';
 import type { ApiExecutionContext } from './types';
 import { getNamespacesBoolFilter } from '../search';
 
@@ -97,6 +96,7 @@ export async function performEsql(
   // Build the FROM clause using the composer for safe construction.
   // esql.from() parses indices and metadata through the ES|QL parser,
   // preventing injection via malformed values.
+  const { esql, Walker, SOURCE_COMMANDS } = await import('@elastic/esql');
   const indices = helpers.common.getIndicesForTypes(types);
   const fromClause =
     metadata && metadata.length > 0
