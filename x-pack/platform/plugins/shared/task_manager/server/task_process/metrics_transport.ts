@@ -10,13 +10,13 @@ import type { MetricResourceSnapshot } from '@kbn/metrics';
 import type { TaskProcessAddress } from './remote_task_runner';
 import { TASK_PROCESS_PATHS } from './protocol';
 
-/** Collects authenticated live gauge snapshots through the versioned worker control endpoint. */
+/** Collects authenticated live gauge snapshots through the native bulk telemetry endpoint. */
 export const collectRemoteGaugeMetrics = async (
   address: TaskProcessAddress,
   owner: string
 ): Promise<MetricResourceSnapshot[]> => {
   const url = `${address.url.replace(/\/+$/, '')}${
-    TASK_PROCESS_PATHS.gauges
+    TASK_PROCESS_PATHS.metrics
   }?owner=${encodeURIComponent(owner)}`;
   const response = await fetch(url, {
     headers: address.token ? { authorization: `Bearer ${address.token}` } : {},

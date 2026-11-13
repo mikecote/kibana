@@ -18,7 +18,7 @@ import { MlLicense } from '../../common/license';
 import { registerAnomalyDetectionAgentBuilder } from '../agent_builder/register_anomaly_detection';
 import { createInProcessMlCapabilitiesResolver } from '../lib/capabilities/resolve_ml_capabilities_in_process';
 import { createSnapshotModuleFiles } from '../models/data_recognizer/module_files';
-import type { DataRecognizerModuleSnapshot } from '../models/data_recognizer/module_files';
+import type { DataRecognizerModuleSource } from '../models/data_recognizer/module_files';
 import type { MlDataViews } from '../shared_services/shared_services';
 import { getMlSavedObjectTypes } from '../saved_objects';
 import { createMlTaskAuthorization } from './create_ml_task_authorization';
@@ -36,7 +36,7 @@ export interface MlAgentBuilderSettings {
   /** Whether the spaces plugin is enabled. */
   spacesEnabled: boolean;
   cpsEnabled: boolean;
-  moduleFiles: DataRecognizerModuleSnapshot;
+  moduleFiles: DataRecognizerModuleSource;
 }
 
 /**
@@ -105,7 +105,7 @@ export const contribution: AgentBuilderContribution = {
         isMlReady: () => Promise.resolve(),
         getDataViews: () => services.getService<MlDataViews>('dataViews'),
         compatibleModuleType: sent.compatibleModuleType,
-        moduleFiles: createSnapshotModuleFiles(sent.moduleFiles),
+        moduleFiles: createSnapshotModuleFiles(sent.moduleFiles, taskHost.readContent),
       },
     });
   },

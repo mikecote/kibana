@@ -8,13 +8,12 @@
 import { encodeMetricResources } from '@kbn/metrics';
 import type { ScopeMetrics, MetricResourceSnapshot } from '@kbn/metrics';
 import type { ExecutionContextSetup } from '@kbn/core-execution-context-server';
-import { schema } from '@kbn/config-schema';
-import type { TypeOf } from '@kbn/config-schema';
-import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Logger } from '@kbn/logging';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import { TASK_PROCESS_SESSION_HEADER } from './session_protocol';
+import { isTaskProcessAuthorized } from './task_process_auth';
 import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 import { assertTaskFeatureFlagValues } from './feature_flag_declarations';
 import { TaskProcessAcquireError } from './acquire_error';
@@ -25,7 +24,8 @@ import {
   TASK_PROCESS_PATHS,
 } from './protocol';
 import { withTaskProcessTrace } from './task_tracing';
-import { ActiveTaskPoolRequests } from './active_task_pool_requests';
+import type { WorkerRunControl } from './worker_run_control';
+import type { GetRunCancellation } from './worker_capabilities';
 import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import {
   isDeclinedRunError,
@@ -57,14 +57,8 @@ interface InFlight {
   readonly task: { cancel?(): Promise<unknown> };
   readonly finished: Promise<void>;
   readonly adHocTaskCounter: AdHocTaskCounter;
-  readonly activeTaskPool: ActiveTaskPoolRequests;
   readonly metrics: TaskProcessMetrics;
 }
-
-const activePoolReplySchema = schema.object({
-  requestId: schema.string({ minLength: 1, maxLength: 128 }),
-  executionIds: schema.arrayOf(schema.string({ maxLength: 4096 }), { maxSize: 100000 }),
-});
 
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
@@ -107,23 +101,6 @@ class RefusedRun extends Error {
   }
 }
 
-const readActivePoolReply = async (
-  req: IncomingMessage
-): Promise<TypeOf<typeof activePoolReplySchema>> => {
-  const body = await readBody(req);
-  try {
-    return activePoolReplySchema.validate(JSON.parse(body));
-  } catch {
-    throw new RefusedRun(400, 'Invalid active-pool reply');
-  }
-};
-
-const isSameSecret = (received: string | undefined, expected: string) => {
-  const a = Buffer.from(received ?? '');
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
 export const startTaskProcessServer = ({
   taskDefinitions,
   executionContext,
@@ -141,6 +118,8 @@ export const startTaskProcessServer = ({
   getTaskTypes,
   getFeatureFlagDefinitions,
   enrichFakeRequest,
+  registerRunCancellation,
+  prepareRunControl,
 }: {
   taskDefinitions: Map<string, TaskProcessTaskDefinition>;
   executionContext?: Pick<ExecutionContextSetup, 'withContext'>;
@@ -174,12 +153,36 @@ export const startTaskProcessServer = ({
   getTaskTypes?: () => string[];
   getFeatureFlagDefinitions?: (taskType: string) => TaskFeatureFlagDefinitions | undefined;
   enrichFakeRequest?: FakeRequestEnricher;
+  registerRunCancellation?: (getCancellation: GetRunCancellation) => void;
+  prepareRunControl?: (
+    executionUuid: string,
+    counter: AdHocTaskCounter,
+    signal: AbortSignal,
+    sessionId?: string
+  ) => Promise<WorkerRunControl>;
 }) => {
   const inFlight = new Map<string, InFlight>();
   let draining = false;
+  // Concurrent remote cancellations retain separate telemetry until consumed or their grace expires.
+  const completedMetrics = new Map<
+    string,
+    {
+      prometheus?: TaskProcessMetricSnapshot;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  const takeCompletedMetrics = (executionUuid: string) => {
+    const completed = completedMetrics.get(executionUuid);
+    if (completed) {
+      clearTimeout(completed.timer);
+      completedMetrics.delete(executionUuid);
+    }
+    return completed;
+  };
 
   const handleRun = async (
-    body: TaskProcessRunRequest
+    body: TaskProcessRunRequest,
+    sessionId?: string
   ): Promise<TaskProcessRunResponse | undefined> => {
     if (body.protocolVersion !== TASK_PROCESS_PROTOCOL_VERSION) {
       throw new RefusedRun(409, 'Task worker dispatch protocol is incompatible');
@@ -248,11 +251,9 @@ export const startTaskProcessServer = ({
     let finish: () => void = () => {};
     const finished = new Promise<void>((resolve) => (finish = resolve));
     const adHocTaskCounter = new AdHocTaskCounter();
-    const activeTaskPool = new ActiveTaskPoolRequests(abortController.signal);
     const metrics = new TaskProcessMetrics(collectMetrics);
     inFlight.set(body.executionUuid, {
       adHocTaskCounter,
-      activeTaskPool,
       metrics,
       abortController,
       task: { cancel: async () => task?.cancel?.() },
@@ -260,6 +261,7 @@ export const startTaskProcessServer = ({
     });
     const flushers: Array<() => Promise<void>> = [];
     let flushed = true;
+    let runControl: WorkerRunControl | undefined;
     let cleanupSucceeded = true;
     const cleanupTask = async (): Promise<void> => {
       try {
@@ -279,6 +281,12 @@ export const startTaskProcessServer = ({
       }
     };
     try {
+      runControl = await prepareRunControl?.(
+        body.executionUuid,
+        adHocTaskCounter,
+        abortController.signal,
+        sessionId
+      );
       const { value, error } = await runInRunContext(
         async () => {
           const runTask = async () => {
@@ -334,7 +342,12 @@ export const startTaskProcessServer = ({
               : undefined,
           adHocTaskCounter,
           prometheusMetrics: metrics,
-          getCurrentTasksInPool: activeTaskPool.getCurrentTasksInPool,
+          withCoordinatorCapability: runControl?.withCoordinatorCapability,
+          getCurrentTasksInPool:
+            runControl?.getCurrentTasksInPool ??
+            (async () => {
+              throw new Error('Task dispatch has no control session');
+            }),
         }
       );
       const prometheus = await metrics.collect(true).catch((metricError: Error) => {
@@ -369,12 +382,36 @@ export const startTaskProcessServer = ({
       } as TaskProcessRunResponse;
       return response;
     } finally {
+      await runControl?.dispose();
+      if (prepareRunControl && abortController.signal.aborted) {
+        takeCompletedMetrics(body.executionUuid);
+        const timer = setTimeout(
+          () => completedMetrics.delete(body.executionUuid),
+          Math.min(body.cancelGracePeriodMs ?? 5000, MAX_TIMER_MS)
+        );
+        timer.unref();
+        completedMetrics.set(body.executionUuid, { prometheus: metrics.snapshot(), timer });
+      }
       clearTimeout(deadlineTimer);
-      activeTaskPool.dispose();
       inFlight.delete(body.executionUuid);
       finish();
     }
   };
+
+  const getCancellation: GetRunCancellation = (executionUuid) => {
+    const entry = inFlight.get(executionUuid);
+    if (!entry) return undefined;
+    return async () => {
+      entry.abortController.abort();
+      await entry.task.cancel?.();
+      await entry.finished;
+      return {
+        prometheus: entry.metrics.snapshot(),
+        createdTaskCount: entry.adHocTaskCounter.count,
+      };
+    };
+  };
+  registerRunCancellation?.(getCancellation);
 
   const server = createServer(async (req, res) => {
     try {
@@ -392,19 +429,13 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      const isAuthorized =
-        !authToken || isSameSecret(req.headers.authorization, `Bearer ${authToken}`);
+      const isAuthorized = !authToken || isTaskProcessAuthorized(req, authToken);
       if (
-        (req.method === 'POST' &&
-          (req.url === TASK_PROCESS_PATHS.run ||
-            req.url?.startsWith(TASK_PROCESS_PATHS.cancel) ||
-            req.url?.startsWith(TASK_PROCESS_PATHS.activePool))) ||
+        (req.method === 'POST' && req.url === TASK_PROCESS_PATHS.run) ||
         (req.method === 'GET' &&
-          (req.url?.startsWith(TASK_PROCESS_PATHS.metrics) ||
-            req.url === TASK_PROCESS_PATHS.gauges ||
-            req.url === TASK_PROCESS_PATHS.featureFlags ||
-            req.url?.startsWith(`${TASK_PROCESS_PATHS.featureFlags}?`) ||
-            req.url?.startsWith(`${TASK_PROCESS_PATHS.gauges}?`)))
+          (req.url === TASK_PROCESS_PATHS.metrics ||
+            req.url?.startsWith(`${TASK_PROCESS_PATHS.metrics}?`) ||
+            req.url?.startsWith(`${TASK_PROCESS_PATHS.metrics}/`)))
       ) {
         if (!isAuthorized) {
           sendJson(res, 401, { error: 'unauthorized' });
@@ -414,28 +445,8 @@ export const startTaskProcessServer = ({
 
       if (
         req.method === 'GET' &&
-        (req.url === TASK_PROCESS_PATHS.featureFlags ||
-          req.url?.startsWith(`${TASK_PROCESS_PATHS.featureFlags}?`))
-      ) {
-        const taskType = new URL(req.url, 'http://task-worker').searchParams.get('taskType');
-        if (!taskType || taskType.length > 1024)
-          throw new RefusedRun(400, 'Invalid task type for feature flag declarations');
-        if (!(getTaskTypes?.() ?? [...taskDefinitions.keys()]).includes(taskType))
-          throw new RefusedRun(404, 'Task type is not served by this worker');
-        const featureFlags = getFeatureFlagDefinitions?.(taskType);
-        if (!featureFlags)
-          throw new RefusedRun(
-            422,
-            'Task bundle lacks feature flag declarations; rebuild the bundle'
-          );
-        sendJson(res, 200, { taskType, featureFlags });
-        return;
-      }
-
-      if (
-        req.method === 'GET' &&
-        (req.url === TASK_PROCESS_PATHS.gauges ||
-          req.url?.startsWith(`${TASK_PROCESS_PATHS.gauges}?`))
+        (req.url === TASK_PROCESS_PATHS.metrics ||
+          req.url?.startsWith(`${TASK_PROCESS_PATHS.metrics}?`))
       ) {
         const owner = new URL(req.url, 'http://task-worker').searchParams.get('owner') ?? undefined;
         if (owner !== undefined && (!owner.length || owner.length > 128)) {
@@ -447,34 +458,21 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'GET' && req.url?.startsWith(TASK_PROCESS_PATHS.metrics)) {
-        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.metrics.length));
+      if (req.method === 'GET' && req.url?.startsWith(`${TASK_PROCESS_PATHS.metrics}/`)) {
+        const executionUuid = req.url.slice(TASK_PROCESS_PATHS.metrics.length + 1);
+        const entry = inFlight.get(executionUuid);
+        const completed = entry ? undefined : takeCompletedMetrics(executionUuid);
         const prometheus = await entry?.metrics.collect().catch((error: Error) => {
           logger.warn(`Native metric progress collection failed: ${error.message}`);
           return entry.metrics.snapshot();
         });
         sendJson(
           res,
-          entry ? 200 : 404,
-          entry
-            ? {
-                prometheus,
-                createdTaskCount: entry.adHocTaskCounter.count,
-                activePoolRequestIds: entry.activeTaskPool.getRequestIds(),
-              }
+          entry || completed ? 200 : 404,
+          entry || completed
+            ? { prometheus: prometheus ?? completed?.prometheus }
             : { error: 'no such in-flight run' }
         );
-        return;
-      }
-
-      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.activePool)) {
-        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.activePool.length));
-        const reply = await readActivePoolReply(req);
-        if (!entry?.activeTaskPool.completeRequest(reply.requestId, reply.executionIds)) {
-          sendJson(res, 404, { error: 'no such active-pool request' });
-          return;
-        }
-        sendJson(res, 200, { outcome: 'accepted' });
         return;
       }
 
@@ -484,7 +482,11 @@ export const startTaskProcessServer = ({
         res.on('close', () => {
           if (!res.writableEnded) inFlight.get(body.executionUuid)?.abortController.abort();
         });
-        const response = await handleRun(body);
+        const sessionHeader = req.headers[TASK_PROCESS_SESSION_HEADER];
+        const response = await handleRun(
+          body,
+          typeof sessionHeader === 'string' ? sessionHeader : undefined
+        );
         if (!response) {
           sendJson(res, 404, { error: `unregistered task type '${body.taskType}'` });
           return;
@@ -493,27 +495,13 @@ export const startTaskProcessServer = ({
         return;
       }
 
-      if (req.method === 'POST' && req.url?.startsWith(TASK_PROCESS_PATHS.cancel)) {
-        const entry = inFlight.get(req.url.slice(TASK_PROCESS_PATHS.cancel.length));
-        if (!entry) {
-          sendJson(res, 404, { error: 'no such in-flight run' });
-          return;
-        }
-        entry.abortController.abort();
-        await entry.task.cancel?.();
-        await entry.finished;
-        sendJson(res, 200, {
-          outcome: 'cancelled',
-          prometheus: entry.metrics.snapshot(),
-          createdTaskCount: entry.adHocTaskCounter.count,
-        });
-        return;
-      }
-
       sendJson(res, 404, { error: 'not found' });
     } catch (error) {
       if (error instanceof TaskProcessAcquireError) {
-        sendJson(res, DECLINED_STATUS, { kind: 'incompatible', reason: error.message });
+        sendJson(res, error.reason === 'unavailable' ? 503 : DECLINED_STATUS, {
+          kind: error.reason === 'unavailable' ? 'unavailable' : 'incompatible',
+          reason: error.message,
+        });
         return;
       }
       if (error instanceof RefusedRun) {
@@ -558,6 +546,8 @@ export const startTaskProcessServer = ({
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
   server.once('close', () => {
+    for (const { timer } of completedMetrics.values()) clearTimeout(timer);
+    completedMetrics.clear();
     process.removeListener('unhandledRejection', onUnhandledRejection);
     process.removeListener('SIGTERM', shutdown);
     process.removeListener('SIGINT', shutdown);

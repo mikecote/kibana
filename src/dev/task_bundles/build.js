@@ -12,7 +12,8 @@ const { createRequire } = require('module');
 const path = require('path');
 const { build } = require('esbuild');
 const { REPO_ROOT } = require('@kbn/repo-info');
-const { getPackages } = require('@kbn/repo-packages');
+const { getPackages, getRemoteManifestPaths } = require('@kbn/repo-packages');
+const { interpretRemoteManifest } = require('@kbn/import-locator');
 const { escapeNonLatin1 } = require('./escape_non_latin1');
 const { copyTaskRuntimeDependencies } = require('./copy_runtime_dependencies');
 
@@ -23,7 +24,7 @@ const RUNTIME_ENTRY = path.join(
 );
 
 /** Loads a task type file using the registered transpiler. */
-const loadTaskType = (file) => createRequire(__filename)(file).taskType;
+const loadTaskType = (file, exportName = 'taskType') => createRequire(__filename)(file)[exportName];
 
 /**
  * Native modules stay out of the bundle and resolve from node_modules at run time. `canvas` is the
@@ -31,26 +32,32 @@ const loadTaskType = (file) => createRequire(__filename)(file).taskType;
  */
 const EXTERNALS = ['re2', 'canvas'];
 
-/**
- * The files plugins contribute under a key (`plugin.taskTypeContributions` in `kibana.jsonc`), such as
- * `alerting-rule-run` for what every rule run needs. Each file exports `contribution`.
- */
+/** Contribution modules discovered from static server/remote/index.ts declarations. */
 const getContributionFiles = (key, packages = getPackages(REPO_ROOT)) =>
-  packages
-    .filter((pkg) => pkg.manifest.type === 'plugin')
-    .flatMap((pkg) =>
-      (pkg.manifest.plugin.taskTypeContributions?.[key] ?? []).map((file) =>
-        path.resolve(REPO_ROOT, pkg.directory, file)
-      )
+  getRemoteManifestPaths(REPO_ROOT, packages)
+    .flatMap(({ path: file }) =>
+      (interpretRemoteManifest(file).contributions?.[key] ?? []).map(({ modulePath }) => modulePath)
     )
     .sort();
+
+let contributionExports;
+const contributionExport = (file) => {
+  contributionExports ??= new Map(
+    getRemoteManifestPaths(REPO_ROOT)
+      .flatMap(({ path: file }) =>
+        Object.values(interpretRemoteManifest(file).contributions ?? {}).flat()
+      )
+      .map(({ modulePath, exportName }) => [modulePath, exportName])
+  );
+  return contributionExports.get(file) ?? 'contribution';
+};
 
 /** Resolves contribution keys added by native runtimes until the declaration graph is complete. */
 const resolveTaskContributions = (
   taskType,
   additionalContributions = {},
   getFiles = getContributionFiles,
-  loadContribution = (file) => createRequire(__filename)(file).contribution
+  loadContribution = (file) => createRequire(__filename)(file)[contributionExport(file)]
 ) => {
   const filesByKey = {};
   const contributions = {};
@@ -82,17 +89,16 @@ const collectTaskFeatureFlags = (taskType, contributions) =>
     ...contributions.map((item) => item.declares?.featureFlags)
   );
 
-/** Every task type file declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`). */
+/** Every task module declared in convention-discovered remote manifests. */
 const getTaskBundleEntries = (packages = getPackages(REPO_ROOT)) =>
-  packages
-    .filter((pkg) => pkg.manifest.type === 'plugin' && pkg.manifest.plugin.taskTypes?.length)
-    .flatMap((pkg) =>
-      pkg.manifest.plugin.taskTypes.map((file) => ({
-        pluginId: pkg.manifest.plugin.id,
-        file: path.resolve(REPO_ROOT, pkg.directory, file),
-        name: `${pkg.manifest.plugin.id}__${path.basename(file).replace(/\.task\.[jt]s$/, '')}`,
-      }))
-    );
+  getRemoteManifestPaths(REPO_ROOT, packages).flatMap(({ pluginId, path: file }) =>
+    (interpretRemoteManifest(file).taskTypes ?? []).map(({ modulePath, exportName }) => ({
+      pluginId,
+      file: modulePath,
+      exportName,
+      name: `${pluginId}__${path.basename(modulePath).replace(/\.task\.[jt]s$/, '')}`,
+    }))
+  );
 
 /**
  * `@kbn/repo-info` finds the Kibana directory above the file that loads it, so a bundle copied
@@ -271,6 +277,16 @@ const TASK_BUNDLE_OPTIMIZATION = {
   keepNames: true,
 };
 
+const staticRemoteManifestsPlugin = {
+  name: 'static-remote-manifests',
+  setup(buildApi) {
+    buildApi.onLoad({ filter: /[\\/]server[\\/]remote[\\/]index\.ts$/ }, ({ path: file }) => ({
+      contents: `export const remote = ${JSON.stringify(interpretRemoteManifest(file))};`,
+      loader: 'ts',
+    }));
+  },
+};
+
 /** Builds native task entries in one graph, sharing their common runtime chunks. */
 const buildTaskBundles = async ({
   entries,
@@ -283,7 +299,7 @@ const buildTaskBundles = async ({
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const runtime = copyTaskRuntimeDependencies(outDir);
   const prepared = entries.map((entry) => {
-    const loaded = loadTaskType(entry.file);
+    const loaded = loadTaskType(entry.file, entry.exportName);
     if (!loaded) throw new Error(`Task module ${entry.file} has no taskType export`);
     // What the module says it takes from other plugins: every plugin's file under each key.
     const declarations = new Map();
@@ -292,7 +308,7 @@ const buildTaskBundles = async ({
       additionalContributions,
       getContributionFiles,
       (file) => {
-        const contribution = createRequire(__filename)(file).contribution;
+        const contribution = createRequire(__filename)(file)[contributionExport(file)];
         declarations.set(file, contribution);
         return contribution;
       }
@@ -314,10 +330,15 @@ const buildTaskBundles = async ({
         `  import(${JSON.stringify(entry.file)}),`,
         ...contributionImports.map((file) => `  import(${JSON.stringify(file)}),`),
         `]);`,
-        `runtime.runTaskProcess(taskModule.taskType, { ...initialization, contributions: {`,
+        `runtime.runTaskProcess(taskModule[${JSON.stringify(
+          entry.exportName ?? 'taskType'
+        )}], { ...initialization, contributions: {`,
         ...Object.entries(contributions).map(([key, files]) => {
           const names = files.map(
-            (file) => `contributionModule${contributionImports.indexOf(file)}.contribution`
+            (file) =>
+              `contributionModule${contributionImports.indexOf(file)}[${JSON.stringify(
+                contributionExport(file)
+              )}]`
           );
           return `  ${JSON.stringify(key)}: [${names.join(', ')}],`;
         }),
@@ -390,6 +411,7 @@ const buildTaskBundles = async ({
       '.node': 'empty',
     },
     plugins: [
+      staticRemoteManifestsPlugin,
       taskEntriesPlugin,
       uiSharedDepsStubPlugin,
       nativeApmAgentPlugin,
@@ -433,7 +455,7 @@ const buildTaskBundle = async ({ entry, ...options }) => {
 };
 
 /** The task type a file exports as `taskType`; loads it, so it needs the transpiler. */
-const readTaskType = (file) => createRequire(__filename)(file).taskType.type;
+const readTaskType = (file, exportName) => loadTaskType(file, exportName).type;
 
 /** Writes `manifest.json`: which task type each bundle serves, read by Kibana's supervisor. */
 const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
@@ -446,7 +468,7 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
         {
           file: path.relative(outDir, outfile),
           files: files.map((file) => path.relative(outDir, file)),
-          taskType: readTaskType(entry.file),
+          taskType: readTaskType(entry.file, entry.exportName),
           bytes,
           startupBytes,
           featureFlags,
@@ -459,6 +481,7 @@ const writeManifest = (results, outDir = OUT_DIR, kibanaVersion) => {
 };
 
 module.exports = {
+  staticRemoteManifestsPlugin,
   TASK_BUNDLE_OPTIMIZATION,
   OUT_DIR,
   getTaskBundleEntries,

@@ -29,6 +29,8 @@
     "@kbn/core-base-common",
     "@kbn/core-plugins-server-internal",
     "@kbn/core-root-server-internal",
+    "@kbn/core-remote-server-internal",
+    "@kbn/core-remote-common",
     "@kbn/utility-types",
     "@kbn/safer-lodash-set",
     "@kbn/es-types",

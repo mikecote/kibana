@@ -14,6 +14,7 @@ import { AdHocTaskCounter } from '../lib/adhoc_task_counter';
 import type { TaskHost } from '../task_type_module';
 
 interface RunStore {
+  withCoordinatorCapability?: TaskHost['withCoordinatorCapability'];
   featureFlags: Record<string, boolean | string | number>;
   executionId?: string;
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
@@ -24,6 +25,15 @@ interface RunStore {
 
 const storage = new AsyncLocalStorage<RunStore>();
 const activeExecutions = new Set<string>();
+
+export const withTaskCoordinatorCapability: NonNullable<TaskHost['withCoordinatorCapability']> = (
+  token,
+  use
+) => {
+  const call = storage.getStore()?.withCoordinatorCapability;
+  if (!call) return Promise.reject(new Error('No coordinator capability in the active task run'));
+  return call(token, use);
+};
 
 /** Lists the execution identities actually served by this worker process. */
 export const getActiveTaskExecutions = (): string[] => [...activeExecutions];
@@ -60,6 +70,7 @@ export const runInRunContext = async <T>(
     flushers = [],
     executionId,
     getCurrentTasksInPool,
+    withCoordinatorCapability,
     adHocTaskCounter = new AdHocTaskCounter(),
     prometheusMetrics,
   }: Partial<RunStore> = {}
@@ -73,6 +84,7 @@ export const runInRunContext = async <T>(
           flushers,
           executionId,
           getCurrentTasksInPool,
+          withCoordinatorCapability,
           adHocTaskCounter,
           prometheusMetrics,
         },

@@ -80,7 +80,7 @@ export const createWorkflowMlServices = (
           )
         : undefined,
     }),
-    moduleFiles: createSnapshotModuleFiles(snapshot.moduleFiles),
+    moduleFiles: createSnapshotModuleFiles(snapshot.moduleFiles, host.readContent),
   }).sharedServicesProviders;
 };
 

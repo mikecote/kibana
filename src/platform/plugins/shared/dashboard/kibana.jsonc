@@ -6,7 +6,7 @@
   "visibility": "shared",
   "description": "Adds the Dashboard app to Kibana",
   "plugin": {
-    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
+
     "id": "dashboard",
     "browser": true,
     "server": true,

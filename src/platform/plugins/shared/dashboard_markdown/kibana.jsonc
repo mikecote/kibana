@@ -6,7 +6,7 @@
   "group": "platform",
   "visibility": "private",
   "plugin": {
-    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
+
     "id": "dashboardMarkdown",
     "server": true,
     "browser": true,

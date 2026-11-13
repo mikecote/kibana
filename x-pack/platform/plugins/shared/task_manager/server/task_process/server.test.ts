@@ -10,6 +10,18 @@
  * 2.0.
  */
 
+import { expose } from '@kbn/core-remote-common';
+import { openIpcSession } from '@kbn/core-remote-server-internal';
+import type { IpcSession } from '@kbn/core-remote-server-internal';
+import { sessionChannelPair } from './testing/session_channel';
+import { WorkerCapabilities } from './worker_capabilities';
+import type { GetRunCancellation } from './worker_capabilities';
+import { CoordinatorCapabilities } from './coordinator_capabilities';
+import type { CoordinatorCallbacks } from './coordinator_capabilities';
+import { openWorkerRunControl } from './worker_run_control';
+import { RemoteWorkerSessions } from './remote_worker_sessions';
+import { acquireRemoteSession } from './remote_supervisor_session';
+import { TASK_PROCESS_SESSION_HEADER } from './session_protocol';
 import { decodeMetricResources } from '@kbn/metrics';
 import {
   TASK_PROCESS_PROTOCOL_VERSION,
@@ -34,14 +46,9 @@ import { RemoteTaskRunner } from './remote_task_runner';
 import { elasticsearchConfigFromEnv } from './es_config';
 import { TaskProcessSupervisor } from './supervisor';
 import { startTaskProcessWorker } from './worker';
-import type { TaskProcessDispatchSnapshot, TaskProcessRunMetrics } from './wire';
+import type { TaskProcessDispatchSnapshot } from './wire';
 import type { TaskExecutionPool } from '../task_scheduling';
-import {
-  createHostFeatureFlags,
-  incrementCreatedTaskCount,
-  requestDispatchTaskPool,
-  registerRunFlusher,
-} from './run_context';
+import { createHostFeatureFlags, requestDispatchTaskPool, registerRunFlusher } from './run_context';
 import { firstValueFrom } from 'rxjs';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
 
@@ -49,6 +56,10 @@ const TYPE = 'test:type';
 const TOKEN = 'secret';
 
 describe('task process server', () => {
+  let mainSession: IpcSession<WorkerCapabilities>;
+  let childSession: IpcSession<CoordinatorCapabilities>;
+  let coordinator: CoordinatorCallbacks | undefined;
+
   let server: Server;
   let url: string;
   const cleanup = jest.fn();
@@ -64,6 +75,23 @@ describe('task process server', () => {
 
   beforeEach(async () => {
     runAsDefinition = undefined;
+    coordinator = undefined;
+    let getCancellation: GetRunCancellation = () => undefined;
+    const [mainChannel, childChannel] = sessionChannelPair();
+    // Direct HTTP validation tests use fixture callbacks; leased runs bind their actual callbacks.
+    mainSession = openIpcSession<WorkerCapabilities>(
+      mainChannel,
+      expose(
+        new CoordinatorCapabilities(
+          () => coordinator ?? { reportProgress: () => {}, getCurrentTasksInPool: async () => [] }
+        )
+      )
+    );
+    childSession = openIpcSession<CoordinatorCapabilities>(
+      childChannel,
+      expose(new WorkerCapabilities((id) => getCancellation(id)))
+    );
+
     collectGauges.mockClear();
     getFeatureFlagDefinitions.mockReset().mockReturnValue({});
     enrichFakeRequest = jest.fn();
@@ -80,6 +108,12 @@ describe('task process server', () => {
       cleanup,
     });
     server = startTaskProcessServer({
+      registerRunCancellation: (get) => {
+        getCancellation = get;
+      },
+      prepareRunControl: (id, counter, signal) =>
+        openWorkerRunControl(childSession, id, counter, signal),
+
       executionContext: executionContextServiceMock.createSetupContract(),
       taskDefinitions: new Map([
         [
@@ -106,7 +140,10 @@ describe('task process server', () => {
   });
 
   afterEach(() => {
+    mainSession.close();
+    childSession.close();
     server.close();
+    server.closeAllConnections();
   });
 
   it('listens on the loopback address only when given a host', async () => {
@@ -132,7 +169,19 @@ describe('task process server', () => {
     }> = {}
   ) =>
     new RemoteTaskRunner({
-      route: { url, token: overrides.token ?? TOKEN },
+      route: {
+        acquire: async () => ({
+          url,
+          token: overrides.token ?? TOKEN,
+          session: mainSession,
+          bindCoordinator: (callbacks) => {
+            coordinator = callbacks;
+          },
+          release: () => {
+            coordinator = undefined;
+          },
+        }),
+      },
       request: {
         taskType: overrides.taskType ?? TYPE,
         taskInstance: { id: 't1', taskType: TYPE, params: {}, state: {} },
@@ -151,7 +200,7 @@ describe('task process server', () => {
   });
 
   it('authenticates gauge collection and bounds its owner before invoking the native source', async () => {
-    const endpoint = `${url}${TASK_PROCESS_PATHS.gauges}`;
+    const endpoint = `${url}${TASK_PROCESS_PATHS.metrics}`;
     expect((await undiciFetch(`${endpoint}?owner=node`)).status).toBe(401);
     expect(collectGauges).not.toHaveBeenCalled();
     const headers = { authorization: `Bearer ${TOKEN}` };
@@ -174,35 +223,6 @@ describe('task process server', () => {
       await invalid.body?.cancel();
     }
     expect(collectGauges).toHaveBeenCalledTimes(1);
-  });
-
-  it('authenticates SDK flag declarations and rejects missing bundle metadata before a run', async () => {
-    getFeatureFlagDefinitions.mockReturnValue({ 'sdk.enabled': false });
-    const endpoint = `${url}${TASK_PROCESS_PATHS.featureFlags}`;
-    expect((await undiciFetch(`${endpoint}?taskType=${TYPE}`)).status).toBe(401);
-    expect(getFeatureFlagDefinitions).not.toHaveBeenCalled();
-    const headers = { authorization: `Bearer ${TOKEN}` };
-    const response = await undiciFetch(`${endpoint}?taskType=${TYPE}`, { headers });
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      taskType: TYPE,
-      featureFlags: { 'sdk.enabled': false },
-    });
-    expect(getFeatureFlagDefinitions).toHaveBeenCalledWith(TYPE);
-    getFeatureFlagDefinitions.mockReturnValueOnce(undefined);
-    const missing = await undiciFetch(`${endpoint}?taskType=${TYPE}`, { headers });
-    expect(missing.status).toBe(422);
-    expect(await missing.text()).toContain('rebuild the bundle');
-    for (const [type, status] of [
-      ['', 400],
-      ['x'.repeat(1025), 400],
-      ['unknown', 404],
-    ] as const) {
-      const invalid = await undiciFetch(`${endpoint}?taskType=${type}`, { headers });
-      expect(invalid.status).toBe(status);
-      await invalid.body?.cancel();
-    }
-    expect(order).toEqual([]);
   });
 
   it.each([undefined, { 'sdk.enabled': 'false' }])(
@@ -320,69 +340,6 @@ describe('task process server', () => {
     expect(response.status).toBe(404);
     await response.body?.cancel();
     expect(create).not.toHaveBeenCalled();
-  });
-
-  it('authenticates progress reads and returns the native count before completion', async () => {
-    const started = Promise.withResolvers<void>();
-    const completed = Promise.withResolvers<void>();
-    createTask = () => ({
-      run: async () => {
-        incrementCreatedTaskCount(3);
-        started.resolve();
-        await completed.promise;
-        incrementCreatedTaskCount(2);
-        return { state: {} };
-      },
-    });
-    const running = runner().run();
-    await started.promise;
-    try {
-      expect((await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`)).status).toBe(401);
-      const progress = await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, {
-        headers: { authorization: `Bearer ${TOKEN}` },
-      });
-      expect(await progress.json()).toEqual({ createdTaskCount: 3, activePoolRequestIds: [] });
-    } finally {
-      completed.resolve();
-      await running;
-    }
-    expect(
-      (
-        await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, {
-          headers: { authorization: `Bearer ${TOKEN}` },
-        })
-      ).status
-    ).toBe(404);
-  });
-
-  it('authenticates and validates pool replies before completing the matching live request', async () => {
-    const requested = Promise.withResolvers<void>();
-    createTask = () => ({
-      run: async () => {
-        const pool = requestDispatchTaskPool();
-        requested.resolve();
-        return { state: { pool: await pool } };
-      },
-    });
-    const running = runner().run();
-    await requested.promise;
-    const headers = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
-    const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.metrics}run-1`, { headers });
-    const metrics = (await response.json()) as TaskProcessRunMetrics;
-    const requestId = metrics.activePoolRequestIds?.[0];
-    if (!requestId) throw new Error('The live pool read was not published');
-    const reply = (body: object, authorized = true) =>
-      undiciFetch(`${url}${TASK_PROCESS_PATHS.activePool}run-1`, {
-        method: 'POST',
-        headers: authorized ? headers : { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    expect((await reply({ requestId, executionIds: [] }, false)).status).toBe(401);
-    expect((await reply({ requestId: 'stale', executionIds: [] })).status).toBe(404);
-    expect((await reply({ requestId, executionIds: 'invalid' })).status).toBe(400);
-    expect((await reply({ requestId, executionIds: ['x'.repeat(4097)] })).status).toBe(400);
-    expect((await reply({ requestId, executionIds: ['peer-task::execution'] })).status).toBe(200);
-    expect(await running).toEqual({ state: { pool: ['peer-task::execution'] } });
   });
 
   it('reads the dispatching pool again when it changes within one execution', async () => {
@@ -831,9 +788,20 @@ describe('remote task worker', () => {
   });
 
   it('rejects requests without a snapshot before acquiring an execution process', async () => {
+    // Session setup is not the assertion target: missing dispatch snapshot validation is.
+    const lease = await acquireRemoteSession(
+      { url, token: TOKEN },
+      TYPE,
+      'missing',
+      AbortSignal.timeout(5000)
+    );
+    lease.bindCoordinator?.({ reportProgress: () => {} });
     const response = await undiciFetch(`${url}${TASK_PROCESS_PATHS.run}`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${TOKEN}` },
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        [TASK_PROCESS_SESSION_HEADER]: lease.sessionId ?? '',
+      },
       body: JSON.stringify({
         protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
         taskType: TYPE,
@@ -844,6 +812,7 @@ describe('remote task worker', () => {
     });
     expect(await response.json()).toMatchObject({ kind: 'thrown' });
     expect(acquire).not.toHaveBeenCalled();
+    lease.release();
   });
 
   it('requires the worker token before reading the dispatch credentials', async () => {
@@ -867,7 +836,7 @@ describe('native task creation metrics', () => {
     extra: Partial<ConstructorParameters<typeof RemoteTaskRunner>[0]> = {}
   ) => ({
     runner: new RemoteTaskRunner({
-      route: { url: 'http://process' },
+      route: { acquire: async () => ({ url: 'http://process', release: jest.fn() }) },
       request: { taskType: 'test', taskInstance: {}, executionUuid: 'u' },
       timeoutMs: 1000,
       setCustomTaskRunEventFields: jest.fn(),
@@ -881,19 +850,30 @@ describe('native task creation metrics', () => {
       ...extra,
     }),
   });
-  it('counts monotonic progress and the final total once, then stops polling', async () => {
+
+  it('counts monotonic typed checkpoints and the final total once, without polling control HTTP', async () => {
     jest.useFakeTimers();
     try {
       const result = Promise.withResolvers<Response>();
       const onTasksCreated = jest.fn();
-      const samples = [2, 2, 1, 4];
-      const fetchFn: typeof fetch = jest.fn(async (input) => {
-        if (String(input).endsWith('/run')) return result.promise;
-        return Response.json({ createdTaskCount: samples.shift() });
+      let report = (_count: number): void => {};
+      const fetchFn: typeof fetch = jest.fn(async () => result.promise);
+      const { runner } = create(fetchFn, {
+        onTasksCreated,
+        timeoutMs: 10000,
+        route: {
+          acquire: async () => ({
+            url: 'http://process',
+            release: jest.fn(),
+            bindCoordinator: (callbacks) => {
+              report = callbacks.reportProgress;
+            },
+          }),
+        },
       });
-      const { runner } = create(fetchFn, { onTasksCreated, timeoutMs: 10000 });
       const running = runner.run();
-      await jest.advanceTimersByTimeAsync(4000);
+      await jest.advanceTimersByTimeAsync(0);
+      for (const count of [2, 2, 1, 4]) report(count);
       expect(onTasksCreated.mock.calls).toEqual([[2], [2]]);
       result.resolve(Response.json({ kind: 'result', createdTaskCount: 5 }));
       await running;
@@ -901,6 +881,11 @@ describe('native task creation metrics', () => {
       const calls = jest.mocked(fetchFn).mock.calls.length;
       await jest.advanceTimersByTimeAsync(4000);
       expect(jest.mocked(fetchFn).mock.calls).toHaveLength(calls);
+      expect(
+        jest
+          .mocked(fetchFn)
+          .mock.calls.every(([url]) => String(url).endsWith(TASK_PROCESS_PATHS.run))
+      ).toBe(true);
     } finally {
       jest.useRealTimers();
     }
@@ -955,13 +940,15 @@ it.each([
       }
       response.writeHead(404).end(JSON.stringify({ error: 'not found' }));
     });
+    const sessions = new RemoteWorkerSessions(TOKEN, () => ({}), loggingSystemMock.createLogger());
+    sessions.attach(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     try {
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Missing test server address');
       const onDispatchFailure = jest.fn();
       const runner = new RemoteTaskRunner({
-        route: { url: `http://127.0.0.1:${address.port}` },
+        route: { url: `http://127.0.0.1:${address.port}`, token: TOKEN },
         request: { taskType: 'test:legacy', taskInstance: {}, executionUuid: 'legacy-run' },
         timeoutMs: 1000,
         setCustomTaskRunEventFields: jest.fn(),
@@ -983,6 +970,7 @@ it.each([
         expect.any(String)
       );
     } finally {
+      await sessions.stop();
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

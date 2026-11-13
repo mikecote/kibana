@@ -34,11 +34,6 @@
     ],
     "optionalPlugins": ["cloud", "agentBuilder"],
     "requiredBundles": ["kibanaReact", "esqlDataGrid", "esUiShared"],
-    "extraPublicDirs": [],
-    "taskTypeContributions": {
-      "alerting-rule-run": [
-        "server/task_types/rule_run_contribution.ts"
-      ]
-    }
+    "extraPublicDirs": []
   }
 }

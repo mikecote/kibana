@@ -487,6 +487,8 @@ packages:
   - 'src/core/packages/pricing/server'
   - 'src/core/packages/pricing/server-internal'
   - 'src/core/packages/pricing/server-mocks'
+  - 'src/core/packages/remote/common'
+  - 'src/core/packages/remote/server-internal'
   - 'src/core/packages/rendering/browser'
   - 'src/core/packages/rendering/browser-internal'
   - 'src/core/packages/rendering/browser-mocks'

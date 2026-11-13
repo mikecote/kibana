@@ -9,15 +9,8 @@
     "id": "synthetics",
     "browser": true,
     "server": true,
-    "taskTypeContributions": {
-      "embeddables": ["server/embeddable_contribution.ts"],
-      "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    },
-    "taskTypes": [
-      "server/task_types/monitor_status.task.ts",
-      "server/task_types/tls.task.ts"
-    ],
+
+
     "configPath": ["xpack", "synthetics"],
     "requiredPlugins": [
       "actions",

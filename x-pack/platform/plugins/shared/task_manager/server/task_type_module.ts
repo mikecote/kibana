@@ -30,6 +30,7 @@ import type {
   EncryptedSavedObjectsClient,
   EncryptedSavedObjectsPluginSetup,
 } from '@kbn/encrypted-saved-objects-plugin/server';
+import type { CapabilityToken, RemoteCapability } from '@kbn/core-remote-common';
 import type { CancellableTask, RunContext } from './task';
 import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
 import type { TaskProcessParity, TaskTypeParityHook } from './task_process/parity';
@@ -115,6 +116,15 @@ export interface TaskHost {
    * runs that need it, instead of the process declining every run (`TaskTypeModule.parity`).
    */
   parity?: TaskProcessParity;
+  /** Uses a manifest-declared coordinator capability only within the active run. */
+  withCoordinatorCapability?: <Capability extends object, Result>(
+    token: CapabilityToken<Capability>,
+    use: (capability: RemoteCapability<Capability>) => Promise<Result>
+  ) => Promise<Result>;
+  /** Local Main-owned compatibility decision for actual lazily constructed native registries. */
+  validateRegistrations?: (ids: Record<string, string[]>) => Promise<string | null>;
+  /** Installed static assets, verified and cached in this worker's owned data directory. */
+  readContent?: (reference: { __kind: 'content'; digest: string; size: number }) => Promise<string>;
 
   /** Declared with `encryptedSavedObjectTypes`. */
   encryptedSavedObjects?: {

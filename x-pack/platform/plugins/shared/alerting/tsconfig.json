@@ -12,6 +12,7 @@
     "test/**/*"
   ],
   "kbn_references": [
+    "@kbn/import-locator",
     "@kbn/core",
     "@kbn/lock-manager",
     "@kbn/actions-plugin",

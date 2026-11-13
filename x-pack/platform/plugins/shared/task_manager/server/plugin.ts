@@ -32,6 +32,7 @@ import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server'
 import { join } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
 import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
+import type { CapabilityDefinition } from '@kbn/core-remote-common';
 import { collectRemoteGaugeMetrics } from './task_process/metrics_transport';
 import { TASK_PROCESS_PROTOCOL_VERSION } from './task_process/protocol';
 import type { TaskProcessDispatch } from './task_process/remote_task_runner';
@@ -41,6 +42,10 @@ import type { TaskProcessSupervisorStats } from './task_process/supervisor';
 import type { TaskHost, TaskTypeModule, TaskTypeRegistrationOptions } from './task_type_module';
 import { assertHostExtensions, toTaskDefinition } from './task_type_module';
 import { resolveSettingsByPlugin, serializeSettings } from './task_process/settings';
+import { buildTaskFakeRequest } from './task_running/fake_request_factory';
+import { prepareLocalInit } from './task_process/init_inventory';
+import type { InitializationSource } from './task_process/initialization_api';
+import { deduplicateSettings } from './task_process/shared_settings';
 import { TaskProcessDispatchFailureCounter } from './task_process/dispatch_failure_counter';
 import { TaskProcessAcquireError } from './task_process/acquire_error';
 import type { TaskProcessInit } from './task_process/wire';
@@ -118,6 +123,8 @@ export interface TaskManagerSetupContract {
    * @param taskDefinitions - The Kibana task definitions dictionary
    */
   registerTaskDefinitions: (taskDefinitions: TaskDefinitionRegistry) => void;
+  /** Registers an explicit coordinator/run placement for the local task session. */
+  registerCoordinatorCapability: (definition: CapabilityDefinition) => void;
   /**
    * Registers a task type module: one file that holds the definition and the runner, and that can
    * also be bundled to run in a process of its own. The runner gets the host, which is Core here.
@@ -223,6 +230,8 @@ export class TaskManagerPlugin
     string,
     { module: TaskTypeModule; options?: TaskTypeRegistrationOptions }
   >();
+  private readonly coordinatorManifest: CapabilityDefinition[] = [];
+  private getTaskProcessInitialization?: (taskType: string) => InitializationSource;
   private getTaskProcessInit?: (
     taskType: string
   ) => Promise<
@@ -397,7 +406,7 @@ export class TaskManagerPlugin
         uiSettingsOverrides = undefined;
         throw error;
       }));
-    this.getTaskProcessInit = async (taskType) => {
+    const readTaskProcessInit: NonNullable<typeof this.getTaskProcessInit> = async (taskType) => {
       const registration = this.moduleRegistrations.get(taskType);
       if (!registration) return undefined;
       const { options, module } = registration;
@@ -415,6 +424,7 @@ export class TaskManagerPlugin
         | 'executionContext'
         | 'encryptedSavedObjects'
         | 'settings'
+        | 'sharedSettings'
         | 'parity'
         | 'uiSettingsOverrides'
         | 'uiSettingsGlobalOverrides'
@@ -485,8 +495,23 @@ export class TaskManagerPlugin
               : undefined,
           },
         } satisfies TaskManagerTaskProcessSettings),
-      } as TaskProcessInit['settings'];
+      };
+      Object.assign(init, deduplicateSettings(init.settings));
       return init;
+    };
+
+    this.getTaskProcessInitialization = (taskType) => ({
+      read: async () => prepareLocalInit((await readTaskProcessInit(taskType)) ?? {}),
+      getParity: () =>
+        Object.entries(this.moduleRegistrations.get(taskType)?.options?.parity ?? {}).map(
+          ([kind, getIds]) => ({ kind, ids: getIds() })
+        ),
+    });
+    this.getTaskProcessInit = async (taskType) => {
+      const init = await readTaskProcessInit(taskType);
+      return init && this.config.task_execution?.mode === 'child_process'
+        ? prepareLocalInit(init).init
+        : init;
     };
 
     const { mode = 'in_process', remote } = this.config.task_execution ?? {};
@@ -717,6 +742,13 @@ export class TaskManagerPlugin
         this.definitions.registerTaskDefinitions(taskDefinition);
       },
       registerTaskType,
+      registerCoordinatorCapability: (definition) => {
+        if (definition.placement !== 'coordinator' || definition.scope !== 'run')
+          throw new Error('Task coordinator capabilities require coordinator/run placement');
+        if (this.coordinatorManifest.some(({ token }) => token === definition.token))
+          throw new Error('Duplicate task coordinator capability');
+        this.coordinatorManifest.push(definition);
+      },
       /** Supplies the owning encrypted saved objects service's current task encryption keys. */
       registerTaskProcessEncryptionKeys: (getKeys) => {
         this.getTaskProcessEncryptionKeys = getKeys;
@@ -983,6 +1015,21 @@ export class TaskManagerPlugin
               }
             : undefined,
           getElasticsearchConfig: () => serializeElasticsearchConfig(this.elasticsearchConfig!),
+          coordinatorPlacement: {
+            manifest: this.coordinatorManifest,
+            requests: {
+              create: (identity) => {
+                const request = buildTaskFakeRequest({
+                  ...identity,
+                  enrichFakeRequest: this.enrichFakeRequest,
+                });
+                if (!request)
+                  throw new Error('Coordinator operations require a scoped task credential');
+                return request;
+              },
+            },
+          },
+          getInitializationFor: (taskType) => this.getTaskProcessInitialization!(taskType),
           getInitFor: async (taskType) => (await this.getTaskProcessInit?.(taskType)) ?? {},
         },
         logger: this.logger,

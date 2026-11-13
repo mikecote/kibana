@@ -7,9 +7,10 @@
 
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { join, relative } from 'path';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { REPO_ROOT } from '@kbn/repo-info';
+import { getRemoteContributions } from '@kbn/import-locator';
 import type { AgentBuilderContribution } from '@kbn/agent-builder-server';
 import { collectRegisteredIds } from '../run_services/collect_registered_ids';
 import { getExampleContributionSettings } from './example_contribution_settings';
@@ -17,7 +18,7 @@ import { AGENT_BUILDER_CONTRIBUTIONS_KEY } from './agent_builder_contribution';
 
 /**
  * Everything a plugin registers with agent builder in its `setup()` must be registered by a task
- * process too (the `agent-builder` contributions in `kibana.jsonc`), or the process differs from Kibana
+ * process too (the `agent-builder` contributions in `server/remote/index.ts`), or the process differs from Kibana
  * and the runs that read the registries are declined. The ids are checked in: a plugin that registers
  * a new one changes the list, and a plugin that registers with agent builder without a contribution
  * fails the coverage test. Regenerate the list with
@@ -27,21 +28,14 @@ const IDS_FILE = join(__dirname, 'agent_builder_contribution_ids.json');
 
 const git = (args: string) => execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8' });
 
-/** The files of every plugin that lists one under the `agent-builder` key of its `kibana.jsonc`. */
+/** The files declared under the contribution key in convention-discovered remote manifests. */
 const getContributionFiles = (): Array<{ plugin: string; file: string }> =>
-  git(`grep -l '"${AGENT_BUILDER_CONTRIBUTIONS_KEY}"' -- '*kibana.jsonc'`)
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((manifest) => {
-      const text = readFileSync(join(REPO_ROOT, manifest), 'utf8');
-      const list = new RegExp(`"${AGENT_BUILDER_CONTRIBUTIONS_KEY}"\\s*:\\s*\\[([^\\]]*)\\]`).exec(
-        text
-      )?.[1];
-      return [...(list ?? '').matchAll(/"([^"]+)"/g)].map(([, file]) => ({
-        plugin: dirname(manifest),
-        file: join(REPO_ROOT, dirname(manifest), file),
-      }));
-    });
+  getRemoteContributions(REPO_ROOT, AGENT_BUILDER_CONTRIBUTIONS_KEY).map(
+    ({ directory, modulePath }) => ({
+      plugin: relative(REPO_ROOT, directory),
+      file: modulePath,
+    })
+  );
 
 /** The plugins whose server code takes the setup contract of agent builder (what they register with). */
 const getRegisteringPlugins = (): string[] => [

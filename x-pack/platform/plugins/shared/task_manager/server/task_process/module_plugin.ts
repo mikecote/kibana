@@ -53,6 +53,7 @@ import type { StandaloneUsageCounters } from './host_capabilities/usage_counters
 import { reviveSettingsByPlugin } from './settings';
 import { StandaloneSpacesExtension } from './spaces_extension';
 import { getTaskProcessContext } from './context';
+import { withTaskCoordinatorCapability } from './run_context';
 import { createHostFeatureFlags } from './run_context';
 import { registerTaskAnalyticsEventTypes } from './host_capabilities/analytics';
 import { createParityGuard } from './parity';
@@ -111,7 +112,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
                 createMigration: deps.encryptedSavedObjects.createMigration,
                 registerType: (registration) => encryptedTypes.set(registration.type, registration),
               },
-              reviveSettingsByPlugin(init.settings)
+              reviveSettingsByPlugin(init.settings, init.sharedSettings)
             )
           : [];
       for (const type of [...(module.savedObjectTypes ?? []), ...createdTypes]) {
@@ -122,7 +123,9 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       types.forEach((type) => core.savedObjects.registerType(type));
       const dataStreams = [
         ...(module.dataStreams ?? []),
-        ...(module.createDataStreams?.(reviveSettingsByPlugin(init.settings)) ?? []),
+        ...(module.createDataStreams?.(
+          reviveSettingsByPlugin(init.settings, init.sharedSettings)
+        ) ?? []),
       ];
       for (const definition of new Set(dataStreams)) {
         core.dataStreams.registerDataStream(definition);
@@ -146,7 +149,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         core.uiSettings.registerGlobal(defaults)
       );
 
-      module.registerUiSettings?.(core.uiSettings, reviveSettingsByPlugin(init.settings));
+      module.registerUiSettings?.(
+        core.uiSettings,
+        reviveSettingsByPlugin(init.settings, init.sharedSettings)
+      );
 
       // The event types the runner reports; Core's analytics refuses an event it does not know.
       registerTaskAnalyticsEventTypes(module, core.analytics);
@@ -157,7 +163,8 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       if (module.usageCounters) {
         usageCounters = createStandaloneUsageCounters({
           logger: initializerContext.logger.get('usageCounters'),
-          settings: reviveSettingsByPlugin(init.settings).usageCollection as never,
+          settings: reviveSettingsByPlugin(init.settings, init.sharedSettings)
+            .usageCollection as never,
         });
         usageCounters.setup(core.savedObjects);
       }
@@ -199,6 +206,10 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         },
         logger,
         parity: init.parity,
+        ...context.initialization,
+        ...(init.localAuthority
+          ? { withCoordinatorCapability: withTaskCoordinatorCapability }
+          : {}),
         elasticsearch: core.elasticsearch.client,
         savedObjects: core.savedObjects,
         executionContext: core.executionContext,
@@ -273,7 +284,7 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
       }
       if (module.settings?.length || init.settings) {
         // Everything Kibana sent, which also covers what contributions of other plugins read.
-        const settings = reviveSettingsByPlugin(init.settings);
+        const settings = reviveSettingsByPlugin(init.settings, init.sharedSettings);
         const missing = (module.settings ?? []).filter((id) => !(id in settings));
         if (missing.length) {
           throw new Error(`The task process was not given the settings of: ${missing.join(', ')}`);

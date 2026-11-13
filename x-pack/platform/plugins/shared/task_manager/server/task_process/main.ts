@@ -5,6 +5,13 @@
  * 2.0.
  */
 
+import { expose } from '@kbn/core-remote-common';
+import { openIpcSession } from '@kbn/core-remote-server-internal';
+import { prepareWorkerInitialization } from './worker_initialization';
+import { openWorkerRunControl } from './worker_run_control';
+import type { CoordinatorCapabilities } from './coordinator_capabilities';
+import { WorkerCapabilities } from './worker_capabilities';
+import type { GetRunCancellation } from './worker_capabilities';
 import { startTaskProcessServer } from './server';
 import { startTaskProcessCore } from './core_process';
 import { getTaskProcessContext } from './context';
@@ -39,11 +46,25 @@ export const runTaskProcess = async (
   const onCoreStarted = registerStop ?? createTaskProcessParentWatcher();
   try {
     const init = providedInit ?? (await readTaskProcessInit());
-    const core = await startTaskProcessCore({ init, module, contributions });
+    let getRunCancellation: GetRunCancellation = () => undefined;
+    const session = process.send
+      ? openIpcSession<CoordinatorCapabilities>(
+          {
+            send: process.send.bind(process),
+            on: process.on.bind(process),
+            off: process.off.bind(process),
+          },
+          expose(new WorkerCapabilities((executionUuid) => getRunCancellation(executionUuid)))
+        )
+      : undefined;
+    const initialization =
+      session && init.localAuthority ? await prepareWorkerInitialization(session, init) : undefined;
+    const core = await startTaskProcessCore({ init, module, contributions, initialization });
     const stop = async (): Promise<void> => {
       try {
         await core.stop();
       } finally {
+        session?.close();
         await instrumentation?.shutdown();
       }
     };
@@ -57,6 +78,15 @@ export const runTaskProcess = async (
 
     startTaskProcessServer({
       taskDefinitions: core.definitions,
+      prepareRunControl: session
+        ? (executionUuid, counter, signal) =>
+            openWorkerRunControl(session, executionUuid, counter, signal)
+        : undefined,
+      registerRunCancellation: session
+        ? (getCancellation) => {
+            getRunCancellation = getCancellation;
+          }
+        : undefined,
       executionContext: core.host.executionContext,
       enrichFakeRequest: core.enrichFakeRequest,
       getFeatureFlagDefinitions: () => getTaskProcessContext().module.featureFlags ?? {},

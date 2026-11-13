@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
 import { REPO_ROOT } from '@kbn/repo-info';
 import { getPackages } from '@kbn/repo-packages';
+import { getRemoteContributions } from '@kbn/import-locator';
 
 it('provides native contributions for every plugin that registers workflow steps or triggers', () => {
   const registrationFiles = execFileSync(
@@ -34,7 +35,10 @@ it('provides native contributions for every plugin that registers workflow steps
     const files = registrationFiles.filter((file) =>
       resolve(REPO_ROOT, file).startsWith(`${directory}/`)
     );
-    return files.length > 0 && !manifest.plugin.taskTypeContributions?.['workflow-steps']?.length
+    return files.length > 0 &&
+      !getRemoteContributions(REPO_ROOT, 'workflow-steps').some(
+        (module) => module.directory === directory
+      )
       ? [
           {
             plugin: manifest.plugin.id,

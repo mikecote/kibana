@@ -7,9 +7,10 @@
 
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, relative } from 'path';
 import { of } from 'rxjs';
 import { REPO_ROOT } from '@kbn/repo-info';
+import { getRemoteContributions } from '@kbn/import-locator';
 import { loggingSystemMock } from '@kbn/core-logging-server-mocks';
 import { savedObjectsServiceMock } from '@kbn/core-saved-objects-server-mocks';
 import { elasticsearchServiceMock } from '@kbn/core-elasticsearch-server-mocks';
@@ -22,7 +23,7 @@ import { RULE_RUN_CONTRIBUTIONS } from './rule_run_contribution';
 /**
  * Every connector type and connector adapter that a plugin registers in its `setup()` must be
  * registered by a rule run in a task process too (the `alerting-rule-run` contributions in
- * `kibana.jsonc`), or a rule that uses it is declined and Kibana runs it. The ids are checked in:
+ * `server/remote/index.ts`), or a rule that uses it is declined and Kibana runs it. The ids are checked in:
  * a plugin that registers a new one changes the list, and a plugin that registers one without a
  * contribution fails the second test. Regenerate the list with
  * `UPDATE_RULE_RUN_CONNECTOR_IDS=1 node scripts/jest --config <alerting jest config> <this file>`.
@@ -41,21 +42,12 @@ const license = {
 
 const git = (args: string) => execSync(`git ${args}`, { cwd: REPO_ROOT, encoding: 'utf8' });
 
-/** The files of every plugin that lists one under the `alerting-rule-run` key of its `kibana.jsonc`. */
+/** The files declared under the contribution key in convention-discovered remote manifests. */
 const getContributionFiles = (): Array<{ plugin: string; file: string }> =>
-  git(`grep -l '"${RULE_RUN_CONTRIBUTIONS}"' -- '*kibana.jsonc'`)
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((manifest) => {
-      const text = readFileSync(join(REPO_ROOT, manifest), 'utf8');
-      const list = new RegExp(`"${RULE_RUN_CONTRIBUTIONS}"\\s*:\\s*\\[([^\\]]*)\\]`).exec(
-        text
-      )?.[1];
-      return [...(list ?? '').matchAll(/"([^"]+)"/g)].map(([, file]) => ({
-        plugin: dirname(manifest),
-        file: join(REPO_ROOT, dirname(manifest), file),
-      }));
-    });
+  getRemoteContributions(REPO_ROOT, RULE_RUN_CONTRIBUTIONS).map(({ directory, modulePath }) => ({
+    plugin: relative(REPO_ROOT, directory),
+    file: modulePath,
+  }));
 
 const registerContributions = () => {
   const contributions = getContributionFiles().map(

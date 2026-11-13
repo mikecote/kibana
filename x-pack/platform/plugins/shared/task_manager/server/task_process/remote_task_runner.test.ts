@@ -12,11 +12,24 @@ import {
 } from './protocol';
 import { isDeclinedRunError, isRetryableError, isUnrecoverableError } from '../task_running/errors';
 import { TaskProcessAcquireError } from './acquire_error';
+import { acquireRemoteSession } from './remote_supervisor_session';
+jest.mock('./remote_supervisor_session');
+
 import { RemoteTaskRunner } from './remote_task_runner';
 import type { TaskProcessLease } from './remote_task_runner';
 import type { TaskFeatureFlagDefinitions } from './feature_flag_declarations';
 import { elasticsearchConfigFromEnv } from './es_config';
 import type { TaskProcessDispatchSnapshot } from './wire';
+
+let remoteFlags: TaskFeatureFlagDefinitions = {};
+beforeEach(() => {
+  remoteFlags = {};
+  jest.mocked(acquireRemoteSession).mockImplementation(async (address) => ({
+    ...address,
+    featureFlags: remoteFlags,
+    release: jest.fn(),
+  }));
+});
 
 const withProtocol =
   (fetchFn: typeof fetch): typeof fetch =>
@@ -50,6 +63,7 @@ describe('RemoteTaskRunner dispatch', () => {
   it('evaluates contributed SDK flags in Main for every dispatch and forwards the same remote snapshot', async () => {
     let enabled = false;
     const declared = { 'sdk.enabled': false, 'sdk.mode': 'true' };
+    remoteFlags = declared;
     const snapshot: TaskProcessDispatchSnapshot = {
       protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
       init: {
@@ -74,12 +88,6 @@ describe('RemoteTaskRunner dispatch', () => {
     );
     const fetchFn = jest.fn(
       async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        if (String(input).includes(TASK_PROCESS_PATHS.featureFlags)) {
-          expect(init?.headers).toEqual({ authorization: 'Bearer worker-token' });
-          return new Response(
-            JSON.stringify({ taskType: request.taskType, featureFlags: declared })
-          );
-        }
         if (String(input).endsWith(TASK_PROCESS_PATHS.run)) {
           dispatched.push(JSON.parse(String(init?.body)));
         }
@@ -111,6 +119,7 @@ describe('RemoteTaskRunner dispatch', () => {
   });
 
   it('refuses business dispatch when Main omits a contributed SDK flag', async () => {
+    remoteFlags = { 'sdk.enabled': false };
     const fetchFn = jest.fn(
       async () =>
         new Response(
@@ -126,7 +135,7 @@ describe('RemoteTaskRunner dispatch', () => {
       'incompatible',
       expect.stringContaining('sdk.enabled')
     );
-    expect(fetchFn.mock.calls).toHaveLength(1);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it('stops before dispatch when cancelled while Main is evaluating SDK flags', async () => {
@@ -136,11 +145,7 @@ describe('RemoteTaskRunner dispatch', () => {
     const fetchFn = jest.fn(
       async (input: Parameters<typeof fetch>[0]) =>
         new Response(
-          JSON.stringify(
-            String(input).includes(TASK_PROCESS_PATHS.cancel)
-              ? { outcome: 'cancelled' }
-              : { taskType: request.taskType, featureFlags: { 'sdk.enabled': false } }
-          )
+          JSON.stringify({ taskType: request.taskType, featureFlags: { 'sdk.enabled': false } })
         )
     );
     const { runner } = create(fetchFn, {
@@ -201,31 +206,6 @@ describe('RemoteTaskRunner dispatch', () => {
       status: 200,
       json: async () => ({ kind: 'result', result: { state: {} } }),
     });
-    await run;
-  });
-
-  it('allows a task to acknowledge persisted cancellation before terminating its worker', async () => {
-    let finish: (response: object) => void = () => {};
-    let acknowledge: (response: object) => void = () => {};
-    const running = new Promise<object>((resolve) => (finish = resolve));
-    const acknowledgement = new Promise<object>((resolve) => (acknowledge = resolve));
-    const fetchFn = jest.fn((url: string) => (url.endsWith('/run') ? running : acknowledgement));
-    const release = jest.fn();
-    const onTasksCreated = jest.fn();
-    const { runner } = create(fetchFn, {
-      route: { acquire: async () => ({ url: 'http://child', release }) },
-      request: { ...request, cancelGracePeriodMs: 1000 },
-      onTasksCreated,
-    });
-    const run = runner.run();
-    await new Promise((resolve) => setImmediate(resolve));
-    const cancellation = runner.cancel();
-    expect(release).not.toHaveBeenCalled();
-    acknowledge({ ok: true, json: async () => ({ outcome: 'cancelled', createdTaskCount: 4 }) });
-    await cancellation;
-    expect(release).toHaveBeenCalledWith({ force: true });
-    expect(onTasksCreated).toHaveBeenCalledWith(4);
-    finish({ ok: true, json: async () => ({ kind: 'result', result: { state: {} } }) });
     await run;
   });
 

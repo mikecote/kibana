@@ -60,11 +60,23 @@ export const serializeSettings = (value: unknown): SerializedValue => {
   }
 };
 
-export const reviveSettings = (value: SerializedValue): unknown => {
+export const reviveSettings = (
+  value: SerializedValue,
+  sharedSettings: Readonly<Record<string, SerializedValue>> = {}
+): unknown => {
   if (value === null || typeof value !== 'object') return value;
-  if (Array.isArray(value)) return value.map(reviveSettings);
+  if (Array.isArray(value)) return value.map((child) => reviveSettings(child, sharedSettings));
   if (isTagged(value)) {
     switch (value.__kind) {
+      case 'sharedSetting': {
+        const { key } = value as { __kind: string; key?: SerializedValue };
+        if (typeof key !== 'string') throw new Error('Invalid shared task process setting key');
+        if (!Object.hasOwn(sharedSettings, key)) {
+          throw new Error(`Missing shared task process setting: ${key}`);
+        }
+        // Shared values are inline facts, never references to other shared values.
+        return reviveSettings(sharedSettings[key]);
+      }
       case 'duration':
         return moment.duration((value as { ms: number }).ms);
       case 'byteSize':
@@ -75,15 +87,18 @@ export const reviveSettings = (value: SerializedValue): unknown => {
   }
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
-    out[key] = reviveSettings(child as SerializedValue);
+    out[key] = reviveSettings(child as SerializedValue, sharedSettings);
   }
   return out;
 };
 
 export const reviveSettingsByPlugin = (
-  settings: Record<string, SerializedValue> | undefined
+  settings: Record<string, SerializedValue> | undefined,
+  sharedSettings?: Readonly<Record<string, SerializedValue>>
 ): Record<string, unknown> =>
-  Object.fromEntries(Object.entries(settings ?? {}).map(([id, v]) => [id, reviveSettings(v)]));
+  Object.fromEntries(
+    Object.entries(settings ?? {}).map(([id, value]) => [id, reviveSettings(value, sharedSettings)])
+  );
 
 /** Awaits each plugin's current settings before a task host or dispatch snapshot consumes them. */
 export const resolveSettingsByPlugin = async <T>(

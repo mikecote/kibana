@@ -11,10 +11,7 @@
     "id": "elasticAssistant",
     "browser": true,
     "server": true,
-    "taskTypes": [
-      "server/task_types/attack_discovery.task.ts",
-      "server/task_types/attack_discovery_data_generator.task.ts"
-    ],
+
     "configPath": [
       "xpack",
       "elasticAssistant"

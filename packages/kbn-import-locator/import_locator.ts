@@ -81,3 +81,6 @@ export class ImportLocator {
     return this.get(path, content);
   }
 }
+
+export { interpretRemoteManifest, getRemoteContributions } from './remote_manifest';
+export type { RemoteManifest, RemoteModule, RemoteCapability } from './remote_manifest';

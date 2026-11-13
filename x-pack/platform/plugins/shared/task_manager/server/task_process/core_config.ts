@@ -101,7 +101,7 @@ export const buildCoreConfig = (
   // Core reads the UIAM client authentication of Elasticsearch requests from `xpack.security.uiam`,
   // so the settings the security plugin registers for task processes carry it.
   const { uiam, fipsMode } =
-    (reviveSettingsByPlugin(init.settings).security as
+    (reviveSettingsByPlugin(init.settings, init.sharedSettings).security as
       | { uiam?: unknown; fipsMode?: { enabled: boolean } }
       | undefined) ?? {};
   const settings: Record<string, unknown> = {

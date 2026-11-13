@@ -9,15 +9,7 @@
     "configPath": ["workflowsExecutionEngine"],
     "id": "workflowsExecutionEngine",
     "browser": false,
-    "taskTypes": [
-      "server/task_types/workflow_run.task.ts",
-      "server/task_types/workflow_resume.task.ts",
-      "server/task_types/workflow_scheduled.task.ts"
-    ],
-    "taskTypeContributions": {
-      "task-scheduling": ["server/task_types/task_scheduling_contribution.ts"],
-      "workflow-steps": ["server/task_types/fields_metadata_runtime_contribution.ts", "server/task_types/data_views_runtime_contribution.ts"]
-    },
+
     "server": true,
     "requiredPlugins": [
       "taskManager",

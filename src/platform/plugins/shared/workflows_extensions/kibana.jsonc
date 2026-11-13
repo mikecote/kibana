@@ -11,7 +11,6 @@
     "browser": true,
     "server": true,
     "requiredPlugins": ["actions", "inference", "spaces"],
-    "extraPublicDirs": ["common"],
-    "taskTypeContributions": { "workflow-steps": ["server/spaces_runtime_contribution.ts"] }
+    "extraPublicDirs": ["common"]
   }
 }

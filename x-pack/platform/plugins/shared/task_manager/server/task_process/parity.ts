@@ -80,6 +80,13 @@ export const createParityGuard = ({
   };
 
   return async (host: TaskHost): Promise<void> => {
+    if (host.validateRegistrations && hooks.length) {
+      const actual: Record<string, string[]> = {};
+      for (const hook of hooks) actual[hook.kind] = await hook.getIds(host);
+      const gap = await host.validateRegistrations(actual);
+      if (gap) throw new DeclinedRunError(`Native registration mismatch: ${gap}`);
+      return;
+    }
     const missing = await (checked ??= compute(host));
     if (missing.length) {
       throw new DeclinedRunError(

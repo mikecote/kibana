@@ -93,7 +93,7 @@ export const createMlTaskProcessServices = (
         ? createMlTaskSpaceCapabilities(deps.host, getSpaces, getSpacesSettings)
         : undefined,
     }),
-    moduleFiles: createSnapshotModuleFiles(settings.moduleFiles),
+    moduleFiles: createSnapshotModuleFiles(settings.moduleFiles, deps.host.readContent),
   });
 
   /** Resolves once the license is known, which the license checks of the services need. */

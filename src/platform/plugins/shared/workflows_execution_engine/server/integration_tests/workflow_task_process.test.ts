@@ -84,6 +84,15 @@ const LOGS_DATA_STREAM = '.workflows-execution-data-stream-logs';
 
 const RUN_TASK_TYPE = 'workflow:run';
 const RESUME_TASK_TYPE = 'workflow:resume';
+const DEFAULT_FEATURE_FLAGS = {
+  'workflows.kibanaRequest.coreSelfClientEnabled': false,
+  'alertingV2.esqlResponseFormat': 'json',
+  'nightshift.enabled': false,
+  'securitySolution.attackDiscoveryWorkflowsEnabled': false,
+  'streams.significantEventsSemanticCodeSearchGroundingEnabled': false,
+  'vega.standaloneEmbeddable': false,
+  'lens.apiFormat': false,
+};
 const CONNECTOR_ID = 'webhook-1';
 const ES_WORKFLOW_ID = 'es-workflow';
 const CUSTOM_STEP_WORKFLOW_ID = 'custom-step-workflow';
@@ -191,7 +200,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
   interface RunOptions {
     attempts?: number;
     spaceId?: string;
-    featureFlags?: Record<string, boolean>;
+    featureFlags?: Record<string, boolean | string | number>;
     onDispatchFailure?: TaskProcessDispatch['onDispatchFailure'];
     signal?: AbortSignal;
     timeoutMs?: number;
@@ -208,7 +217,16 @@ describe('the workflow:scheduled task type served from a bundle', () => {
       route: options.route ?? supervisor.getRoute(type),
       request: {
         taskType: type,
-        snapshot: options.snapshot,
+        snapshot: options.snapshot
+          ? {
+              ...options.snapshot,
+              featureFlags: {
+                ...DEFAULT_FEATURE_FLAGS,
+                ...options.snapshot.featureFlags,
+                ...options.featureFlags,
+              },
+            }
+          : undefined,
         taskInstance: {
           taskType: type,
           state: {},
@@ -225,7 +243,7 @@ describe('the workflow:scheduled task type served from a bundle', () => {
         apiKey,
         spaceId: options.spaceId ?? 'default',
         userName: 'elastic',
-        featureFlags: options.featureFlags,
+        featureFlags: { ...DEFAULT_FEATURE_FLAGS, ...options.featureFlags },
         kibanaVersion: KIBANA_VERSION,
         cancelGracePeriodMs: 5000,
       },

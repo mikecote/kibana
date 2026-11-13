@@ -11,7 +11,7 @@ const path = require('path');
 const { OUT_DIR, getTaskBundleEntries, buildTaskBundles, writeManifest } = require('./build');
 
 // node scripts/task_bundle [--name <bundle>]... [--out <dir>] [--manifest]
-// Builds the task type files declared in `kibana.jsonc` (`plugin.taskTypes`) into one bundle each,
+// Builds the task type files declared in convention-discovered `server/remote/index.ts` into one bundle each,
 // in target/task_bundles, with a manifest of the task types each bundle serves.
 const args = process.argv.slice(2);
 const getArgs = (flag) =>

@@ -15,9 +15,6 @@
     // must be loaded for the routes to be accessible — the serverless configs keep both in sync.
     "requiredPlugins": [],
     "optionalPlugins": ["features", "workflowsExtensions"],
-    "requiredBundles": [],
-    "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    }
+    "requiredBundles": []
   }
 }

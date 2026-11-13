@@ -11,27 +11,25 @@ import { TaskProcessAcquireError } from './acquire_error';
 
 export const TASK_PROCESS_PROTOCOL_VERSION = 3;
 export const TASK_PROCESS_CAPABILITIES = [
+  'session-control',
+  'shared-init-settings',
+  'live-init-authority',
+  'placed-coordinator-capabilities',
   'native-task-scheduling',
   'ordered-task-middleware',
-  'live-dispatch-pool',
   'native-tracing-with-portable-tls',
   'core-execution-context',
   'created-task-counts',
   'native-prometheus-handoff',
   'live-worker-gauge-collection',
-  'native-feature-flag-declarations',
   'native-self-http-transport',
   `native-metric-format-${METRIC_SERIALIZATION_VERSION}`,
 ] as const;
 
 export const TASK_PROCESS_PATHS = {
   health: '/v3/health',
-  gauges: '/v3/gauges',
-  featureFlags: '/v3/feature_flags',
   run: '/v3/run',
-  cancel: '/v3/cancel/',
-  metrics: '/v3/metrics/',
-  activePool: '/v3/active_pool/',
+  metrics: '/v3/metrics',
 } as const;
 
 const protocolSchema = schema.object(

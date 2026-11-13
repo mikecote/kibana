@@ -13,6 +13,8 @@ import type { TaskStaticPlugin } from '@kbn/core-plugins-server-internal';
 import { config as esoConfig } from '@kbn/encrypted-saved-objects-plugin/server';
 import { taskPlugin as esoTaskPlugin } from '@kbn/encrypted-saved-objects-plugin/server/task_plugin';
 import type { FakeRequestEnricher } from '@kbn/core-security-server';
+import type { prepareWorkerInitialization } from './worker_initialization';
+import { ContentCache } from './content_cache';
 import { buildCoreConfig } from './core_config';
 import { setTaskProcessContext } from './context';
 import type { TaskProcessContext } from './context';
@@ -86,15 +88,20 @@ export const startTaskProcessCore = async ({
   init,
   module,
   contributions = {},
+  initialization,
 }: {
   init: TaskProcessInit;
   module: TaskTypeModule;
   contributions?: Record<string, unknown[]>;
+  initialization?: Awaited<ReturnType<typeof prepareWorkerInitialization>>;
 }): Promise<TaskProcessCore> => {
   const definitions = new Map<string, TaskRegisterDefinition>();
   // The module with what plugins contributed to it declared: saved object types and the like.
   const applied =
-    module.contributions?.apply?.(contributions, reviveSettingsByPlugin(init.settings)) ?? module;
+    module.contributions?.apply?.(
+      contributions,
+      reviveSettingsByPlugin(init.settings, init.sharedSettings)
+    ) ?? module;
   const context: TaskProcessContext = {
     init,
     module: applied,
@@ -102,9 +109,21 @@ export const startTaskProcessCore = async ({
     definitions,
     flushers: [],
   };
+  const { settings, cleanup: cleanupConfig } = buildCoreConfig(init, applied);
+  let cache: ContentCache | undefined;
+  const cleanup = () => {
+    cache?.cleanup();
+    cleanupConfig();
+  };
+  if (initialization) {
+    const contentCache = new ContentCache(initialization.readContent);
+    cache = contentCache;
+    context.initialization = {
+      validateRegistrations: initialization.validateRegistrations,
+      readContent: (reference) => contentCache.read(reference),
+    };
+  }
   setTaskProcessContext(context);
-
-  const { settings, cleanup } = buildCoreConfig(init, applied);
   const isDev = init.server?.isDev ?? false;
   const buildNum = init.server?.buildNum ?? Number.MAX_SAFE_INTEGER;
   const env = Env.createDefault(

@@ -56,3 +56,5 @@ exports.parseKbnImportReq = parseKbnImportReq;
 exports.getRepoRels = getRepoRels;
 exports.getRepoRelsSync = getRepoRelsSync;
 exports.readPackageJson = readPackageJson;
+
+exports.getRemoteManifestPaths = require('./modern/get_packages').getRemoteManifestPaths;

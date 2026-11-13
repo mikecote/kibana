@@ -6,7 +6,7 @@
   "visibility": "shared",
   "description": "Visualization editor allowing to quickly and easily configure compelling visualizations to use on dashboards and canvas workpads. Exposes components to embed visualizations and link into the Lens editor from within other apps in Kibana.",
   "plugin": {
-    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
+
     "id": "lens",
     "browser": true,
     "server": true,

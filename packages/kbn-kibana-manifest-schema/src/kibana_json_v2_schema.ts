@@ -177,23 +177,6 @@ export const MANIFEST_V2: JSONSchema = {
                 pattern: PLUGIN_ID_PATTERN.source,
               },
             },
-            taskTypes: {
-              description: desc`
-                Paths, relative to the plugin, of files that export a Task Manager task type module (\`taskType\`)
-                or a list of them (\`taskTypes\`). Each file can be bundled to run in its own process.
-              `,
-              type: 'array',
-              items: { type: 'string' },
-            },
-            taskTypeContributions: {
-              description: desc`
-                Paths, relative to the plugin, by contribution key, of files that export what this plugin adds to
-                the task processes of other plugins' task types, such as the connector types a rule run may
-                enqueue (key \`alerting-rule-run\`). A task process bundles the contributions of every plugin.
-              `,
-              type: 'object',
-              additionalProperties: { type: 'array', items: { type: 'string' } },
-            },
             enabledOnAnonymousPages: {
               description: desc`
                 Specifies whether this plugin - and its required dependencies - will be enabled for anonymous pages (login page, status page when

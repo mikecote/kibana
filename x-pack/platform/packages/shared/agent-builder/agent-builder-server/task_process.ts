@@ -17,7 +17,7 @@ import type { AgentBuilderPluginSetup, AgentBuilderPluginStart } from './plugin_
 
 /**
  * The contribution key under which plugins add what they register with agent builder to the task
- * process of the workflow task types: `plugin.taskTypeContributions['agent-builder']` in `kibana.jsonc`.
+ * process of the workflow task types: `remote.contributions['agent-builder']` in `server/remote/index.ts`.
  */
 export const AGENT_BUILDER_CONTRIBUTIONS_KEY = 'agent-builder';
 
@@ -157,7 +157,7 @@ export interface AgentBuilderContributionStart {
 /**
  * What a plugin adds to agent builder's registries in the task process of the workflow task types, as
  * it adds it to Kibana in its `setup()`. Exported as `contribution` from a file listed under
- * `plugin.taskTypeContributions['agent-builder']` in the plugin's `kibana.jsonc`.
+ * `remote.contributions['agent-builder']` in the plugin's `server/remote/index.ts`.
  *
  * `register` calls the same function `setup()` calls (`registerXAgentBuilder(setup, services)`) with
  * the registration surface agent builder gives a plugin in `setup()`. A registration that needs a

@@ -8,9 +8,7 @@
     "id": "taskManagerPerformance",
     "server": true,
     "browser": false,
-    "taskTypeContributions": {
-      "task-scheduling": ["server/task_scheduling_contribution.ts"]
-    },
+
     "requiredPlugins": [
       "taskManager"
     ]

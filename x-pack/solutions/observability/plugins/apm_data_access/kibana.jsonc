@@ -8,9 +8,7 @@
     "id": "apmDataAccess",
     "browser": false,
     "server": true,
-    "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    },
+
     "configPath": ["xpack", "apm_data_access"],
     "requiredPlugins": ["data", "apmSourcesAccess"],
     "optionalPlugins": ["security", "workflowsExtensions"],
