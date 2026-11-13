@@ -50,17 +50,6 @@
       "kibanaUtils",
       "savedObjectsFinder"
     ],
-    "extraPublicDirs": ["common"],
-    "taskTypeContributions": {
-      "agent-builder": [
-        "server/task_types/agent_builder_contribution.ts"
-      ],
-      "alerting-rule-run": [
-        "server/task_types/rule_run_contribution.ts"
-      ],
-      "workflow-steps": [
-        "server/task_types/coordinator_workflow_steps_contribution.ts"
-      ]
-    }
+    "extraPublicDirs": ["common"]
   }
 }

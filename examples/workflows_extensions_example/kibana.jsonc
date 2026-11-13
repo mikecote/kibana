@@ -6,9 +6,7 @@
     "group": "platform",
     "visibility": "private",
     "plugin": {
-      "taskTypeContributions": {
-        "workflow-steps": ["server/task_types/workflow_steps_contribution.ts"]
-      },
+
       "id": "workflowsExtensionsExample",
       "server": true,
       "browser": true,

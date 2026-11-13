@@ -8,7 +8,7 @@
   "visibility": "private",
   "description": "Adds drilldown implementations to Kibana",
   "plugin": {
-    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
+
     "id": "urlDrilldown",
     "browser": true,
     "server": true,

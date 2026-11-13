@@ -19,11 +19,6 @@
       "spaces"
     ],
     "optionalPlugins": ["usageCollection", "cloud", "alerting"],
-    "extraPublicDirs": ["public/common"],
-    "taskTypeContributions": {
-      "alerting-rule-run": [
-        "server/task_types/rule_run_contribution.ts"
-      ]
-    }
+    "extraPublicDirs": ["public/common"]
   }
 }

@@ -9,9 +9,7 @@
     "id": "links",
     "browser": true,
     "server": true,
-    "taskTypeContributions": {
-      "embeddables": ["server/embeddable_contribution.ts"]
-    },
+
     "requiredPlugins": [
       "contentManagement",
       "dashboard",

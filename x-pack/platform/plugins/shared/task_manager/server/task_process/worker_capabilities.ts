@@ -7,13 +7,16 @@
 
 import { createToken, defineCapability } from '@kbn/core-remote-common';
 import { composeCapabilities } from '@kbn/core-remote-server-internal';
+import { remote } from '../remote';
 import { RunCancellation } from './run_cancellation';
 import type { TaskProcessRunMetrics } from './wire';
 
 export type GetRunCancellation = (
   executionUuid: string
 ) => (() => Promise<TaskProcessRunMetrics>) | undefined;
-export const RunCancellationToken = createToken<RunCancellation>('taskManager.RunCancellation');
+export const RunCancellationToken = createToken<RunCancellation>(
+  remote.capabilities.RunCancellation.token
+);
 
 /** The boot root cannot yield run controls until the HTTP server owns that active execution. */
 export class WorkerCapabilities {
@@ -24,9 +27,8 @@ export class WorkerCapabilities {
     if (!cancelRun) throw new Error(`No active task execution: ${executionUuid}`);
     const manifest = [
       defineCapability({
+        ...remote.capabilities.RunCancellation,
         token: RunCancellationToken,
-        placement: 'executor',
-        scope: 'run',
         needs: [] as const,
         create: () => new RunCancellation(cancelRun),
       }),

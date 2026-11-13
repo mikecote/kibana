@@ -64,8 +64,6 @@ function validatePackageManifestPlugin(plugin, repoRoot, path) {
     optionalPlugins,
     requiredBundles,
     runtimePluginDependencies,
-    taskTypes,
-    taskTypeContributions,
     enabledOnAnonymousPages,
     type,
     __category__,
@@ -79,24 +77,6 @@ function validatePackageManifestPlugin(plugin, repoRoot, path) {
   }
   if (typeof server !== 'boolean') {
     throw err('plugin.server', server, 'must be a boolean');
-  }
-  if (taskTypes !== undefined && !isArrOfStrings(taskTypes)) {
-    throw err(`plugin.taskTypes`, taskTypes, `must be an array of strings`);
-  }
-  if (
-    taskTypeContributions !== undefined &&
-    !(
-      typeof taskTypeContributions === 'object' &&
-      taskTypeContributions !== null &&
-      !Array.isArray(taskTypeContributions) &&
-      Object.values(taskTypeContributions).every((files) => isArrOfStrings(files))
-    )
-  ) {
-    throw err(
-      `plugin.taskTypeContributions`,
-      taskTypeContributions,
-      `must be an object of arrays of strings`
-    );
   }
   if (extraPublicDirs !== undefined && !isArrOfStrings(extraPublicDirs)) {
     throw err(`plugin.extraPublicDirs`, extraPublicDirs, `must be an array of strings`);
@@ -185,10 +165,6 @@ function validatePackageManifestPlugin(plugin, repoRoot, path) {
     optionalPlugins,
     requiredBundles,
     runtimePluginDependencies,
-    taskTypes,
-    taskTypeContributions: /** @type {Record<string, string[]> | undefined} */ (
-      taskTypeContributions
-    ),
     enabledOnAnonymousPages,
     extraPublicDirs,
     [PLUGIN_CATEGORY]: __category__,

@@ -8,9 +8,7 @@
   "plugin": {
     "id": "embeddableExamples",
     "server": true,
-    "taskTypeContributions": {
-      "embeddables": ["server/embeddable_contribution.ts"]
-    },
+
     "browser": true,
     "requiredPlugins": [
       "contentManagement",

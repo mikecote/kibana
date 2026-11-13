@@ -7,7 +7,7 @@
   "group": "platform",
   "visibility": "shared",
   "plugin": {
-    "taskTypeContributions": { "embeddables": ["server/embeddable_contribution.ts"] },
+
     "id": "maps",
     "browser": true,
     "server": true,

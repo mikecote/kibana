@@ -7,6 +7,7 @@
 
 import type { KibanaRequest } from '@kbn/core/server';
 import { createToken } from '@kbn/core-remote-common';
+import { remote } from '../remote';
 
 export interface CoordinatorRequestIdentity {
   apiKey: string;
@@ -21,5 +22,5 @@ export interface CoordinatorRequestFactory {
 }
 
 export const CoordinatorRequestToken = createToken<CoordinatorRequestFactory>(
-  'taskManager.CoordinatorRequest'
+  remote.capabilities.CoordinatorRequest.token
 );

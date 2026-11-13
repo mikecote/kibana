@@ -24,9 +24,6 @@
       "workflowsExtensions"
     ],
     "requiredBundles": ["kibanaReact", "kibanaUtils", "unifiedSearch"],
-    "extraPublicDirs": ["common"],
-    "taskTypeContributions": {
-      "workflow-steps": ["server/task_process/workflow_runtime_contribution.ts"]
-    }
+    "extraPublicDirs": ["common"]
   }
 }

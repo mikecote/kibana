@@ -126,17 +126,6 @@ export interface PluginPackageManifest extends PackageManifestBaseFields {
     optionalPlugins?: string[];
     requiredBundles?: string[];
     runtimePluginDependencies?: string[];
-    /**
-     * Paths, relative to the plugin, of files that export a task type module (`taskType`) or a list
-     * of them (`taskTypes`). Each one can be bundled to run in its own process.
-     */
-    taskTypes?: string[];
-    /**
-     * Files, by contribution key, that export what this plugin adds to the task processes of other
-     * plugins' task types, such as the connector types a rule run may enqueue (key
-     * `alerting-rule-run`). A task process bundles the contributions of every plugin.
-     */
-    taskTypeContributions?: Record<string, string[]>;
     enabledOnAnonymousPages?: boolean;
     type?: 'preboot';
     extraPublicDirs?: string[];

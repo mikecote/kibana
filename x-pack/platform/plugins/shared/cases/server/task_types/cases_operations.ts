@@ -9,6 +9,7 @@ import type { KibanaRequest } from '@kbn/core/server';
 import { defineCapability, remotable } from '@kbn/core-remote-common';
 import type { CoordinatorRequestFactory } from '@kbn/task-manager-plugin/server/task_process/coordinator_request';
 import { CoordinatorRequestToken } from '@kbn/task-manager-plugin/server/task_process/coordinator_request';
+import { remote } from '../remote';
 import type { CasesClient } from '../client';
 import type { GetCasesClientOptions } from '../client/types';
 import type { CasesOperationsApi } from './cases_operations_api';
@@ -174,9 +175,8 @@ export const defineCasesOperations = (
   getClient: (request: KibanaRequest, options?: GetCasesClientOptions) => Promise<CasesClient>
 ) =>
   defineCapability({
+    ...remote.capabilities.CasesOperations,
     token: CasesOperationsToken,
-    placement: 'coordinator',
-    scope: 'run',
     needs: [CoordinatorRequestToken] as const,
     create: ([requests]) => new CasesOperations(requests, getClient),
   });

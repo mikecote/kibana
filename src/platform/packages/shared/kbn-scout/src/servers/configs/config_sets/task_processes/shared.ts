@@ -12,7 +12,8 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { basename, resolve } from 'path';
 import { REPO_ROOT } from '@kbn/repo-info';
 import { CA_CERT_PATH } from '@kbn/dev-utils';
-import { getPackages } from '@kbn/repo-packages';
+import { getRemoteManifestPaths } from '@kbn/repo-packages';
+import { interpretRemoteManifest } from '@kbn/import-locator';
 import type { ScoutServerConfig } from '../../../../types';
 import { servers as defaultConfig } from '../default/stateful/classic.stateful.config';
 
@@ -25,12 +26,11 @@ export const TASK_PROCESSES_LOG_FILE = resolve(TASK_PROCESSES_DIR, 'kibana.log')
 export const TASK_PROCESSES_MAX_CONCURRENT = 2;
 
 /** Every registered module needs a real bundle when Main is configured for process execution. */
-const BUNDLES = getPackages(REPO_ROOT).flatMap(({ manifest }) => {
-  if (manifest.type !== 'plugin') return [];
-  return (manifest.plugin.taskTypes ?? []).map(
-    (file) => `${manifest.plugin.id}__${basename(file).replace(/\.task\.[jt]s$/, '')}`
-  );
-});
+const BUNDLES = getRemoteManifestPaths(REPO_ROOT).flatMap(({ pluginId, path }) =>
+  (interpretRemoteManifest(path).taskTypes ?? []).map(
+    ({ modulePath }) => `${pluginId}__${basename(modulePath).replace(/\.task\.[jt]s$/, '')}`
+  )
+);
 
 /**
  * Kibana reads the manifest of the bundles when it starts, so they are built when the config is

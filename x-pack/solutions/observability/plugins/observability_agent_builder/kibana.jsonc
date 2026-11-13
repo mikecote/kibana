@@ -8,7 +8,7 @@
     "id": "observabilityAgentBuilder",
     "browser": true,
     "server": true,
-    "taskTypeContributions": { "agent-builder": ["server/task_types/agent_builder_contribution.ts"] },
+
     "requiredPlugins": [
       "agentBuilder",
       "apmDataAccess",

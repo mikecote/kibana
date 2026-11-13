@@ -6,11 +6,11 @@
  */
 
 import { execFileSync } from 'child_process';
-import { dirname, join } from 'path';
+import { relative } from 'path';
 import { elasticsearchServiceMock } from '@kbn/core/server/mocks';
-import { readFileSync } from 'fs';
 import { loggerMock } from '@kbn/logging-mocks';
 import { REPO_ROOT } from '@kbn/repo-info';
+import { getRemoteContributions } from '@kbn/import-locator';
 import { UnifiedAttachmentTypeRegistry } from '../attachment_framework/unified_attachment_registry';
 import { registerInternalAttachments } from '../internal_attachments';
 import {
@@ -26,23 +26,14 @@ const getContributions = (): Array<{
   owner: string;
   contribution: CasesAttachmentTypeContribution;
 }> =>
-  git('grep', '-l', `"${CASES_ATTACHMENT_TYPES_CONTRIBUTION_KEY}"`, '--', '*kibana.jsonc')
-    .split('\n')
-    .filter(Boolean)
-    .flatMap((manifest) => {
-      const source = readFileSync(join(REPO_ROOT, manifest), 'utf8');
-      const files = new RegExp(
-        `"${CASES_ATTACHMENT_TYPES_CONTRIBUTION_KEY}"\\s*:\\s*\\[([^\\]]*)\\]`
-      ).exec(source)?.[1];
-      return [...(files ?? '').matchAll(/"([^"]+)"/g)].map(([, file]) => ({
-        owner: dirname(manifest),
-        contribution: (
-          jest.requireActual(join(REPO_ROOT, dirname(manifest), file)) as {
-            contribution: CasesAttachmentTypeContribution;
-          }
-        ).contribution,
-      }));
-    });
+  getRemoteContributions(REPO_ROOT, CASES_ATTACHMENT_TYPES_CONTRIBUTION_KEY).map(
+    ({ directory, modulePath, exportName }) => ({
+      owner: relative(REPO_ROOT, directory),
+      contribution: (
+        jest.requireActual(modulePath) as Record<string, CasesAttachmentTypeContribution>
+      )[exportName],
+    })
+  );
 
 describe('Cases attachment contribution coverage', () => {
   it('covers every production plugin registering server-side attachment types', () => {

@@ -8,6 +8,7 @@
 import { createToken, defineCapability, remoteTokenId } from '@kbn/core-remote-common';
 import type { CapabilityDefinition } from '@kbn/core-remote-common';
 import { composeCapabilities } from '@kbn/core-remote-server-internal';
+import { remote } from '../remote';
 import type { CoordinatorRequestFactory } from './coordinator_request';
 import { CoordinatorRequestToken } from './coordinator_request';
 import { TaskPoolApi } from './task_pool_api';
@@ -26,10 +27,12 @@ export interface CoordinatorCallbacks {
   reportProgress: (createdTaskCount: number) => void;
 }
 
-export const TaskPoolToken = createToken<TaskPoolApi>('taskManager.TaskPoolApi');
-export const RunProgressToken = createToken<RunProgressApi>('taskManager.RunProgressApi');
-const InitializationToken = createToken<InitializationApi>('taskManager.InitializationApi');
-const RunCoordinatorToken = createToken<RunCoordinator>('taskManager.RunCoordinator');
+export const TaskPoolToken = createToken<TaskPoolApi>(remote.capabilities.TaskPool.token);
+export const RunProgressToken = createToken<RunProgressApi>(remote.capabilities.RunProgress.token);
+const InitializationToken = createToken<InitializationApi>(
+  remote.capabilities.Initialization.token
+);
+const RunCoordinatorToken = createToken<RunCoordinator>(remote.capabilities.RunCoordinator.token);
 
 /** Exposes only the coordinator callbacks owned by a currently leased execution. */
 export class CoordinatorCapabilities {
@@ -43,9 +46,8 @@ export class CoordinatorCapabilities {
       this.initializationApi = composeCapabilities(
         [
           defineCapability({
+            ...remote.capabilities.Initialization,
             token: InitializationToken,
-            placement: 'coordinator',
-            scope: 'worker',
             needs: [] as const,
             create: () => new InitializationApi(initialization),
           }),
@@ -72,9 +74,8 @@ export class CoordinatorCapabilities {
     active();
     const manifest: CapabilityDefinition[] = [
       defineCapability({
+        ...remote.capabilities.CoordinatorRequest,
         token: CoordinatorRequestToken,
-        placement: 'coordinator',
-        scope: 'run',
         needs: [] as const,
         create: () => ({
           create: (identity) => {
@@ -86,9 +87,8 @@ export class CoordinatorCapabilities {
       }),
       ...(this.placement?.manifest ?? []),
       defineCapability({
+        ...remote.capabilities.TaskPool,
         token: TaskPoolToken,
-        placement: 'coordinator',
-        scope: 'run',
         needs: [] as const,
         create: () =>
           new TaskPoolApi(async () => {
@@ -98,17 +98,15 @@ export class CoordinatorCapabilities {
           }),
       }),
       defineCapability({
+        ...remote.capabilities.RunProgress,
         token: RunProgressToken,
-        placement: 'coordinator',
-        scope: 'run',
         needs: [] as const,
         create: () =>
           new RunProgressApi((createdTaskCount) => active().reportProgress(createdTaskCount)),
       }),
       defineCapability({
+        ...remote.capabilities.RunCoordinator,
         token: RunCoordinatorToken,
-        placement: 'coordinator',
-        scope: 'run',
         needs: [TaskPoolToken, RunProgressToken] as const,
         create: ([pool, progress]): RunCoordinator =>
           new RunCoordinator(pool, progress, (tokenId) => {

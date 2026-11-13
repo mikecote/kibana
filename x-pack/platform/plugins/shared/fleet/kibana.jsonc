@@ -8,9 +8,7 @@
     "id": "fleet",
     "browser": true,
     "server": true,
-    "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    },
+
     "configPath": ["xpack", "fleet"],
     "requiredPlugins": [
       "licensing",

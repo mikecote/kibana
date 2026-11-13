@@ -8,14 +8,8 @@
     "id": "observability",
     "browser": true,
     "server": true,
-    "taskTypeContributions": {
-      "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
-      "workflow-steps": ["server/task_types/workflow_ui_settings_contribution.ts"],
-      "cases-attachment-types": ["server/task_types/case_attachment_type_contribution.ts"]
-    },
-    "taskTypes": [
-      "server/task_types/custom_threshold.task.ts"
-    ],
+
+
     "configPath": ["xpack", "observability"],
     "requiredPlugins": [
       "alerting",

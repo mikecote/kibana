@@ -7,6 +7,7 @@
 
 import { createToken } from '@kbn/core-remote-common';
 import type { CoordinatorRequestIdentity } from '@kbn/task-manager-plugin/server/task_process/coordinator_request';
+import { remote } from '../remote';
 import type { CasesClient } from '../client';
 import type { GetCasesClientOptions } from '../client/types';
 
@@ -45,7 +46,9 @@ export interface CasesOperationsApi {
   templatesGetTemplate: ScopedOperation<CasesClient['templates']['getTemplate']>;
 }
 
-export const CasesOperationsToken = createToken<CasesOperationsApi>('cases.CasesOperations');
+export const CasesOperationsToken = createToken<CasesOperationsApi>(
+  remote.capabilities.CasesOperations.token
+);
 
 // Internal forwarding bindings; this is deliberately not a generic public RPC tunnel.
 export const casesOperationBindings = {

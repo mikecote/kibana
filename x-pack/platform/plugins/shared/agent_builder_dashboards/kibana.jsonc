@@ -8,9 +8,7 @@
     "id": "agentBuilderDashboards",
     "server": true,
     "browser": true,
-    "taskTypeContributions": {
-      "agent-builder": ["server/task_types/agent_builder_contribution.ts"]
-    },
+
     "configPath": ["xpack", "agentBuilderDashboards"],
     "requiredPlugins": [
       "agentBuilder",

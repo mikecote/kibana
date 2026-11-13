@@ -10,9 +10,6 @@
     "browser": false,
     "server": true,
     "configPath": ["xpack", "sandbox"],
-    "optionalPlugins": ["spaces", "workflowsExtensions"],
-    "taskTypeContributions": {
-      "workflow-steps": ["server/workflow_services_contribution.ts"]
-    }
+    "optionalPlugins": ["spaces", "workflowsExtensions"]
   }
 }

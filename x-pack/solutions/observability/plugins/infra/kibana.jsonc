@@ -8,15 +8,8 @@
   "plugin": {
     "id": "infra",
     "server": true,
-    "taskTypeContributions": {
-      "alerting-rule-read": ["server/task_types/rule_read_contribution.ts"],
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    },
-    "taskTypes": [
-      "server/task_types/metric_threshold.task.ts",
-      "server/task_types/inventory_metric_threshold.task.ts",
-      "server/task_types/log_threshold.task.ts"
-    ],
+
+
     "browser": true,
     "configPath": ["xpack", "infra"],
     "requiredPlugins": [

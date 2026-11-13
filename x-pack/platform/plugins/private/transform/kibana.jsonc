@@ -9,9 +9,7 @@
     "id": "transform",
     "browser": true,
     "server": true,
-    "taskTypes": [
-      "server/task_types/transform_health.task.ts"
-    ],
+
     "configPath": ["xpack", "transform"],
     "requiredPlugins": [
       "data",

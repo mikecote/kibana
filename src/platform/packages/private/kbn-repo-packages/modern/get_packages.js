@@ -211,7 +211,23 @@ function findPackageForPath(repoRoot, path) {
   return findClosest(Path.relative(repoRoot, Path.dirname(path)), getPkgDirMap(repoRoot));
 }
 
+/**
+ * Discovers remote declarations by convention without importing or interpreting plugin code.
+ * @param {string} repoRoot
+ * @param {readonly import('./package').Package[]} [packages]
+ */
+const getRemoteManifestPaths = (repoRoot, packages = getPackages(repoRoot)) =>
+  packages
+    .filter(({ manifest }) => manifest.type === 'plugin')
+    .map(({ directory, manifest }) => ({
+      directory,
+      pluginId: manifest.type === 'plugin' ? manifest.plugin.id : '',
+      path: Path.resolve(directory, 'server/remote/index.ts'),
+    }))
+    .filter(({ path }) => Fs.existsSync(path));
+
 module.exports = {
+  getRemoteManifestPaths,
   getPackages,
   getPkgDirMap,
   getPkgsById,

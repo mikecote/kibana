@@ -12,7 +12,7 @@ import { buildTaskBundles, getTaskBundleEntries, writeManifest } from '../../tas
 import type { Task } from '../lib';
 
 /**
- * Bundles every task type module declared in a plugin's `kibana.jsonc` (`plugin.taskTypes`) into
+ * Bundles every task type module declared in a plugin's `server/remote/index.ts` into
  * `task_bundles/`, with a manifest of the task type each bundle serves. Kibana starts them when
  * `xpack.task_manager.task_execution.mode` is `child_process`.
  */

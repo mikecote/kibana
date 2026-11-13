@@ -7,9 +7,7 @@
   "plugin": {
     "id": "apmSourcesAccess",
     "server": true,
-    "taskTypeContributions": {
-      "workflow-steps": ["server/task_types/workflow_services_contribution.ts"]
-    },
+
     "browser": true,
     "configPath": [
       "xpack",
