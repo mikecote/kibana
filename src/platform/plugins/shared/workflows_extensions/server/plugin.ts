@@ -24,6 +24,11 @@ import type {
 import { createPluginScopedManagedWorkflowsClient } from './create_plugin_scoped_managed_workflows_client';
 import { registerGetStepDefinitionsRoute } from './routes/get_step_definitions';
 import { registerGetTriggerDefinitionsRoute } from './routes/get_trigger_definitions';
+import {
+  buildWorkflowStepIndex,
+  buildWorkflowTriggerIndex,
+  WORKFLOW_STEP_INDEX_SETTINGS_ID,
+} from './step_index';
 import { ServerStepRegistry } from './step_registry';
 import { registerInternalStepDefinitions } from './steps';
 import { TriggerRegistry } from './trigger_registry';
@@ -165,7 +170,17 @@ export class WorkflowsExtensionsServerPlugin
             : this.getNoopWorkflowsClient()
         );
       },
-      getTaskProcessSettings: () => this.taskProcessSettings,
+      getTaskProcessSettings: () => ({
+        ...this.taskProcessSettings,
+        // What a thin task process (one with no `workflow-steps` contributions of its own) needs to
+        // proxy a step or trigger back here, in place of the `workflow.steps`/`workflow.triggers`
+        // parity kinds below, which only ever compared ids: this index is the source of truth, so a
+        // worker with it needs no separate comparison.
+        [WORKFLOW_STEP_INDEX_SETTINGS_ID]: () => ({
+          steps: buildWorkflowStepIndex(this.stepRegistry.getAll()),
+          triggers: buildWorkflowTriggerIndex(this.triggerRegistry.list()),
+        }),
+      }),
       getTaskProcessParity: () => ({
         ...this.taskProcessParity,
         'workflow.steps': () => this.stepRegistry.getAll().map(({ id }) => id),

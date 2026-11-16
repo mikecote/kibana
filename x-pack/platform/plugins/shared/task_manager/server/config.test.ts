@@ -339,6 +339,7 @@ describe('config validation', () => {
     expect(configSchema.validate({}).task_execution).toBeUndefined();
     expect(configSchema.validate({ task_execution: {} }).task_execution).toEqual({
       mode: 'in_process',
+      child_compile_cache: true,
     });
   });
 
@@ -346,12 +347,16 @@ describe('config validation', () => {
     expect(
       configSchema.validate({ task_execution: { mode: 'child_process', bundle_dir: '/bundles' } })
         .task_execution
-    ).toEqual({ mode: 'child_process', bundle_dir: '/bundles' });
+    ).toEqual({ mode: 'child_process', bundle_dir: '/bundles', child_compile_cache: true });
     expect(
       configSchema.validate({
         task_execution: { mode: 'remote', remote: { url: 'http://pod:4100', token: 'secret' } },
       }).task_execution
-    ).toEqual({ mode: 'remote', remote: { url: 'http://pod:4100', token: 'secret' } });
+    ).toEqual({
+      mode: 'remote',
+      remote: { url: 'http://pod:4100', token: 'secret' },
+      child_compile_cache: true,
+    });
   });
 
   test('requires the pod url in remote mode', () => {
@@ -380,7 +385,7 @@ describe('config validation', () => {
     ).toThrow();
     expect(
       configSchema.validate({ task_execution: { mode: 'child_process' } }).task_execution
-    ).toEqual({ mode: 'child_process' });
+    ).toEqual({ mode: 'child_process', child_compile_cache: true });
     expect(() =>
       configSchema.validate({ task_execution: { max_concurrent_processes: 0 } })
     ).toThrow();

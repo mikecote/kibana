@@ -97,3 +97,14 @@ export type {
 } from './create_server_step_registry';
 
 export { createPluginScopedManagedWorkflowsClient } from './create_plugin_scoped_managed_workflows_client';
+
+export {
+  buildWorkflowStepIndex,
+  buildWorkflowTriggerIndex,
+  WORKFLOW_STEP_INDEX_SETTINGS_ID,
+} from './step_index';
+export type {
+  WorkflowStepIndexEntry,
+  WorkflowTriggerIndexEntry,
+  WorkflowStepIndexSettings,
+} from './step_index';

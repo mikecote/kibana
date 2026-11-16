@@ -23,6 +23,7 @@ import type { TaskHost, TaskTypeModule } from '@kbn/task-manager-plugin/server/t
 import { defineTaskType } from '@kbn/task-manager-plugin/server/task_type_module';
 import { createTelemetryTaskPlugin } from '@kbn/telemetry-plugin/server/task_plugin';
 import { WORKFLOWS_CORE_SELF_CLIENT_ENABLED_FLAG } from '@kbn/workflows';
+import { WORKFLOW_STEP_INDEX_SETTINGS_ID } from '@kbn/workflows-extensions/server';
 import type { WorkflowStepsContribution } from '@kbn/workflows-extensions/server';
 import {
   AGENT_BUILDER_CONTRIBUTIONS_KEY,
@@ -203,6 +204,9 @@ export const defineWorkflowTaskType = (
       'security',
       'actions',
       'taskManager',
+      // The step and trigger index (see `step_index.ts`): what a process with fewer or no
+      // `workflow-steps` contributions of its own needs to proxy a step back to Main.
+      WORKFLOW_STEP_INDEX_SETTINGS_ID,
     ],
     // What contributions read: a plugin that is disabled sends nothing, and its contribution then
     // registers nothing, so these are not required.
@@ -231,17 +235,17 @@ export const defineWorkflowTaskType = (
           },
         }
       : {}),
-    // `alerting-rule-run`: the connector types of the plugins that own them. `workflow-steps`: the
-    // steps and triggers of the plugins that register them. `agent-builder`: the tools, agents, skills
-    // and attachment types of the plugins that register them with agent builder.
+    // `alerting-rule-run`: the connector types of the plugins that own them, still run natively in
+    // this process. `workflow-steps` (and the `agent-builder`/`cases-*` keys only ever reached
+    // through it) is deliberately **not** requested any more: a thin worker runs no plugin step
+    // code of its own — see `step_proxies.ts` and the `WORKFLOW_STEP_INDEX_SETTINGS_ID` setting
+    // above, which proxy those steps back to Main instead. This is the "no contributions" bundle
+    // variant benched in the thin-worker spike (`bench-thin-worker`), confirmed well under the
+    // memory/startup gate.
     contributions: {
       keys: [
         TASK_SCHEDULING_CONTRIBUTIONS_KEY,
         RULE_RUN_CONTRIBUTIONS_KEY,
-        WORKFLOW_STEPS_CONTRIBUTIONS_KEY,
-        AGENT_BUILDER_CONTRIBUTIONS_KEY,
-        CASES_ATTACHMENT_TYPES_CONTRIBUTIONS_KEY,
-        CASES_CLIENT_CONTRIBUTIONS_KEY,
         ...new Set(declared.flatMap(({ contributionKeys }) => contributionKeys ?? [])),
       ],
       // A task process hands over what plugins contribute; the module is built again with it.

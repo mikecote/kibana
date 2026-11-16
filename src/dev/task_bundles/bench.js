@@ -26,6 +26,8 @@ const {
 // node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
 //   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>] [--node-defaults]
 //   [--run <request.json>] [--settings <settings.json>] [--init <init.json>]
+// node scripts/task_bundle_bench --layers [--dir <bundles>] [--name <substring>] [--layer-runs <n>]
+//   [--json <file>]: no Core, no Elasticsearch. See `runLayers` below.
 // Processes start with the Node flags Kibana's supervisor gives them (a small young generation);
 // `--node-defaults` starts them with Node's own, to compare.
 // For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
@@ -217,7 +219,128 @@ const measureOnce = (file, settingIds) =>
     child.send(getInit(settingIds));
   });
 
+/**
+ * Every dynamic import a bundle's entry awaits before `runTaskProcess`, in source order: the runtime
+ * (`main`), the task module, then each contribution, matching the `Promise.all` the entry builds
+ * (see `buildTaskBundles` in `./build.js`). Reads the already-built `.mjs` rather than the metafile,
+ * so this matches a distributable bundle too.
+ */
+const getEntryImports = (file) => {
+  const source = fs.readFileSync(file, 'utf8');
+  const dir = path.dirname(file);
+  const imports = [];
+  const pattern = /import\(\s*"(\.{1,2}\/[^"]+\.mjs)"\s*\)/g;
+  let match;
+  while ((match = pattern.exec(source))) imports.push(path.resolve(dir, match[1]));
+  return imports;
+};
+
+/** One layer's run: forks `layer_probe.mjs` with the given files and returns its reported sample. */
+const probeLayer = (files) =>
+  new Promise((resolve) => {
+    const child = fork(path.join(__dirname, 'layer_probe.mjs'), [], {
+      env: { ...process.env, LAYER_PROBE_FILES: JSON.stringify(files) },
+      execArgv: [...childOptions.execArgv, '--expose-gc'],
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve({ error: `layer probe did not finish in ${readyTimeoutMs} ms` });
+    }, readyTimeoutMs);
+    child.once('exit', (code) => {
+      if (code !== 0) {
+        clearTimeout(timer);
+        resolve({ error: stderr.trim() || `layer probe exited (${code})` });
+      }
+    });
+    child.on('message', (message) => {
+      if (message?.kind !== 'layer-probe-result') return;
+      clearTimeout(timer);
+      // A handful of modules can fail to evaluate standalone (see the esbuild shared-chunk
+      // correctness note in `./build.js`'s `TASK_BUNDLE_OPTIMIZATION` comment): most of a failed
+      // module's own weight is already loaded by the time it throws, so its memory still counts.
+      // Only give up on the layer when nothing useful loaded.
+      resolve(
+        message.failed.length === message.modules
+          ? { error: `all ${message.modules} import(s) failed: ${message.failed[0]}` }
+          : message
+      );
+    });
+  });
+
+/**
+ * `node scripts/task_bundle_bench --layers [--name <substring>] [--runs <n>]`: for each selected
+ * bundle, imports just its `main` chunk, then `main` plus its task module, then every pre-READY
+ * import, with no Core and no Elasticsearch, `--layer-runs` fresh processes per layer. This isolates
+ * what module loading itself costs (a floor a real worker cannot beat) and attributes it between the
+ * runtime, the task module, and its contributions.
+ */
+const runLayers = async () => {
+  const manifestFile = path.join(bundleDir, 'manifest.json');
+  if (!fs.existsSync(manifestFile)) {
+    throw new Error(`No manifest at ${manifestFile}; run node scripts/task_bundle first`);
+  }
+  const { bundles } = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  const selected = Object.entries(bundles).filter(
+    ([name, { taskType }]) =>
+      !nameFilter || name.includes(nameFilter) || taskType.includes(nameFilter)
+  );
+  const layerRuns = Number(getArg('--layer-runs', runs));
+  const results = [];
+  for (const [name, { file }] of selected) {
+    const imports = getEntryImports(path.join(bundleDir, file));
+    const layers = [
+      { layer: 'main', files: imports.slice(0, 1) },
+      { layer: 'main+task', files: imports.slice(0, 2) },
+      { layer: 'all', files: imports },
+    ];
+    for (const { layer, files } of layers) {
+      const samples = [];
+      let error;
+      for (let i = 0; i < layerRuns; i++) {
+        const sample = await probeLayer(files);
+        if (sample.error) {
+          error = sample.error;
+          break;
+        }
+        samples.push(sample);
+      }
+      const failedCount = Math.max(...samples.map((s) => s.failed.length), 0);
+      const row = {
+        bundle: name,
+        layer,
+        modules: files.length,
+        ...(error
+          ? { error }
+          : {
+              failedCount: failedCount || undefined,
+              importMs: Math.round(median(samples.map((s) => s.importMs))),
+              rssMb: Math.round(median(samples.map((s) => s.rss)) / 1048576),
+              heapUsedMb: Math.round(median(samples.map((s) => s.heapUsed)) / 1048576),
+              oldSpaceMb: Math.round(median(samples.map((s) => s.spaces.old_space ?? 0)) / 1048576),
+            }),
+      };
+      results.push(row);
+      console.log(
+        error
+          ? `${name} ${layer}: FAILED ${error}`
+          : `${name} ${layer}: ${row.modules} modules${
+              failedCount ? ` (${failedCount} failed to evaluate)` : ''
+            }, ${row.importMs} ms, ${row.rssMb} MB rss, ${row.heapUsedMb} MB heap`
+      );
+    }
+  }
+  const json = getArg('--json');
+  if (json) fs.writeFileSync(json, `${JSON.stringify(results, null, 2)}\n`);
+};
+
 (async () => {
+  if (args.includes('--layers')) {
+    await runLayers();
+    return;
+  }
   const manifestFile = path.join(bundleDir, 'manifest.json');
   if (!fs.existsSync(manifestFile)) {
     throw new Error(`No manifest at ${manifestFile}; run node scripts/task_bundle first`);

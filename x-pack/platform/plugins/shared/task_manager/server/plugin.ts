@@ -30,6 +30,7 @@ import type { LicensingPluginStart } from '@kbn/licensing-plugin/server';
 import type { PublicMethodsOf } from '@kbn/utility-types';
 import type { InvalidateAPIKeysParams } from '@kbn/security-plugin-types-server';
 import { join } from 'path';
+import os from 'os';
 import { REPO_ROOT } from '@kbn/repo-info';
 import type { IElasticsearchConfig } from '@kbn/core-elasticsearch-server';
 import { collectRemoteGaugeMetrics } from './task_process/metrics_transport';
@@ -958,6 +959,7 @@ export class TaskManagerPlugin
       max_concurrent_processes: maxConcurrentProcesses,
       child_max_old_space_mb: childMaxOldSpaceMb,
       child_max_semi_space_mb: childMaxSemiSpaceMb,
+      child_compile_cache: childCompileCache,
       reuse,
     } = this.config.task_execution ?? {};
     if (mode !== 'child_process') return;
@@ -974,6 +976,11 @@ export class TaskManagerPlugin
           maxConcurrentProcesses: maxConcurrentProcesses ?? this.config.max_workers,
           childMaxOldSpaceMb,
           childMaxSemiSpaceMb,
+          // Shared by every Kibana of this version on this host; Node's cache key already covers
+          // platform and source hash, so a rebuilt bundle cannot hit a stale entry.
+          childCompileCacheDir: childCompileCache
+            ? join(os.tmpdir(), 'kbn-task-process-compile-cache', this.kibanaVersion)
+            : undefined,
           reuse: reuse?.enabled
             ? {
                 idleTimeoutMs: reuse.idle_timeout_ms,

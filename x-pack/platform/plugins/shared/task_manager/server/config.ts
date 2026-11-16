@@ -265,6 +265,13 @@ export const configSchema = schema.object(
            * in work that allocates a lot.
            */
           child_max_semi_space_mb: schema.maybe(schema.number({ min: 1, max: 256 })),
+          /*
+           * child_process: caches each process's compiled V8 bytecode on disk (Node's
+           * `module.enableCompileCache`) so a later fork of the same bundle build skips parsing and
+           * compiling it again. Shared by every task type and kept across Kibana restarts; a new build
+           * gets its own cache entries. Defaults to on.
+           */
+          child_compile_cache: schema.boolean({ defaultValue: true }),
           /* remote: the task process, and the bearer token it was started with (`TASK_PROCESS_TOKEN`). */
           remote: schema.maybe(
             schema.object({

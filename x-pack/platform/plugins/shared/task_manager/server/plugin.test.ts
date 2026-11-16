@@ -369,7 +369,11 @@ describe('TaskManagerPlugin', () => {
     test('evaluates the feature flags a module declares and the ones the registration adds, per dispatch', async () => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
-        task_execution: { mode: 'remote', remote: { url: 'http://pod:4100' } },
+        task_execution: {
+          mode: 'remote',
+          remote: { url: 'http://pod:4100' },
+          child_compile_cache: true,
+        },
       } as TaskManagerConfig);
       pluginInitializerContext.node.roles.backgroundTasks = true;
       const core = coreMock.createSetup();
@@ -466,7 +470,7 @@ describe('TaskManagerPlugin', () => {
     ) => {
       const pluginInitializerContext = coreMock.createPluginInitializerContext<TaskManagerConfig>({
         ...pluginInitializerContextParams,
-        task_execution: { mode: 'child_process' },
+        task_execution: { mode: 'child_process', child_compile_cache: true },
       } as TaskManagerConfig);
       pluginInitializerContext.node.roles.backgroundTasks = true;
       const core = coreMock.createSetup();

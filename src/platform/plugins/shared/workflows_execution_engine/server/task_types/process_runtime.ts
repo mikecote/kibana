@@ -35,8 +35,10 @@ import { SystemConnectorsMap } from '@kbn/workflows';
 import {
   createEventChainContextStore,
   createServerStepRegistry,
+  WORKFLOW_STEP_INDEX_SETTINGS_ID,
 } from '@kbn/workflows-extensions/server';
 import type {
+  WorkflowStepIndexSettings,
   WorkflowStepRunCheck,
   WorkflowStepsContribution,
   WorkflowStepsContributionContext,
@@ -49,6 +51,7 @@ import {
   WORKFLOWS_ENGINE_SETTINGS_ID,
   WORKFLOWS_USAGE_API_SETTINGS_ID,
 } from './constants';
+import { buildStepProxyDefinition, buildTriggerProxyDefinition } from './step_proxies';
 import { WorkflowRuntimeServices } from './workflow_runtime_services';
 import type { WorkflowsExecutionEngineConfig } from '../config';
 import { createWorkflowRuntime } from '../create_workflow_runtime';
@@ -138,6 +141,24 @@ export const createWorkflowRuntimeFromHost = async (
 
   const workflowsExtensions = createServerStepRegistry(logger);
 
+  // Thin worker (Option B): no `workflow-steps` contributions are loaded here any more, so the
+  // process's only source of plugin-registered steps/triggers is the index Main computed from its
+  // own registry and sent as a setting (see `step_index.ts`). Each entry becomes a proxy that calls
+  // back to Main's `invoke_step` route instead of running real handler code in this process.
+  const stepIndex = settings[WORKFLOW_STEP_INDEX_SETTINGS_ID] as
+    | WorkflowStepIndexSettings
+    | undefined;
+  for (const entry of stepIndex?.steps ?? []) {
+    if (!workflowsExtensions.hasStepDefinition(entry.id)) {
+      workflowsExtensions.registerStepDefinition(buildStepProxyDefinition(entry));
+    }
+  }
+  for (const entry of stepIndex?.triggers ?? []) {
+    if (!workflowsExtensions.getTriggerDefinition(entry.id)) {
+      workflowsExtensions.registerTriggerDefinition(buildTriggerProxyDefinition(entry));
+    }
+  }
+
   // Connectors: the actions of the process, with the connector types the plugins contribute.
   const connectorContributions = (host.contributions?.[RULE_RUN_CONTRIBUTIONS_KEY] ??
     []) as RuleRunContribution[];
@@ -198,17 +219,10 @@ export const createWorkflowRuntimeFromHost = async (
     taskType: 'workflow',
     logger,
     expected: host.parity,
-    hooks: [
-      { kind: 'connectorTypes', getIds: getActionTypeIds },
-      {
-        kind: 'workflow.steps',
-        getIds: () => workflowsExtensions.getAllStepDefinitions().map(({ id }) => id),
-      },
-      {
-        kind: 'workflow.triggers',
-        getIds: () => workflowsExtensions.getAllTriggerDefinitions().map(({ id }) => id),
-      },
-    ],
+    // `workflow.steps`/`workflow.triggers` are no longer checked here: the step/trigger index
+    // (`WORKFLOW_STEP_INDEX_SETTINGS_ID`, above) replaces that comparison, since a thin worker's
+    // own registry is now built *from* Main's registry rather than independently of it.
+    hooks: [{ kind: 'connectorTypes', getIds: getActionTypeIds }],
   });
 
   // Steps: the internal ones (registered with the registry), and what the plugins contribute, which

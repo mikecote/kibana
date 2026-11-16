@@ -98,14 +98,10 @@ describe('workflow task type modules', () => {
           'taskManager',
         ])
       );
-      expect(module.contributions?.keys).toEqual([
-        'task-scheduling',
-        'alerting-rule-run',
-        'workflow-steps',
-        'agent-builder',
-        'cases-attachment-types',
-        'cases-client',
-      ]);
+      // `workflow-steps` (and the `agent-builder`/`cases-*` keys only ever reached through it) is
+      // deliberately not requested: a thin worker proxies plugin steps back to Main instead of
+      // loading their contributions locally (see `step_proxies.ts`).
+      expect(module.contributions?.keys).toEqual(['task-scheduling', 'alerting-rule-run']);
       expect(module.taskPlugins?.map(({ manifest }) => manifest.id)).toEqual([
         'security',
         'telemetry',
@@ -186,7 +182,9 @@ describe('workflow task type modules with contributions', () => {
   it.each([runTaskType, resumeTaskType, scheduledTaskType].map((m) => [m.type, m] as const))(
     'merges what the contributions of %s declare',
     (_type, module) => {
-      expect(module.contributions?.keys).toContain('workflow-steps');
+      // `workflow-steps` is no longer in `contributions.keys` by default (see above), but the
+      // generic merge machinery `apply()` still works when a contribution for it is supplied, as
+      // Kibana's own dispatch does for whichever keys a module actually requests.
       const applied = module.contributions!.apply!({
         'workflow-steps': [contribution, {}],
       } as never);
