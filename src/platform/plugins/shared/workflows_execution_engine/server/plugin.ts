@@ -31,6 +31,7 @@ import { ensureWorkflowsDataStreamsRolledOver } from './lib/data_streams/ensure_
 import { WorkflowExecutionTelemetryClient } from './lib/telemetry/workflow_execution_telemetry_client';
 import { WorkflowsMeteringService } from './metering/metering_service';
 import { createDataClientBundle, type DataClientBundle } from './repositories/data_access_layer';
+import { registerInvokeStepRoute } from './routes/invoke_step';
 import { WORKFLOW_SERVICE_ACCOUNT_TYPE } from './service_account_execution';
 import { resolveWorkflowWorkloads } from './service_account_workload_resolver';
 import { WORKFLOW_WORKLOAD_TYPE_NAME } from './task_plugin';
@@ -136,6 +137,20 @@ export class WorkflowsExecutionEnginePlugin
 
     const setupDependencies: SetupDependencies = { cloudSetup: plugins.cloud };
     this.setupDependencies = setupDependencies;
+
+    // The engine-to-engine seam a thin task worker (no `workflow-steps` contributions of its own)
+    // calls to run a plugin-registered step here instead (see `routes/invoke_step.ts`).
+    registerInvokeStepRoute(
+      core.http.createRouter(),
+      () =>
+        core
+          .getStartServices()
+          .then(([coreStart, pluginsStart]) => [
+            coreStart,
+            { workflowsExtensions: pluginsStart.workflowsExtensions },
+          ]),
+      this.logger.get('steps-invoke')
+    );
 
     // Initialize metering from the centralized Usage API plugin
     if (plugins.usageApi?.usageReporting) {

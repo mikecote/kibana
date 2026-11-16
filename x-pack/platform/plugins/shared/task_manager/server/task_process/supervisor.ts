@@ -49,6 +49,12 @@ export interface TaskProcessSettings {
   childMaxOldSpaceMb?: number;
   /** `--max-semi-space-size` of each process, in MB (its young generation). Defaults to 2. */
   childMaxSemiSpaceMb?: number;
+  /**
+   * Where a process's compiled V8 bytecode is cached (Node's `module.enableCompileCache`), shared by
+   * every fork of every task type. Unset disables it. Node's own cache key covers the Node version,
+   * platform and source hash, so a rebuilt bundle gets fresh entries without a stale hit.
+   */
+  childCompileCacheDir?: string;
   /** How long `stop` lets runs in flight finish before it kills their processes. */
   drainTimeoutMs?: number;
   /** Opt-in sequential reuse of compatible task processes after successful runs. */
@@ -64,6 +70,9 @@ export interface TaskProcessSettings {
     | Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>
     | Promise<Omit<TaskProcessInit, 'kind' | 'authToken' | 'elasticsearch' | 'kibanaVersion'>>;
 }
+
+/** Loaded with `--require` before the entry's module graph; plain JS, not transpiled. */
+const COMPILE_CACHE_PRELOAD = join(__dirname, 'compile_cache_preload.js');
 
 const READY_TIMEOUT_MS = 30_000;
 const STOP_TIMEOUT_MS = 10_000;
@@ -304,6 +313,9 @@ export class TaskProcessSupervisor {
       maxOldSpaceMb: settings.childMaxOldSpaceMb,
       maxSemiSpaceMb: settings.childMaxSemiSpaceMb,
     });
+    if (settings.childCompileCacheDir) {
+      execArgv.push('--require', COMPILE_CACHE_PRELOAD);
+    }
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       PORT: '0',
@@ -311,6 +323,9 @@ export class TaskProcessSupervisor {
       TASK_PROCESS_LOG_LAYOUT: 'json',
       TASK_PROCESS_LOG_LEVEL: getChildLogLevel(logger),
     };
+    if (settings.childCompileCacheDir)
+      env.TASK_PROCESS_COMPILE_CACHE_DIR = settings.childCompileCacheDir;
+    else delete env.TASK_PROCESS_COMPILE_CACHE_DIR;
     if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
     else delete env.NODE_OPTIONS;
     const child = forkFn(bundle.file, [], {

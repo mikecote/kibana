@@ -392,6 +392,9 @@ const buildTaskBundles = async ({
   sourcemap = true,
   metafile = false,
   additionalContributions = {},
+  // Overrides which files `resolveTaskContributions` resolves a key to (see `--contribution-keys`
+  // in `./cli.js`). Defaults to every plugin's declared files for the key.
+  getContributionFilesOverride = getContributionFiles,
 }) => {
   const version = kibanaVersion ?? require('@kbn/repo-info').kibanaPackageJson.version;
   const runtime = copyTaskRuntimeDependencies(outDir);
@@ -403,7 +406,7 @@ const buildTaskBundles = async ({
     const contributions = resolveTaskContributions(
       loaded,
       additionalContributions,
-      getContributionFiles,
+      getContributionFilesOverride,
       (file) => {
         const contribution = createRequire(__filename)(file).contribution;
         declarations.set(file, contribution);
@@ -415,11 +418,19 @@ const buildTaskBundles = async ({
     return {
       entry,
       featureFlags,
+      // Instrumentation must initialize before any application code imports (it patches modules at
+      // load, such as Node's core `http`): `init` is read first, instrumentation starts from it, and
+      // only then does the module graph (the runtime, the task module, its contributions) import,
+      // concurrently with each other. This keeps native tracing correct, at the cost of not
+      // overlapping the `init` IPC wait with module loading (see the "instrumentation ordering" risk
+      // in the task worker footprint plan).
       contents: [
-        `import { bootstrapTaskProcess } from ${JSON.stringify(
+        `import { readTaskProcessInit, createTaskProcessParentWatcher, instrumentFromInit } from ${JSON.stringify(
           path.join(path.dirname(RUNTIME_ENTRY), 'bootstrap')
         )};`,
-        `const initialization = await bootstrapTaskProcess();`,
+        `const registerStop = createTaskProcessParentWatcher();`,
+        `const init = await readTaskProcessInit();`,
+        `const instrumentation = await instrumentFromInit(init, registerStop);`,
         `const [runtime, taskModule, ${contributionImports
           .map((_, i) => `contributionModule${i}`)
           .join(', ')}] = await Promise.all([`,
@@ -427,7 +438,7 @@ const buildTaskBundles = async ({
         `  import(${JSON.stringify(entry.file)}),`,
         ...contributionImports.map((file) => `  import(${JSON.stringify(file)}),`),
         `]);`,
-        `runtime.runTaskProcess(taskModule.taskType, { ...initialization, contributions: {`,
+        `runtime.runTaskProcess(taskModule.taskType, { init, instrumentation, registerStop, contributions: {`,
         ...Object.entries(contributions).map(([key, files]) => {
           const names = files.map(
             (file) => `contributionModule${contributionImports.indexOf(file)}.contribution`
