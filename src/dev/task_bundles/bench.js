@@ -26,6 +26,7 @@ const {
 // node scripts/task_bundle_bench [--dir <bundles>] [--name <substring>] [--runs <n>] [--settle <ms>]
 //   [--es-url <url>] [--es-user <user>] [--es-password <password>] [--json <file>] [--node-defaults]
 //   [--run <request.json>] [--settings <settings.json>] [--init <init.json>]
+//   [--cpu-profile <file.cpuprofile>] [--heap-profile <file.heapsnapshot>]
 // Processes start with the Node flags Kibana's supervisor gives them (a small young generation);
 // `--node-defaults` starts them with Node's own, to compare.
 // For every bundle in the manifest: forks it as Kibana's supervisor does, sends `init`, and measures
@@ -44,6 +45,11 @@ const settingsFile = getArg('--settings');
 const extraSettings = settingsFile ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {};
 const initFile = getArg('--init');
 const extraInit = initFile ? JSON.parse(fs.readFileSync(initFile, 'utf8')) : {};
+// A profile pins the bench to the one bundle its file path was given for; forcing one run and one
+// bundle keeps it unambiguous which run's cost the file holds.
+const cpuProfileFile = getArg('--cpu-profile') && path.resolve(getArg('--cpu-profile'));
+const heapProfileFile = getArg('--heap-profile') && path.resolve(getArg('--heap-profile'));
+const profiling = Boolean(cpuProfileFile || heapProfileFile);
 const readyTimeoutMs = 60000;
 // The flags of a process as the supervisor starts it, without Kibana's own.
 const childOptions = args.includes('--node-defaults')
@@ -56,9 +62,14 @@ const esConfig = elasticsearchConfigFromEnv({
   ES_PASSWORD: getArg('--es-password', 'changeme'),
 });
 
+// `--runs n` only produces a real median (not n separate bench.js invocations averaged by hand) if
+// this itself is a real median: an even sample count (`--runs 2`, the common quick check) was
+// picking the higher of the two middle values instead of averaging them, silently biasing every
+// number `--runs` produces upward.
 const median = (values) => {
   const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 };
 
 /** Settings a module declares that startup checks for: plugins read their own at run time. */
@@ -103,6 +114,10 @@ const measureOnce = (file, settingIds) =>
     const env = { ...process.env, PORT: '0' };
     if (childOptions.nodeOptions) env.NODE_OPTIONS = childOptions.nodeOptions;
     else delete env.NODE_OPTIONS;
+    if (cpuProfileFile) env.TASK_BUNDLE_CPU_PROFILE_FILE = cpuProfileFile;
+    else delete env.TASK_BUNDLE_CPU_PROFILE_FILE;
+    if (heapProfileFile) env.TASK_BUNDLE_HEAP_PROFILE_FILE = heapProfileFile;
+    else delete env.TASK_BUNDLE_HEAP_PROFILE_FILE;
     const child = fork(file, [], {
       env,
       execArgv: [...childOptions.execArgv, '--require', path.join(__dirname, 'memory_probe.js')],
@@ -147,7 +162,10 @@ const measureOnce = (file, settingIds) =>
       if (message?.kind === 'task-bundle-memory') {
         probes[message.phase] = message;
         peakRss = Math.max(peakRss, message.usage.rss / 1048576, message.peakRss / 1048576);
-        if ((message.phase === 'idle' && !runRequest) || message.phase === 'afterRun') {
+        if (
+          (message.phase === 'idle' && !runRequest && !profiling) ||
+          message.phase === 'afterRun'
+        ) {
           finish({
             startupMs,
             readyRss,
@@ -158,6 +176,22 @@ const measureOnce = (file, settingIds) =>
             taskMs,
           });
         }
+        return;
+      }
+      if (message?.kind === 'task-bundle-profile') {
+        finish({
+          startupMs,
+          readyRss,
+          idleRss,
+          peakRss: Math.max(peakRss, readyRss ?? 0, idleRss ?? 0),
+          probes,
+          runStatus,
+          taskMs,
+          profile: {
+            cpuProfileFile: message.cpuProfileFile,
+            heapProfileFile: message.heapProfileFile,
+          },
+        });
         return;
       }
       if (message?.kind !== 'ready') return;
@@ -234,7 +268,7 @@ const measureOnce = (file, settingIds) =>
     let settingIds = [];
     const samples = [];
     let error;
-    for (let i = 0; i < runs; i++) {
+    for (let i = 0; i < (profiling ? 1 : runs); i++) {
       let sample = await measureOnce(path.join(bundleDir, file), settingIds);
       const missing = sample.error && /not given the settings of: ([\w, ]+)/.exec(sample.error);
       if (missing) {
@@ -301,6 +335,9 @@ const measureOnce = (file, settingIds) =>
         ? `${taskType}: FAILED ${error}`
         : `${taskType}: ready in ${row.startupMs} ms, idle ${row.idleRssMb} MB (bundle ${row.bundleMb} MB)`
     );
+    const profile = samples[0]?.profile;
+    if (profile?.cpuProfileFile) console.log(`  profile written to ${profile.cpuProfileFile}`);
+    if (profile?.heapProfileFile) console.log(`  profile written to ${profile.heapProfileFile}`);
   }
   const ok = results.filter((r) => !r.error);
   if (ok.length) {

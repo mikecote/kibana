@@ -29,6 +29,14 @@ import type { IWorkflowEventLogger } from '../workflow_event_logger';
  */
 const CONNECTOR_TYPES_WITH_LAYER_1 = new Set<string>(['http']);
 
+/**
+ * Whether `stepType` is one of the stock, spec-defined Kibana connector types (slack, jira,
+ * webhook, ...): shapes the request Layer 1/2 size enforcement uses below, since spec-based
+ * connectors take `fetchOptions` where the HTTP system connector takes `fetcher`.
+ */
+const isSpecConnectorStepType = (stepType: string): boolean =>
+  getConnectorSpec(`.${stepType}`) !== undefined;
+
 // Axios internal error message format — no typed error code is exposed for this case,
 // so regex matching is the only reliable detection method.
 const ACTIONS_MAX_CONTENT_LENGTH_ERROR_PATTERN = /maxContentLength size of (\d+) exceeded/;
@@ -55,9 +63,6 @@ const getEstimatedOutputBytes = (
   return typeof estimatedOutputBytes === 'number' ? estimatedOutputBytes : undefined;
 };
 
-const isSpecConnectorType = (connectorType: string): boolean =>
-  getConnectorSpec(`.${connectorType}`) !== undefined;
-
 const shouldUseWorkflowTransportLimit = ({
   rawType,
   stepType,
@@ -71,7 +76,7 @@ const shouldUseWorkflowTransportLimit = ({
     return true;
   }
 
-  return hasStepMaxSize && isSpecConnectorType(stepType);
+  return hasStepMaxSize && isSpecConnectorStepType(stepType);
 };
 
 // Extend BaseStep for connector-specific properties
@@ -135,7 +140,7 @@ export class ConnectorStepImpl extends BaseAtomicNodeImplementation<ConnectorSte
       // so axios can abort mid-stream (Layer 1 OOM prevention).
       // The HTTP system connector uses "fetcher"; spec-based connectors use "fetchOptions".
       const rawType = step.type;
-      const isSpecConnector = isSpecConnectorType(stepType);
+      const isSpecConnector = isSpecConnectorStepType(stepType);
       const hasStepMaxSize = Boolean(step['max-step-size']);
       const usesWorkflowTransportLimit = shouldUseWorkflowTransportLimit({
         rawType,

@@ -87,6 +87,19 @@ export interface WorkflowStepsContribution {
    * the plugins listed in `settings` and the feature flags with their fallbacks).
    */
   declares?: {
+    /**
+     * The step type ids this contribution's `register` adds to the step registry. Resolved to packs
+     * in Main, which walks a workflow definition's step types to decide what a run needs
+     * (`getPacks`).
+     */
+    stepTypes?: string[];
+    /**
+     * Ids this contribution's `provides` services need from another contribution's `provides`
+     * (`getService` of a service this one does not itself provide). Added transitively when Main
+     * resolves a definition's step types to packs, so a pack whose services depend on another's is
+     * never selected alone.
+     */
+    requires?: string[];
     /** Native SDK registrations needed by this contribution, resolved transitively by the bundler. */
     contributionKeys?: string[];
     schedulableTypes?: RegExp[];

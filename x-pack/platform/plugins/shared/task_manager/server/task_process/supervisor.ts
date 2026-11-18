@@ -29,11 +29,35 @@ import { forwardChildLogs, getChildLogLevel } from './child_log_forwarder';
 import type { SerializedElasticsearchConfig } from './es_config';
 import type { TaskProcessInit, TaskProcessReady } from './wire';
 
+/**
+ * One pack in a bundle's manifest: what it declares (for a workflow step contribution, the step
+ * types it registers, and the pack ids it requires), read by a task type's own plugin to resolve
+ * what a specific run needs (`TaskTypeRegistrationOptions.getPacks`).
+ */
+export interface TaskBundlePackManifest {
+  id: string;
+  stepTypes?: string[];
+  requires?: string[];
+  /**
+   * Whether this pack registers one or more connector types (`actions.registerType` or
+   * `actions.registerSubActionConnectorType`). A workflow step this manifest's `stepTypes` do not
+   * cover is assumed to be a connector step and selects every pack with this flag set.
+   */
+  registersConnectorTypes?: boolean;
+  /** The service ids this pack's `provides` offers, which another pack's `requires` may name. */
+  provides?: string[];
+}
+
 /** `manifest.json` of a task bundle directory: which task types each bundle serves. */
 export interface TaskBundleManifest {
   bundles: Record<
     string,
-    { file: string; taskType: string; featureFlags?: TaskFeatureFlagDefinitions }
+    {
+      file: string;
+      taskType: string;
+      featureFlags?: TaskFeatureFlagDefinitions;
+      packs?: TaskBundlePackManifest[];
+    }
   >;
 }
 
@@ -90,6 +114,7 @@ interface Bundle {
   file: string;
   taskType: string;
   featureFlags?: TaskFeatureFlagDefinitions;
+  packs?: TaskBundlePackManifest[];
 }
 
 interface ReusableChild {
@@ -140,12 +165,15 @@ export class TaskProcessSupervisor {
       );
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as TaskBundleManifest;
-    for (const [name, { file, taskType, featureFlags }] of Object.entries(manifest.bundles)) {
+    for (const [name, { file, taskType, featureFlags, packs }] of Object.entries(
+      manifest.bundles
+    )) {
       this.bundleByTaskType.set(taskType, {
         name,
         file: join(settings.bundle_dir, file),
         taskType,
         featureFlags,
+        packs,
       });
     }
     const required = new Set([...requiredTaskTypes, ...this.bundleByTaskType.keys()]);
@@ -183,6 +211,11 @@ export class TaskProcessSupervisor {
     return this.bundleByTaskType.get(taskType)?.featureFlags;
   }
 
+  /** Undefined when the bundle predates packs (every pack loads, the pre-pack behavior). */
+  public getTaskBundlePacks(taskType: string): TaskBundlePackManifest[] | undefined {
+    return this.bundleByTaskType.get(taskType)?.packs;
+  }
+
   public getStats(): TaskProcessSupervisorStats {
     return {
       live: this.children.size,
@@ -190,6 +223,11 @@ export class TaskProcessSupervisor {
       max: this.params.settings.maxConcurrentProcesses,
       ...this.stats,
     };
+  }
+
+  /** The OS pids of every process this supervisor currently has live (idle or held by a run). */
+  public getProcessPids(): number[] {
+    return [...this.children].flatMap((child) => (child.pid ? [child.pid] : []));
   }
 
   /**
@@ -277,7 +315,15 @@ export class TaskProcessSupervisor {
     const elasticsearch =
       context?.snapshot?.init.elasticsearch ?? settings.getElasticsearchConfig();
     const fingerprint = settings.reuse
-      ? createHash('sha256').update(JSON.stringify({ init, elasticsearch })).digest('hex')
+      ? createHash('sha256')
+          // Sorted, so the same pack set in a different order still reuses a warm process.
+          .update(
+            JSON.stringify({
+              init: init?.packs ? { ...init, packs: [...init.packs].sort() } : init,
+              elasticsearch,
+            })
+          )
+          .digest('hex')
       : '';
     for (const process of this.idle) {
       if (process.bundle.taskType !== bundle.taskType) continue;
@@ -313,6 +359,7 @@ export class TaskProcessSupervisor {
     };
     if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
     else delete env.NODE_OPTIONS;
+    const spawnStartedAt = Date.now();
     const child = forkFn(bundle.file, [], {
       env,
       execArgv,
@@ -328,6 +375,8 @@ export class TaskProcessSupervisor {
     const labels: Record<string, string> = {
       task_type: bundle.taskType,
       ...(context?.executionUuid ? { run_id: context.executionUuid } : {}),
+      // Sorted, so two runs that asked for the same packs in a different order reuse one label.
+      ...(init?.packs ? { packs: [...init.packs].sort().join(',') } : {}),
     };
     const managed: ReusableChild = {
       child,
@@ -364,13 +413,7 @@ export class TaskProcessSupervisor {
       // What the child wrote before it exited is read before the streams close.
       setImmediate(() => stopForwarding.forEach((stop) => stop?.()));
     });
-    if (child.pid !== undefined) {
-      logger.info(
-        `Spinning up process ${child.pid} for task ${bundle.taskType}; ${this.children.size} live (${this.activeCount} held by runs)`,
-        { labels }
-      );
-    }
-
+    let readyRss: number | undefined;
     const port = await new Promise<number>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
@@ -428,6 +471,7 @@ export class TaskProcessSupervisor {
         }
         settled = true;
         clearTimeout(timer);
+        readyRss = message.rss;
         resolve(message.port);
       });
       child.send({
@@ -443,6 +487,14 @@ export class TaskProcessSupervisor {
       throw error;
     });
 
+    logger.info(
+      `Spinning up process ${child.pid} for task ${bundle.taskType}; ${this.children.size} live (${
+        this.activeCount
+      } held by runs); ready in ${Date.now() - spawnStartedAt}ms${
+        readyRss !== undefined ? `, idle RSS ${Math.round(readyRss / 1024 / 1024)}MB` : ''
+      }`,
+      { labels }
+    );
     managed.port = port;
     return this.lease(managed);
   }

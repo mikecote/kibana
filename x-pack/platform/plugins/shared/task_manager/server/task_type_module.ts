@@ -34,6 +34,17 @@ import type { CancellableTask, RunContext } from './task';
 import type { HostTaskManager } from './task_process/host_capabilities/task_scheduling';
 import type { TaskProcessParity, TaskTypeParityHook } from './task_process/parity';
 import type { TaskRegisterDefinition } from './task_type_dictionary';
+import type { ConcreteTaskInstance } from './task';
+
+/**
+ * Ids of the packs a run needs, read from the task instance it was scheduled with. Without a hook,
+ * or when a call returns `undefined` (the ids were not resolvable for this particular run), a task
+ * type gets every pack a worker's bundle declares, which is the pre-pack behavior. Returning `[]`
+ * is different from returning `undefined`: `[]` says the run needs no pack at all.
+ */
+export type TaskTypePackSelector = (
+  taskInstance: ConcreteTaskInstance
+) => string[] | undefined | Promise<string[] | undefined>;
 
 export interface TaskHostEventLog {
   // Method signatures, so the plugin's own `IEventLogService` is assignable.
@@ -306,6 +317,11 @@ export interface TaskTypeRegistrationOptions {
    * runs declares, such as the opt-ins of plugins that other plugins register with Kibana.
    */
   featureFlags?: () => Record<string, boolean | string | number>;
+  /**
+   * The pack ids this run needs, read for the task instance being dispatched. Without it a task
+   * type gets every pack its bundle declares, which is the pre-pack behavior.
+   */
+  getPacks?: TaskTypePackSelector;
 }
 
 /** Throws when a declared capability has no real service to hand to the module in Kibana. */
@@ -342,8 +358,8 @@ export const defineTaskType = (module: TaskTypeModule): TaskTypeModule => module
 export const toTaskDefinition = (
   module: TaskTypeModule,
   getHost: () => Promise<TaskHost>,
-  /** Runs before every run, with the host; throwing (a `DeclinedRunError`, say) stops the run. */
-  beforeRun?: (host: TaskHost) => Promise<void>
+  /** Runs before every run, with the host and its context; throwing (a `DeclinedRunError`, say) stops the run. */
+  beforeRun?: (host: TaskHost, context: RunContext) => Promise<void>
 ): TaskRegisterDefinition => {
   const {
     type,
@@ -378,7 +394,7 @@ export const toTaskDefinition = (
       return {
         run: async () => {
           const host = await getHost();
-          await beforeRun?.(host);
+          await beforeRun?.(host, context);
           created = createTaskRunner(context, host);
           // Cancelled while the host was resolving: the run never starts.
           if (cancelled) await created.cancel?.();

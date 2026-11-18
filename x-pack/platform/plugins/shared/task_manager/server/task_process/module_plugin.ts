@@ -176,7 +176,13 @@ const plugin: TaskPluginInitializer<void, void, SetupDeps, StartDeps> = async (
         taskType: module.type,
       });
       deps.taskManager.registerTaskDefinitions({
-        [module.type]: toTaskDefinition(module, () => hostPromise, parityGuard),
+        [module.type]: toTaskDefinition(
+          module,
+          () => hostPromise,
+          async (host) => {
+            await parityGuard(host);
+          }
+        ),
       });
     },
 

@@ -10,7 +10,7 @@ import { combineMetricCollections, decodeMetricScopes } from '@kbn/metrics';
 import type { ScopeMetrics } from '@kbn/metrics';
 import { captureTaskRunTrace } from '../task_running/task_tracing';
 import type { TaskExecutionPool } from '../task_scheduling';
-import type { CancellableTask, RemoteRunObserver, RunResult } from '../task';
+import type { CancellableTask, ConcreteTaskInstance, RemoteRunObserver, RunResult } from '../task';
 import {
   createRetryableError,
   DeclinedRunError,
@@ -73,7 +73,11 @@ export interface TaskProcessDispatch {
     taskType: string,
     declarations?: TaskFeatureFlagDefinitions
   ) => Promise<TaskProcessRunRequest['featureFlags']>;
-  getSnapshot?: (taskType: string) => Promise<TaskProcessDispatchSnapshot>;
+  /** `taskInstance` is the run being dispatched, read by `TaskTypeRegistrationOptions.getPacks`. */
+  getSnapshot?: (
+    taskType: string,
+    taskInstance: ConcreteTaskInstance
+  ) => Promise<TaskProcessDispatchSnapshot>;
   getCurrentTasksInPool?: TaskExecutionPool['getCurrentTasksInPool'];
   onTasksCreated?: (count: number) => void;
   onMetrics?: (metrics: ScopeMetrics[]) => void;
@@ -151,8 +155,28 @@ export class RemoteTaskRunner implements CancellableTask {
   private cancelled = false;
   private target?: TaskProcessAddress | TaskProcessLease;
   private cancellation?: Promise<void>;
+  private retriedWithEveryPack = false;
 
+  /**
+   * A worker dispatched with a narrowed pack selection (`init.packs`) that declines the run is asked
+   * once more with no pack selection at all (`onDispatchFailure` already reports the first, declined
+   * attempt), so Main's incomplete pack resolution costs a slower run instead of a failed one. A
+   * worker that was already asked for every pack keeps today's behavior: the decline is unrecoverable.
+   */
   public async run(): Promise<RunResult | undefined | void> {
+    try {
+      return await this.attempt();
+    } catch (error) {
+      const packs = this.params.request.snapshot?.init.packs;
+      if (!this.retriedWithEveryPack && packs !== undefined && error instanceof DeclinedRunError) {
+        this.retriedWithEveryPack = true;
+        return this.attempt(true);
+      }
+      throw error;
+    }
+  }
+
+  private async attempt(loadEveryPack?: boolean): Promise<RunResult | undefined | void> {
     const {
       route,
       request: originalRequest,
@@ -164,6 +188,14 @@ export class RemoteTaskRunner implements CancellableTask {
       ...originalRequest,
       protocolVersion: TASK_PROCESS_PROTOCOL_VERSION,
       tracing: originalRequest.tracing ?? captureTaskRunTrace(),
+      ...(loadEveryPack && originalRequest.snapshot
+        ? {
+            snapshot: {
+              ...originalRequest.snapshot,
+              init: { ...originalRequest.snapshot.init, packs: undefined },
+            },
+          }
+        : {}),
     };
     signal?.throwIfAborted();
     if (this.cancelled)

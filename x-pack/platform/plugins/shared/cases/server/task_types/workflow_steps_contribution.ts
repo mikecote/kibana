@@ -69,6 +69,55 @@ export const contribution: WorkflowStepsContribution = {
   declares: {
     savedObjectTypes: getCasesTaskProcessSavedObjectTypes(),
     settings: ['cases'],
+    // `register` below reads the rule registry's alerts client (`ruleRegistry`, for RAC-backed cases
+    // steps) and, when spaces is enabled, the spaces service (`spaces`, for the space-scoped cases
+    // client): both are services another pack provides, not this one. `register` also builds this
+    // process's attachment type registry from every plugin's `cases-attachment-types` contribution
+    // (`createCasesAttachmentTypeRegistry`, read by the run check below registers for every
+    // `cases.*` step, not just the ones that add attachments): naming the whole `cases-attachment-types`
+    // contribution key here, the same way `ai.agent` names `agent-builder`, selects every one of
+    // those packs too, so no `cases.*` step is declined for a registration this pack alone does not
+    // carry.
+    requires: ['ruleRegistry', 'spaces', 'cases-attachment-types'],
+    // Every `cases.*` step type `register` below can register: `casesStepRegistry` (./registry.ts)
+    // plus the three it adds on top (`createCaseFromTemplate` always, `setExtendedFields` and
+    // `addAttachments` each behind their own flag). Lets `resolvePacksForDefinition` select this
+    // pack for a workflow that uses one of these steps instead of falling back to a full load.
+    stepTypes: [
+      'cases.addAlerts',
+      'cases.addAttachments',
+      'cases.addComment',
+      'cases.addEvents',
+      'cases.addObservables',
+      'cases.addTags',
+      'cases.assignCase',
+      'cases.bulkDeleteObservables',
+      'cases.closeCase',
+      'cases.createCase',
+      'cases.createCaseFromTemplate',
+      'cases.deleteAttachments',
+      'cases.deleteCases',
+      'cases.deleteObservable',
+      'cases.findCases',
+      'cases.findSimilarCases',
+      'cases.getAllAttachments',
+      'cases.getCase',
+      'cases.getCases',
+      'cases.getCasesByAlertId',
+      'cases.pushCases',
+      'cases.removeTags',
+      'cases.setCategory',
+      'cases.setCustomField',
+      'cases.setDescription',
+      'cases.setExtendedFields',
+      'cases.setSeverity',
+      'cases.setStatus',
+      'cases.setTitle',
+      'cases.unassignCase',
+      'cases.updateCase',
+      'cases.updateCases',
+      'cases.updateObservable',
+    ],
   },
   provides: {
     'cases.attachmentTypes': ({ host, settings }) => {

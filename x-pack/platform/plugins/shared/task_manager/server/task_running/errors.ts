@@ -154,7 +154,9 @@ const CODE_DECLINED = 'TaskManager/declined';
 
 /**
  * Thrown by a runner in a task process that cannot serve this run, such as a rule that uses a
- * connector type the process does not know. Task Manager reports a capability failure.
+ * connector type the process does not know, or a workflow step a narrowed worker did not load a
+ * pack for. Task Manager reports a capability failure; a worker dispatched with a pack selection is
+ * retried once with every pack instead (see `RemoteTaskRunner.run`).
  */
 export class DeclinedRunError extends Error {
   public readonly code = CODE_DECLINED;
